@@ -104,6 +104,51 @@
             transition: color 0.3s ease, border-color 0.3s ease;
         }
         
+        /* Best Practices Section */
+        .best-practices {
+            background-color: var(--bg-secondary);
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+        }
+        
+        /* Category Tables */
+        .category-table {
+            width: 100%;
+            margin: 20px 0;
+            border-collapse: collapse;
+            background-color: var(--bg-secondary);
+        }
+        .category-table thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .category-table thead.vision {
+            background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+        }
+        .category-table thead.tools {
+            background: linear-gradient(135deg, #e27a4a 0%, #c96538 100%);
+        }
+        .category-table thead.arch {
+            background: linear-gradient(135deg, #6a4ae2 0%, #5638c9 100%);
+        }
+        .category-table th, .category-table td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border-color);
+        }
+        .category-table tbody tr:nth-child(even) {
+            background-color: var(--chart-bg);
+        }
+        .category-table tbody tr:hover {
+            background-color: var(--border-color);
+        }
+        
         /* Theme Toggle Button */
         .theme-toggle {
             position: fixed;
@@ -183,6 +228,15 @@
         <div class="chart" id="efficiency-chart"></div>
         
         {{TREND_SECTION}}
+        
+        <h2>💡 Best-Practice-Empfehlungen</h2>
+        <div class="best-practices">{{BEST_PRACTICES}}</div>
+        
+        {{VISION_SECTION}}
+        
+        {{TOOLS_SECTION}}
+        
+        {{ARCH_SECTION}}
         
         <div class="timestamp">
             Generiert: {{TIMESTAMP}}

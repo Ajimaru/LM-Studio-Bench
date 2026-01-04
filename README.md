@@ -15,8 +15,8 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **Dev-Mode**: Automatische Auswahl des kleinsten Modells für schnelle Tests während Entwicklung
 - ✅ **Export**:
   - JSON, CSV (Excel/Sheets-kompatibel)
-  - PDF (Multi-Page mit Best-Practice-Empfehlungen, separate Seiten für Vision/Tool/Architektur)
-  - HTML (interaktive Plotly-Charts mit Dark Mode)
+  - PDF (Multi-Page mit Best-Practice-Empfehlungen, Vision/Tool/Architektur-Seiten, optionale Plotly-Charts)
+  - HTML (interaktive Plotly-Charts, Best-Practices, Vision/Tool/Architektur-Tabellen, Dark Mode)
 - ✅ **Umfangreiche Metadaten**: Parametergröße, Architektur, Context-Länge, Dateigröße, Vision- und Tool-Support
 
 ## Systemanforderungen

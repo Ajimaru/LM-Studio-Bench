@@ -23,16 +23,20 @@ from datetime import datetime
 from statistics import quantiles, mean, median
 from tqdm import tqdm
 import re
+import io
+import base64
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
+from reportlab.lib.utils import ImageReader
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     go = None
+    PLOTLY_AVAILABLE = False
     PLOTLY_AVAILABLE = False
 
 
@@ -1257,6 +1261,23 @@ class LMStudioBenchmark:
         
         return recommendations
     
+    def _plotly_fig_to_image(self, fig, width=700, height=400):
+        """Konvertiert Plotly Figure zu ReportLab Image für PDF-Einbettung"""
+        try:
+            # Versuche kaleido (bevorzugt)
+            img_bytes = fig.to_image(format="png", width=width, height=height, engine="kaleido")
+            return Image(ImageReader(io.BytesIO(img_bytes)), width=width*0.75, height=height*0.75)
+        except Exception as e:
+            logger.warning(f"Kaleido nicht verfügbar, verwende Fallback-Methode: {e}")
+            try:
+                # Fallback: orca
+                img_bytes = fig.to_image(format="png", width=width, height=height, engine="orca")
+                return Image(ImageReader(io.BytesIO(img_bytes)), width=width*0.75, height=height*0.75)
+            except Exception as e2:
+                logger.warning(f"Charts können nicht ins PDF eingebettet werden: {e2}")
+                logger.warning("Installiere 'kaleido' für Chart-Support: pip install kaleido")
+                return None
+    
     def load_all_historical_data(self) -> Dict[str, List[Dict]]:
         """Lädt alle historischen Benchmark-Ergebnisse und gruppiert nach Modell+Quantisierung"""
         trends = {}
@@ -1668,6 +1689,100 @@ class LMStudioBenchmark:
                 elements.append(Paragraph(rec_text, rec_style))
                 elements.append(Spacer(1, 20))
             
+            # === Plotly-Charts einbetten (wenn verfügbar) ===
+            if PLOTLY_AVAILABLE and go is not None:
+                try:
+                    # Bar-Chart: Top 10 schnellste Modelle
+                    top_10 = sorted_results[:10]
+                    fig_bar = go.Figure(data=[
+                        go.Bar(
+                            x=[f"{r.model_name[:20]}\n{r.quantization}" for r in top_10],
+                            y=[r.avg_tokens_per_sec for r in top_10],
+                            text=[f"{r.avg_tokens_per_sec:.2f}" for r in top_10],
+                            textposition='auto',
+                            marker_color='#2d5aa8'
+                        )
+                    ])
+                    fig_bar.update_layout(
+                        title="Top 10 schnellste Modelle",
+                        xaxis_title="Modell + Quantisierung",
+                        yaxis_title="Tokens/s",
+                        height=400,
+                        font=dict(size=10)
+                    )
+                    
+                    img_bar = self._plotly_fig_to_image(fig_bar, width=700, height=400)
+                    if img_bar:
+                        elements.append(PageBreak())
+                        elements.append(Paragraph("📊 Performance-Charts", title_style))
+                        elements.append(Spacer(1, 15))
+                        elements.append(Paragraph("Top 10 schnellste Modelle", heading_style))
+                        elements.append(img_bar)
+                        elements.append(Spacer(1, 20))
+                    
+                    # Scatter-Plot: Modellgröße vs Speed
+                    fig_scatter = go.Figure(data=[
+                        go.Scatter(
+                            x=[r.model_size_gb for r in self.results],
+                            y=[r.avg_tokens_per_sec for r in self.results],
+                            mode='markers',
+                            text=[f"{r.model_name[:15]}" for r in self.results],
+                            marker=dict(
+                                size=8,
+                                color=[r.tokens_per_sec_per_gb for r in self.results],
+                                colorscale='Viridis',
+                                showscale=True,
+                                colorbar=dict(title="Effizienz")
+                            )
+                        )
+                    ])
+                    fig_scatter.update_layout(
+                        title="Modellgröße vs Performance",
+                        xaxis_title="Modellgröße (GB)",
+                        yaxis_title="Tokens/s",
+                        height=400,
+                        font=dict(size=10)
+                    )
+                    
+                    img_scatter = self._plotly_fig_to_image(fig_scatter, width=700, height=400)
+                    if img_scatter:
+                        elements.append(Paragraph("Modellgröße vs Performance", heading_style))
+                        elements.append(img_scatter)
+                        elements.append(Spacer(1, 20))
+                    
+                    # Effizienz-Chart
+                    fig_efficiency = go.Figure(data=[
+                        go.Scatter(
+                            x=[r.tokens_per_sec_per_gb for r in self.results],
+                            y=[r.tokens_per_sec_per_billion_params for r in self.results],
+                            mode='markers',
+                            text=[f"{r.model_name[:15]}" for r in self.results],
+                            marker=dict(
+                                size=8,
+                                color=[r.avg_tokens_per_sec for r in self.results],
+                                colorscale='RdYlGn',
+                                showscale=True,
+                                colorbar=dict(title="Speed")
+                            )
+                        )
+                    ])
+                    fig_efficiency.update_layout(
+                        title="Effizienz-Analyse",
+                        xaxis_title="Tokens/s pro GB",
+                        yaxis_title="Tokens/s pro Milliarde Parameter",
+                        height=400,
+                        font=dict(size=10)
+                    )
+                    
+                    img_efficiency = self._plotly_fig_to_image(fig_efficiency, width=700, height=400)
+                    if img_efficiency:
+                        elements.append(Paragraph("Effizienz-Analyse", heading_style))
+                        elements.append(img_efficiency)
+                        elements.append(Spacer(1, 20))
+                
+                except Exception as e:
+                    logger.warning(f"Charts konnten nicht ins PDF eingebettet werden: {e}")
+            
             # === NEUE SEITE: Vision-Modelle ===
             vision_models = [r for r in self.results if r.has_vision]
             if vision_models:
@@ -1944,9 +2059,155 @@ class LMStudioBenchmark:
                 trend_section = ""
                 trend_script = ""
             
+            # Best-Practice-Empfehlungen
+            recommendations = self._generate_best_practices()
+            best_practices_html = "\n".join(recommendations) if recommendations else "Keine Empfehlungen verfügbar"
+            
+            # Vision-Modelle Sektion
+            vision_models = [r for r in self.results if r.has_vision]
+            if vision_models:
+                vision_sorted = sorted(vision_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+                vision_rows = ""
+                for r in vision_sorted:
+                    vision_rows += f"""
+                    <tr>
+                        <td>{r.model_name}</td>
+                        <td>{r.params_size}</td>
+                        <td>{r.model_size_gb:.2f} GB</td>
+                        <td>{r.quantization}</td>
+                        <td><strong>{r.avg_tokens_per_sec:.2f}</strong></td>
+                        <td>{r.avg_ttft*1000:.1f} ms</td>
+                        <td>{r.tokens_per_sec_per_gb:.2f}</td>
+                    </tr>"""
+                
+                vision_section = f"""
+        <h2>👁️ Vision-Modelle (Multimodal)</h2>
+        <p>{len(vision_models)} Vision-fähige Modelle gefunden</p>
+        <table class="category-table">
+            <thead class="vision">
+                <tr>
+                    <th>Modell</th>
+                    <th>Parameter</th>
+                    <th>Größe</th>
+                    <th>Quantisierung</th>
+                    <th>Tokens/s</th>
+                    <th>TTFT</th>
+                    <th>Effizienz</th>
+                </tr>
+            </thead>
+            <tbody>
+                {vision_rows}
+            </tbody>
+        </table>
+        <h3>Top 3 Vision-Modelle:</h3>
+        <ul>"""
+                for i, r in enumerate(vision_sorted[:3], 1):
+                    vision_section += f"""
+            <li><strong>{r.model_name}</strong> ({r.quantization}) → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB</li>"""
+                vision_section += """
+        </ul>"""
+            else:
+                vision_section = ""
+            
+            # Tool-Modelle Sektion
+            tool_models = [r for r in self.results if r.has_tools]
+            if tool_models:
+                tool_sorted = sorted(tool_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+                tool_rows = ""
+                for r in tool_sorted:
+                    tool_rows += f"""
+                    <tr>
+                        <td>{r.model_name}</td>
+                        <td>{r.params_size}</td>
+                        <td>{r.model_size_gb:.2f} GB</td>
+                        <td>{r.quantization}</td>
+                        <td><strong>{r.avg_tokens_per_sec:.2f}</strong></td>
+                        <td>{r.avg_ttft*1000:.1f} ms</td>
+                        <td>{r.tokens_per_sec_per_gb:.2f}</td>
+                    </tr>"""
+                
+                tools_section = f"""
+        <h2>🔧 Tool-Calling Modelle</h2>
+        <p>{len(tool_models)} Tool-fähige Modelle gefunden</p>
+        <table class="category-table">
+            <thead class="tools">
+                <tr>
+                    <th>Modell</th>
+                    <th>Parameter</th>
+                    <th>Größe</th>
+                    <th>Quantisierung</th>
+                    <th>Tokens/s</th>
+                    <th>TTFT</th>
+                    <th>Effizienz</th>
+                </tr>
+            </thead>
+            <tbody>
+                {tool_rows}
+            </tbody>
+        </table>
+        <h3>Top 3 Tool-Calling Modelle:</h3>
+        <ul>"""
+                for i, r in enumerate(tool_sorted[:3], 1):
+                    tools_section += f"""
+            <li><strong>{r.model_name}</strong> ({r.quantization}) → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB</li>"""
+                tools_section += """
+        </ul>"""
+            else:
+                tools_section = ""
+            
+            # Architektur-Gruppierung
+            by_arch = {}
+            for r in self.results:
+                arch = r.architecture
+                if arch not in by_arch:
+                    by_arch[arch] = []
+                by_arch[arch].append(r)
+            
+            major_archs = {k: v for k, v in by_arch.items() if len(v) >= 2}
+            
+            if major_archs:
+                arch_section = """
+        <h2>🏗️ Modelle nach Architektur</h2>"""
+                
+                for arch_name, arch_models in sorted(major_archs.items(), key=lambda x: -len(x[1])):
+                    arch_sorted = sorted(arch_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+                    arch_rows = ""
+                    for r in arch_sorted[:5]:  # Top 5 pro Architektur
+                        arch_rows += f"""
+                        <tr>
+                            <td>{r.model_name}</td>
+                            <td>{r.params_size}</td>
+                            <td>{r.quantization}</td>
+                            <td><strong>{r.avg_tokens_per_sec:.2f}</strong></td>
+                            <td>{r.model_size_gb:.2f} GB</td>
+                        </tr>"""
+                    
+                    arch_section += f"""
+        <h3>{arch_name.upper()} ({len(arch_models)} Modelle)</h3>
+        <table class="category-table">
+            <thead class="arch">
+                <tr>
+                    <th>Modell</th>
+                    <th>Parameter</th>
+                    <th>Quantisierung</th>
+                    <th>Tokens/s</th>
+                    <th>Größe</th>
+                </tr>
+            </thead>
+            <tbody>
+                {arch_rows}
+            </tbody>
+        </table>"""
+            else:
+                arch_section = ""
+            
             # Ersetze Platzhalter im Template
             html_output = html_template.replace('{{SUMMARY_BOXES}}', summary_boxes)
             html_output = html_output.replace('{{TREND_SECTION}}', trend_section)
+            html_output = html_output.replace('{{BEST_PRACTICES}}', best_practices_html)
+            html_output = html_output.replace('{{VISION_SECTION}}', vision_section)
+            html_output = html_output.replace('{{TOOLS_SECTION}}', tools_section)
+            html_output = html_output.replace('{{ARCH_SECTION}}', arch_section)
             html_output = html_output.replace('{{TIMESTAMP}}', time.strftime('%d.%m.%Y %H:%M:%S'))
             html_output = html_output.replace('{{BAR_DATA}}', json.dumps(fig_bar.to_dict()['data']))
             html_output = html_output.replace('{{BAR_LAYOUT}}', json.dumps(fig_bar.to_dict()['layout']))
