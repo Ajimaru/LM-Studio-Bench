@@ -44,13 +44,13 @@ PROJECT_ROOT = SCRIPT_DIR.parent    # root
 LOGS_DIR = PROJECT_ROOT / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Logging konfigurieren mit Datums-Format
-log_filename = LOGS_DIR / f"error_{datetime.now().strftime('%Y-%m-%d')}.log"
+# Logging konfigurieren mit Timestamp pro Run (nicht pro Tag)
+log_filename = LOGS_DIR / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_filename, mode='w'),  # 'w' mode: neu schreiben bei jedem Start
+        logging.FileHandler(log_filename, mode='w'),  # Neue Log-Datei pro Run
         logging.StreamHandler()
     ]
 )
