@@ -94,6 +94,25 @@ Python-Skript zum automatischen Testen aller lokal installierten LM Studio Model
 Erkläre maschinelles Lernen in 3 Sätzen
 ```
 
+### Optimierte Inference-Parameter
+
+Für standardisierte und reproduzierbare Benchmarks werden die folgenden Parameter verwendet (via `LlmPredictionConfig` im SDK):
+
+| Parameter | Wert | Grund |
+| --------- | ---- | ----- |
+| **temperature** | 0.1 | Niedrig für deterministische, konsistente Ergebnisse (statt default 0.8 für zufälligere Ausgabe) |
+| **top_k_sampling** | 40 | Sampling aus den top 40 Token-Kandidaten |
+| **top_p_sampling** | 0.9 | Nucleus-Sampling bei 90% kumulativer Wahrscheinlichkeit |
+| **min_p_sampling** | 0.05 | Minimum-Wahrscheinlichkeits-Schwelle zur Filterung niedriger Wahrscheinlichkeits-Token |
+| **repeat_penalty** | 1.2 | Leichte Strafe gegen wiederholte Tokens (default 1.1) für variablere Ausgabe |
+| **max_tokens** | 256 | Begrenzte Output-Länge für schnellere und konsistentere Messungen |
+
+Diese Parameter ermöglichen:
+- **Reproduzierbarkeit**: Gleiche Eingabe → gleiche Ausgabe über mehrere Durchläufe
+- **Fairness**: Alle Modelle werden mit denselben Sampling-Strategien gemessen
+- **Performance**: Maximale Generierungsgeschwindigkeit durch limitierte Output-Länge
+- **Konsistenz**: Reduzierung von Wiederholungen und erzeugten Fehler-Token
+
 ### GPU-Offload-Strategie
 
 1. Versuche `gpuOffload: 1.0` (100%)

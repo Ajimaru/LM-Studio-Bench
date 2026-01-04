@@ -83,7 +83,20 @@ Das Script verwendet folgende Standard-Einstellungen:
 - **Messungen**: 3 Durchläufe
 - **GPU-Offload**: Automatisch (1.0 → 0.7 → 0.5 → 0.3)
 
-Diese können in [benchmark.py](benchmark.py) angepasst werden (siehe Konstanten am Anfang).
+### Optimierte Inference-Parameter
+
+Für standardisierte und reproduzierbare Benchmarks werden optimierte Sampling-Parameter verwendet:
+
+| Parameter | Wert | Grund |
+|-----------|------|-------|
+| **Temperatur** | 0.1 | Niedrig für konsistente, deterministische Ergebnisse |
+| **Top-K Sampling** | 40 | Sampling aus top 40 Tokens |
+| **Top-P Sampling** | 0.9 | Nucleus-Sampling bei 90% kumulativer Wahrscheinlichkeit |
+| **Min-P Sampling** | 0.05 | Minimum-Wahrscheinlichkeits-Schwelle |
+| **Repeat Penalty** | 1.2 | Reduziert Wiederholungen (default 1.1) |
+| **Max Tokens** | 256 | Begrenzte Output-Länge für schnellere Tests |
+
+Diese werden automatisch in `_run_inference()` über das Python SDK angewendet und können in der `OPTIMIZED_INFERENCE_PARAMS` Konstante angepasst werden (siehe [benchmark.py](benchmark.py) Zeile ~47).
 
 ## Output
 

@@ -41,6 +41,17 @@ NUM_WARMUP_RUNS = 1
 NUM_MEASUREMENT_RUNS = 3
 RESULTS_DIR = Path("results")
 
+# Optimierte Inference-Parameter für standardisierte Benchmarks
+# (Für konsistente, reproduzierbare Messungen)
+OPTIMIZED_INFERENCE_PARAMS = {
+    'temperature': 0.1,        # Niedrig für konsistente Ergebnisse (statt default 0.8)
+    'top_k_sampling': 40,      # Sampling aus top 40 Tokens
+    'top_p_sampling': 0.9,     # Nucleus sampling bei 90%
+    'min_p_sampling': 0.05,    # Minimum probability threshold
+    'repeat_penalty': 1.2,     # Leichte Strafe gegen Wiederholungen (default 1.1)
+    'max_tokens': 256,         # Begrenzte Output-Länge für schnellere Messungen
+}
+
 
 @dataclass
 class BenchmarkResult:
@@ -270,12 +281,13 @@ class ModelDiscovery:
 class LMStudioBenchmark:
     """Haupt-Benchmark-Klasse"""
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen"):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
         self.context_length = context_length
         self.prompt = prompt
+        self.model_limit = model_limit
         
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
@@ -394,9 +406,19 @@ class LMStudioBenchmark:
                 )
             )
             
-            # Führe Inferenz durch
+            # Erstelle optimierte Prediction-Konfiguration
+            prediction_config = lms.LlmPredictionConfig(
+                temperature=OPTIMIZED_INFERENCE_PARAMS['temperature'],
+                top_k_sampling=OPTIMIZED_INFERENCE_PARAMS['top_k_sampling'],
+                top_p_sampling=OPTIMIZED_INFERENCE_PARAMS['top_p_sampling'],
+                min_p_sampling=OPTIMIZED_INFERENCE_PARAMS['min_p_sampling'],
+                repeat_penalty=OPTIMIZED_INFERENCE_PARAMS['repeat_penalty'],
+                max_tokens=OPTIMIZED_INFERENCE_PARAMS['max_tokens']
+            )
+            
+            # Führe Inferenz durch mit optimierten Parametern
             start_time = time.time()
-            result = model.respond(self.prompt)
+            result = model.respond(self.prompt, config=prediction_config)
             end_time = time.time()
             
             generation_time = end_time - start_time
@@ -462,6 +484,11 @@ class LMStudioBenchmark:
             logger.error("Keine Modelle gefunden")
             return
         
+        # Wende Limit an wenn gesetzt
+        if self.model_limit and self.model_limit < len(models):
+            logger.info(f"Modell-Limit gesetzt: Testet nur erste {self.model_limit} von {len(models)} Modellen")
+            models = models[:self.model_limit]
+        
         logger.info(f"Starte Benchmark für {len(models)} Modelle...")
         
         # Benchmark für jedes Modell
@@ -507,16 +534,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Beispiele:
-  python benchmark.py                    # Standard: 3 Messungen pro Modell
-  python benchmark.py --runs 1           # Schnell: 1 Messung pro Modell
-  python benchmark.py --runs 5           # Genau: 5 Messungen pro Modell
-  python benchmark.py --runs 2 --context 4096  # 2 Messungen, 4096 Token Context
-
-Zeitschätzung:
-  1 Messung:  ~45 Minuten für 9 Modelle
-  2 Messungen: ~90 Minuten für 9 Modelle
-  3 Messungen: ~135 Minuten für 9 Modelle (Standard)
-  5 Messungen: ~225 Minuten für 9 Modelle
+  python benchmark.py                              # Standard: alle Modelle, 3 Messungen
+  python benchmark.py --runs 1                     # Schnell: alle Modelle, 1 Messung
+  python benchmark.py --limit 3 --runs 1           # Test 3 Modelle mit 1 Messung (~15 Min)
+  python benchmark.py --limit 1 --runs 1           # Test 1 Modell mit 1 Messung (~5 Min)
+  python benchmark.py --runs 2 --context 4096      # 2 Messungen, 4096 Token Context
+  python benchmark.py --limit 5 --runs 2 --context 4096  # Test 5 Modelle, weitere Optionen
         """
     )
     
@@ -541,6 +564,13 @@ Zeitschätzung:
         help=f'Standard-Test-Prompt (Standard: "{STANDARD_PROMPT}")'
     )
     
+    parser.add_argument(
+        '--limit', '-l',
+        type=int,
+        default=None,
+        help='Maximale Anzahl von Modellen zum Testen (z.B. 3 testet nur die ersten 3 Modelle)'
+    )
+    
     args = parser.parse_args()
     
     # Validierung
@@ -550,18 +580,23 @@ Zeitschätzung:
         parser.error('--context muss >= 256 sein')
     if len(args.prompt.strip()) == 0:
         parser.error('--prompt darf nicht leer sein')
+    if args.limit is not None and args.limit < 1:
+        parser.error('--limit muss >= 1 sein')
     
     logger.info("=== LM Studio Model Benchmark ===")
     logger.info(f"Prompt: '{args.prompt}'")
     logger.info(f"Context Length: {args.context} Tokens")
     logger.info(f"Messungen pro Modell: {args.runs} (+ {NUM_WARMUP_RUNS} Warmup)")
-    logger.info(f"Geschätzte Gesamtzeit: ~{int(args.runs * 45)} Minuten bei 9 Modellen")
+    if args.limit:
+        logger.info(f"Modell-Limit: Testet max. {args.limit} Modelle")
+    logger.info(f"Geschätzte Gesamtzeit: ~{int(args.runs * 45 * (args.limit or 9) / 9)} Minuten")
     logger.info("")
     
     benchmark = LMStudioBenchmark(
         num_runs=args.runs,
         context_length=args.context,
-        prompt=args.prompt
+        prompt=args.prompt,
+        model_limit=args.limit
     )
     benchmark.run_all_benchmarks()
     
