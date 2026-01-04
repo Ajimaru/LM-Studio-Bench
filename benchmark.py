@@ -73,6 +73,11 @@ class BenchmarkResult:
     prompt_tokens: int
     completion_tokens: int
     timestamp: str
+    
+    # Modell-Metadaten
+    params_size: str                   # z.B. "3B", "7B"
+    architecture: str                  # z.B. "mistral3", "gemma3"
+    max_context_length: int            # z.B. 262144
 
 
 class GPUMonitor:
@@ -244,6 +249,45 @@ class ModelDiscovery:
     """Findet alle lokal installierten Modelle"""
     
     @staticmethod
+    def _get_metadata_cache() -> Dict[str, Dict]:
+        """Cache für Modell-Metadaten (geladen einmal am Anfang)"""
+        if not hasattr(ModelDiscovery, '_metadata_cache'):
+            ModelDiscovery._metadata_cache = {}
+            try:
+                result = subprocess.run(
+                    ['lms', 'ls', '--json'],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                if result.returncode == 0:
+                    import json
+                    data = json.loads(result.stdout)
+                    for model_data in data:
+                        if model_data.get('type') == 'llm':
+                            key = model_data.get('modelKey')
+                            ModelDiscovery._metadata_cache[key] = {
+                                'architecture': model_data.get('architecture', 'unknown'),
+                                'params_size': model_data.get('paramsString', 'unknown'),
+                                'max_context_length': model_data.get('maxContextLength', 0),
+                            }
+            except Exception as e:
+                logger.warning(f"Fehler beim Laden von Metadaten-Cache: {e}")
+        return ModelDiscovery._metadata_cache
+    
+    @staticmethod
+    def get_model_metadata(model_key: str) -> Dict:
+        """Hole Metadaten für ein bestimmtes Modell"""
+        cache = ModelDiscovery._get_metadata_cache()
+        # Extrahiere Model-Name (vor @)
+        base_model = model_key.split('@')[0] if '@' in model_key else model_key
+        return cache.get(base_model, {
+            'architecture': 'unknown',
+            'params_size': 'unknown',
+            'max_context_length': 0,
+        })
+    
+    @staticmethod
     def get_installed_models() -> List[str]:
         """Listet alle lokal installierten Modelle und Quantisierungen auf"""
         try:
@@ -353,7 +397,8 @@ class LMStudioBenchmark:
                     quantization,
                     1.0,  # SDK handhabt GPU-Offload automatisch
                     vram_after,
-                    measurements
+                    measurements,
+                    model_key
                 )
                 
                 logger.info(f"✓ {model_key}: {result.avg_tokens_per_sec:.2f} tokens/s")
@@ -454,7 +499,8 @@ class LMStudioBenchmark:
         quantization: str,
         gpu_offload: float,
         vram_mb: str,
-        measurements: List[Dict]
+        measurements: List[Dict],
+        model_key: str
     ) -> BenchmarkResult:
         """Berechnet Durchschnittswerte aus Messungen"""
         avg_tokens_per_sec = sum(m['tokens_per_second'] for m in measurements) / len(measurements)
@@ -462,6 +508,9 @@ class LMStudioBenchmark:
         avg_gen_time = sum(m['generation_time'] for m in measurements) / len(measurements)
         prompt_tokens = measurements[0]['prompt_tokens']
         completion_tokens = int(sum(m['completion_tokens'] for m in measurements) / len(measurements))
+        
+        # Hole Metadaten
+        metadata = ModelDiscovery.get_model_metadata(model_key)
         
         return BenchmarkResult(
             model_name=model_name,
@@ -474,7 +523,10 @@ class LMStudioBenchmark:
             avg_gen_time=round(avg_gen_time, 3),
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
-            timestamp=time.strftime('%Y-%m-%d %H:%M:%S')
+            timestamp=time.strftime('%Y-%m-%d %H:%M:%S'),
+            params_size=metadata.get('params_size', 'unknown'),
+            architecture=metadata.get('architecture', 'unknown'),
+            max_context_length=metadata.get('max_context_length', 0)
         )
     
     def run_all_benchmarks(self):
@@ -618,39 +670,38 @@ class LMStudioBenchmark:
             )
             
             # Erstelle Tabellen-Daten
-            table_data = [['Modell', 'Quant.', 'GPU', 'Tokens/s', 'TTFT (ms)', 'Gen.Zeit (s)', 'Prompt', 'Output']]
+            table_data = [['Modell', 'Param', 'Arch', 'Quant.', 'GPU', 'Tokens/s', 'TTFT (ms)', 'Gen.Zeit (s)']]
             for result in sorted_results:
                 table_data.append([
-                    result.model_name[:25],  # Kürzen bei Bedarf
-                    result.quantization[:8],
+                    result.model_name[:18],  # Kürzen bei Bedarf
+                    result.params_size[:4],
+                    result.architecture[:8],
+                    result.quantization[:6],
                     result.gpu_type[:6],
                     f"{result.avg_tokens_per_sec:.2f}",
                     f"{result.avg_ttft*1000:.1f}" if result.avg_ttft else "N/A",
                     f"{result.avg_gen_time:.2f}",
-                    str(result.prompt_tokens),
-                    str(result.completion_tokens)
                 ])
             
             # Formatiere Tabelle
-            results_table = Table(table_data, colWidths=[1.8*inch, 0.8*inch, 0.7*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.6*inch, 0.6*inch])
+            results_table = Table(table_data, colWidths=[1.5*inch, 0.6*inch, 0.7*inch, 0.65*inch, 0.6*inch, 0.75*inch, 0.75*inch, 0.8*inch])
             results_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-                ('ALIGN', (1, 0), (1, -1), 'CENTER'),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('FONTSIZE', (0, 1), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-                ('TOPPADDING', (0, 0), (-1, 0), 10),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+
+                ('FONTSIZE', (0, 1), (-1, -1), 7),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('TOPPADDING', (0, 0), (-1, 0), 8),
                 ('GRID', (0, 0), (-1, -1), 1, colors.black),
                 ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')]),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ]))
             elements.append(results_table)
             elements.append(Spacer(1, 20))
-            
             # Performance-Statistiken
             elements.append(Paragraph("Performance-Statistiken", heading_style))
             max_tps_result = max(self.results, key=lambda x: x.avg_tokens_per_sec)

@@ -120,9 +120,9 @@ Perfekt zum Teilen von Benchmark-Ergebnissen oder zum Archivieren!
 ### Beispiel CSV-Output
 
 ```csv
-model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp
-llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 10:30:45
-qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12
+model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp,params_size,architecture,max_context_length
+llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 10:30:45,3B,llama,8192
+qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12,7B,qwen,131072
 ```
 
 ### Logs
@@ -138,9 +138,11 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 | **avg_ttft** | Time to First Token - Latenz bis zum ersten generierten Token |
 | **avg_gen_time** | Gesamtzeit für die Antwort-Generierung |
 | **vram_mb** | VRAM-Nutzung während Inferenz (falls messbar) |
-| **gpu_offload** | Verwendeter GPU-Offload-Level (0.3 - 1.0) |
 | **prompt_tokens** | Anzahl Input-Tokens |
 | **completion_tokens** | Anzahl generierter Tokens |
+| **params_size** | Parametergröße des Modells (z.B. "3B", "7B") |
+| **architecture** | Modell-Architektur (z.B. "mistral3", "gemma3") |
+| **max_context_length** | Max. Context-Länge des Modells in Tokens |
 
 ## Fehlerbehebung
 
