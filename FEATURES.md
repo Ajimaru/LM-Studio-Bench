@@ -68,23 +68,23 @@
 
 ### 📊 Vergleich & Analyse (Priorität: Mittel)
 
-- [ ] Historischer Vergleich (frühere Runs laden und vergleichen)
+- ✅ Historischer Vergleich (frühere Runs laden und vergleichen) - `--compare-with latest|filename`
 - [ ] Delta-Anzeige (Performance-Veränderungen über Zeit)
-- [ ] Ranking-System nach verschiedenen Kriterien (Speed, Effizienz, VRAM)
-- [ ] Best-of-Quantization (bestes Q-Level pro Modell finden)
+- ✅ Ranking-System nach verschiedenen Kriterien (Speed, Effizienz, VRAM) - `--rank-by speed|efficiency|ttft|vram`
+- ✅ Best-of-Quantization (bestes Q-Level pro Modell finden) - PDF-Sektion
 - [ ] Percentile-Statistiken (P50, P95, P99 für Metriken)
 
 ### 📄 PDF-Report-Verbesserungen (Priorität: Mittel)
 
-- [ ] Bar-Charts für Top 10 schnellste Modelle
+- ✅ Bar-Charts für Top 10 schnellste Modelle
 - [ ] Best-Practice-Empfehlungen basierend auf Hardware
 - [ ] Quantisierungs-Vergleichstabelle (Q4 vs Q5 vs Q6 Side-by-Side)
 - [ ] Separate Seiten für verschiedene Kategorien
 
 ### 📈 Visualisierung (Priorität: Mittel)
 
-- [ ] HTML-Report mit interaktiven Charts
-- [ ] Scatter-Plots (Größe vs Speed, VRAM vs Performance)
+- ✅ HTML-Report mit interaktiven Charts - Plotly (Bar-Chart, 2x Scatter-Plots)
+- ✅ Scatter-Plots (Größe vs Speed, VRAM vs Performance)
 
 ### 🚀 Weitere Features
 
@@ -92,7 +92,7 @@
 - Web-Dashboard
 - Automatisierung (Scheduler, CI/CD, Notifications)
 - Hardware-Profiling (Temperatur, Stromverbrauch)
-- Daten-Management (SQLite, REST-API)
+- Daten-Management (SQLite)
 
 ## 🏆 Nächste Schritte
 

@@ -19,6 +19,7 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict
 from datetime import datetime
 import psutil
+from statistics import quantiles, mean, median
 from tqdm import tqdm
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib import colors
@@ -93,6 +94,10 @@ class BenchmarkResult:
     # Effizienz-Metriken
     tokens_per_sec_per_gb: float       # Tokens/s pro GB Modellgröße
     tokens_per_sec_per_billion_params: float  # Tokens/s pro Milliarde Parameter
+    
+    # Historischer Vergleich (optional)
+    speed_delta_pct: Optional[float] = None     # Performance-Veränderung (%) vs. vorheriger Benchmark
+    prev_timestamp: Optional[str] = None         # Zeitstempel des vorherigen Benchmarks
 
 
 class GPUMonitor:
@@ -667,7 +672,7 @@ class LMStudioBenchmark:
         except (ValueError, AttributeError):
             tokens_per_sec_per_billion_params = 0.0
         
-        return BenchmarkResult(
+        result = BenchmarkResult(
             model_name=model_name,
             quantization=quantization,
             gpu_type=self.gpu_monitor.gpu_type or "Unknown",
@@ -688,6 +693,14 @@ class LMStudioBenchmark:
             tokens_per_sec_per_gb=tokens_per_sec_per_gb,
             tokens_per_sec_per_billion_params=tokens_per_sec_per_billion_params
         )
+        
+        # Berechne Delta zu vorherigem Benchmark falls vorhanden
+        delta = self._calculate_delta(result)
+        if delta:
+            result.speed_delta_pct = delta['speed_delta_pct']
+            result.prev_timestamp = delta['prev_timestamp']
+        
+        return result
     
     def run_all_benchmarks(self):
         """Führt Benchmarks für alle verfügbaren Modelle durch"""
@@ -781,6 +794,106 @@ class LMStudioBenchmark:
         else:
             return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)  # Default
     
+    def calculate_percentile_stats(self) -> Dict[str, Dict]:
+        """Berechnet P50, P95, P99 Statistiken für Benchmark-Metriken"""
+        if not self.results or len(self.results) < 3:
+            return {}
+        
+        speeds = [r.avg_tokens_per_sec for r in self.results if r.avg_tokens_per_sec > 0]
+        ttfts = [r.avg_ttft for r in self.results if r.avg_ttft > 0]
+        vram_values = []
+        for r in self.results:
+            try:
+                vram_mb = float(r.vram_mb.split()[0]) if isinstance(r.vram_mb, str) else float(r.vram_mb)
+                vram_values.append(vram_mb)
+            except:
+                pass
+        
+        stats = {}
+        
+        # Speed-Statistiken
+        if speeds:
+            if len(speeds) >= 3:
+                quantile_data = quantiles(speeds, n=100, method='inclusive')
+                stats['speed'] = {
+                    'avg': round(mean(speeds), 2),
+                    'median': round(median(speeds), 2),
+                    'p95': round(quantile_data[94], 2),
+                    'p99': round(quantile_data[98], 2),
+                    'min': round(min(speeds), 2),
+                    'max': round(max(speeds), 2)
+                }
+        
+        # TTFT-Statistiken
+        if ttfts:
+            if len(ttfts) >= 3:
+                quantile_data = quantiles(ttfts, n=100, method='inclusive')
+                stats['ttft'] = {
+                    'avg': round(mean(ttfts), 3),
+                    'median': round(median(ttfts), 3),
+                    'p95': round(quantile_data[94], 3),
+                    'p99': round(quantile_data[98], 3),
+                    'min': round(min(ttfts), 3),
+                    'max': round(max(ttfts), 3)
+                }
+        
+        # VRAM-Statistiken
+        if vram_values:
+            if len(vram_values) >= 3:
+                quantile_data = quantiles(vram_values, n=100, method='inclusive')
+                stats['vram'] = {
+                    'avg': round(mean(vram_values), 0),
+                    'median': round(median(vram_values), 0),
+                    'p95': round(quantile_data[94], 0),
+                    'p99': round(quantile_data[98], 0),
+                    'min': round(min(vram_values), 0),
+                    'max': round(max(vram_values), 0)
+                }
+        
+        return stats
+    
+    def generate_quantization_comparison(self) -> Dict[str, Dict]:
+        """Generiert Vergleichstabelle Q4 vs Q5 vs Q6 pro Modell"""
+        if not self.results:
+            return {}
+        
+        # Gruppiere Ergebnisse nach Modell und Quantisierung
+        model_quants = {}
+        for result in self.results:
+            if result.model_name not in model_quants:
+                model_quants[result.model_name] = {}
+            
+            # Extrahiere Quantisierungs-Level (z.B. "q4_k_m" -> "q4")
+            quant_level = result.quantization.split('_')[0].lower()
+            if quant_level not in model_quants[result.model_name]:
+                model_quants[result.model_name][quant_level] = result
+            else:
+                # Nimm die beste Performance (höchste Tokens/s) falls mehrere Quantisierungen
+                if result.avg_tokens_per_sec > model_quants[result.model_name][quant_level].avg_tokens_per_sec:
+                    model_quants[result.model_name][quant_level] = result
+        
+        # Erstelle Vergleich-Tabelle
+        comparison = {}
+        for model, quants in sorted(model_quants.items()):
+            comparison[model] = {
+                'q4': None,
+                'q5': None, 
+                'q6': None,
+                'q8': None
+            }
+            for q_level in ['q4', 'q5', 'q6', 'q8']:
+                if q_level in quants:
+                    r = quants[q_level]
+                    comparison[model][q_level] = {
+                        'speed': round(r.avg_tokens_per_sec, 2),
+                        'efficiency': round(r.tokens_per_sec_per_gb, 2),
+                        'vram_mb': r.vram_mb,
+                        'ttft': round(r.avg_ttft * 1000, 1)
+                    }
+        
+        return comparison
+    
+
     def export_results(self):
         """Exportiert Ergebnisse als JSON, CSV, PDF und HTML"""
         if not self.results:
@@ -912,10 +1025,11 @@ class LMStudioBenchmark:
             elements.append(Spacer(1, 10))
             
             # Erstelle Tabellen-Daten
-            table_data = [['Modell', 'Param', 'Arch', 'Size(GB)', 'Vision', 'Tools', 'Quant.', 'GPU', 'Tokens/s', 'TTFT (ms)', 'Gen.Zeit (s)']]
+            table_data = [['Modell', 'Param', 'Arch', 'Size(GB)', 'Vision', 'Tools', 'Quant.', 'GPU', 'Tokens/s', 'Δ%', 'TTFT (ms)', 'Gen.Zeit (s)']]
             for result in sorted_results:
                 vision_icon = '👁' if result.has_vision else ''
                 tools_icon = '🔧' if result.has_tools else ''
+                delta_str = f"{result.speed_delta_pct:+.1f}%" if result.speed_delta_pct is not None else "-"
                 table_data.append([
                     result.model_name[:15],  # Kürzen bei Bedarf
                     result.params_size[:4],
@@ -926,12 +1040,13 @@ class LMStudioBenchmark:
                     result.quantization[:6],
                     result.gpu_type[:5],
                     f"{result.avg_tokens_per_sec:.2f}",
+                    delta_str,
                     f"{result.avg_ttft*1000:.1f}" if result.avg_ttft else "N/A",
                     f"{result.avg_gen_time:.2f}",
                 ])
             
             # Formatiere Tabelle (Landscape mit mehr Spalten)
-            results_table = Table(table_data, colWidths=[1.2*inch, 0.55*inch, 0.6*inch, 0.65*inch, 0.45*inch, 0.45*inch, 0.6*inch, 0.5*inch, 0.65*inch, 0.65*inch, 0.7*inch])
+            results_table = Table(table_data, colWidths=[1.2*inch, 0.55*inch, 0.6*inch, 0.65*inch, 0.45*inch, 0.45*inch, 0.6*inch, 0.5*inch, 0.65*inch, 0.45*inch, 0.65*inch, 0.7*inch])
             results_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -981,11 +1096,45 @@ class LMStudioBenchmark:
             elements.append(quant_table)
             elements.append(Spacer(1, 20))
             
+            # Quantisierungs-Vergleich (Q4 vs Q5 vs Q6)
+            comp_data = self.generate_quantization_comparison()
+            if comp_data:
+                elements.append(Paragraph("Quantisierungs-Vergleich (Q4 vs Q5 vs Q6)", heading_style))
+                
+                # Erstelle Vergleichs-Tabelle
+                comp_table_data = [['Modell', 'Q4 (t/s)', 'Q5 (t/s)', 'Q6 (t/s)', 'Q8 (t/s)']]
+                for model_name, q_variants in sorted(comp_data.items()):
+                    row = [model_name[:15]]
+                    for q_level in ['q4', 'q5', 'q6', 'q8']:
+                        if q_variants.get(q_level):
+                            row.append(f"{q_variants[q_level]['speed']:.2f}")
+                        else:
+                            row.append('-')
+                    comp_table_data.append(row)
+                
+                comp_table = Table(comp_table_data, colWidths=[1.5*inch, 1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch])
+                comp_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d7aa8')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 9),
+                    ('FONTSIZE', (0, 1), (-1, -1), 7),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')]),
+                ]))
+                elements.append(comp_table)
+                elements.append(Spacer(1, 20))
+            
             # Performance-Statistiken
             elements.append(Paragraph("Performance-Statistiken", heading_style))
             max_tps_result = max(self.results, key=lambda x: x.avg_tokens_per_sec)
             min_tps_result = min(self.results, key=lambda x: x.avg_tokens_per_sec)
             avg_tps = sum(r.avg_tokens_per_sec for r in self.results) / len(self.results)
+            
+            # Percentile berechnen
+            percentile_stats = self.calculate_percentile_stats()
             
             stats_data = [
                 ['Statistik', 'Wert'],
@@ -993,6 +1142,17 @@ class LMStudioBenchmark:
                 ['Langsamstes Modell', f"{min_tps_result.model_name} ({min_tps_result.avg_tokens_per_sec:.2f} tokens/s)"],
                 ['Durchschnitt Tokens/s', f"{avg_tps:.2f}"],
             ]
+            
+            # Percentile-Zeilen hinzufügen
+            if 'speed' in percentile_stats:
+                speed_p = percentile_stats['speed']
+                stats_data.extend([
+                    ['', ''],  # Leerzeile
+                    ['Tokens/s - Median', f"{speed_p.get('median', '-'):.2f}"],
+                    ['Tokens/s - P95', f"{speed_p.get('p95', '-'):.2f}"],
+                    ['Tokens/s - P99', f"{speed_p.get('p99', '-'):.2f}"],
+                ])
+            
             stats_table = Table(stats_data, colWidths=[3*inch, 3*inch])
             stats_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
