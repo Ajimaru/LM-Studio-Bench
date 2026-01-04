@@ -420,7 +420,7 @@ class BenchmarkCache:
             
             conn.commit()
         except Exception as e:
-            logger.error(f"Fehler beim Speichern in Cache: {e}")
+            logger.error(f"❌ Fehler beim Speichern in Cache: {e}")
         finally:
             conn.close()
     
@@ -502,7 +502,7 @@ class BenchmarkCache:
             
             return results
         except Exception as e:
-            logger.error(f"Fehler beim Laden aller Ergebnisse: {e}")
+            logger.error(f"❌ Fehler beim Laden aller Ergebnisse: {e}")
             return []
         finally:
             conn.close()
@@ -615,7 +615,7 @@ class GPUMonitor:
             logger.info(f"🔵 Intel GPU erkannt, Tool: {intel_tool}")
             return
         
-        logger.warning("Keine GPU-Monitoring-Tools gefunden. VRAM-Messung nicht verfügbar.")
+        logger.warning("⚠️ Keine GPU-Monitoring-Tools gefunden. VRAM-Messung nicht verfügbar.")
         self.gpu_type = "Unknown"
     
     def get_vram_usage(self) -> str:
@@ -663,7 +663,7 @@ class GPUMonitor:
                 return "N/A"
         
         except (subprocess.TimeoutExpired, Exception) as e:
-            logger.warning(f"VRAM-Messung fehlgeschlagen: {e}")
+            logger.warning(f"⚠️ VRAM-Messung fehlgeschlagen: {e}")
         
         return "N/A"
 
@@ -685,7 +685,7 @@ class LMStudioServerManager:
             output = result.stdout + result.stderr
             return result.returncode == 0 and ('running' in output.lower() or 'port' in output.lower())
         except Exception as e:
-            logger.error(f"Fehler bei Server-Status-Prüfung: {e}")
+            logger.error(f"❌ Fehler bei Server-Status-Prüfung: {e}")
             return False
     
     @staticmethod
@@ -707,11 +707,11 @@ class LMStudioServerManager:
                     logger.info("✅ LM Studio Server erfolgreich gestartet")
                     return True
             
-            logger.error("Server-StartTimeout nach 60 Sekunden")
+            logger.error("❌ Server-StartTimeout nach 60 Sekunden")
             return False
         
         except Exception as e:
-            logger.error(f"Fehler beim Starten des Servers: {e}")
+            logger.error(f"❌ Fehler beim Starten des Servers: {e}")
             return False
     
     @staticmethod
@@ -754,7 +754,7 @@ class ModelDiscovery:
                                 'has_tools': model_data.get('trainedForToolUse', False),
                             }
             except Exception as e:
-                logger.warning(f"Fehler beim Laden von Metadaten-Cache: {e}")
+                logger.warning(f"⚠️ Fehler beim Laden von Metadaten-Cache: {e}")
         return ModelDiscovery._metadata_cache
     
     @staticmethod
@@ -784,7 +784,7 @@ class ModelDiscovery:
             )
             
             if result.returncode != 0:
-                logger.error(f"Fehler bei 'lms ls': {result.stderr}")
+                logger.error(f"❌ Fehler bei 'lms ls': {result.stderr}")
                 return []
             
             # Parse JSON Output
@@ -811,7 +811,7 @@ class ModelDiscovery:
             return models
         
         except Exception as e:
-            logger.error(f"Fehler beim Abrufen der Modelle: {e}")
+            logger.error(f"❌ Fehler beim Abrufen der Modelle: {e}")
             return []
     
     @staticmethod
@@ -832,14 +832,14 @@ class ModelDiscovery:
             try:
                 include_pattern = re.compile(filter_args['include_models'], re.IGNORECASE)
             except re.error as e:
-                logger.error(f"Ungültiges include-models Pattern: {e}")
+                logger.error(f"❌ Ungültiges include-models Pattern: {e}")
                 return []
         
         if filter_args.get('exclude_models'):
             try:
                 exclude_pattern = re.compile(filter_args['exclude_models'], re.IGNORECASE)
             except re.error as e:
-                logger.error(f"Ungültiges exclude-models Pattern: {e}")
+                logger.error(f"❌ Ungültiges exclude-models Pattern: {e}")
                 return []
         
         for model_key in models:
@@ -1054,7 +1054,7 @@ class LMStudioBenchmark:
             safe_vram = available_vram - VRAM_SAFETY_HEADROOM_GB
             
             if safe_vram <= 0:
-                logger.warning(f"Zu wenig VRAM verfügbar: {available_vram:.1f}GB")
+                logger.warning(f"⚠️ Zu wenig VRAM verfügbar: {available_vram:.1f}GB")
                 return 0.3  # Minimaler Offload
             
             # Berechne optimalen Offload-Faktor
@@ -1164,14 +1164,14 @@ class LMStudioBenchmark:
                     # Finde neueste Datei
                     json_files = sorted(RESULTS_DIR.glob('benchmark_results_*.json'))
                     if not json_files:
-                        logger.warning("Keine früheren Benchmark-Dateien gefunden")
+                        logger.warning("⚠️ Keine früheren Benchmark-Dateien gefunden")
                         return
                     json_file = json_files[-1]
                 else:
                     json_file = RESULTS_DIR / f"benchmark_results_{self.compare_with}.json"
             
             if not json_file.exists():
-                logger.warning(f"Datei nicht gefunden: {json_file}")
+                logger.warning(f"⚠️ Datei nicht gefunden: {json_file}")
                 return
             
             with open(json_file, 'r', encoding='utf-8') as f:
@@ -1180,7 +1180,7 @@ class LMStudioBenchmark:
             
             logger.info(f"✓ {len(self.previous_results)} frühere Ergebnisse geladen aus {json_file.name}")
         except Exception as e:
-            logger.error(f"Fehler beim Laden von frühen Ergebnissen: {e}")
+            logger.error(f"❌ Fehler beim Laden von frühen Ergebnissen: {e}")
     
     def _matches_filters(self, result: BenchmarkResult) -> bool:
         """Prüft ob ein BenchmarkResult die aktiven Filter erfüllt"""
@@ -1281,7 +1281,7 @@ class LMStudioBenchmark:
             logger.info("🧹 Alle Modelle entladen")
             time.sleep(1)  # Warte bis Speicher freigegeben
         except Exception as e:
-            logger.warning(f"Fehler beim Entladen aller Modelle: {e}")
+            logger.warning(f"⚠️ Fehler beim Entladen aller Modelle: {e}")
         
         # Parse Model-Name und Quantisierung
         if '@' in model_key:
@@ -1309,7 +1309,7 @@ class LMStudioBenchmark:
             for _ in range(NUM_WARMUP_RUNS):
                 warmup_result = self._run_inference(model_key)
                 if not warmup_result:
-                    logger.error(f"Warmup für {model_key} fehlgeschlagen")
+                    logger.error(f"❌ Warmup für {model_key} fehlgeschlagen")
                     return None
             
             # Starte Hardware-Profiling wenn aktiviert
@@ -1328,7 +1328,7 @@ class LMStudioBenchmark:
                     measurements.append(stats)
                     logger.info(f"⚡ Run {run+1}/{self.num_measurement_runs}: {stats['tokens_per_second']:.2f} tokens/s")
                 else:
-                    logger.warning(f"Run {run+1}/{self.num_measurement_runs} fehlgeschlagen")
+                    logger.warning(f"⚠️ Run {run+1}/{self.num_measurement_runs} fehlgeschlagen")
             
             # Stoppe Hardware-Profiling und hole Statistiken
             profiling_stats = self.hardware_monitor.stop()
@@ -1368,11 +1368,11 @@ class LMStudioBenchmark:
                 logger.info(f"✓ {model_key}: {result.avg_tokens_per_sec:.2f} tokens/s")
                 return result
             else:
-                logger.error(f"Keine erfolgreichen Messungen für {model_key}")
+                logger.error(f"❌ Keine erfolgreichen Messungen für {model_key}")
                 return None
                 
         except Exception as e:
-            logger.error(f"Fehler beim Benchmarking von {model_key}: {e}")
+            logger.error(f"❌ Fehler beim Benchmarking von {model_key}: {e}")
             return None
     
     def _load_model(self, model_key: str, gpu_offload: float) -> bool:
@@ -1394,7 +1394,7 @@ class LMStudioBenchmark:
             return result.returncode == 0
         
         except Exception as e:
-            logger.error(f"Fehler beim Laden von {model_key}: {e}")
+            logger.error(f"❌ Fehler beim Laden von {model_key}: {e}")
             return False
     
     def _unload_model(self, model_key: str):
@@ -1406,7 +1406,7 @@ class LMStudioBenchmark:
                 timeout=30
             )
         except Exception as e:
-            logger.warning(f"Fehler beim Entladen von {model_key}: {e}")
+            logger.warning(f"⚠️ Fehler beim Entladen von {model_key}: {e}")
     
     def _run_inference(self, model_key: str) -> Optional[Dict]:
         """Führt Inferenz durch und gibt Stats zurück"""
@@ -1460,7 +1460,7 @@ class LMStudioBenchmark:
             }
         
         except Exception as e:
-            logger.error(f"Fehler bei Inferenz mit {model_key}: {e}")
+            logger.error(f"❌ Fehler bei Inferenz mit {model_key}: {e}")
             return None
     
     def _calculate_averages(
@@ -1535,7 +1535,7 @@ class LMStudioBenchmark:
         """Führt Benchmarks für alle verfügbaren Modelle durch"""
         # Stelle sicher dass Server läuft
         if not LMStudioServerManager.ensure_server_running():
-            logger.error("Server konnte nicht gestartet werden, breche ab")
+            logger.error("❌ Server konnte nicht gestartet werden, breche ab")
             return
         
         # Initialisiere Metadata-Cache frühzeitig
@@ -1544,13 +1544,13 @@ class LMStudioBenchmark:
         # Hole alle Modelle
         models = ModelDiscovery.get_installed_models()
         if not models:
-            logger.error("Keine Modelle gefunden")
+            logger.error("❌ Keine Modelle gefunden")
             return
         
         # Wende Filter an
         models = ModelDiscovery.filter_models(models, self.filter_args)
         if not models:
-            logger.error("Keine Modelle nach Filterung übrig")
+            logger.error("❌ Keine Modelle nach Filterung übrig")
             return
         
         # Prüfe Cache und zeige Stats
@@ -1940,7 +1940,7 @@ class LMStudioBenchmark:
     def export_results(self):
         """Exportiert Ergebnisse als JSON, CSV, PDF und HTML"""
         if not self.results:
-            logger.warning("Keine Ergebnisse zum Exportieren")
+            logger.warning("⚠️ Keine Ergebnisse zum Exportieren")
             return
         
         timestamp = time.strftime('%Y%m%d_%H%M%S')
@@ -2525,12 +2525,12 @@ class LMStudioBenchmark:
             logger.info(f"📑 PDF-Ergebnisse gespeichert: {pdf_file}")
         
         except Exception as e:
-            logger.error(f"Fehler beim Erstellen der PDF: {e}")
+            logger.error(f"❌ Fehler beim Erstellen der PDF: {e}")
     
     def _export_html(self, timestamp: str):
         """Exportiert Benchmark-Ergebnisse als interaktiven HTML-Report mit Plotly Charts"""
         if not PLOTLY_AVAILABLE or go is None:
-            logger.warning("Plotly nicht verfügbar, überspringe HTML-Export")
+            logger.warning("⚠️ Plotly nicht verfügbar, überspringe HTML-Export")
             return
         
         try:
@@ -2941,7 +2941,7 @@ class LMStudioBenchmark:
             logger.info(f"🌐 HTML-Ergebnisse gespeichert: {html_file}")
         
         except Exception as e:
-            logger.error(f"Fehler beim Erstellen der HTML: {e}")
+            logger.error(f"❌ Fehler beim Erstellen der HTML: {e}")
 
 
 def main():
@@ -3160,7 +3160,7 @@ Beispiele:
         cached_results = cache.get_all_results()
         
         if not cached_results:
-            logger.error("Keine Ergebnisse in der Datenbank gefunden. Führe zuerst einen Benchmark durch.")
+            logger.error("❌ Keine Ergebnisse in der Datenbank gefunden. Führe zuerst einen Benchmark durch.")
             return
         
         logger.info(f"📥 Lade {len(cached_results)} Ergebnisse aus Datenbank...")
@@ -3202,7 +3202,7 @@ Beispiele:
             logger.info(f"✔️ Nach Filterung: {len(benchmark.results)}/{original_count} Modelle")
         
         if not benchmark.results:
-            logger.error("Keine Ergebnisse nach Filterung übrig")
+            logger.error("❌ Keine Ergebnisse nach Filterung übrig")
             return
         
         # Lade frühere Ergebnisse für Vergleich wenn gewünscht
@@ -3234,7 +3234,7 @@ Beispiele:
             logger.info(f"⚙️ Konfiguration: 1 Messung, Context {args.context}")
             logger.info("")
         else:
-            logger.error("Keine Modelle gefunden für Dev-Mode")
+            logger.error("❌ Keine Modelle gefunden für Dev-Mode")
             return
     
     # Validierung
