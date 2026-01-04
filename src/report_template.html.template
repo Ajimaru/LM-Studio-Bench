@@ -218,6 +218,8 @@
             {{SUMMARY_BOXES}}
         </div>
         
+        {{CLI_SECTION}}
+        
         <h2>Performance Rankings</h2>
         <div class="chart" id="bar-chart"></div>
         

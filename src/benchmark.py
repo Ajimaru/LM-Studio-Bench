@@ -811,6 +811,27 @@ class LMStudioBenchmark:
             enabled=enable_profiling
         )
         
+        # Speichere CLI-Argumente für Reports
+        self.cli_args = {
+            'runs': num_runs,
+            'context': context_length,
+            'prompt': prompt[:50] + '...' if len(prompt) > 50 else prompt,
+            'limit': model_limit,
+            'only_vision': filter_args.get('only_vision', False),
+            'only_tools': filter_args.get('only_tools', False),
+            'quants': filter_args.get('quants'),
+            'arch': filter_args.get('arch'),
+            'params': filter_args.get('params'),
+            'include_models': filter_args.get('include_models'),
+            'exclude_models': filter_args.get('exclude_models'),
+            'compare_with': compare_with,
+            'rank_by': rank_by,
+            'retest': not use_cache,
+            'enable_profiling': enable_profiling,
+            'max_temp': max_temp,
+            'max_power': max_power,
+        }
+        
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
         
@@ -1639,6 +1660,7 @@ class LMStudioBenchmark:
             
             params_data = [
                 ['Parameter', 'Wert'],
+                ['Messungen pro Modell', f"{self.num_measurement_runs}"],
                 ['Context Length', f"{self.context_length} Tokens"],
                 ['Temperature', str(OPTIMIZED_INFERENCE_PARAMS['temperature'])],
                 ['Top-K Sampling', str(OPTIMIZED_INFERENCE_PARAMS['top_k_sampling'])],
@@ -1648,6 +1670,26 @@ class LMStudioBenchmark:
                 ['Max Tokens', str(OPTIMIZED_INFERENCE_PARAMS['max_tokens'])],
                 ['GPU-Offload Levels', ', '.join(map(str, GPU_OFFLOAD_LEVELS))],
             ]
+            
+            # CLI-Argumente
+            if self.cli_args.get('limit'):
+                params_data.append(['Modell-Limit', str(self.cli_args['limit'])])
+            if self.cli_args.get('retest'):
+                params_data.append(['Cache ignoriert', 'Ja (--retest)'])
+            if self.cli_args.get('only_vision'):
+                params_data.append(['Filter', 'Nur Vision-Modelle'])
+            if self.cli_args.get('only_tools'):
+                params_data.append(['Filter', 'Nur Tool-fähige Modelle'])
+            if self.cli_args.get('include_models'):
+                params_data.append(['Include-Pattern', self.cli_args['include_models'][:30]])
+            if self.cli_args.get('exclude_models'):
+                params_data.append(['Exclude-Pattern', self.cli_args['exclude_models'][:30]])
+            if self.cli_args.get('enable_profiling'):
+                params_data.append(['Hardware-Profiling', 'Ja (--enable-profiling)'])
+                if self.cli_args.get('max_temp'):
+                    params_data.append(['Max. Temperatur', f"{self.cli_args['max_temp']}°C"])
+                if self.cli_args.get('max_power'):
+                    params_data.append(['Max. Power-Draw', f"{self.cli_args['max_power']}W"])
             
             params_table = Table(params_data, colWidths=[3*inch, 3*inch])
             params_table.setStyle(TableStyle([
@@ -2192,6 +2234,32 @@ class LMStudioBenchmark:
             </div>
 """
             
+            # CLI-Argumente Sektion
+            cli_params = []
+            cli_params.append(f"<strong>Messungen:</strong> {self.cli_args['runs']}")
+            cli_params.append(f"<strong>Context:</strong> {self.cli_args['context']} Tokens")
+            if self.cli_args.get('limit'):
+                cli_params.append(f"<strong>Limit:</strong> {self.cli_args['limit']} Modelle")
+            if self.cli_args.get('retest'):
+                cli_params.append(f"<strong>Cache:</strong> Ignoriert (--retest)")
+            if self.cli_args.get('include_models'):
+                cli_params.append(f"<strong>Include:</strong> {self.cli_args['include_models'][:40]}")
+            if self.cli_args.get('exclude_models'):
+                cli_params.append(f"<strong>Exclude:</strong> {self.cli_args['exclude_models'][:40]}")
+            if self.cli_args.get('enable_profiling'):
+                cli_params.append(f"<strong>Profiling:</strong> Aktiviert")
+                if self.cli_args.get('max_temp'):
+                    cli_params.append(f"<strong>Max-Temp:</strong> {self.cli_args['max_temp']}°C")
+                if self.cli_args.get('max_power'):
+                    cli_params.append(f"<strong>Max-Power:</strong> {self.cli_args['max_power']}W")
+            
+            cli_section = f"""
+            <h2>⚙️ Benchmark Konfiguration</h2>
+            <p style="line-height: 1.8; color: var(--text-secondary); font-size: 14px;">
+                {" | ".join(cli_params)}
+            </p>
+"""
+            
             # Trend-Chart wenn vorhanden
             trend_json = self.generate_trend_chart()
             if trend_json:
@@ -2415,6 +2483,7 @@ class LMStudioBenchmark:
             
             # Ersetze Platzhalter im Template
             html_output = html_template.replace('{{SUMMARY_BOXES}}', summary_boxes)
+            html_output = html_output.replace('{{CLI_SECTION}}', cli_section)
             html_output = html_output.replace('{{TREND_SECTION}}', trend_section)
             html_output = html_output.replace('{{BEST_PRACTICES}}', best_practices_html)
             html_output = html_output.replace('{{VISION_SECTION}}', vision_section)
