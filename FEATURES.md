@@ -37,35 +37,49 @@
 - ✅ `--prompt "..."` - Custom Prompt verwenden
 - ✅ `--limit N` - Anzahl zu testender Modelle begrenzen
 
+### Erweiterte Filterung
+
+- ✅ `--only-vision` - Nur Vision-Modelle testen
+- ✅ `--only-tools` - Nur Tool-fähige Modelle testen
+- ✅ `--min-context 32000` - Min. Context Length Filter
+- ✅ `--max-size 10` - Max. Dateigröße in GB
+- ✅ `--params 7B,8B` - Bestimmte Parametergrößen
+- ✅ `--quants q4,q5,q6` - Quantisierungs-Filter
+- ✅ `--arch llama,mistral` - Architektur-Filter
+
+### Effizienz-Metriken
+
+- ✅ tokens_per_sec_per_gb - Performance pro GB Modellgröße
+- ✅ tokens_per_sec_per_billion_params - Performance pro Milliarde Parameter
+
+### PDF-Verbesserungen
+
+- ✅ Metadata-Summary im Header (Vision/Tools-Count, Ø Größe, Ø Speed)
+
 ---
 
 ## 📋 Geplant
 
 ### 🎯 Erweiterte Filterung (Priorität: Hoch)
 
-- [ ] `--only-vision` - Nur Vision-Modelle testen
-- [ ] `--only-tools` - Nur Tool-fähige Modelle testen
-- [ ] `--min-context 32000` - Min. Context Length Filter
-- [ ] `--max-size 10` - Max. Dateigröße in GB
-- [ ] `--params 7B,8B` - Bestimmte Parametergrößen
-- [ ] `--quants q4,q5,q6` - Quantisierungs-Filter
-- [ ] `--arch llama,mistral` - Architektur-Filter
-- [ ] `--exclude-models "pattern"` - Modelle ausschließen
+- [ ] `--exclude-models "pattern"` - Modelle ausschließen (Regex-Support)
+- [ ] `--include-models "pattern"` - Nur bestimmte Modelle (Regex-Support)
+- [ ] Filter-Kombinationslogik verbessern (OR-Verknüpfung ermöglichen)
 
 ### 📊 Vergleich & Analyse (Priorität: Mittel)
 
-- [ ] Historischer Vergleich (frühere Runs laden)
-- [ ] Delta-Anzeige (Performance-Veränderungen)
-- [ ] Effizienz-Metriken (tokens/s pro GB, pro Milliarde Parameter)
-- [ ] Ranking-System nach verschiedenen Kriterien
-- [ ] Best-of-Quantization (bestes Q-Level pro Modell)
+- [ ] Historischer Vergleich (frühere Runs laden und vergleichen)
+- [ ] Delta-Anzeige (Performance-Veränderungen über Zeit)
+- [ ] Ranking-System nach verschiedenen Kriterien (Speed, Effizienz, VRAM)
+- [ ] Best-of-Quantization (bestes Q-Level pro Modell finden)
+- [ ] Percentile-Statistiken (P50, P95, P99 für Metriken)
 
-### 📄 PDF-Verbesserungen (Priorität: Mittel)
+### 📄 PDF-Report-Verbesserungen (Priorität: Mittel)
 
-- [ ] Metadata-Summary im Header
-- [ ] Bar-Charts für Top 10
-- [ ] Best-Practice-Empfehlungen
-- [ ] Quantisierungs-Vergleichstabelle
+- [ ] Bar-Charts für Top 10 schnellste Modelle
+- [ ] Best-Practice-Empfehlungen basierend auf Hardware
+- [ ] Quantisierungs-Vergleichstabelle (Q4 vs Q5 vs Q6 Side-by-Side)
+- [ ] Separate Seiten für verschiedene Kategorien
 
 ### 📈 Visualisierung (Priorität: Mittel)
 

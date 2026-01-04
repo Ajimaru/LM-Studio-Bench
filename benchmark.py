@@ -661,6 +661,41 @@ class LMStudioBenchmark:
         
         logger.info(f"Benchmark abgeschlossen. {len(self.results)}/{len(models)} Modelle erfolgreich getestet")
     
+    def _analyze_best_quantizations(self) -> Dict[str, Dict]:
+        """Analysiert beste Quantisierung pro Modell nach verschiedenen Kriterien"""
+        best_by_model = {}
+        
+        for result in self.results:
+            model_key = result.model_name
+            
+            if model_key not in best_by_model:
+                best_by_model[model_key] = {
+                    'best_speed': None,
+                    'best_efficiency': None,
+                    'best_ttft': None,
+                    'all_quantizations': []
+                }
+            
+            # Speichere alle Quantisierungen
+            best_by_model[model_key]['all_quantizations'].append(result)
+            
+            # Bestes Speed
+            if best_by_model[model_key]['best_speed'] is None or \
+               result.avg_tokens_per_sec > best_by_model[model_key]['best_speed'].avg_tokens_per_sec:
+                best_by_model[model_key]['best_speed'] = result
+            
+            # Beste Effizienz (tokens/s per GB)
+            if best_by_model[model_key]['best_efficiency'] is None or \
+               result.tokens_per_sec_per_gb > best_by_model[model_key]['best_efficiency'].tokens_per_sec_per_gb:
+                best_by_model[model_key]['best_efficiency'] = result
+            
+            # Bestes TTFT (Time to First Token - niedrig = gut)
+            if best_by_model[model_key]['best_ttft'] is None or \
+               result.avg_ttft < best_by_model[model_key]['best_ttft'].avg_ttft:
+                best_by_model[model_key]['best_ttft'] = result
+        
+        return best_by_model
+    
     def export_results(self):
         """Exportiert Ergebnisse als JSON, CSV und PDF"""
         if not self.results:
@@ -819,6 +854,38 @@ class LMStudioBenchmark:
             ]))
             elements.append(results_table)
             elements.append(Spacer(1, 20))
+            
+            # Best-of-Quantization Analyse
+            elements.append(Paragraph("Best-of-Quantization Analyse", heading_style))
+            best_quants = self._analyze_best_quantizations()
+            
+            quant_data = [['Modell', 'Best Speed', 'Best Effizienz', 'Best TTFT']]
+            for model_name, analysis in sorted(best_quants.items()):
+                speed_q = analysis['best_speed'].quantization if analysis['best_speed'] else '-'
+                efficiency_q = analysis['best_efficiency'].quantization if analysis['best_efficiency'] else '-'
+                ttft_q = analysis['best_ttft'].quantization if analysis['best_ttft'] else '-'
+                quant_data.append([
+                    model_name[:20],
+                    speed_q[:8],
+                    efficiency_q[:8],
+                    ttft_q[:8]
+                ])
+            
+            quant_table = Table(quant_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+            quant_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')]),
+            ]))
+            elements.append(quant_table)
+            elements.append(Spacer(1, 20))
+            
             # Performance-Statistiken
             elements.append(Paragraph("Performance-Statistiken", heading_style))
             max_tps_result = max(self.results, key=lambda x: x.avg_tokens_per_sec)
