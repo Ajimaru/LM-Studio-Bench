@@ -161,6 +161,12 @@ Das Script wird:
 
 # Exportiere Cache als JSON
 ./run.py --export-cache my_cache.json
+
+# Generiere Reports aus Datenbank (ohne neue Tests)
+./run.py --export-only                  # Alle gecachten Modelle
+./run.py --export-only --params 7B      # Nur 7B Modelle
+./run.py --export-only --quants q4      # Nur Q4 Quantisierungen
+./run.py --export-only --compare-with latest  # Mit historischem Vergleich
 ```
 
 ### Standard-Einstellungen

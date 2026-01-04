@@ -198,6 +198,31 @@ pip install -r requirements.txt
 ./run.py --retest --limit 3
 ```
 
+✅ Re-runs benchmarks even if cached
+
+**Regenerate Reports from Database:**
+
+```bash
+./run.py --export-only
+```
+
+✅ Generates JSON/CSV/PDF/HTML from cached results in <1s
+✅ No benchmarking - instant report generation
+✅ Supports all filters (--params, --quants, --arch, etc.)
+
+**Examples:**
+
+```bash
+# All cached models
+./run.py --export-only
+
+# Only 7B models from cache
+./run.py --export-only --params 7B
+
+# Q4 quantizations with historical comparison
+./run.py --export-only --quants q4 --compare-with latest
+```
+
 ✅ Retests models even if cached
 
 **Export Cache as JSON:**
