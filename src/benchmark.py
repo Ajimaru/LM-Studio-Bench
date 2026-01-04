@@ -537,7 +537,7 @@ class BenchmarkCache:
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
         
-        logger.info(f"Cache exportiert: {output_file}")
+        logger.info(f"💾 Cache exportiert: {output_file}")
 
 
 class GPUMonitor:
@@ -570,7 +570,7 @@ class GPUMonitor:
         if nvidia_tool:
             self.gpu_type = "NVIDIA"
             self.gpu_tool = nvidia_tool
-            logger.info(f"NVIDIA GPU erkannt, Tool: {nvidia_tool}")
+            logger.info(f"🟢 NVIDIA GPU erkannt, Tool: {nvidia_tool}")
             return
         
         # AMD - Suche in ROCm Versionsverzeichnissen
@@ -584,7 +584,7 @@ class GPUMonitor:
         if amd_tool:
             self.gpu_type = "AMD"
             self.gpu_tool = amd_tool
-            logger.info(f"AMD GPU erkannt, Tool: {amd_tool}")
+            logger.info(f"🔴 AMD GPU erkannt, Tool: {amd_tool}")
             return
         
         # Intel
@@ -593,7 +593,7 @@ class GPUMonitor:
         if intel_tool:
             self.gpu_type = "Intel"
             self.gpu_tool = intel_tool
-            logger.info(f"Intel GPU erkannt, Tool: {intel_tool}")
+            logger.info(f"🔵 Intel GPU erkannt, Tool: {intel_tool}")
             return
         
         logger.warning("Keine GPU-Monitoring-Tools gefunden. VRAM-Messung nicht verfügbar.")
@@ -673,7 +673,7 @@ class LMStudioServerManager:
     def start_server():
         """Startet LM Studio Server"""
         try:
-            logger.info("Starte LM Studio Server...")
+            logger.info("🚀 Starte LM Studio Server...")
             subprocess.Popen(
                 ['lms', 'server', 'start'],
                 stdout=subprocess.PIPE,
@@ -685,7 +685,7 @@ class LMStudioServerManager:
             for i in range(max_retries):
                 time.sleep(2)
                 if LMStudioServerManager.is_server_running():
-                    logger.info("LM Studio Server erfolgreich gestartet")
+                    logger.info("✅ LM Studio Server erfolgreich gestartet")
                     return True
             
             logger.error("Server-StartTimeout nach 60 Sekunden")
@@ -699,9 +699,9 @@ class LMStudioServerManager:
     def ensure_server_running():
         """Stellt sicher dass Server läuft"""
         if not LMStudioServerManager.is_server_running():
-            logger.info("Server läuft nicht, starte Server...")
+            logger.info("⚠️ Server läuft nicht, starte Server...")
             return LMStudioServerManager.start_server()
-        logger.info("Server läuft bereits")
+        logger.info("✅ Server läuft bereits")
         return True
 
 
@@ -784,9 +784,9 @@ class ModelDiscovery:
                         # Fallback wenn keine Varianten
                         models.append(model_data.get('modelKey'))
             
-            logger.info(f"{len(models)} Modelle gefunden")
+            logger.info(f"🔍 {len(models)} Modelle gefunden")
             if models:
-                logger.info(f"Erste 5 Modelle: {models[:5]}")
+                logger.info(f"📋 Erste 5 Modelle: {models[:5]}")
             return models
         
         except Exception as e:
@@ -874,7 +874,7 @@ class ModelDiscovery:
             
             filtered.append(model_key)
         
-        logger.info(f"Nach Filterung: {len(filtered)}/{len(models)} Modelle übrig")
+        logger.info(f"✔️ Nach Filterung: {len(filtered)}/{len(models)} Modelle übrig")
         return filtered
 
 
@@ -1309,7 +1309,7 @@ class LMStudioBenchmark:
     
     def benchmark_model(self, model_key: str) -> Optional[BenchmarkResult]:
         """Führt Benchmark für ein spezifisches Modell durch"""
-        logger.info(f"Starte Benchmark für {model_key}")
+        logger.info(f"🎯 Starte Benchmark für {model_key}")
         
         # Entlade alle anderen Modelle zuerst
         try:
@@ -1319,7 +1319,7 @@ class LMStudioBenchmark:
                 text=True,
                 timeout=30
             )
-            logger.info("Alle Modelle entladen")
+            logger.info("🧹 Alle Modelle entladen")
             time.sleep(1)  # Warte bis Speicher freigegeben
         except Exception as e:
             logger.warning(f"Fehler beim Entladen aller Modelle: {e}")
@@ -1346,7 +1346,7 @@ class LMStudioBenchmark:
         
         try:
             # Warmup
-            logger.info(f"Warmup für {model_key}...")
+            logger.info(f"🔥 Warmup für {model_key}...")
             for _ in range(NUM_WARMUP_RUNS):
                 warmup_result = self._run_inference(model_key)
                 if not warmup_result:
@@ -1357,7 +1357,7 @@ class LMStudioBenchmark:
             self.hardware_monitor.start()
             
             # Messungen
-            logger.info(f"Führe {self.num_measurement_runs} Messungen durch...")
+            logger.info(f"📊 Führe {self.num_measurement_runs} Messungen durch...")
             measurements = []
             vram_after = "N/A"  # Initialisiere Standard-Wert
             for run in range(self.num_measurement_runs):
@@ -1367,7 +1367,7 @@ class LMStudioBenchmark:
                 
                 if stats:
                     measurements.append(stats)
-                    logger.info(f"Run {run+1}/{self.num_measurement_runs}: {stats['tokens_per_second']:.2f} tokens/s")
+                    logger.info(f"⚡ Run {run+1}/{self.num_measurement_runs}: {stats['tokens_per_second']:.2f} tokens/s")
                 else:
                     logger.warning(f"Run {run+1}/{self.num_measurement_runs} fehlgeschlagen")
             
@@ -1473,7 +1473,7 @@ class LMStudioBenchmark:
             )
             
             # DEBUG: Logging der konfigurierten Parameter
-            logger.info(f"Verwende Prediction Config: temp={prediction_config.temperature}, "
+            logger.info(f"🧠 Verwende Prediction Config: temp={prediction_config.temperature}, "
                        f"top_k={prediction_config.top_k_sampling}, top_p={prediction_config.top_p_sampling}, "
                        f"min_p={prediction_config.min_p_sampling}, repeat_penalty={prediction_config.repeat_penalty}, "
                        f"max_tokens={prediction_config.max_tokens}")
@@ -1596,7 +1596,7 @@ class LMStudioBenchmark:
         
         # Wende Limit an wenn gesetzt
         if self.model_limit and self.model_limit < len(models):
-            logger.info(f"Modell-Limit gesetzt: Testet nur erste {self.model_limit} von {len(models)} Modellen")
+            logger.info(f"⚙️ Modell-Limit gesetzt: Testet nur erste {self.model_limit} von {len(models)} Modellen")
             models = models[:self.model_limit]
         
         # Prüfe Cache und zeige Stats
@@ -1613,8 +1613,8 @@ class LMStudioBenchmark:
             
             if cached_models:
                 logger.info("")
-                logger.info("=== Gecachte Modelle ===")
-                logger.info(f"{len(cached_models)} von {len(models)} Modellen bereits getestet (werden aus Cache geladen):")
+                logger.info("📦 === Gecachte Modelle ===")
+                logger.info(f"💾 {len(cached_models)} von {len(models)} Modellen bereits getestet (werden aus Cache geladen):")
                 for model_key, cached in cached_models[:10]:  # Zeige max. 10
                     date_part = cached.timestamp.split('T')[0] if 'T' in cached.timestamp else cached.timestamp[:10]
                     logger.info(f"  • {model_key}: {cached.avg_tokens_per_sec:.2f} tok/s (zuletzt: {date_part})")
@@ -1627,14 +1627,14 @@ class LMStudioBenchmark:
                     self.results.append(cached)
             
             if new_models:
-                logger.info(f"Starte Benchmark für {len(new_models)} neue Modelle...")
+                logger.info(f"🚀 Starte Benchmark für {len(new_models)} neue Modelle...")
                 models = new_models
             else:
-                logger.info("Alle Modelle bereits gecacht - keine neuen Tests notwendig")
+                logger.info("✅ Alle Modelle bereits gecacht - keine neuen Tests notwendig")
                 self.export_results()
                 return
         else:
-            logger.info(f"Starte Benchmark für {len(models)} Modelle...")
+            logger.info(f"🚀 Starte Benchmark für {len(models)} Modelle...")
         
         # Benchmark für jedes Modell
         for model_key in tqdm(models, desc="Benchmarking Modelle"):
@@ -1646,7 +1646,7 @@ class LMStudioBenchmark:
         # Exportiere Ergebnisse
         self.export_results()
         
-        logger.info(f"Benchmark abgeschlossen. {len(self.results)}/{len(models)} Modelle erfolgreich getestet")
+        logger.info(f"✅ Benchmark abgeschlossen. {len(self.results)}/{len(models)} Modelle erfolgreich getestet")
     
     def _analyze_best_quantizations(self) -> Dict[str, Dict]:
         """Analysiert beste Quantisierung pro Modell nach verschiedenen Kriterien"""
@@ -1984,7 +1984,7 @@ class LMStudioBenchmark:
         json_file = RESULTS_DIR / f"benchmark_results_{timestamp}.json"
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump([asdict(r) for r in self.results], f, indent=2, ensure_ascii=False)
-        logger.info(f"JSON-Ergebnisse gespeichert: {json_file}")
+        logger.info(f"📄 JSON-Ergebnisse gespeichert: {json_file}")
         
         # CSV Export
         csv_file = RESULTS_DIR / f"benchmark_results_{timestamp}.csv"
@@ -1994,7 +1994,7 @@ class LMStudioBenchmark:
                 writer.writeheader()
                 for result in self.results:
                     writer.writerow(asdict(result))
-        logger.info(f"CSV-Ergebnisse gespeichert: {csv_file}")
+        logger.info(f"📊 CSV-Ergebnisse gespeichert: {csv_file}")
         
         # PDF Export
         self._export_pdf(timestamp)
@@ -2557,7 +2557,7 @@ class LMStudioBenchmark:
             
             # Erstelle PDF
             doc.build(elements)
-            logger.info(f"PDF-Ergebnisse gespeichert: {pdf_file}")
+            logger.info(f"📑 PDF-Ergebnisse gespeichert: {pdf_file}")
         
         except Exception as e:
             logger.error(f"Fehler beim Erstellen der PDF: {e}")
@@ -2973,7 +2973,7 @@ class LMStudioBenchmark:
             with open(html_file, 'w', encoding='utf-8') as f:
                 f.write(html_output)
             
-            logger.info(f"HTML-Ergebnisse gespeichert: {html_file}")
+            logger.info(f"🌐 HTML-Ergebnisse gespeichert: {html_file}")
         
         except Exception as e:
             logger.error(f"Fehler beim Erstellen der HTML: {e}")
@@ -3190,7 +3190,7 @@ Beispiele:
     
     # Export-Only: Generiere Reports aus DB ohne neue Tests
     if args.export_only:
-        logger.info("=== Report-Regenerierung aus Datenbank ===")
+        logger.info("🔄 === Report-Regenerierung aus Datenbank ===")
         cache = BenchmarkCache()
         cached_results = cache.get_all_results()
         
@@ -3198,7 +3198,7 @@ Beispiele:
             logger.error("Keine Ergebnisse in der Datenbank gefunden. Führe zuerst einen Benchmark durch.")
             return
         
-        logger.info(f"Lade {len(cached_results)} Ergebnisse aus Datenbank...")
+        logger.info(f"📥 Lade {len(cached_results)} Ergebnisse aus Datenbank...")
         
         # Erstelle Filter-Dictionary
         filter_args = {
@@ -3234,7 +3234,7 @@ Beispiele:
         if any(filter_args.values()):
             original_count = len(benchmark.results)
             benchmark.results = [r for r in benchmark.results if benchmark._matches_filters(r)]
-            logger.info(f"Nach Filterung: {len(benchmark.results)}/{original_count} Modelle")
+            logger.info(f"✔️ Nach Filterung: {len(benchmark.results)}/{original_count} Modelle")
         
         if not benchmark.results:
             logger.error("Keine Ergebnisse nach Filterung übrig")
@@ -3244,14 +3244,14 @@ Beispiele:
         if args.compare_with:
             benchmark._load_previous_results()
         
-        logger.info(f"Generiere Reports für {len(benchmark.results)} Modelle...")
+        logger.info(f"⚙️ Generiere Reports für {len(benchmark.results)} Modelle...")
         benchmark.export_results()
-        logger.info("Reports erfolgreich generiert!")
+        logger.info("✅ Reports erfolgreich generiert!")
         return
     
     # Dev-Mode: Überschreibe Einstellungen
     if args.dev_mode:
-        logger.info("=== Entwicklungs-Modus aktiviert ===")
+        logger.info("🧪 === Entwicklungs-Modus aktiviert ===")
         args.runs = 1
         args.limit = 1
         # Finde kleinstes Modell
@@ -3265,8 +3265,8 @@ Beispiele:
             
             model_sizes.sort(key=lambda x: x[1])
             smallest = model_sizes[0][0]
-            logger.info(f"Kleinstes Modell ausgewählt: {smallest} ({model_sizes[0][1]:.2f} GB)")
-            logger.info(f"Konfiguration: 1 Messung, Context {args.context}")
+            logger.info(f"✅ Kleinstes Modell ausgewählt: {smallest} ({model_sizes[0][1]:.2f} GB)")
+            logger.info(f"⚙️ Konfiguration: 1 Messung, Context {args.context}")
             logger.info("")
         else:
             logger.error("Keine Modelle gefunden für Dev-Mode")
@@ -3295,22 +3295,22 @@ Beispiele:
         'exclude_models': args.exclude_models,
     }
     
-    logger.info("=== LM Studio Model Benchmark ===")
-    logger.info(f"Prompt: '{args.prompt}'")
-    logger.info(f"Context Length: {args.context} Tokens")
-    logger.info(f"Messungen pro Modell: {args.runs} (+ {NUM_WARMUP_RUNS} Warmup)")
+    logger.info("🚀 === LM Studio Model Benchmark ===")
+    logger.info(f"💬 Prompt: '{args.prompt}'")
+    logger.info(f"📏 Context Length: {args.context} Tokens")
+    logger.info(f"🔢 Messungen pro Modell: {args.runs} (+ {NUM_WARMUP_RUNS} Warmup)")
     if args.limit:
-        logger.info(f"Modell-Limit: Testet max. {args.limit} Modelle")
+        logger.info(f"📌 Modell-Limit: Testet max. {args.limit} Modelle")
     
     # Zeige aktive Filter
     active_filters = [k for k, v in filter_args.items() if v]
     if active_filters:
-        logger.info(f"Aktive Filter: {', '.join(active_filters)}")
+        logger.info(f"🔎 Aktive Filter: {', '.join(active_filters)}")
     
     if args.compare_with:
-        logger.info(f"Historischer Vergleich: {args.compare_with}")
+        logger.info(f"📈 Historischer Vergleich: {args.compare_with}")
     
-    logger.info(f"Geschätzte Gesamtzeit: ~{int(args.runs * 45 * (args.limit or 9) / 9)} Minuten")
+    logger.info(f"⏱️ Geschätzte Gesamtzeit: ~{int(args.runs * 45 * (args.limit or 9) / 9)} Minuten")
     logger.info("")
     
     benchmark = LMStudioBenchmark(
@@ -3329,7 +3329,7 @@ Beispiele:
     )
     benchmark.run_all_benchmarks()
     
-    logger.info("Benchmark abgeschlossen!")
+    logger.info("🎉 Benchmark abgeschlossen!")
 
 
 
