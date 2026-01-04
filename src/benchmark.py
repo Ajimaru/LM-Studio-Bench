@@ -1155,7 +1155,7 @@ class LMStudioBenchmark:
             elements.append(Spacer(1, 10))
             
             # Erstelle Tabellen-Daten
-            table_data = [['Modell', 'Param', 'Arch', 'Size(GB)', 'Vision', 'Tools', 'Quant.', 'GPU', 'Tokens/s', 'Δ%', 'TTFT (ms)', 'Gen.Zeit (s)']]
+            table_data = [['Modell', 'Param', 'Arch', 'Size(GB)', 'Vision', 'Tools', 'Quant.', 'GPU', 'GPU Off.', 'Tokens/s', 'Δ%', 'TTFT (ms)', 'Gen.Zeit (s)']]
             for result in sorted_results:
                 vision_icon = '👁' if result.has_vision else ''
                 tools_icon = '🔧' if result.has_tools else ''
@@ -1169,6 +1169,7 @@ class LMStudioBenchmark:
                     tools_icon,
                     result.quantization[:6],
                     result.gpu_type[:5],
+                    f"{result.gpu_offload:.1f}",
                     f"{result.avg_tokens_per_sec:.2f}",
                     delta_str,
                     f"{result.avg_ttft*1000:.1f}" if result.avg_ttft else "N/A",
@@ -1176,7 +1177,7 @@ class LMStudioBenchmark:
                 ])
             
             # Formatiere Tabelle (Landscape mit mehr Spalten)
-            results_table = Table(table_data, colWidths=[1.2*inch, 0.55*inch, 0.6*inch, 0.65*inch, 0.45*inch, 0.45*inch, 0.6*inch, 0.5*inch, 0.65*inch, 0.45*inch, 0.65*inch, 0.7*inch])
+            results_table = Table(table_data, colWidths=[1.2*inch, 0.55*inch, 0.6*inch, 0.65*inch, 0.45*inch, 0.45*inch, 0.6*inch, 0.5*inch, 0.5*inch, 0.65*inch, 0.45*inch, 0.65*inch, 0.7*inch])
             results_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
