@@ -17,15 +17,17 @@ pip install -r requirements.txt
 
 ✅ Tests all installed models with 3 runs each (~1-2 hours)
 ✅ Automatically caches results - reruns are instant!
+✅ Clean output with emoji icons and formatted model lists
 
-### Quick Test (3 Models)
+### Quick Test (3 NEW Models)
 
 ```bash
 ./run.py --limit 3 --runs 1
 ```
 
-✅ Fast test with 3 random models (~5-10 minutes)
-✅ Already tested models loaded from cache
+✅ Fast test with 3 NEW untested models (~5-10 minutes)
+✅ Already tested models automatically loaded from cache
+✅ Limit applies ONLY to new models, all cached models included
 
 ### Development Mode (Fastest)
 

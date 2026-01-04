@@ -14,11 +14,14 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **Standardisierte Tests**: Verwendet denselben Prompt für alle Modelle
 - ✅ **Statistische Auswertung**: Warmup + mehrere Messungen für genaue Ergebnisse
 - ✅ **SQLite-Cache**: Automatisches Caching von Benchmark-Ergebnissen (überspringt bereits getestete Modelle)
+- ✅ **Intelligente Limits**: Mit `-l 5` werden 5 NEUE Modelle getestet + alle gecachten Modelle geladen
 - ✅ **Dev-Mode**: Automatische Auswahl des kleinsten Modells für schnelle Tests während Entwicklung
+- ✅ **Saubere Logging**: Emoji-Icons, formatierte Modell-Listen, gefilterte Third-Party-Debug-Logs
 - ✅ **Export**:
   - JSON, CSV (Excel/Sheets-kompatibel)
   - PDF (Multi-Page mit Best-Practice-Empfehlungen, Vision/Tool/Architektur-Seiten, optionale Plotly-Charts)
   - HTML (interaktive Plotly-Charts, Best-Practices, Vision/Tool/Architektur-Tabellen, Dark Mode)
+- ✅ **Instant Report Regeneration**: `--export-only` generiert Reports in <1s aus gecachten Daten
 - ✅ **Umfangreiche Metadaten**: Parametergröße, Architektur, Context-Länge, Dateigröße, Vision- und Tool-Support
 
 ## Systemanforderungen
@@ -89,7 +92,7 @@ Das Script wird:
 ./run.py --runs 1           # Anzahl Messungen pro Modell
 ./run.py --context 4096     # Context Length in Tokens
 ./run.py --prompt "..."      # Custom Prompt
-./run.py --limit 5          # Max. Anzahl Modelle testen
+./run.py --limit 5          # Max. 5 NEUE Modelle testen (+ alle gecachten)
 ```
 
 ### Hardware-Profiling
@@ -225,8 +228,19 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 
 ### Logs
 
-- **Console**: Echtzeit-Fortschritt mit tqdm Progress-Bar
-- **errors.log**: Fehler und Warnungen für Debugging
+- **Console**: Echtzeit-Fortschritt mit tqdm Progress-Bar und Emoji-Icons
+  - 🚀 Start/Launch
+  - 🔍 Detection/Discovery
+  - 📊 Data/Statistics
+  - 💾 Storage/Memory
+  - ✅ Success/Completion
+  - 🎯 Optimization
+  - ⚙️ Configuration
+  - ⏱️ Time/Performance
+  - Weitere Icons für spezifische Operationen
+- **Per-Run Logs**: `logs/benchmark_YYYYMMDD_HHMMSS.log` - Separate Log-Datei für jeden Run
+- **Gefilterte Logs**: Third-Party-Bibliotheken (httpx, lmstudio, urllib3, websockets) auf WARNING-Level begrenzt
+- **JSON-Filtering**: Websocket-Debug-Events automatisch gefiltert
 
 ## Gemessene Metriken
 
