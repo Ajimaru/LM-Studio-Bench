@@ -27,7 +27,8 @@ Dies ist ein Python-Benchmark-Tool für LM Studio, das automatisch alle lokal in
 - Context Length auf 2048 begrenzen (VRAM-Optimierung)
 
 ### Dateistruktur
-```
+
+```text
 project-root/
 ├── run.py              # Wrapper-Script (entry point)
 ├── README.md           # Hauptdokumentation

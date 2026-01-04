@@ -5,7 +5,7 @@
 ```bash
 cd ~/local-llm-bench
 pip install -r requirements.txt
-```
+```text
 
 ## Basic Usage
 
@@ -13,7 +13,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py
-```
+```text
 
 ✅ Tests all installed models with 3 runs each (~1-2 hours)
 
@@ -21,7 +21,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --limit 3 --runs 1
-```
+```text
 
 ✅ Fast test with 3 random models (~5-10 minutes)
 
@@ -29,7 +29,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --limit 1 --runs 1
-```
+```text
 
 ✅ Single model benchmark (~1-2 minutes)
 
@@ -41,37 +41,37 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --quants q4,q5 --limit 5
-```
+```text
 
 **By Architecture:**
 
 ```bash
 ./run.py --arch llama,mistral --limit 5
-```
+```text
 
 **By Parameter Size:**
 
 ```bash
 ./run.py --params 7B,8B --limit 5
-```
+```text
 
 **By Context Length:**
 
 ```bash
 ./run.py --min-context 32000 --limit 3
-```
+```text
 
 **By Model Size:**
 
 ```bash
 ./run.py --max-size 10 --limit 5
-```
+```text
 
 **Vision Models Only:**
 
 ```bash
 ./run.py --only-vision --runs 1
-```
+```text
 
 ### 2️⃣ Ranking & Sorting
 
@@ -79,19 +79,19 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --limit 5 --rank-by efficiency
-```
+```text
 
 **Sort by TTFT (Lower = Better):**
 
 ```bash
 ./run.py --limit 5 --rank-by ttft
-```
+```text
 
 **Sort by VRAM Usage (Lower = Better):**
 
 ```bash
 ./run.py --limit 5 --rank-by vram
-```
+```text
 
 ### 3️⃣ Historical Comparison & Trends
 
@@ -99,7 +99,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --limit 3 --runs 1 --compare-with latest
-```
+```text
 
 📊 Shows performance delta (%) vs previous run
 
@@ -107,7 +107,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --limit 3 --runs 1 --compare-with benchmark_results_20260104_170000.json
-```
+```text
 
 ### 4️⃣ Custom Configuration
 
@@ -115,19 +115,19 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --runs 5 --limit 2
-```
+```text
 
 **Custom Context Length:**
 
 ```bash
 ./run.py --context 4096 --limit 2 --runs 1
-```
+```text
 
 **Custom Prompt:**
 
 ```bash
 ./run.py --prompt "Your custom prompt here" --limit 2 --runs 1
-```
+```text
 
 ## 📊 Output Formats
 
@@ -144,7 +144,7 @@ Each benchmark generates 4 files:
   "speed_delta_pct": -0.2,
   ...
 }
-```
+```text
 
 ✅ Structured data for analysis
 
@@ -153,7 +153,7 @@ Each benchmark generates 4 files:
 ```csv
 model_name,quantization,avg_tokens_per_sec,tokens_per_sec_per_gb,speed_delta_pct
 qwen/qwen3-8b,q4_k_m,8.15,1.74,-0.2
-```
+```text
 
 ✅ Excel/Sheets compatible
 
@@ -184,7 +184,7 @@ qwen/qwen3-8b,q4_k_m,8.15,1.74,-0.2
   --runs 1 \
   --rank-by efficiency \
   --compare-with latest
-```
+```text
 
 Output:
 
@@ -208,13 +208,13 @@ Output:
 
 ## 📁 File Structure
 
-```files
+```text
 results/
 ├── benchmark_results_20260104_170000.json
 ├── benchmark_results_20260104_170000.csv
 ├── benchmark_results_20260104_170000.pdf
 └── benchmark_results_20260104_170000.html
-```
+```text
 
 ## 🐛 Troubleshooting
 
@@ -233,7 +233,7 @@ results/
 ```bash
 mkdir -p results/
 chmod 755 results/
-```
+```text
 
 ## 🔗 Related Files
 

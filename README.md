@@ -28,32 +28,32 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
    ```bash
    git clone <repository-url>
    cd local-llm-bench
-   ```
+```text
 
 2. **Virtuelle Umgebung erstellen und aktivieren**:
 
    ```bash
    # Virtuelle Umgebung erstellen
    python3 -m venv .venv
-   
+
    # Aktivieren (Linux/macOS)
    source .venv/bin/activate
-   
+
    # Aktivieren (Windows)
    # .venv\Scripts\activate
-   ```
+```text
 
 3. **Python-Dependencies installieren**:
 
    ```bash
    pip install -r requirements.txt
-   ```
+```text
 
 4. **LM Studio CLI prüfen**:
 
    ```bash
    lms --help
-   ```
+```text
 
 ## Nutzung
 
@@ -65,7 +65,7 @@ source .venv/bin/activate  # Linux/macOS
 .venv\Scripts\activate   # Windows
 
 ./run.py
-```
+```text
 
 Das Script wird:
 
@@ -83,7 +83,7 @@ Das Script wird:
 ./run.py --context 4096     # Context Length in Tokens
 ./run.py --prompt "..."      # Custom Prompt
 ./run.py --limit 5          # Max. Anzahl Modelle testen
-```
+```text
 
 #### Erweiterte Filter
 
@@ -111,7 +111,7 @@ Das Script wird:
 
 # Filter kombinieren
 ./run.py --quants q4 --arch gemma --max-size 5 --limit 3
-```
+```text
 
 #### Standard-Einstellungen
 
@@ -163,7 +163,7 @@ Perfekt zum Teilen von Benchmark-Ergebnissen oder zum Archivieren!
 model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp,params_size,architecture,max_context_length,model_size_gb,has_vision,has_tools,tokens_per_sec_per_gb,tokens_per_sec_per_billion_params
 llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 10:30:45,3B,llama,8192,1.92,False,False,26.79,17.14
 qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12,7B,qwen,131072,4.38,False,True,8.85,5.54
-```
+```text
 
 ### Logs
 
@@ -198,7 +198,7 @@ LM Studio CLI ist nicht im PATH. Installiere/konfiguriere LM Studio:
 ```bash
 # Prüfe Installation
 which lms
-```
+```text
 
 ### "Keine Modelle gefunden"
 
@@ -206,7 +206,7 @@ Stelle sicher dass Modelle in LM Studio heruntergeladen sind:
 
 ```bash
 lms ls
-```
+```text
 
 ### "GPU-Monitoring nicht verfügbar"
 
@@ -216,19 +216,19 @@ GPU-Tools fehlen. Installiere je nach GPU:
 
 ```bash
 sudo apt install nvidia-utils
-```
+```text
 
 **AMD**:
 
 ```bash
 # ROCm installieren
-```
+```text
 
 **Intel**:
 
 ```bash
 sudo apt install intel-gpu-tools
-```
+```text
 
 ### Modell lädt nicht (VRAM-Fehler)
 
@@ -247,23 +247,23 @@ Das Script versucht automatisch niedrigere GPU-Offload-Levels. Bei 12GB VRAM:
 
 ```python
 STANDARD_PROMPT = "Dein eigener Test-Prompt"
-```
+```text
 
 ### Mehr/Weniger Durchläufe
 
 ```python
 NUM_MEASUREMENT_RUNS = 5  # Standard: 3
-```
+```text
 
 ### Context Length
 
 ```python
 CONTEXT_LENGTH = 4096  # Standard: 2048
-```
+```text
 
 ## Projekt-Struktur
 
-```files
+```text
 local-llm-bench/
 ├── benchmark.py              # Haupt-Script
 ├── requirements.txt          # Python-Dependencies
@@ -275,7 +275,7 @@ local-llm-bench/
 ├── README.md                 # Diese Datei
 └── .github/
     └── copilot-instructions.md
-```
+```text
 
 ## Technische Details
 
