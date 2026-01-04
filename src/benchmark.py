@@ -405,6 +405,89 @@ class BenchmarkCache:
         finally:
             conn.close()
     
+    def get_all_results(self) -> List[BenchmarkResult]:
+        """Lädt alle Benchmark-Ergebnisse aus der Datenbank"""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cursor = conn.cursor()
+            
+            # Prüfe welche Spalten existieren
+            cursor.execute("PRAGMA table_info(benchmark_results)")
+            columns = {row[1] for row in cursor.fetchall()}
+            
+            # Basis-Spalten (immer vorhanden)
+            base_cols = "model_name, quantization, gpu_type, gpu_offload, vram_mb, " \
+                       "avg_tokens_per_sec, avg_ttft, avg_gen_time, prompt_tokens, completion_tokens, " \
+                       "timestamp, params_size, architecture, max_context_length, model_size_gb, " \
+                       "has_vision, has_tools, tokens_per_sec_per_gb, tokens_per_sec_per_billion_params"
+            
+            # Optionale Spalten (wenn vorhanden)
+            optional_cols = []
+            if 'temp_celsius_min' in columns:
+                optional_cols.extend(['temp_celsius_min', 'temp_celsius_max', 'temp_celsius_avg'])
+            if 'power_watts_min' in columns:
+                optional_cols.extend(['power_watts_min', 'power_watts_max', 'power_watts_avg'])
+            if 'gtt_enabled' in columns:
+                optional_cols.extend(['gtt_enabled', 'gtt_total_gb', 'gtt_used_gb'])
+            if 'speed_delta_pct' in columns:
+                optional_cols.extend(['speed_delta_pct', 'prev_timestamp'])
+            
+            select_cols = base_cols + (", " + ", ".join(optional_cols) if optional_cols else "")
+            
+            cursor.execute(f'''
+                SELECT {select_cols}
+                FROM benchmark_results
+                ORDER BY timestamp DESC
+            ''')
+            
+            results = []
+            for row in cursor.fetchall():
+                idx = 0
+                # Basis-Felder (19 Spalten)
+                result_dict = {
+                    'model_name': row[idx], 'quantization': row[idx+1], 'gpu_type': row[idx+2],
+                    'gpu_offload': row[idx+3], 'vram_mb': row[idx+4],
+                    'avg_tokens_per_sec': row[idx+5], 'avg_ttft': row[idx+6], 'avg_gen_time': row[idx+7],
+                    'prompt_tokens': row[idx+8], 'completion_tokens': row[idx+9], 'timestamp': row[idx+10],
+                    'params_size': row[idx+11], 'architecture': row[idx+12], 'max_context_length': row[idx+13],
+                    'model_size_gb': row[idx+14], 'has_vision': bool(row[idx+15]), 'has_tools': bool(row[idx+16]),
+                    'tokens_per_sec_per_gb': row[idx+17], 'tokens_per_sec_per_billion_params': row[idx+18]
+                }
+                idx = 19
+                
+                # Optionale Felder
+                if 'temp_celsius_min' in columns:
+                    result_dict['temp_celsius_min'] = row[idx]
+                    result_dict['temp_celsius_max'] = row[idx+1]
+                    result_dict['temp_celsius_avg'] = row[idx+2]
+                    idx += 3
+                
+                if 'power_watts_min' in columns:
+                    result_dict['power_watts_min'] = row[idx]
+                    result_dict['power_watts_max'] = row[idx+1]
+                    result_dict['power_watts_avg'] = row[idx+2]
+                    idx += 3
+                
+                if 'gtt_enabled' in columns:
+                    result_dict['gtt_enabled'] = bool(row[idx]) if row[idx] is not None else None
+                    result_dict['gtt_total_gb'] = row[idx+1]
+                    result_dict['gtt_used_gb'] = row[idx+2]
+                    idx += 3
+                
+                if 'speed_delta_pct' in columns:
+                    result_dict['speed_delta_pct'] = row[idx]
+                    result_dict['prev_timestamp'] = row[idx+1]
+                
+                result = BenchmarkResult(**result_dict)
+                results.append(result)
+            
+            return results
+        except Exception as e:
+            logger.error(f"Fehler beim Laden aller Ergebnisse: {e}")
+            return []
+        finally:
+            conn.close()
+    
     def list_cached_models(self) -> List[Dict]:
         """Gibt alle gecachten Modelle zurück"""
         conn = sqlite3.connect(self.db_path)
@@ -1075,6 +1158,130 @@ class LMStudioBenchmark:
             logger.info(f"✓ {len(self.previous_results)} frühere Ergebnisse geladen aus {json_file.name}")
         except Exception as e:
             logger.error(f"Fehler beim Laden von frühen Ergebnissen: {e}")
+    
+    def _matches_filters(self, result: BenchmarkResult) -> bool:
+        """Prüft ob ein BenchmarkResult die aktiven Filter erfüllt"""
+        # Vision-Filter
+        if self.filter_args.get('only_vision') and not result.has_vision:
+            return False
+        
+        # Tools-Filter
+        if self.filter_args.get('only_tools') and not result.has_tools:
+            return False
+        
+        # Quantisierung-Filter
+        if self.filter_args.get('quants'):
+            quants = [q.strip().lower() for q in self.filter_args['quants'].split(',')]
+            if not any(q in result.quantization.lower() for q in quants):
+                return False
+        
+        # Architektur-Filter
+        if self.filter_args.get('arch'):
+            archs = [a.strip().lower() for a in self.filter_args['arch'].split(',')]
+            if not any(a in result.architecture.lower() for a in archs):
+                return False
+        
+        # Parameter-Filter
+        if self.filter_args.get('params'):
+            params = [p.strip().upper() for p in self.filter_args['params'].split(',')]
+            if result.params_size.upper() not in params:
+                return False
+        
+        # Min Context-Filter
+        if self.filter_args.get('min_context'):
+            if result.max_context_length < self.filter_args['min_context']:
+                return False
+        
+        # Max Size-Filter
+        if self.filter_args.get('max_size'):
+            if result.model_size_gb > self.filter_args['max_size']:
+                return False
+        
+        # Include-Pattern (Regex)
+        if self.filter_args.get('include_models'):
+            import re
+            try:
+                pattern = re.compile(self.filter_args['include_models'], re.IGNORECASE)
+                model_full = f"{result.model_name}@{result.quantization}"
+                if not pattern.search(model_full):
+                    return False
+            except re.error:
+                pass
+        
+        # Exclude-Pattern (Regex)
+        if self.filter_args.get('exclude_models'):
+            import re
+            try:
+                pattern = re.compile(self.filter_args['exclude_models'], re.IGNORECASE)
+                model_full = f"{result.model_name}@{result.quantization}"
+                if pattern.search(model_full):
+                    return False
+            except re.error:
+                pass
+        
+        return True
+    
+    def _matches_filters(self, result: BenchmarkResult) -> bool:
+        """Prüft ob ein BenchmarkResult die aktiven Filter erfüllt"""
+        # Vision-Filter
+        if self.filter_args.get('only_vision') and not result.has_vision:
+            return False
+        
+        # Tools-Filter
+        if self.filter_args.get('only_tools') and not result.has_tools:
+            return False
+        
+        # Quantisierung-Filter
+        if self.filter_args.get('quants'):
+            quants = [q.strip().lower() for q in self.filter_args['quants'].split(',')]
+            if not any(q in result.quantization.lower() for q in quants):
+                return False
+        
+        # Architektur-Filter
+        if self.filter_args.get('arch'):
+            archs = [a.strip().lower() for a in self.filter_args['arch'].split(',')]
+            if not any(a in result.architecture.lower() for a in archs):
+                return False
+        
+        # Parameter-Filter
+        if self.filter_args.get('params'):
+            params = [p.strip().upper() for p in self.filter_args['params'].split(',')]
+            if result.params_size.upper() not in params:
+                return False
+        
+        # Min Context-Filter
+        if self.filter_args.get('min_context'):
+            if result.max_context_length < self.filter_args['min_context']:
+                return False
+        
+        # Max Size-Filter
+        if self.filter_args.get('max_size'):
+            if result.model_size_gb > self.filter_args['max_size']:
+                return False
+        
+        # Include-Pattern (Regex)
+        if self.filter_args.get('include_models'):
+            import re
+            try:
+                pattern = re.compile(self.filter_args['include_models'], re.IGNORECASE)
+                model_full = f"{result.model_name}@{result.quantization}"
+                if not pattern.search(model_full):
+                    return False
+            except re.error:
+                pass
+        
+        # Exclude-Pattern (Regex)
+        if self.filter_args.get('exclude_models'):
+            import re
+            try:
+                pattern = re.compile(self.filter_args['exclude_models'], re.IGNORECASE)
+                model_full = f"{result.model_name}@{result.quantization}"
+                if pattern.search(model_full):
+                    return False
+            except re.error:
+                pass
+        
+        return True
     
     def _calculate_delta(self, current: BenchmarkResult) -> Optional[Dict]:
         """Berechnet Delta zu früherem Benchmark für selbes Modell+Quantisierung"""
@@ -2075,7 +2282,6 @@ class LMStudioBenchmark:
             if 'speed' in percentile_stats:
                 speed_p = percentile_stats['speed']
                 stats_data.extend([
-                    ['', ''],  # Leerzeile
                     ['Tokens/s - Median', f"{speed_p.get('median', '-'):.2f}"],
                     ['Tokens/s - P95', f"{speed_p.get('p95', '-'):.2f}"],
                     ['Tokens/s - P99', f"{speed_p.get('p99', '-'):.2f}"],
@@ -2948,6 +3154,13 @@ Beispiele:
         help='Deaktiviere GTT (Shared System RAM) bei AMD GPUs - nutze nur dediziertes VRAM'
     )
     
+    # Report-Regenerierung
+    parser.add_argument(
+        '--export-only',
+        action='store_true',
+        help='Generiere Reports (JSON/CSV/PDF/HTML) aus allen Ergebnissen in der Datenbank ohne neue Tests durchzuführen'
+    )
+    
     args = parser.parse_args()
     
     # Cache-Verwaltungs-Befehle (beenden vor Benchmark)
@@ -2971,6 +3184,67 @@ Beispiele:
         output_file = RESULTS_DIR / args.export_cache
         cache.export_to_json(output_file)
         print(f"Cache exportiert nach: {output_file}")
+        return
+    
+    # Export-Only: Generiere Reports aus DB ohne neue Tests
+    if args.export_only:
+        logger.info("=== Report-Regenerierung aus Datenbank ===")
+        cache = BenchmarkCache()
+        cached_results = cache.get_all_results()
+        
+        if not cached_results:
+            logger.error("Keine Ergebnisse in der Datenbank gefunden. Führe zuerst einen Benchmark durch.")
+            return
+        
+        logger.info(f"Lade {len(cached_results)} Ergebnisse aus Datenbank...")
+        
+        # Erstelle Filter-Dictionary
+        filter_args = {
+            'only_vision': args.only_vision,
+            'only_tools': args.only_tools,
+            'quants': args.quants,
+            'arch': args.arch,
+            'params': args.params,
+            'min_context': args.min_context,
+            'max_size': args.max_size,
+            'include_models': args.include_models,
+            'exclude_models': args.exclude_models,
+        }
+        
+        # Erstelle Benchmark-Instanz mit gecachten Daten
+        benchmark = LMStudioBenchmark(
+            num_runs=1,  # Wird nicht verwendet
+            context_length=2048,  # Wird nicht verwendet
+            prompt="",  # Wird nicht verwendet
+            model_limit=None,
+            filter_args=filter_args,
+            compare_with=args.compare_with,
+            rank_by=args.rank_by,
+            use_cache=False,  # Keine Cache-Checks nötig
+            enable_profiling=False,
+            use_gtt=not args.disable_gtt
+        )
+        
+        # Lade alle Ergebnisse direkt
+        benchmark.results = cached_results
+        
+        # Wende Filter an wenn gesetzt
+        if any(filter_args.values()):
+            original_count = len(benchmark.results)
+            benchmark.results = [r for r in benchmark.results if benchmark._matches_filters(r)]
+            logger.info(f"Nach Filterung: {len(benchmark.results)}/{original_count} Modelle")
+        
+        if not benchmark.results:
+            logger.error("Keine Ergebnisse nach Filterung übrig")
+            return
+        
+        # Lade frühere Ergebnisse für Vergleich wenn gewünscht
+        if args.compare_with:
+            benchmark._load_previous_results()
+        
+        logger.info(f"Generiere Reports für {len(benchmark.results)} Modelle...")
+        benchmark.export_results()
+        logger.info("Reports erfolgreich generiert!")
         return
     
     # Dev-Mode: Überschreibe Einstellungen
