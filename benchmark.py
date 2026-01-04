@@ -411,7 +411,7 @@ class ModelDiscovery:
 class LMStudioBenchmark:
     """Haupt-Benchmark-Klasse"""
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed'):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
@@ -420,6 +420,7 @@ class LMStudioBenchmark:
         self.model_limit = model_limit
         self.filter_args = filter_args or {}
         self.compare_with = compare_with
+        self.rank_by = rank_by
         self.previous_results: List[BenchmarkResult] = []
         
         # Erstelle Results-Verzeichnis
@@ -761,6 +762,25 @@ class LMStudioBenchmark:
         
         return best_by_model
     
+    def sort_results(self, rank_by: str = 'speed') -> List[BenchmarkResult]:
+        """Sortiert Ergebnisse nach verschiedenen Kriterien"""
+        if rank_by == 'speed':
+            return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+        elif rank_by == 'efficiency':
+            return sorted(self.results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True)
+        elif rank_by == 'ttft':
+            return sorted(self.results, key=lambda x: x.avg_ttft, reverse=False)  # Niedrig = gut
+        elif rank_by == 'vram':
+            # Parse VRAM-Wert (z.B. "2048 MB" -> 2048)
+            def get_vram_mb(result):
+                try:
+                    return float(result.vram_mb.split()[0]) if isinstance(result.vram_mb, str) else float(result.vram_mb)
+                except:
+                    return 999999
+            return sorted(self.results, key=get_vram_mb, reverse=False)  # Niedrig = besser
+        else:
+            return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)  # Default
+    
     def export_results(self):
         """Exportiert Ergebnisse als JSON, CSV, PDF und HTML"""
         if not self.results:
@@ -878,12 +898,18 @@ class LMStudioBenchmark:
             # Ergebnisse-Tabelle
             elements.append(Paragraph("Detaillierte Ergebnisse", heading_style))
             
-            # Sortiere Ergebnisse nach Tokens/s (absteigend)
-            sorted_results = sorted(
-                self.results,
-                key=lambda x: x.avg_tokens_per_sec,
-                reverse=True
-            )
+            # Sortiere Ergebnisse nach Ranking-Kriterium
+            sorted_results = self.sort_results(self.rank_by)
+            
+            # Zeige Ranking-Kriterium
+            rank_labels = {
+                'speed': 'Geschwindigkeit (Tokens/s)',
+                'efficiency': 'Effizienz (Tokens/s pro GB)',
+                'ttft': 'Time to First Token (ms)',
+                'vram': 'VRAM-Nutzung (MB)'
+            }
+            elements.append(Paragraph(f"<font size=9>Sortiert nach: <b>{rank_labels.get(self.rank_by, 'Speed')}</b></font>", styles['Normal']))
+            elements.append(Spacer(1, 10))
             
             # Erstelle Tabellen-Daten
             table_data = [['Modell', 'Param', 'Arch', 'Size(GB)', 'Vision', 'Tools', 'Quant.', 'GPU', 'Tokens/s', 'TTFT (ms)', 'Gen.Zeit (s)']]
@@ -993,8 +1019,8 @@ class LMStudioBenchmark:
         try:
             html_file = RESULTS_DIR / f"benchmark_results_{timestamp}.html"
             
-            # Sortiere Ergebnisse nach Speed
-            sorted_results = sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+            # Sortiere Ergebnisse nach Ranking-Kriterium (aber für HTML Charts immer nach Speed)
+            sorted_results = self.sort_results('speed')  # HTML Charts zeigen immer Top 10 nach Speed
             
             # Bar-Chart: Top 10 schnellste Modelle
             top_10 = sorted_results[:10]
@@ -1301,6 +1327,14 @@ Beispiele:
         help='Vergleiche mit früheren Ergebnissen (z.B. "20260104_172200.json" oder "latest")'
     )
     
+    parser.add_argument(
+        '--rank-by',
+        type=str,
+        choices=['speed', 'efficiency', 'ttft', 'vram'],
+        default='speed',
+        help='Sortiere Ergebnisse nach: speed (tokens/s), efficiency (tokens/s pro GB), ttft (Time to First Token), vram (VRAM-Nutzung)'
+    )
+    
     args = parser.parse_args()
     
     # Validierung
@@ -1348,11 +1382,13 @@ Beispiele:
         prompt=args.prompt,
         model_limit=args.limit,
         filter_args=filter_args,
-        compare_with=args.compare_with
+        compare_with=args.compare_with,
+        rank_by=args.rank_by
     )
     benchmark.run_all_benchmarks()
     
     logger.info("Benchmark abgeschlossen!")
+
 
 
 if __name__ == "__main__":
