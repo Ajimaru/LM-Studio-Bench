@@ -899,7 +899,9 @@ class LMStudioBenchmark:
         self.use_gtt = use_gtt
         self.previous_results: List[BenchmarkResult] = []
         self._gtt_info = {}  # Speichert GTT-Informationen von AMD GPU
-        self.cache = BenchmarkCache() if use_cache else None
+        # Cache wird IMMER initialisiert (zum Speichern von Ergebnissen)
+        # use_cache kontrolliert nur das LADEN von Cache-Hits
+        self.cache = BenchmarkCache()
         self.params_hash = BenchmarkCache.compute_params_hash(
             prompt, context_length, OPTIMIZED_INFERENCE_PARAMS
         )

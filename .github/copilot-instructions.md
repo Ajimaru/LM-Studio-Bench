@@ -41,7 +41,6 @@ project-root/
 │   ├── QUICKSTART.md   # Schnelleinstieg
 │   └── LLM_METADATA_GUIDE.md
 ├── development/        # Interne Notizen (in .gitignore)
-│   ├── PLAN.md
 │   └── FEATURES.md
 ├── results/            # Benchmark-Ergebnisse
 │   ├── benchmark_results_*.json
@@ -79,8 +78,7 @@ project-root/
 - Error Recovery: Niemals ganzen Benchmark abbrechen, einzelne Modelle überspringen
 
 ## Implementierungsplan
-- Interne Roadmap: siehe `development/PLAN.md`
-- Öffentliche Features: siehe `development/FEATURES.md`
+- Interne Roadmap: siehe `development/FEATURES.md`
 
 ## Troubleshooting
 - Prüfe LM Studio Installation mit `lms --help`
