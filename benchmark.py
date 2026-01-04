@@ -268,6 +268,8 @@ class LMStudioServerManager:
 class ModelDiscovery:
     """Findet alle lokal installierten Modelle"""
     
+    _metadata_cache: Dict[str, Dict] = {}  # Class-level cache
+    
     @staticmethod
     def _get_metadata_cache() -> Dict[str, Dict]:
         """Cache für Modell-Metadaten (geladen einmal am Anfang)"""
@@ -439,6 +441,9 @@ class LMStudioBenchmark:
         """Lädt frühere Benchmark-Ergebnisse zum Vergleich"""
         try:
             # Suche nach passenden JSON-Datei
+            if not self.compare_with:
+                return
+            
             if self.compare_with.endswith('.json'):
                 json_file = RESULTS_DIR / self.compare_with
             else:
@@ -924,7 +929,7 @@ class LMStudioBenchmark:
     
     def generate_trend_chart(self) -> Optional[str]:
         """Generiert Plotly Line-Chart für Performance-Trends über Zeit"""
-        if not PLOTLY_AVAILABLE or not self.previous_results:
+        if not PLOTLY_AVAILABLE or not self.previous_results or go is None:
             return None
         
         try:
@@ -1264,6 +1269,10 @@ class LMStudioBenchmark:
     
     def _export_html(self, timestamp: str):
         """Exportiert Benchmark-Ergebnisse als interaktiven HTML-Report mit Plotly Charts"""
+        if not PLOTLY_AVAILABLE or go is None:
+            logger.warning("Plotly nicht verfügbar, überspringe HTML-Export")
+            return
+        
         try:
             html_file = RESULTS_DIR / f"benchmark_results_{timestamp}.html"
             
