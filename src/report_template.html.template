@@ -237,6 +237,8 @@
         {{TOOLS_SECTION}}
         
         {{ARCH_SECTION}}
+
+        {{PROFILING_SECTION}}
         
         <div class="timestamp">
             Generiert: {{TIMESTAMP}}

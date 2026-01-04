@@ -16,9 +16,10 @@ import shutil
 import argparse
 import sqlite3
 import hashlib
+import threading
 from pathlib import Path
-from typing import List, Dict, Optional
-from dataclasses import dataclass, asdict
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from statistics import quantiles, mean, median
 from tqdm import tqdm
@@ -104,9 +105,150 @@ class BenchmarkResult:
     tokens_per_sec_per_gb: float       # Tokens/s pro GB Modellgröße
     tokens_per_sec_per_billion_params: float  # Tokens/s pro Milliarde Parameter
     
+    # Hardware-Profiling (optional)
+    temp_celsius_min: Optional[float] = None   # Min. Temperatur während Benchmark
+    temp_celsius_max: Optional[float] = None   # Max. Temperatur während Benchmark
+    temp_celsius_avg: Optional[float] = None   # Durchschn. Temperatur
+    power_watts_min: Optional[float] = None    # Min. Power-Draw
+    power_watts_max: Optional[float] = None    # Max. Power-Draw
+    power_watts_avg: Optional[float] = None    # Durchschn. Power-Draw
+    
     # Historischer Vergleich (optional)
     speed_delta_pct: Optional[float] = None     # Performance-Veränderung (%) vs. vorheriger Benchmark
     prev_timestamp: Optional[str] = None         # Zeitstempel des vorherigen Benchmarks
+
+
+class HardwareMonitor:
+    """Echtzeit-Monitoring von GPU-Temperatur und Power-Draw"""
+    
+    def __init__(self, gpu_type: str, gpu_tool: str, enabled: bool = False):
+        self.gpu_type = gpu_type
+        self.gpu_tool = gpu_tool
+        self.enabled = enabled
+        self.monitoring = False
+        self.thread: Optional[threading.Thread] = None
+        self.temps: List[float] = []
+        self.powers: List[float] = []
+        self.lock = threading.Lock()
+    
+    def start(self):
+        """Starte Background-Monitoring"""
+        if not self.enabled or not self.gpu_tool:
+            return
+        
+        self.monitoring = True
+        self.temps.clear()
+        self.powers.clear()
+        self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self.thread.start()
+    
+    def stop(self) -> Dict[str, Optional[float]]:
+        """Stoppe Monitoring und gebe Statistiken zurück"""
+        self.monitoring = False
+        if self.thread:
+            self.thread.join(timeout=2)
+        
+        with self.lock:
+            temps = self.temps.copy()
+            powers = self.powers.copy()
+        
+        stats = {
+            'temp_celsius_min': min(temps) if temps else None,
+            'temp_celsius_max': max(temps) if temps else None,
+            'temp_celsius_avg': mean(temps) if temps else None,
+            'power_watts_min': min(powers) if powers else None,
+            'power_watts_max': max(powers) if powers else None,
+            'power_watts_avg': mean(powers) if powers else None,
+        }
+        return stats
+    
+    def _monitor_loop(self):
+        """Background-Thread für kontinuierliche Messungen"""
+        while self.monitoring:
+            try:
+                temp = self._get_temperature()
+                power = self._get_power_draw()
+                
+                with self.lock:
+                    if temp is not None:
+                        self.temps.append(temp)
+                    if power is not None:
+                        self.powers.append(power)
+                
+                time.sleep(1)  # Messungen jede Sekunde
+            except Exception as e:
+                logger.debug(f"Monitoring-Fehler: {e}")
+                time.sleep(2)
+    
+    def _get_temperature(self) -> Optional[float]:
+        """Liest aktuelle GPU-Temperatur"""
+        try:
+            if self.gpu_type == "NVIDIA":
+                result = subprocess.run(
+                    [self.gpu_tool, '--query-gpu=temperature.gpu', '--format=csv,noheader,nounits'],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    temp_str = result.stdout.strip().split('\n')[0]
+                    return float(temp_str)
+            
+            elif self.gpu_type == "AMD":
+                result = subprocess.run(
+                    [self.gpu_tool, '--showtemp'],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    # Parse AMD rocm-smi output: "GPU[X]        : X.0c"
+                    for line in result.stdout.split('\n'):
+                        if 'GPU[' in line and 'c' in line:
+                            try:
+                                temp_str = line.split(':')[1].strip().replace('c', '')
+                                return float(temp_str)
+                            except (ValueError, IndexError):
+                                pass
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+        
+        return None
+    
+    def _get_power_draw(self) -> Optional[float]:
+        """Liest GPU Power-Draw in Watts"""
+        try:
+            if self.gpu_type == "NVIDIA":
+                result = subprocess.run(
+                    [self.gpu_tool, '--query-gpu=power.draw', '--format=csv,noheader,nounits'],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    power_str = result.stdout.strip().split('\n')[0]
+                    return float(power_str)
+            
+            elif self.gpu_type == "AMD":
+                result = subprocess.run(
+                    [self.gpu_tool, '--showpower'],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    # Parse AMD rocm-smi output: "GPU[X]  : XXX.X W"
+                    for line in result.stdout.split('\n'):
+                        if 'GPU[' in line and 'W' in line:
+                            try:
+                                power_str = line.split(':')[1].strip().replace('W', '')
+                                return float(power_str)
+                            except (ValueError, IndexError):
+                                pass
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+        
+        return None
 
 
 class BenchmarkCache:
@@ -642,7 +784,7 @@ class ModelDiscovery:
 class LMStudioBenchmark:
     """Haupt-Benchmark-Klasse"""
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
@@ -653,10 +795,20 @@ class LMStudioBenchmark:
         self.compare_with = compare_with
         self.rank_by = rank_by
         self.use_cache = use_cache
+        self.enable_profiling = enable_profiling
+        self.max_temp = max_temp
+        self.max_power = max_power
         self.previous_results: List[BenchmarkResult] = []
         self.cache = BenchmarkCache() if use_cache else None
         self.params_hash = BenchmarkCache.compute_params_hash(
             prompt, context_length, OPTIMIZED_INFERENCE_PARAMS
+        )
+        
+        # Hardware Monitor für Profiling
+        self.hardware_monitor = HardwareMonitor(
+            self.gpu_monitor.gpu_type,
+            self.gpu_monitor.gpu_tool,
+            enabled=enable_profiling
         )
         
         # Erstelle Results-Verzeichnis
@@ -754,6 +906,9 @@ class LMStudioBenchmark:
                     logger.error(f"Warmup für {model_key} fehlgeschlagen")
                     return None
             
+            # Starte Hardware-Profiling wenn aktiviert
+            self.hardware_monitor.start()
+            
             # Messungen
             logger.info(f"Führe {self.num_measurement_runs} Messungen durch...")
             measurements = []
@@ -769,6 +924,9 @@ class LMStudioBenchmark:
                 else:
                     logger.warning(f"Run {run+1}/{self.num_measurement_runs} fehlgeschlagen")
             
+            # Stoppe Hardware-Profiling und hole Statistiken
+            profiling_stats = self.hardware_monitor.stop()
+            
             # Berechne Durchschnitte
             if measurements:
                 result = self._calculate_averages(
@@ -779,6 +937,22 @@ class LMStudioBenchmark:
                     measurements,
                     model_key
                 )
+                
+                # Füge Profiling-Daten hinzu
+                if self.enable_profiling:
+                    result.temp_celsius_min = profiling_stats.get('temp_celsius_min')
+                    result.temp_celsius_max = profiling_stats.get('temp_celsius_max')
+                    result.temp_celsius_avg = profiling_stats.get('temp_celsius_avg')
+                    result.power_watts_min = profiling_stats.get('power_watts_min')
+                    result.power_watts_max = profiling_stats.get('power_watts_max')
+                    result.power_watts_avg = profiling_stats.get('power_watts_avg')
+                    
+                    # Prüfe Grenzen
+                    if self.max_temp and result.temp_celsius_max and result.temp_celsius_max > self.max_temp:
+                        logger.warning(f"⚠️ Max. Temperatur überschritten: {result.temp_celsius_max:.1f}°C > {self.max_temp}°C")
+                    
+                    if self.max_power and result.power_watts_max and result.power_watts_max > self.max_power:
+                        logger.warning(f"⚠️ Max. Power überschritten: {result.power_watts_max:.1f}W > {self.max_power}W")
                 
                 # Speichere in Cache
                 if self.cache:
@@ -1817,6 +1991,92 @@ class LMStudioBenchmark:
                     elements.append(arch_table)
                     elements.append(Spacer(1, 15))
             
+            # Hardware-Profiling Seite (wenn aktiviert)
+            if self.enable_profiling and any(r.temp_celsius_avg for r in self.results):
+                elements.append(PageBreak())
+                elements.append(Paragraph("🌡️ Hardware-Profiling Report", title_style))
+                elements.append(Spacer(1, 12))
+                
+                # Profiling Summary
+                elements.append(Paragraph("Temperatur- und Power-Analyse", heading_style))
+                
+                # Sammel Profiling-Daten
+                temps_avg = [r.temp_celsius_avg for r in self.results if r.temp_celsius_avg]
+                powers_avg = [r.power_watts_avg for r in self.results if r.power_watts_avg]
+                
+                profile_summary = [
+                    ['Metrik', 'Min', 'Max', 'Durchschnitt'],
+                ]
+                
+                if temps_avg:
+                    profile_summary.append([
+                        'GPU Temperatur (°C)',
+                        f"{min(temps_avg):.1f}",
+                        f"{max(temps_avg):.1f}",
+                        f"{mean(temps_avg):.1f}"
+                    ])
+                
+                if powers_avg:
+                    profile_summary.append([
+                        'GPU Power-Draw (W)',
+                        f"{min(powers_avg):.1f}",
+                        f"{max(powers_avg):.1f}",
+                        f"{mean(powers_avg):.1f}"
+                    ])
+                
+                profile_table = Table(profile_summary, colWidths=[2*inch, 1.2*inch, 1.2*inch, 1.5*inch])
+                profile_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#d9534f')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 1), (-1, -1), 9),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fff0ed')])
+                ]))
+                elements.append(profile_table)
+                elements.append(Spacer(1, 15))
+                
+                # Detaillierte Profiling-Tabelle
+                elements.append(Paragraph("Profiling pro Modell", heading_style))
+                
+                profile_data = [['Modell', 'Quant.', 'Temp Min', 'Temp Max', 'Temp Ø (°C)', 'Power Min', 'Power Max', 'Power Ø (W)']]
+                for r in sorted(self.results, key=lambda x: x.temp_celsius_avg or 0, reverse=True):
+                    if r.temp_celsius_avg or r.power_watts_avg:
+                        temp_min = f"{r.temp_celsius_min:.1f}" if r.temp_celsius_min else "-"
+                        temp_max = f"{r.temp_celsius_max:.1f}" if r.temp_celsius_max else "-"
+                        temp_avg = f"{r.temp_celsius_avg:.1f}" if r.temp_celsius_avg else "-"
+                        power_min = f"{r.power_watts_min:.1f}" if r.power_watts_min else "-"
+                        power_max = f"{r.power_watts_max:.1f}" if r.power_watts_max else "-"
+                        power_avg = f"{r.power_watts_avg:.1f}" if r.power_watts_avg else "-"
+                        
+                        profile_data.append([
+                            r.model_name[:20],
+                            r.quantization[:6],
+                            temp_min,
+                            temp_max,
+                            temp_avg,
+                            power_min,
+                            power_max,
+                            power_avg
+                        ])
+                
+                if len(profile_data) > 1:  # Nur wenn Daten vorhanden
+                    prof_table = Table(profile_data, colWidths=[1.5*inch, 0.6*inch, 0.7*inch, 0.7*inch, 0.8*inch, 0.7*inch, 0.7*inch, 0.75*inch])
+                    prof_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#d9534f')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, 0), 8),
+                        ('FONTSIZE', (0, 1), (-1, -1), 7),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#ffe5e5')])
+                    ]))
+                    elements.append(prof_table)
+            
             # Erstelle PDF
             doc.build(elements)
             logger.info(f"PDF-Ergebnisse gespeichert: {pdf_file}")
@@ -2087,6 +2347,72 @@ class LMStudioBenchmark:
             else:
                 arch_section = ""
             
+            # Hardware-Profiling Sektion
+            profiling_section = ""
+            if self.enable_profiling and any(r.temp_celsius_avg for r in self.results):
+                temps_avg = [r.temp_celsius_avg for r in self.results if r.temp_celsius_avg]
+                powers_avg = [r.power_watts_avg for r in self.results if r.power_watts_avg]
+                
+                profile_rows = ""
+                for r in sorted(self.results, key=lambda x: x.temp_celsius_avg or 0, reverse=True):
+                    if r.temp_celsius_avg or r.power_watts_avg:
+                        temp_min = f"{r.temp_celsius_min:.1f}°C" if r.temp_celsius_min else "-"
+                        temp_max = f"{r.temp_celsius_max:.1f}°C" if r.temp_celsius_max else "-"
+                        temp_avg = f"{r.temp_celsius_avg:.1f}°C" if r.temp_celsius_avg else "-"
+                        power_min = f"{r.power_watts_min:.1f}W" if r.power_watts_min else "-"
+                        power_max = f"{r.power_watts_max:.1f}W" if r.power_watts_max else "-"
+                        power_avg = f"{r.power_watts_avg:.1f}W" if r.power_watts_avg else "-"
+                        
+                        profile_rows += f"""
+                <tr>
+                    <td>{r.model_name}</td>
+                    <td>{r.quantization}</td>
+                    <td>{temp_min}</td>
+                    <td>{temp_max}</td>
+                    <td><strong>{temp_avg}</strong></td>
+                    <td>{power_min}</td>
+                    <td>{power_max}</td>
+                    <td><strong>{power_avg}</strong></td>
+                </tr>"""
+                
+                profile_summary = ""
+                if temps_avg:
+                    profile_summary += f"""
+                <div class="summary-box" style="border-left: 4px solid #d9534f;">
+                    <h4>🌡️ GPU Temperatur</h4>
+                    <p>Min: {min(temps_avg):.1f}°C | Max: {max(temps_avg):.1f}°C | Ø: {mean(temps_avg):.1f}°C</p>
+                </div>"""
+                
+                if powers_avg:
+                    profile_summary += f"""
+                <div class="summary-box" style="border-left: 4px solid #ff9800;">
+                    <h4>⚡ Power-Draw</h4>
+                    <p>Min: {min(powers_avg):.1f}W | Max: {max(powers_avg):.1f}W | Ø: {mean(powers_avg):.1f}W</p>
+                </div>"""
+                
+                profiling_section = f"""
+            <h2>🌡️ Hardware-Profiling</h2>
+            <div class="profiling-summary">
+                {profile_summary}
+            </div>
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th>Modell</th>
+                        <th>Quant.</th>
+                        <th>Temp Min</th>
+                        <th>Temp Max</th>
+                        <th>Temp Ø</th>
+                        <th>Power Min</th>
+                        <th>Power Max</th>
+                        <th>Power Ø</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {profile_rows}
+                </tbody>
+            </table>"""
+            
             # Ersetze Platzhalter im Template
             html_output = html_template.replace('{{SUMMARY_BOXES}}', summary_boxes)
             html_output = html_output.replace('{{TREND_SECTION}}', trend_section)
@@ -2094,6 +2420,7 @@ class LMStudioBenchmark:
             html_output = html_output.replace('{{VISION_SECTION}}', vision_section)
             html_output = html_output.replace('{{TOOLS_SECTION}}', tools_section)
             html_output = html_output.replace('{{ARCH_SECTION}}', arch_section)
+            html_output = html_output.replace('{{PROFILING_SECTION}}', profiling_section)
             html_output = html_output.replace('{{TIMESTAMP}}', time.strftime('%d.%m.%Y %H:%M:%S'))
             html_output = html_output.replace('{{BAR_DATA}}', json.dumps(fig_bar.to_dict()['data']))
             html_output = html_output.replace('{{BAR_LAYOUT}}', json.dumps(fig_bar.to_dict()['layout']))
@@ -2262,6 +2589,27 @@ Beispiele:
         help='Exportiere Cache-Inhalte als JSON (z.B. "cache_export.json") und beende'
     )
     
+    # Hardware-Profiling
+    parser.add_argument(
+        '--enable-profiling',
+        action='store_true',
+        help='Aktiviere Hardware-Profiling: Misst Temperatur und Power-Draw während Benchmark'
+    )
+    
+    parser.add_argument(
+        '--max-temp',
+        type=float,
+        default=None,
+        help='Maximale GPU-Temperatur in °C (Warnung wenn überschritten, z.B. 80.0)'
+    )
+    
+    parser.add_argument(
+        '--max-power',
+        type=float,
+        default=None,
+        help='Maximaler GPU Power-Draw in Watts (Warnung wenn überschritten, z.B. 400.0)'
+    )
+    
     args = parser.parse_args()
     
     # Cache-Verwaltungs-Befehle (beenden vor Benchmark)
@@ -2359,7 +2707,10 @@ Beispiele:
         filter_args=filter_args,
         compare_with=args.compare_with,
         rank_by=args.rank_by,
-        use_cache=not args.retest
+        use_cache=not args.retest,
+        enable_profiling=args.enable_profiling,
+        max_temp=args.max_temp,
+        max_power=args.max_power
     )
     benchmark.run_all_benchmarks()
     

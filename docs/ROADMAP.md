@@ -246,9 +246,9 @@
       - WebSocket /ws/benchmark - Live-Streaming
       - POST /api/cache/export - Cache exportieren
       - DELETE /api/cache/{id} - Eintrag löschen
-    
+
     - **WebSocket-Messages** (Live):
-    
+
       ```json
       {
         "type": "benchmark_progress",
@@ -264,7 +264,7 @@
         "message": "Run 2/3 abgeschlossen..."
       }
       ```
-    
+
     - **Subprocess-Management**:
       - Start: subprocess.Popen mit capture_output
       - Pause: signal.SIGSTOP
