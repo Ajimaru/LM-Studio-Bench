@@ -23,19 +23,35 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 ## Installation
 
 1. **Repository klonen**:
+
    ```bash
    git clone <repository-url>
    cd local-llm-bench
    ```
 
-2. **Python-Dependencies installieren**:
+2. **Virtuelle Umgebung erstellen und aktivieren**:
+
+   ```bash
+   # Virtuelle Umgebung erstellen
+   python3 -m venv .venv
+   
+   # Aktivieren (Linux/macOS)
+   source .venv/bin/activate
+   
+   # Aktivieren (Windows)
+   # .venv\Scripts\activate
+   ```
+
+3. **Python-Dependencies installieren**:
+
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **LM Studio CLI prüfen**:
+4. **LM Studio CLI prüfen**:
+
    ```bash
-   lms --version
+   lms --help
    ```
 
 ## Nutzung
@@ -43,10 +59,15 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 ### Benchmark starten
 
 ```bash
+# Stelle sicher dass die virtuelle Umgebung aktiviert ist
+source .venv/bin/activate  # Linux/macOS
+.venv\Scripts\activate   # Windows
+
 python benchmark.py
 ```
 
 Das Script wird:
+
 1. LM Studio Server prüfen/starten
 2. Alle installierten Modelle finden
 3. Jeden mit standardisiertem Prompt testen
@@ -122,16 +143,19 @@ lms ls
 GPU-Tools fehlen. Installiere je nach GPU:
 
 **NVIDIA**:
+
 ```bash
 sudo apt install nvidia-utils
 ```
 
 **AMD**:
+
 ```bash
 # ROCm installieren
 ```
 
 **Intel**:
+
 ```bash
 sudo apt install intel-gpu-tools
 ```
@@ -169,7 +193,7 @@ CONTEXT_LENGTH = 4096  # Standard: 2048
 
 ## Projekt-Struktur
 
-```
+```files
 local-llm-bench/
 ├── benchmark.py              # Haupt-Script
 ├── requirements.txt          # Python-Dependencies

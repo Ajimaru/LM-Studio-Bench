@@ -54,3 +54,11 @@ README.md            # Dokumentation
 - Alle Pfade OS-agnostisch (pathlib.Path)
 - CSV mit UTF-8 encoding
 - JSON mit indent=2 für Lesbarkeit
+
+## Implementierungsplan
+- siehe PLAN.md
+
+## Troubleshooting
+- Prüfe LM Studio Installation mit `lms --help`
+- benutze `errors.log` für Debugging
+- benutze LMStudio logs in `~/.lmstudio/server-logs/` für tiefere Fehleranalyse

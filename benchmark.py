@@ -166,7 +166,9 @@ class LMStudioServerManager:
                 text=True,
                 timeout=10
             )
-            return result.returncode == 0 and 'running' in result.stdout.lower()
+            # Server gibt Ausgabe in stderr aus (nicht stdout!)
+            output = result.stdout + result.stderr
+            return result.returncode == 0 and ('running' in output.lower() or 'port' in output.lower())
         except Exception as e:
             logger.error(f"Fehler bei Server-Status-Prüfung: {e}")
             return False
@@ -215,7 +217,7 @@ class ModelDiscovery:
         """Listet alle lokal installierten Modelle und Quantisierungen auf"""
         try:
             result = subprocess.run(
-                ['lms', 'ls'],
+                ['lms', 'ls', '--json'],
                 capture_output=True,
                 text=True,
                 timeout=30
@@ -225,18 +227,25 @@ class ModelDiscovery:
                 logger.error(f"Fehler bei 'lms ls': {result.stderr}")
                 return []
             
-            # Parse Output
+            # Parse JSON Output
             models = []
-            for line in result.stdout.split('\n'):
-                line = line.strip()
-                if line and not line.startswith('#') and not line.startswith('Model'):
-                    # Extrahiere Model-Key (kann Format haben wie: model-name@quant)
-                    parts = line.split()
-                    if parts:
-                        model_key = parts[0]
-                        models.append(model_key)
+            import json
+            data = json.loads(result.stdout)
             
-            logger.info(f"{len(models)} Modelle gefunden: {models}")
+            for model_data in data:
+                # Nur LLM-Modelle, keine Embeddings
+                if model_data.get('type') == 'llm':
+                    # Hole alle Varianten (Quantisierungen)
+                    variants = model_data.get('variants', [])
+                    if variants:
+                        models.extend(variants)
+                    else:
+                        # Fallback wenn keine Varianten
+                        models.append(model_data.get('modelKey'))
+            
+            logger.info(f"{len(models)} Modelle gefunden")
+            if models:
+                logger.info(f"Erste 5 Modelle: {models[:5]}")
             return models
         
         except Exception as e:
@@ -258,6 +267,19 @@ class LMStudioBenchmark:
         """Führt Benchmark für ein spezifisches Modell durch"""
         logger.info(f"Starte Benchmark für {model_key}")
         
+        # Entlade alle anderen Modelle zuerst
+        try:
+            subprocess.run(
+                ['lms', 'unload', '--all'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            logger.info("Alle Modelle entladen")
+            time.sleep(1)  # Warte bis Speicher freigegeben
+        except Exception as e:
+            logger.warning(f"Fehler beim Entladen aller Modelle: {e}")
+        
         # Parse Model-Name und Quantisierung
         if '@' in model_key:
             model_name, quantization = model_key.split('@', 1)
@@ -265,53 +287,49 @@ class LMStudioBenchmark:
             model_name = model_key
             quantization = "unknown"
         
-        # Versuche Modell mit verschiedenen GPU-Offload-Levels zu laden
-        for gpu_offload in GPU_OFFLOAD_LEVELS:
-            try:
-                logger.info(f"Versuche {model_key} mit GPU-Offload {gpu_offload}")
+        try:
+            # Warmup
+            logger.info(f"Warmup für {model_key}...")
+            for _ in range(NUM_WARMUP_RUNS):
+                warmup_result = self._run_inference(model_key)
+                if not warmup_result:
+                    logger.error(f"Warmup für {model_key} fehlgeschlagen")
+                    return None
+            
+            # Messungen
+            logger.info(f"Führe {NUM_MEASUREMENT_RUNS} Messungen durch...")
+            measurements = []
+            vram_after = "N/A"  # Initialisiere Standard-Wert
+            for run in range(NUM_MEASUREMENT_RUNS):
+                vram_before = self.gpu_monitor.get_vram_usage()
+                stats = self._run_inference(model_key)
+                vram_after = self.gpu_monitor.get_vram_usage()
                 
-                # Lade Modell
-                if not self._load_model(model_key, gpu_offload):
-                    continue
+                if stats:
+                    measurements.append(stats)
+                    logger.info(f"Run {run+1}/{NUM_MEASUREMENT_RUNS}: {stats['tokens_per_second']:.2f} tokens/s")
+                else:
+                    logger.warning(f"Run {run+1}/{NUM_MEASUREMENT_RUNS} fehlgeschlagen")
+            
+            # Berechne Durchschnitte
+            if measurements:
+                result = self._calculate_averages(
+                    model_name,
+                    quantization,
+                    1.0,  # SDK handhabt GPU-Offload automatisch
+                    vram_after,
+                    measurements
+                )
                 
-                # Warmup
-                logger.info(f"Warmup für {model_key}...")
-                for _ in range(NUM_WARMUP_RUNS):
-                    self._run_inference(model_key)
+                logger.info(f"✓ {model_key}: {result.avg_tokens_per_sec:.2f} tokens/s")
+                return result
+            else:
+                logger.error(f"Keine erfolgreichen Messungen für {model_key}")
+                return None
                 
-                # Messungen
-                logger.info(f"Führe {NUM_MEASUREMENT_RUNS} Messungen durch...")
-                measurements = []
-                for _ in range(NUM_MEASUREMENT_RUNS):
-                    vram_before = self.gpu_monitor.get_vram_usage()
-                    stats = self._run_inference(model_key)
-                    vram_after = self.gpu_monitor.get_vram_usage()
-                    
-                    if stats:
-                        measurements.append(stats)
-                
-                # Berechne Durchschnitte
-                if measurements:
-                    result = self._calculate_averages(
-                        model_name,
-                        quantization,
-                        gpu_offload,
-                        vram_after,
-                        measurements
-                    )
-                    
-                    # Entlade Modell
-                    self._unload_model(model_key)
-                    
-                    return result
-                
-            except Exception as e:
-                logger.warning(f"Fehler mit GPU-Offload {gpu_offload}: {e}")
-                continue
-        
-        # Wenn alle Versuche fehlschlagen
-        logger.error(f"Konnte {model_key} nicht laden, überspringe")
-        return None
+        except Exception as e:
+            logger.error(f"Fehler beim Benchmarking von {model_key}: {e}")
+            return None
     
     def _load_model(self, model_key: str, gpu_offload: float) -> bool:
         """Lädt ein Modell in den Speicher"""
@@ -349,29 +367,40 @@ class LMStudioBenchmark:
     def _run_inference(self, model_key: str) -> Optional[Dict]:
         """Führt Inferenz durch und gibt Stats zurück"""
         try:
-            # Hier müsste die tatsächliche LM Studio Python SDK Integration erfolgen
-            # Da lmstudio SDK möglicherweise nicht verfügbar ist, verwenden wir
-            # eine Placeholder-Implementierung
+            import lmstudio as lms
             
-            # TODO: Implementiere mit lmstudio SDK:
-            # import lmstudio as lms
-            # model = lms.llm(model_key)
-            # result = model.respond(STANDARD_PROMPT)
-            # return result.stats
+            # Lade Modell über SDK mit Kontextlängen-Konfiguration
+            model = lms.llm(
+                model_key,
+                config=lms.LlmLoadModelConfig(
+                    context_length=CONTEXT_LENGTH
+                )
+            )
             
-            logger.warning("LM Studio SDK Integration fehlt noch - Placeholder verwendet")
-            time.sleep(1)  # Simuliere Inferenz
+            # Führe Inferenz durch
+            start_time = time.time()
+            result = model.respond(STANDARD_PROMPT)
+            end_time = time.time()
+            
+            generation_time = end_time - start_time
+            
+            # Extrahiere Stats
+            stats = result.stats
+            
+            tokens_per_sec = 0.0
+            if generation_time > 0 and stats.predicted_tokens_count:
+                tokens_per_sec = float(stats.predicted_tokens_count) / generation_time
             
             return {
-                'tokens_per_second': 50.0,
-                'time_to_first_token': 0.1,
-                'generation_time': 1.0,
-                'prompt_tokens': 10,
-                'completion_tokens': 50
+                'tokens_per_second': tokens_per_sec,
+                'time_to_first_token': stats.time_to_first_token_sec,
+                'generation_time': generation_time,
+                'prompt_tokens': stats.prompt_tokens_count or 0,
+                'completion_tokens': stats.predicted_tokens_count or 0
             }
         
         except Exception as e:
-            logger.error(f"Fehler bei Inferenz: {e}")
+            logger.error(f"Fehler bei Inferenz mit {model_key}: {e}")
             return None
     
     def _calculate_averages(
@@ -392,7 +421,7 @@ class LMStudioBenchmark:
         return BenchmarkResult(
             model_name=model_name,
             quantization=quantization,
-            gpu_type=self.gpu_monitor.gpu_type,
+            gpu_type=self.gpu_monitor.gpu_type or "Unknown",
             gpu_offload=gpu_offload,
             vram_mb=vram_mb,
             avg_tokens_per_sec=round(avg_tokens_per_sec, 2),
