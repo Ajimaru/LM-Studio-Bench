@@ -1553,11 +1553,6 @@ class LMStudioBenchmark:
             logger.error("Keine Modelle nach Filterung übrig")
             return
         
-        # Wende Limit an wenn gesetzt
-        if self.model_limit and self.model_limit < len(models):
-            logger.info(f"⚙️ Modell-Limit gesetzt: Testet nur erste {self.model_limit} von {len(models)} Modellen")
-            models = models[:self.model_limit]
-        
         # Prüfe Cache und zeige Stats
         if self.cache and self.use_cache:
             cached_models = []
@@ -1570,10 +1565,17 @@ class LMStudioBenchmark:
                 else:
                     new_models.append(model_key)
             
+            # Wende Limit NUR auf neue Modelle an (nicht auf gecachte)
+            if self.model_limit and self.model_limit < len(new_models):
+                logger.info(f"⚙️ Modell-Limit gesetzt: Testet max. {self.model_limit} neue Modelle (+ {len(cached_models)} gecachte)")
+                new_models = new_models[:self.model_limit]
+            elif self.model_limit:
+                logger.info(f"⚙️ Modell-Limit: {len(new_models)} neue Modelle + {len(cached_models)} gecachte = {len(new_models) + len(cached_models)} gesamt")
+            
             if cached_models:
                 logger.info("")
                 logger.info("📦 === Gecachte Modelle ===")
-                logger.info(f"💾 {len(cached_models)} von {len(models)} Modellen bereits getestet (werden aus Cache geladen):")
+                logger.info(f"💾 {len(cached_models)} Modelle bereits getestet (werden aus Cache geladen):")
                 for model_key, cached in cached_models[:10]:  # Zeige max. 10
                     date_part = cached.timestamp.split('T')[0] if 'T' in cached.timestamp else cached.timestamp[:10]
                     logger.info(f"  • {model_key}: {cached.avg_tokens_per_sec:.2f} tok/s (zuletzt: {date_part})")
@@ -1593,6 +1595,10 @@ class LMStudioBenchmark:
                 self.export_results()
                 return
         else:
+            # Wende Limit an wenn gesetzt (kein Cache)
+            if self.model_limit and self.model_limit < len(models):
+                logger.info(f"⚙️ Modell-Limit gesetzt: Testet nur erste {self.model_limit} von {len(models)} Modellen")
+                models = models[:self.model_limit]
             logger.info(f"🚀 Starte Benchmark für {len(models)} Modelle...")
         
         # Benchmark für jedes Modell
