@@ -27,6 +27,12 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import landscape
+try:
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    go = None
+    PLOTLY_AVAILABLE = False
 
 
 # Logging konfigurieren
@@ -756,7 +762,7 @@ class LMStudioBenchmark:
         return best_by_model
     
     def export_results(self):
-        """Exportiert Ergebnisse als JSON, CSV und PDF"""
+        """Exportiert Ergebnisse als JSON, CSV, PDF und HTML"""
         if not self.results:
             logger.warning("Keine Ergebnisse zum Exportieren")
             return
@@ -781,6 +787,10 @@ class LMStudioBenchmark:
         
         # PDF Export
         self._export_pdf(timestamp)
+        
+        # HTML Export (optional)
+        if PLOTLY_AVAILABLE:
+            self._export_html(timestamp)
     
     def _export_pdf(self, timestamp: str):
         """Exportiert Benchmark-Ergebnisse als PDF-Report"""
@@ -977,6 +987,219 @@ class LMStudioBenchmark:
         
         except Exception as e:
             logger.error(f"Fehler beim Erstellen der PDF: {e}")
+    
+    def _export_html(self, timestamp: str):
+        """Exportiert Benchmark-Ergebnisse als interaktiven HTML-Report mit Plotly Charts"""
+        try:
+            html_file = RESULTS_DIR / f"benchmark_results_{timestamp}.html"
+            
+            # Sortiere Ergebnisse nach Speed
+            sorted_results = sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+            
+            # Bar-Chart: Top 10 schnellste Modelle
+            top_10 = sorted_results[:10]
+            fig_bar = go.Figure(data=[
+                go.Bar(
+                    x=[f"{r.model_name[:20]}\n{r.quantization}" for r in top_10],
+                    y=[r.avg_tokens_per_sec for r in top_10],
+                    text=[f"{r.avg_tokens_per_sec:.2f}" for r in top_10],
+                    textposition='auto',
+                    marker_color='#2d5aa8'
+                )
+            ])
+            fig_bar.update_layout(
+                title="Top 10 schnellste Modelle",
+                xaxis_title="Modell + Quantisierung",
+                yaxis_title="Tokens/s",
+                hovermode='x unified',
+                height=500
+            )
+            
+            # Scatter-Plot: Modellgröße vs Speed
+            fig_scatter = go.Figure(data=[
+                go.Scatter(
+                    x=[r.model_size_gb for r in self.results],
+                    y=[r.avg_tokens_per_sec for r in self.results],
+                    mode='markers',
+                    text=[f"{r.model_name}<br>{r.quantization}<br>{r.avg_tokens_per_sec:.2f} t/s" for r in self.results],
+                    marker=dict(
+                        size=[r.avg_tokens_per_sec / 2 for r in self.results],
+                        color=[r.tokens_per_sec_per_gb for r in self.results],
+                        colorscale='Viridis',
+                        showscale=True,
+                        colorbar=dict(title="Effizienz<br>(t/s pro GB)")
+                    ),
+                    hovertemplate='<b>%{text}</b><extra></extra>'
+                )
+            ])
+            fig_scatter.update_layout(
+                title="Modellgröße vs Performance (Größe der Bubble = Speed)",
+                xaxis_title="Modellgröße (GB)",
+                yaxis_title="Tokens/s",
+                height=500,
+                hovermode='closest'
+            )
+            
+            # Scatter-Plot: Parameter vs Effizienz
+            fig_efficiency = go.Figure(data=[
+                go.Scatter(
+                    x=[r.tokens_per_sec_per_gb for r in self.results],
+                    y=[r.tokens_per_sec_per_billion_params for r in self.results],
+                    mode='markers',
+                    text=[f"{r.model_name} ({r.quantization})" for r in self.results],
+                    marker=dict(
+                        size=8,
+                        color=[r.avg_tokens_per_sec for r in self.results],
+                        colorscale='RdYlGn',
+                        showscale=True,
+                        colorbar=dict(title="Speed<br>(tokens/s)")
+                    ),
+                    hovertemplate='<b>%{text}</b><br>Per GB: %{x:.2f}<br>Per Billion Params: %{y:.2f}<extra></extra>'
+                )
+            ])
+            fig_efficiency.update_layout(
+                title="Effizienz-Analyse: Tokens/s pro GB vs Tokens/s pro Milliarde Parameter",
+                xaxis_title="Tokens/s pro GB",
+                yaxis_title="Tokens/s pro Milliarde Parameter",
+                height=500
+            )
+            
+            # Summary-Tabelle
+            summary_stats = {
+                'Anzahl Modelle': len(self.results),
+                'Schnellstes': f"{sorted_results[0].model_name} ({sorted_results[0].avg_tokens_per_sec:.2f} t/s)",
+                'Langsamster': f"{sorted_results[-1].model_name} ({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)",
+                'Ø Geschwindigkeit': f"{sum(r.avg_tokens_per_sec for r in self.results) / len(self.results):.2f} t/s",
+                'Vision-Modelle': f"{sum(1 for r in self.results if r.has_vision)}",
+                'Tool-fähige Modelle': f"{sum(1 for r in self.results if r.has_tools)}",
+                'Ø Modellgröße': f"{sum(r.model_size_gb for r in self.results) / len(self.results):.2f} GB",
+            }
+            
+            # Erstelle HTML mit allen Charts
+            with open(html_file, 'w', encoding='utf-8') as f:
+                f.write(f"""
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LM Studio Benchmark Report</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }}
+        .container {{
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
+        h1 {{
+            color: #1f4788;
+            text-align: center;
+            border-bottom: 3px solid #2d5aa8;
+            padding-bottom: 10px;
+        }}
+        h2 {{
+            color: #2d5aa8;
+            margin-top: 30px;
+            border-left: 4px solid #2d5aa8;
+            padding-left: 10px;
+        }}
+        .summary {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }}
+        .summary-box {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }}
+        .summary-label {{
+            font-size: 12px;
+            text-transform: uppercase;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }}
+        .summary-value {{
+            font-size: 18px;
+            font-weight: bold;
+        }}
+        .chart {{
+            margin: 30px 0;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 15px;
+            background-color: #fafafa;
+        }}
+        .timestamp {{
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+            margin-top: 30px;
+            border-top: 1px solid #e0e0e0;
+            padding-top: 15px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 LM Studio Model Benchmark Report</h1>
+        
+        <div class="summary">
+""")
+                
+                # Summary-Boxen
+                colors_list = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe']
+                for i, (label, value) in enumerate(summary_stats.items()):
+                    color = colors_list[i % len(colors_list)]
+                    f.write(f"""
+            <div class="summary-box" style="background: linear-gradient(135deg, {color} 0%, {color}dd 100%);">
+                <div class="summary-label">{label}</div>
+                <div class="summary-value">{value}</div>
+            </div>
+""")
+                
+                f.write("""
+        </div>
+        
+        <h2>Performance Rankings</h2>
+        <div class="chart" id="bar-chart"></div>
+        
+        <h2>Modellgröße vs Performance</h2>
+        <div class="chart" id="scatter-chart"></div>
+        
+        <h2>Effizienz-Analyse</h2>
+        <div class="chart" id="efficiency-chart"></div>
+        
+        <div class="timestamp">
+            Generiert: {time.strftime('%d.%m.%Y %H:%M:%S')}
+        </div>
+    </div>
+    
+    <script>
+        Plotly.newPlot('bar-chart', {json.dumps(fig_bar.to_dict()['data'])}, {json.dumps(fig_bar.to_dict()['layout'])});
+        Plotly.newPlot('scatter-chart', {json.dumps(fig_scatter.to_dict()['data'])}, {json.dumps(fig_scatter.to_dict()['layout'])});
+        Plotly.newPlot('efficiency-chart', {json.dumps(fig_efficiency.to_dict()['data'])}, {json.dumps(fig_efficiency.to_dict()['layout'])});
+    </script>
+</body>
+</html>
+""")
+            
+            logger.info(f"HTML-Ergebnisse gespeichert: {html_file}")
+        
+        except Exception as e:
+            logger.error(f"Fehler beim Erstellen der HTML: {e}")
 
 
 def main():
