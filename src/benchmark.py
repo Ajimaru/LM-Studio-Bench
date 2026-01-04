@@ -2951,12 +2951,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Beispiele:
-  python benchmark.py                              # Standard: alle Modelle, 3 Messungen
-  python benchmark.py --runs 1                     # Schnell: alle Modelle, 1 Messung
-  python benchmark.py --limit 3 --runs 1           # Test 3 Modelle mit 1 Messung (~15 Min)
-  python benchmark.py --limit 1 --runs 1           # Test 1 Modell mit 1 Messung (~5 Min)
-  python benchmark.py --runs 2 --context 4096      # 2 Messungen, 4096 Token Context
-  python benchmark.py --limit 5 --runs 2 --context 4096  # Test 5 Modelle, weitere Optionen
+  python benchmark.py                                   # Standard: alle Modelle, 3 Messungen
+  python benchmark.py --runs 1                          # Schnell: alle Modelle, 1 Messung
+  python benchmark.py --limit 3 --runs 1                # Test 3 Modelle mit 1 Messung
+  python benchmark.py --limit 1 --runs 1                # Test 1 Modell mit 1 Messung
+  python benchmark.py --runs 2 --context 4096           # 2 Messungen, 4096 Token Context
+  python benchmark.py --limit 5 --runs 2 --context 4096 # Test 5 Modelle, weitere Optionen
         """
     )
     
