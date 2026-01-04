@@ -56,6 +56,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Stummschalten von Debug-Logs von Drittanbieter-Bibliotheken
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("lmstudio").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("websockets").setLevel(logging.WARNING)
+
 
 # Konstanten
 STANDARD_PROMPT = "Erkläre maschinelles Lernen in 3 Sätzen"
