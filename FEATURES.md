@@ -85,6 +85,7 @@
 
 - ✅ HTML-Report mit interaktiven Charts - Plotly (Bar-Chart, 2x Scatter-Plots)
 - ✅ Scatter-Plots (Größe vs Speed, VRAM vs Performance)
+- ✅ Performance-Trends über Zeit (Line-Charts mit historischen Daten)
 
 ### 🚀 Weitere Features
 
@@ -96,6 +97,16 @@
 
 ## 🏆 Nächste Schritte
 
-**Kurzfristig**: CLI-Filter, Metadata-Summary, Effizienz-Metriken
-**Mittelfristig**: Historischer Vergleich, HTML-Report, Tests
-**Langfristig**: Web-Dashboard, Quality-Benchmark, Docker
+**Abgeschlossen**: Alle Core Features (Phase 1-4) ✅
+
+- Phase 1: Best-of-Quantization, Historical Comparison
+- Phase 2: HTML Reports, Ranking System  
+- Phase 3: Delta Display, Percentiles, Quantization Comparison
+- Phase 4: Trend Visualization
+
+**Optional**: Erweiterte Features
+
+- Regex-basierte Filter (--include/--exclude-models)
+- Best-Practice-Empfehlungen basierend auf Hardware
+- Web-Dashboard
+- Performance Optimierungen
