@@ -2212,14 +2212,21 @@ class LMStudioBenchmark:
             )
             
             # Summary-Tabelle
+            vision_count = sum(1 for r in self.results if r.has_vision)
+            tools_count = sum(1 for r in self.results if r.has_tools)
+            avg_size_gb = sum(r.model_size_gb for r in self.results) / len(self.results) if self.results else 0
+            avg_tokens_per_sec = sum(r.avg_tokens_per_sec for r in self.results) / len(self.results) if self.results else 0
+            
             summary_stats = {
                 'Anzahl Modelle': len(self.results),
-                'Schnellstes': f"{sorted_results[0].model_name} ({sorted_results[0].avg_tokens_per_sec:.2f} t/s)",
-                'Langsamster': f"{sorted_results[-1].model_name} ({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)",
-                'Ø Geschwindigkeit': f"{sum(r.avg_tokens_per_sec for r in self.results) / len(self.results):.2f} t/s",
-                'Vision-Modelle': f"{sum(1 for r in self.results if r.has_vision)}",
-                'Tool-fähige Modelle': f"{sum(1 for r in self.results if r.has_tools)}",
-                'Ø Modellgröße': f"{sum(r.model_size_gb for r in self.results) / len(self.results):.2f} GB",
+                'Messungen pro Modell': self.num_measurement_runs,
+                'Standard-Prompt': self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt,
+                'Schnellstes': f"{sorted_results[0].model_name[:20]} ({sorted_results[0].avg_tokens_per_sec:.2f} t/s)",
+                'Langsamster': f"{sorted_results[-1].model_name[:20]} ({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)",
+                'Ø Geschwindigkeit': f"{avg_tokens_per_sec:.2f} t/s",
+                'Vision-Modelle': f"{vision_count} ({vision_count*100//len(self.results) if self.results else 0}%)",
+                'Tool-fähige Modelle': f"{tools_count} ({tools_count*100//len(self.results) if self.results else 0}%)",
+                'Ø Modellgröße': f"{avg_size_gb:.2f} GB",
             }
             
             # Erstelle Summary-Boxen HTML
@@ -2234,29 +2241,48 @@ class LMStudioBenchmark:
             </div>
 """
             
-            # CLI-Argumente Sektion
+            # Benchmark Parameter Sektion (vollständig wie PDF)
+            benchmark_params = []
+            benchmark_params.append(f"<strong>Context Length:</strong> {self.context_length} Tokens")
+            benchmark_params.append(f"<strong>Temperature:</strong> {OPTIMIZED_INFERENCE_PARAMS['temperature']}")
+            benchmark_params.append(f"<strong>Top-K Sampling:</strong> {OPTIMIZED_INFERENCE_PARAMS['top_k_sampling']}")
+            benchmark_params.append(f"<strong>Top-P Sampling:</strong> {OPTIMIZED_INFERENCE_PARAMS['top_p_sampling']}")
+            benchmark_params.append(f"<strong>Min-P Sampling:</strong> {OPTIMIZED_INFERENCE_PARAMS['min_p_sampling']}")
+            benchmark_params.append(f"<strong>Repeat Penalty:</strong> {OPTIMIZED_INFERENCE_PARAMS['repeat_penalty']}")
+            benchmark_params.append(f"<strong>Max Tokens:</strong> {OPTIMIZED_INFERENCE_PARAMS['max_tokens']}")
+            benchmark_params.append(f"<strong>GPU-Offload Levels:</strong> {', '.join(map(str, GPU_OFFLOAD_LEVELS))}")
+            
+            # CLI-Argumente
             cli_params = []
-            cli_params.append(f"<strong>Messungen:</strong> {self.cli_args['runs']}")
-            cli_params.append(f"<strong>Context:</strong> {self.cli_args['context']} Tokens")
+            cli_params.append(f"<strong>Messungen pro Modell:</strong> {self.cli_args['runs']}")
             if self.cli_args.get('limit'):
-                cli_params.append(f"<strong>Limit:</strong> {self.cli_args['limit']} Modelle")
+                cli_params.append(f"<strong>Modell-Limit:</strong> {self.cli_args['limit']}")
             if self.cli_args.get('retest'):
                 cli_params.append(f"<strong>Cache:</strong> Ignoriert (--retest)")
+            if self.cli_args.get('only_vision'):
+                cli_params.append(f"<strong>Filter:</strong> Nur Vision-Modelle")
+            if self.cli_args.get('only_tools'):
+                cli_params.append(f"<strong>Filter:</strong> Nur Tool-fähige Modelle")
             if self.cli_args.get('include_models'):
-                cli_params.append(f"<strong>Include:</strong> {self.cli_args['include_models'][:40]}")
+                cli_params.append(f"<strong>Include-Pattern:</strong> {self.cli_args['include_models'][:40]}")
             if self.cli_args.get('exclude_models'):
-                cli_params.append(f"<strong>Exclude:</strong> {self.cli_args['exclude_models'][:40]}")
+                cli_params.append(f"<strong>Exclude-Pattern:</strong> {self.cli_args['exclude_models'][:40]}")
             if self.cli_args.get('enable_profiling'):
-                cli_params.append(f"<strong>Profiling:</strong> Aktiviert")
+                cli_params.append(f"<strong>Hardware-Profiling:</strong> Ja (--enable-profiling)")
                 if self.cli_args.get('max_temp'):
-                    cli_params.append(f"<strong>Max-Temp:</strong> {self.cli_args['max_temp']}°C")
+                    cli_params.append(f"<strong>Max. Temperatur:</strong> {self.cli_args['max_temp']}°C")
                 if self.cli_args.get('max_power'):
-                    cli_params.append(f"<strong>Max-Power:</strong> {self.cli_args['max_power']}W")
+                    cli_params.append(f"<strong>Max. Power-Draw:</strong> {self.cli_args['max_power']}W")
             
             cli_section = f"""
-            <h2>⚙️ Benchmark Konfiguration</h2>
+            <h2>⚙️ Benchmark Parameter</h2>
+            <h3>Inference-Parameter</h3>
             <p style="line-height: 1.8; color: var(--text-secondary); font-size: 14px;">
-                {" | ".join(cli_params)}
+                {" | ".join(benchmark_params)}
+            </p>
+            <h3>CLI-Argumente</h3>
+            <p style="line-height: 1.8; color: var(--text-secondary); font-size: 14px;">
+                {" | ".join(cli_params) if cli_params else "Keine zusätzlichen Argumente"}
             </p>
 """
             

@@ -107,9 +107,9 @@
 
 - ✅ **Daten-Management (SQLite)** - Cache-System implementiert
 - ✅ **Dev-Mode** - Automatische Modell-Auswahl für schnelle Tests
+- ✅ **Hardware-Profiling** - GPU-Temperatur und Power-Draw Monitoring (--enable-profiling)
 - [ ] Web-Dashboard
 - [ ] Automatisierung (Scheduler, CI/CD, Notifications)
-- [ ] Hardware-Profiling (Temperatur, Stromverbrauch)
 - [ ] GPU-Offload-Strategie-Optimierung
 
 ## 🏆 Nächste Schritte
@@ -166,7 +166,29 @@
   - Farbcodierte Tabellen (Blau=Vision, Orange=Tools, Lila=Architektur)
   - Responsive Design mit Dark Mode Support
 
-- Phase 9: **Web-Dashboard** (Geplant)
+- Phase 9: **Hardware-Profiling & Report-Parität** (2026-01-04)
+  - **HardwareMonitor-Klasse** mit Background-Threading:
+    - GPU-Temperatur-Monitoring (nvidia-smi, rocm-smi, intel_gpu_top)
+    - Power-Draw-Monitoring (Stromverbrauch in Watt)
+    - 1-Sekunden-Intervall während Benchmark-Run
+    - Min/Max/Avg-Berechnung für temp_celsius und power_watts
+  - **CLI-Flags für Profiling**:
+    - `--enable-profiling` - Aktiviert Hardware-Monitoring
+    - `--max-temp CELSIUS` - Abort bei Überhitzung
+    - `--max-power WATTS` - Abort bei zu hohem Stromverbrauch
+  - **BenchmarkResult erweitert** - 6 neue optionale Felder:
+    - temp_celsius_min/max/avg
+    - power_watts_min/max/avg
+  - **CLI-Parameter in Reports**:
+    - PDF Benchmark Parameter zeigt alle CLI-Argumente
+    - HTML Benchmark Parameter vollständig wie PDF
+    - Inference-Parameter + Runtime-Parameter strukturiert
+  - **HTML/PDF Report-Parität**:
+    - Benchmark Summary: 9 identische Metriken
+    - Benchmark Parameter: Inference-Settings + CLI-Argumente
+    - Vollständige Informations-Parität zwischen beiden Formaten
+
+- Phase 10: **Web-Dashboard** (Geplant)
   - **Backend (Flask/FastAPI)**:
     - REST API Endpoints für Daten-Zugriff
     - Subprocess-Management für Benchmark-Kontrolle

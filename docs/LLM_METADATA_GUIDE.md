@@ -9,7 +9,7 @@ lms ls --json           # Alle heruntergeladenen Modelle mit Metadaten
 lms ps --json           # Aktuell geladene Modelle
 lms status              # Server-Status + Modell-Größe
 lms version             # LM Studio Version
-```text
+```
 
 ## 📊 Vollständige Metadaten-Felder (15 Felder pro Modell)
 
@@ -55,38 +55,38 @@ lms version             # LM Studio Version
 
 ```bash
 lms ls --json | jq '.[] | select(.vision == true) | {displayName, paramsString, maxContextLength}'
-```text
+```
 
 **Ausgabe:**
-```text
+```
   • Gemma 3 4B (4B) - 131072 Tokens
   • Ministral 3 3B (3B) - 262144 Tokens
   • Qwen3 Vl 8B (8B) - 262144 Tokens
-```text
+```
 
 ### Beispiel 2: Nur Tool-Calling Modelle
 
 ```bash
 lms ls --json | jq '.[] | select(.trainedForToolUse == true) | .displayName'
-```text
+```
 
 ### Beispiel 3: Modelle nach Größe sortieren
 
 ```bash
 lms ls --json | jq 'sort_by(.sizeBytes) | .[] | {displayName, sizeGB: (.sizeBytes/1024/1024/1024|round*100/100)}'
-```text
+```
 
 ### Beispiel 4: Modelle mit großem Context (≥128k Tokens)
 
 ```bash
 lms ls --json | jq '.[] | select(.maxContextLength >= 131072) | {modelKey, maxContextLength}'
-```text
+```
 
 ### Beispiel 5: Modell-Architektur Verteilung
 
 ```bash
 lms ls --json | jq -r '.[] | .architecture' | sort | uniq -c
-```text
+```
 
 ## 🐍 Python SDK Zugriff
 
@@ -118,7 +118,7 @@ print(f"Vision-Modelle: {len(vision_models)}")
 large_models = sorted(models, key=lambda m: m.info.sizeBytes, reverse=True)[:3]
 for model in large_models:
     print(f"{model.info.displayName}: {model.info.sizeBytes / 1024**3:.2f} GB")
-```text
+```
 
 ## 💡 Häufige Anwendungsfälle
 
@@ -127,35 +127,35 @@ for model in large_models:
 Filter nur kleine Modelle < 1GB für schnelle Benchmarks:
 ```bash
 lms ls --json | jq '.[] | select(.sizeBytes < 1000000000) | .modelKey'
-```text
+```
 
 ### Use Case 2: Langtext-Verarbeitung
 
 Modelle mit großem Context für Dokumentanalyse:
 ```bash
 lms ls --json | jq '.[] | select(.maxContextLength >= 100000) | .displayName'
-```text
+```
 
 ### Use Case 3: Bildverarbeitung
 
 Multi-Modal Modelle für Vision-Tasks:
 ```bash
 lms ls --json | jq '.[] | select(.vision == true) | .modelKey'
-```text
+```
 
 ### Use Case 4: Tool-Integration
 
 Modelle mit Function-Calling für Agent-Systeme:
 ```bash
 lms ls --json | jq '.[] | select(.trainedForToolUse == true) | .displayName'
-```text
+```
 
 ### Use Case 5: Quantisierungs-Vergleich
 
 Alle verfügbaren Quantisierungen eines Modells:
 ```bash
 lms ls "google/gemma-3-1b" --json | jq '.variants[]'
-```text
+```
 
 ## 🎯 Benchmarking mit Metadaten
 
@@ -179,7 +179,7 @@ benchmark_candidates = [
 print(f"Benchmark-Kandidaten: {len(benchmark_candidates)}")
 for model in benchmark_candidates:
     print(f"  - {model['displayName']} ({model['paramsString']})")
-```text
+```
 
 ## 📝 Tipps & Tricks
 
@@ -188,13 +188,13 @@ for model in benchmark_candidates:
 ```bash
 # Bytes zu GB
 python3 -c "print(f'{2986817071/1024**3:.2f} GB')"  # Output: 2.78 GB
-```text
+```
 
 ### JSON Pretty-Print
 
 ```bash
 lms ls --json | jq '.' | less
-```text
+```
 
 ### Schnelle Statistiken
 
@@ -207,7 +207,7 @@ lms ls --json | jq 'max_by(.sizeBytes) | .displayName'
 
 # Modelle pro Architektur
 lms ls --json | jq 'group_by(.architecture) | map({architecture: .[0].architecture, count: length})'
-```text
+```
 
 ## 🔗 Verwandte Befehle
 
@@ -216,7 +216,7 @@ lms status              # Server-Status (zeigt auch geladene Modelle)
 lms version             # LM Studio Version
 lms load <model>        # Modell laden
 lms unload --all        # Alle Modelle entladen
-```text
+```
 
 ## 🐛 Troubleshooting
 

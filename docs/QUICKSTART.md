@@ -5,7 +5,7 @@
 ```bash
 cd ~/local-llm-bench
 pip install -r requirements.txt
-```text
+```
 
 ## Basic Usage
 
@@ -13,7 +13,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py
-```text
+```
 
 ✅ Tests all installed models with 3 runs each (~1-2 hours)
 ✅ Automatically caches results - reruns are instant!
@@ -22,7 +22,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --limit 3 --runs 1
-```text
+```
 
 ✅ Fast test with 3 random models (~5-10 minutes)
 ✅ Already tested models loaded from cache
@@ -31,7 +31,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --dev-mode
-```text
+```
 
 ✅ Automatically selects smallest model
 ✅ Single run for quick validation (~30 seconds)
@@ -41,49 +41,68 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --limit 1 --runs 1
-```text
+```
 
 ✅ Single model benchmark (~1-2 minutes)
 
 ## Advanced Features
 
-### 1️⃣ Filtering Models
+### 1️⃣ Hardware Profiling
+
+**Enable GPU Temperature & Power Monitoring:**
+
+```bash
+./run.py --enable-profiling --runs 1 --limit 3
+```
+
+**With Safety Limits:**
+
+```bash
+./run.py --enable-profiling --max-temp 85 --max-power 350
+```
+
+✅ Monitors GPU temperature and power draw in background thread
+✅ Supports NVIDIA (nvidia-smi), AMD (rocm-smi), Intel (intel_gpu_top)
+✅ Records min/max/avg values per benchmark run
+✅ Aborts benchmark if safety limits exceeded
+
+### 2️⃣ Filtering Models
 
 **By Quantization:**
 
 ```bash
 ./run.py --quants q4,q5 --limit 5
-```text
+```
 
 **By Architecture:**
 
 ```bash
 ./run.py --arch llama,mistral --limit 5
-```text
+```
 
 **By Parameter Size:**
 
 ```bash
 ./run.py --params 7B,8B --limit 5
-```text
+```
 
 **By Context Length:**
 
 ```bash
 ./run.py --min-context 32000 --limit 3
-```text
+```
 
 **By Model Size:**
 
 ```bash
 ./run.py --max-size 10 --limit 5
-```text
+```
 
 **Vision Models Only:**
 
 ```bash
 ./run.py --only-vision --runs 1
-```text
+```
 
 **Regex-based Filtering (Include):**
 
@@ -96,7 +115,7 @@ pip install -r requirements.txt
 
 # Only Q4 quantizations
 ./run.py --include-models ".*q4.*" --runs 1
-```text
+```
 
 **Regex-based Filtering (Exclude):**
 
@@ -109,7 +128,7 @@ pip install -r requirements.txt
 
 # Exclude all vision models
 ./run.py --exclude-models ".*vision.*" --runs 1
-```text
+```
 
 **Combined Filters (AND logic):**
 
@@ -119,35 +138,35 @@ pip install -r requirements.txt
 
 # Vision models, 7B params, max 12GB
 ./run.py --only-vision --params 7B --max-size 12 --runs 1
-```text
+```
 
-### 2️⃣ Ranking & Sorting
+### 3️⃣ Ranking & Sorting
 
 **Sort by Efficiency (Default: Speed):**
 
 ```bash
 ./run.py --limit 5 --rank-by efficiency
-```text
+```
 
 **Sort by TTFT (Lower = Better):**
 
 ```bash
 ./run.py --limit 5 --rank-by ttft
-```text
+```
 
 **Sort by VRAM Usage (Lower = Better):**
 
 ```bash
 ./run.py --limit 5 --rank-by vram
-```text
+```
 
-### 3️⃣ Cache Management
+### 4️⃣ Cache Management
 
 **View Cached Results:**
 
 ```bash
 ./run.py --list-cache
-```text
+```
 
 ✅ Shows all cached models with performance metrics
 
@@ -155,7 +174,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --retest --limit 3
-```text
+```
 
 ✅ Retests models even if cached
 
@@ -163,7 +182,7 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --export-cache my_backup.json
-```text
+```
 
 ✅ Exports entire cache database
 
@@ -174,13 +193,13 @@ pip install -r requirements.txt
 - Automatic invalidation on parameter changes (prompt, context, temperature)
 - Shows "X of Y models cached" before starting
 
-### 4️⃣ Historical Comparison & Trends
+### 5️⃣ Historical Comparison & Trends
 
 **Compare with Latest Benchmark:**
 
 ```bash
 ./run.py --limit 3 --runs 1 --compare-with latest
-```text
+```
 
 📊 Shows performance delta (%) vs previous run
 
@@ -188,27 +207,27 @@ pip install -r requirements.txt
 
 ```bash
 ./run.py --limit 3 --runs 1 --compare-with benchmark_results_20260104_170000.json
-```text
+```
 
-### 5️⃣ Custom Configuration
+### 6️⃣ Custom Configuration
 
 **Adjust Number of Runs:**
 
 ```bash
 ./run.py --runs 5 --limit 2
-```text
+```
 
 **Custom Context Length:**
 
 ```bash
 ./run.py --context 4096 --limit 2 --runs 1
-```text
+```
 
 **Custom Prompt:**
 
 ```bash
 ./run.py --prompt "Your custom prompt here" --limit 2 --runs 1
-```text
+```
 
 ## 📊 Output Formats
 
@@ -225,7 +244,7 @@ Each benchmark generates 4 files:
   "speed_delta_pct": -0.2,
   ...
 }
-```text
+```
 
 ✅ Structured data for analysis
 
@@ -234,7 +253,7 @@ Each benchmark generates 4 files:
 ```csv
 model_name,quantization,avg_tokens_per_sec,tokens_per_sec_per_gb,speed_delta_pct
 qwen/qwen3-8b,q4_k_m,8.15,1.74,-0.2
-```text
+```
 
 ✅ Excel/Sheets compatible
 
@@ -265,7 +284,7 @@ qwen/qwen3-8b,q4_k_m,8.15,1.74,-0.2
   --runs 1 \
   --rank-by efficiency \
   --compare-with latest
-```text
+```
 
 Output:
 
@@ -289,13 +308,13 @@ Output:
 
 ## 📁 File Structure
 
-```text
+```
 results/
 ├── benchmark_results_20260104_170000.json
 ├── benchmark_results_20260104_170000.csv
 ├── benchmark_results_20260104_170000.pdf
 └── benchmark_results_20260104_170000.html
-```text
+```
 
 ## 🐛 Troubleshooting
 
@@ -314,7 +333,7 @@ results/
 ```bash
 mkdir -p results/
 chmod 755 results/
-```text
+```
 
 ## 🔗 Related Files
 

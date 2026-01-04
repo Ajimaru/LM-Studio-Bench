@@ -7,6 +7,7 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **Automatische Modell-Discovery**: Findet alle lokal installierten Modelle und Quantisierungen
 - ✅ **GPU-Detection**: Erkennt NVIDIA, AMD und Intel GPUs automatisch
 - ✅ **VRAM-Monitoring**: Misst VRAM-Nutzung während des Benchmarks
+- ✅ **Hardware-Profiling**: Optionales Monitoring von GPU-Temperatur und Power-Draw (NVIDIA/AMD/Intel)
 - ✅ **Progressive GPU-Offload**: Versucht automatisch verschiedene GPU-Offload-Levels (1.0 → 0.7 → 0.5 → 0.3)
 - ✅ **Server-Management**: Startet LM Studio Server automatisch falls nötig
 - ✅ **Standardisierte Tests**: Verwendet denselben Prompt für alle Modelle
@@ -33,8 +34,7 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
    ```bash
    git clone <repository-url>
    cd local-llm-bench
-
-```text
+   ```
 
 2. **Virtuelle Umgebung erstellen und aktivieren**:
 
@@ -47,19 +47,19 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 
    # Aktivieren (Windows)
    # .venv\Scripts\activate
-```text
+   ```
 
 3. **Python-Dependencies installieren**:
 
    ```bash
    pip install -r requirements.txt
-```text
+   ```
 
 4. **LM Studio CLI prüfen**:
 
    ```bash
    lms --help
-```text
+   ```
 
 ## Nutzung
 
@@ -71,7 +71,7 @@ source .venv/bin/activate  # Linux/macOS
 .venv\Scripts\activate   # Windows
 
 ./run.py
-```text
+```
 
 Das Script wird:
 
@@ -89,9 +89,19 @@ Das Script wird:
 ./run.py --context 4096     # Context Length in Tokens
 ./run.py --prompt "..."      # Custom Prompt
 ./run.py --limit 5          # Max. Anzahl Modelle testen
-```text
+```
 
-#### Erweiterte Filter
+### Hardware-Profiling
+
+```bash
+# Aktiviere GPU-Monitoring (Temperatur + Power-Draw)
+./run.py --enable-profiling
+
+# Mit Sicherheitslimits
+./run.py --enable-profiling --max-temp 85 --max-power 350
+```
+
+### Erweiterte Filter
 
 ```bash
 # Nur bestimmte Quantisierungen
@@ -128,9 +138,9 @@ Das Script wird:
 # Filter kombinieren (AND-Verknüpfung)
 ./run.py --include-models "llama" --exclude-models "q2" --only-tools
 ./run.py --only-vision --params 7B --max-size 12
-```text
+```
 
-#### Cache-Verwaltung
+### Cache-Verwaltung
 
 ```bash
 # Cache nutzen (Standard - überspringt bereits getestete Modelle)
@@ -147,9 +157,9 @@ Das Script wird:
 
 # Exportiere Cache als JSON
 ./run.py --export-cache my_cache.json
-```text
+```
 
-#### Standard-Einstellungen
+### Standard-Einstellungen
 
 - **Prompt**: "Erkläre maschinelles Lernen in 3 Sätzen"
 - **Context Length**: 2048 Tokens
@@ -161,14 +171,14 @@ Das Script wird:
 
 Für standardisierte und reproduzierbare Benchmarks werden optimierte Sampling-Parameter verwendet:
 
-| Parameter | Wert | Grund |
-|-----------|------|-------|
-| **Temperatur** | 0.1 | Niedrig für konsistente, deterministische Ergebnisse |
-| **Top-K Sampling** | 40 | Sampling aus top 40 Tokens |
-| **Top-P Sampling** | 0.9 | Nucleus-Sampling bei 90% kumulativer Wahrscheinlichkeit |
-| **Min-P Sampling** | 0.05 | Minimum-Wahrscheinlichkeits-Schwelle |
-| **Repeat Penalty** | 1.2 | Reduziert Wiederholungen (default 1.1) |
-| **Max Tokens** | 256 | Begrenzte Output-Länge für schnellere Tests |
+| Parameter          | Wert | Grund                                                        |
+|--------------------|------|--------------------------------------------------------------|
+| **Temperatur**     | 0.1  | Niedrig für konsistente, deterministische Ergebnisse        |
+| **Top-K Sampling** | 40   | Sampling aus top 40 Tokens                                   |
+| **Top-P Sampling** | 0.9  | Nucleus-Sampling bei 90% kumulativer Wahrscheinlichkeit     |
+| **Min-P Sampling** | 0.05 | Minimum-Wahrscheinlichkeits-Schwelle                         |
+| **Repeat Penalty** | 1.2  | Reduziert Wiederholungen (default 1.1)                       |
+| **Max Tokens**     | 256  | Begrenzte Output-Länge für schnellere Tests                  |
 
 Diese werden automatisch in `_run_inference()` über das Python SDK angewendet und können in der `OPTIMIZED_INFERENCE_PARAMS` Konstante angepasst werden (siehe [benchmark.py](benchmark.py) Zeile ~47).
 
@@ -201,7 +211,7 @@ Perfekt zum Teilen von Benchmark-Ergebnissen oder zum Archivieren!
 model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp,params_size,architecture,max_context_length,model_size_gb,has_vision,has_tools,tokens_per_sec_per_gb,tokens_per_sec_per_billion_params
 llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 10:30:45,3B,llama,8192,1.92,False,False,26.79,17.14
 qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12,7B,qwen,131072,4.38,False,True,8.85,5.54
-```text
+```
 
 ### Logs
 
@@ -226,6 +236,8 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 | **has_tools** | Tool-Calling-Support (Function/Tool-Use) |
 | **tokens_per_sec_per_gb** | Effizienz: Tokens/s pro GB Modellgröße |
 | **tokens_per_sec_per_billion_params** | Effizienz: Tokens/s pro Milliarde Parameter |
+| **temp_celsius_min/max/avg** | GPU-Temperatur während Benchmark (°C) - nur mit --enable-profiling |
+| **power_watts_min/max/avg** | GPU-Stromverbrauch während Benchmark (W) - nur mit --enable-profiling |
 
 ## Fehlerbehebung
 
@@ -236,7 +248,7 @@ LM Studio CLI ist nicht im PATH. Installiere/konfiguriere LM Studio:
 ```bash
 # Prüfe Installation
 which lms
-```text
+```
 
 ### "Keine Modelle gefunden"
 
@@ -244,7 +256,7 @@ Stelle sicher dass Modelle in LM Studio heruntergeladen sind:
 
 ```bash
 lms ls
-```text
+```
 
 ### "GPU-Monitoring nicht verfügbar"
 
@@ -254,19 +266,19 @@ GPU-Tools fehlen. Installiere je nach GPU:
 
 ```bash
 sudo apt install nvidia-utils
-```text
+```
 
 **AMD**:
 
 ```bash
 # ROCm installieren
-```text
+```
 
 **Intel**:
 
 ```bash
 sudo apt install intel-gpu-tools
-```text
+```
 
 ### Modell lädt nicht (VRAM-Fehler)
 
@@ -285,23 +297,23 @@ Das Script versucht automatisch niedrigere GPU-Offload-Levels. Bei 12GB VRAM:
 
 ```python
 STANDARD_PROMPT = "Dein eigener Test-Prompt"
-```text
+```
 
 ### Mehr/Weniger Durchläufe
 
 ```python
 NUM_MEASUREMENT_RUNS = 5  # Standard: 3
-```text
+```
 
 ### Context Length
 
 ```python
 CONTEXT_LENGTH = 4096  # Standard: 2048
-```text
+```
 
 ## Projekt-Struktur
 
-```text
+```
 local-llm-bench/
 ├── benchmark.py              # Haupt-Script
 ├── requirements.txt          # Python-Dependencies
@@ -313,7 +325,7 @@ local-llm-bench/
 ├── README.md                 # Diese Datei
 └── .github/
     └── copilot-instructions.md
-```text
+```
 
 ## Technische Details
 
