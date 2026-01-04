@@ -46,6 +46,15 @@ LOGS_DIR.mkdir(exist_ok=True)
 
 # Logging konfigurieren mit Timestamp pro Run (nicht pro Tag)
 log_filename = LOGS_DIR / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+# Custom Filter um JSON-Logs von externen Libs zu filtern
+class NoJSONFilter(logging.Filter):
+    def filter(self, record):
+        # Filtere JSON-Logs und andere Debug-Events aus
+        if record.getMessage().startswith('{'):
+            return False
+        return True
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -55,6 +64,10 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Füge NoJSONFilter zu allen Handlers hinzu
+for handler in logging.root.handlers:
+    handler.addFilter(NoJSONFilter())
 
 # Stummschalten von Debug-Logs von Drittanbieter-Bibliotheken
 logging.getLogger("httpx").setLevel(logging.WARNING)
