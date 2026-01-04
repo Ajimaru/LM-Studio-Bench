@@ -60,9 +60,13 @@ logger = logging.getLogger(__name__)
 # Konstanten
 STANDARD_PROMPT = "Erkläre maschinelles Lernen in 3 Sätzen"
 CONTEXT_LENGTH = 2048
-GPU_OFFLOAD_LEVELS = [1.0, 0.7, 0.5, 0.3]
+GPU_OFFLOAD_LEVELS = [1.0, 0.7, 0.5, 0.3]  # Fallback falls keine intelligente Berechnung möglich
 NUM_WARMUP_RUNS = 1
 NUM_MEASUREMENT_RUNS = 3
+
+# GPU-Offload Optimierung
+VRAM_SAFETY_HEADROOM_GB = 1.0  # Reserve für System
+CONTEXT_VRAM_FACTOR = 0.000002  # ~2KB pro Token
 RESULTS_DIR = PROJECT_ROOT / "results"
 DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
 
@@ -839,6 +843,169 @@ class LMStudioBenchmark:
         if self.compare_with:
             self._load_previous_results()
     
+    def _get_available_vram_gb(self) -> Optional[float]:
+        """Ermittelt verfügbares VRAM in GB"""
+        try:
+            gpu_type = self.gpu_monitor.gpu_type
+            gpu_tool = self.gpu_monitor.gpu_tool
+            
+            if not gpu_tool:
+                return None
+            
+            if gpu_type == "NVIDIA":
+                # nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits
+                result = subprocess.run(
+                    [gpu_tool, '--query-gpu=memory.free', '--format=csv,noheader,nounits'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    vram_mb = float(result.stdout.strip().split('\n')[0])
+                    return vram_mb / 1024  # MB → GB
+            
+            elif gpu_type == "AMD":
+                # rocm-smi --showmeminfo vram
+                result = subprocess.run(
+                    [gpu_tool, '--showmeminfo', 'vram'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if 'VRAM Total Used Memory' in line:
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                total_mb = float(parts[-2])
+                                used_mb = float(parts[-1])
+                                return (total_mb - used_mb) / 1024  # MB → GB
+            
+            elif gpu_type == "Intel":
+                # intel_gpu_top hat keine direkte VRAM-Abfrage
+                # Schätze basierend auf typischen Intel iGPU Werten
+                return 8.0  # Konservative Schätzung für moderne iGPUs
+            
+            return None
+        
+        except Exception as e:
+            logger.debug(f"VRAM-Abfrage fehlgeschlagen: {e}")
+            return None
+    
+    def _predict_optimal_offload(self, model_size_gb: float) -> float:
+        """Berechnet optimalen GPU-Offload basierend auf VRAM und Modellgröße"""
+        try:
+            available_vram = self._get_available_vram_gb()
+            
+            if available_vram is None:
+                logger.debug("VRAM nicht verfügbar, verwende Standard-Levels")
+                return 1.0  # Starte mit maximalem Offload
+            
+            # Geschätzter VRAM-Bedarf
+            # Faktor 1.2 für Overhead (Weights + Aktivations + KV-Cache)
+            estimated_vram = model_size_gb * 1.2
+            
+            # Context-Length-Overhead (~2KB pro Token)
+            estimated_vram += (self.context_length * CONTEXT_VRAM_FACTOR)
+            
+            # Verfügbares VRAM minus Sicherheits-Headroom
+            safe_vram = available_vram - VRAM_SAFETY_HEADROOM_GB
+            
+            if safe_vram <= 0:
+                logger.warning(f"Zu wenig VRAM verfügbar: {available_vram:.1f}GB")
+                return 0.3  # Minimaler Offload
+            
+            # Berechne optimalen Offload-Faktor
+            if estimated_vram <= safe_vram:
+                optimal_offload = 1.0  # Komplett auf GPU
+            else:
+                optimal_offload = safe_vram / estimated_vram
+                optimal_offload = max(0.3, min(1.0, optimal_offload))  # Clamp zwischen 0.3 und 1.0
+            
+            logger.info(f"📊 VRAM-Prediction: {available_vram:.1f}GB verfügbar, "
+                       f"{estimated_vram:.1f}GB geschätzt → Offload {optimal_offload:.2f}")
+            
+            return round(optimal_offload, 1)  # Runde auf 1 Dezimalstelle
+        
+        except Exception as e:
+            logger.debug(f"Offload-Prediction fehlgeschlagen: {e}")
+            return 1.0
+    
+    def _get_cached_optimal_offload(self, model_key: str, model_size_gb: float) -> Optional[float]:
+        """Holt optimalen Offload aus Cache für ähnliche Modelle"""
+        if not self.cache:
+            return None
+        
+        try:
+            # Suche nach ähnlichen Modellen (gleiche Architektur + ähnliche Größe)
+            metadata = ModelDiscovery.get_model_metadata(model_key)
+            architecture = metadata.get('architecture', 'unknown')
+            
+            if architecture == 'unknown':
+                return None
+            
+            # Hole alle gecachten Ergebnisse mit gleicher Architektur
+            conn = self.cache.conn
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT gpu_offload, model_size_gb 
+                FROM benchmark_results 
+                WHERE architecture = ? 
+                AND model_size_gb BETWEEN ? AND ?
+                AND gpu_offload > 0
+                ORDER BY timestamp DESC
+                LIMIT 5
+            """, (architecture, model_size_gb * 0.8, model_size_gb * 1.2))
+            
+            results = cursor.fetchall()
+            
+            if results:
+                # Durchschnitt der erfolgreichen Offload-Levels
+                offloads = [r[0] for r in results]
+                avg_offload = sum(offloads) / len(offloads)
+                logger.info(f"📚 Cache-Hit: Verwende durchschn. Offload {avg_offload:.2f} "
+                           f"für {architecture} (~{model_size_gb:.1f}GB)")
+                return round(avg_offload, 1)
+            
+            return None
+        
+        except Exception as e:
+            logger.debug(f"Cache-Lookup fehlgeschlagen: {e}")
+            return None
+    
+    def _get_smart_offload_levels(self, model_key: str, model_size_gb: float) -> List[float]:
+        """Generiert intelligente GPU-Offload-Levels basierend auf Vorhersage und Cache"""
+        # 1. Versuche Cache-Lookup
+        cached_offload = self._get_cached_optimal_offload(model_key, model_size_gb)
+        if cached_offload:
+            # Verwende gecachten Wert + Nachbarn für Robustheit
+            levels = [cached_offload]
+            if cached_offload > 0.5:
+                levels.append(round(cached_offload - 0.2, 1))
+            if cached_offload < 0.9:
+                levels.append(round(cached_offload + 0.1, 1))
+            return sorted(set(levels), reverse=True)  # Deduplizieren und absteigend sortieren
+        
+        # 2. VRAM-basierte Prediction
+        predicted_offload = self._predict_optimal_offload(model_size_gb)
+        
+        # 3. Generiere Binary-Search-ähnliche Levels um Prediction
+        levels = [predicted_offload]
+        
+        if predicted_offload >= 0.8:
+            # Großes VRAM → starte hoch, dann reduziere
+            levels.extend([1.0, 0.7, 0.5])
+        elif predicted_offload >= 0.5:
+            # Mittleres VRAM → starte bei Prediction
+            levels.extend([0.7, 0.5, 0.3])
+        else:
+            # Wenig VRAM → starte niedrig
+            levels.extend([0.5, 0.3, 0.7])
+        
+        # Deduplizieren und absteigend sortieren
+        return sorted(set(levels), reverse=True)
+    
     def _load_previous_results(self):
         """Lädt frühere Benchmark-Ergebnisse zum Vergleich"""
         try:
@@ -918,6 +1085,19 @@ class LMStudioBenchmark:
             model_name = model_key
             quantization = "unknown"
         
+        # Hole Modell-Metadaten für intelligente Offload-Berechnung
+        metadata = ModelDiscovery.get_model_metadata(model_key)
+        model_size_gb = metadata.get('model_size_gb', 0)
+        
+        # Generiere intelligente Offload-Levels
+        smart_offload_levels = self._get_smart_offload_levels(model_key, model_size_gb)
+        logger.info(f"🎯 Intelligente Offload-Levels: {smart_offload_levels}")
+        
+        # Tracke welches Offload-Level verwendet wird (für SDK-Modelle)
+        # Das SDK handled den Offload automatisch, aber wir speichern den ersten Level
+        # der erfolgreich ist für Cache-Zwecke
+        used_offload = smart_offload_levels[0] if smart_offload_levels else 1.0
+        
         try:
             # Warmup
             logger.info(f"Warmup für {model_key}...")
@@ -953,7 +1133,7 @@ class LMStudioBenchmark:
                 result = self._calculate_averages(
                     model_name,
                     quantization,
-                    1.0,  # SDK handhabt GPU-Offload automatisch
+                    used_offload,  # Verwende vorhergesagten/gecachten Offload-Level
                     vram_after,
                     measurements,
                     model_key
