@@ -117,6 +117,11 @@ class BenchmarkResult:
     power_watts_max: Optional[float] = None    # Max. Power-Draw
     power_watts_avg: Optional[float] = None    # Durchschn. Power-Draw
     
+    # GTT (Graphics Translation Table) - Shared System RAM für AMD GPUs (optional)
+    gtt_enabled: Optional[bool] = None          # GTT-Nutzung aktiviert
+    gtt_total_gb: Optional[float] = None        # GTT Total verfügbar
+    gtt_used_gb: Optional[float] = None         # GTT verwendet
+    
     # Historischer Vergleich (optional)
     speed_delta_pct: Optional[float] = None     # Performance-Veränderung (%) vs. vorheriger Benchmark
     prev_timestamp: Optional[str] = None         # Zeitstempel des vorherigen Benchmarks
@@ -794,7 +799,7 @@ class ModelDiscovery:
 class LMStudioBenchmark:
     """Haupt-Benchmark-Klasse"""
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
@@ -808,7 +813,9 @@ class LMStudioBenchmark:
         self.enable_profiling = enable_profiling
         self.max_temp = max_temp
         self.max_power = max_power
+        self.use_gtt = use_gtt
         self.previous_results: List[BenchmarkResult] = []
+        self._gtt_info = {}  # Speichert GTT-Informationen von AMD GPU
         self.cache = BenchmarkCache() if use_cache else None
         self.params_hash = BenchmarkCache.compute_params_hash(
             prompt, context_length, OPTIMIZED_INFERENCE_PARAMS
@@ -840,6 +847,7 @@ class LMStudioBenchmark:
             'enable_profiling': enable_profiling,
             'max_temp': max_temp,
             'max_power': max_power,
+            'use_gtt': use_gtt,
         }
         
         # Erstelle Results-Verzeichnis
@@ -850,7 +858,7 @@ class LMStudioBenchmark:
             self._load_previous_results()
     
     def _get_available_vram_gb(self) -> Optional[float]:
-        """Ermittelt verfügbares VRAM in GB"""
+        """Ermittelt verfügbares VRAM in GB (inkl. GTT wenn aktiviert)"""
         try:
             gpu_type = self.gpu_monitor.gpu_type
             gpu_tool = self.gpu_monitor.gpu_tool
@@ -871,21 +879,43 @@ class LMStudioBenchmark:
                     return vram_mb / 1024  # MB → GB
             
             elif gpu_type == "AMD":
-                # rocm-smi --showmeminfo vram
+                # rocm-smi --showmeminfo all (holt VRAM + GTT)
                 result = subprocess.run(
-                    [gpu_tool, '--showmeminfo', 'vram'],
+                    [gpu_tool, '--showmeminfo', 'all'],
                     capture_output=True,
                     text=True,
                     timeout=5
                 )
                 if result.returncode == 0:
+                    vram_total = vram_used = gtt_total = gtt_used = 0.0
+                    
                     for line in result.stdout.split('\n'):
-                        if 'VRAM Total Used Memory' in line:
-                            parts = line.split()
-                            if len(parts) >= 2:
-                                total_mb = float(parts[-2])
-                                used_mb = float(parts[-1])
-                                return (total_mb - used_mb) / 1024  # MB → GB
+                        if 'VRAM Total Memory (B):' in line:
+                            vram_total = float(line.split(':')[-1].strip()) / (1024**3)  # Bytes → GB
+                        elif 'VRAM Total Used Memory (B):' in line:
+                            vram_used = float(line.split(':')[-1].strip()) / (1024**3)
+                        elif 'GTT Total Memory (B):' in line:
+                            gtt_total = float(line.split(':')[-1].strip()) / (1024**3)
+                        elif 'GTT Total Used Memory (B):' in line:
+                            gtt_used = float(line.split(':')[-1].strip()) / (1024**3)
+                    
+                    vram_free = vram_total - vram_used
+                    gtt_free = gtt_total - gtt_used
+                    
+                    # Speichere GTT-Info für später
+                    self._gtt_info = {
+                        'total': gtt_total,
+                        'used': gtt_used,
+                        'free': gtt_free
+                    }
+                    
+                    if self.use_gtt and gtt_total > 0:
+                        total_available = vram_free + gtt_free
+                        logger.info(f"💾 Memory: {vram_free:.1f}GB VRAM + {gtt_free:.1f}GB GTT = {total_available:.1f}GB total")
+                        return total_available
+                    else:
+                        logger.info(f"💾 Memory: {vram_free:.1f}GB VRAM (GTT deaktiviert)")
+                        return vram_free
             
             elif gpu_type == "Intel":
                 # intel_gpu_top hat keine direkte VRAM-Abfrage
@@ -1318,7 +1348,11 @@ class LMStudioBenchmark:
             has_vision=metadata.get('has_vision', False),
             has_tools=metadata.get('has_tools', False),
             tokens_per_sec_per_gb=tokens_per_sec_per_gb,
-            tokens_per_sec_per_billion_params=tokens_per_sec_per_billion_params
+            tokens_per_sec_per_billion_params=tokens_per_sec_per_billion_params,
+            # GTT-Informationen (AMD GPUs)
+            gtt_enabled=self.use_gtt if self._gtt_info else None,
+            gtt_total_gb=round(self._gtt_info.get('total', 0), 2) if self._gtt_info else None,
+            gtt_used_gb=round(self._gtt_info.get('used', 0), 2) if self._gtt_info else None
         )
         
         # Berechne Delta zu vorherigem Benchmark falls vorhanden
@@ -1857,6 +1891,13 @@ class LMStudioBenchmark:
                 ['Max Tokens', str(OPTIMIZED_INFERENCE_PARAMS['max_tokens'])],
                 ['GPU-Offload Levels', ', '.join(map(str, GPU_OFFLOAD_LEVELS))],
             ]
+            
+            # GTT-Info (AMD-spezifisch)
+            if self._gtt_info and self._gtt_info.get('total', 0) > 0:
+                gtt_total = self._gtt_info['total']
+                gtt_used = self._gtt_info['used']
+                gtt_status = "Aktiviert" if self.use_gtt else "Deaktiviert"
+                params_data.append(['GTT (Shared System RAM)', f"{gtt_status} ({gtt_total:.1f}GB total, {gtt_used:.1f}GB benutzt)"])
             
             # CLI-Argumente
             if self.cli_args.get('limit'):
@@ -2442,6 +2483,14 @@ class LMStudioBenchmark:
             # CLI-Argumente
             cli_params = []
             cli_params.append(f"<strong>Messungen pro Modell:</strong> {self.cli_args['runs']}")
+            
+            # GTT-Info (AMD-spezifisch)
+            if self._gtt_info and self._gtt_info.get('total', 0) > 0:
+                gtt_total = self._gtt_info['total']
+                gtt_used = self._gtt_info['used']
+                gtt_status = "✅ Aktiviert" if self.use_gtt else "❌ Deaktiviert"
+                cli_params.append(f"<strong>GTT (Shared System RAM):</strong> {gtt_status} ({gtt_total:.1f}GB total, {gtt_used:.1f}GB benutzt)")
+            
             if self.cli_args.get('limit'):
                 cli_params.append(f"<strong>Modell-Limit:</strong> {self.cli_args['limit']}")
             if self.cli_args.get('retest'):
@@ -2892,6 +2941,13 @@ Beispiele:
         help='Maximaler GPU Power-Draw in Watts (Warnung wenn überschritten, z.B. 400.0)'
     )
     
+    # GTT (Graphics Translation Table) - Shared System RAM für AMD GPUs
+    parser.add_argument(
+        '--disable-gtt',
+        action='store_true',
+        help='Deaktiviere GTT (Shared System RAM) bei AMD GPUs - nutze nur dediziertes VRAM'
+    )
+    
     args = parser.parse_args()
     
     # Cache-Verwaltungs-Befehle (beenden vor Benchmark)
@@ -2992,7 +3048,8 @@ Beispiele:
         use_cache=not args.retest,
         enable_profiling=args.enable_profiling,
         max_temp=args.max_temp,
-        max_power=args.max_power
+        max_power=args.max_power,
+        use_gtt=not args.disable_gtt
     )
     benchmark.run_all_benchmarks()
     

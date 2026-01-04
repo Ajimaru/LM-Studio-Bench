@@ -66,7 +66,29 @@ pip install -r requirements.txt
 ✅ Records min/max/avg values per benchmark run
 ✅ Aborts benchmark if safety limits exceeded
 
-### 2️⃣ Filtering Models
+### 2️⃣ AMD GTT Support (Shared System RAM)
+
+**Enable GTT (Default):**
+
+```bash
+./run.py --limit 3
+```
+
+✅ Automatically uses VRAM + GTT (e.g. 2GB VRAM + 46GB GTT = 48GB)
+✅ Enables larger models on AMD APUs/iGPUs
+✅ Shown in logs: "💾 Memory: 0.4GB VRAM + 44.7GB GTT = 45.1GB total"
+
+**Disable GTT (VRAM-only):**
+
+```bash
+./run.py --disable-gtt --limit 3
+```
+
+✅ Only uses dedicated VRAM
+✅ More conservative offload levels
+✅ Useful for benchmarking VRAM-only performance
+
+### 3️⃣ Filtering Models
 
 **By Quantization:**
 

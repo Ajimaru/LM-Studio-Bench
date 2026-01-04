@@ -7,6 +7,7 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **Automatische Modell-Discovery**: Findet alle lokal installierten Modelle und Quantisierungen
 - ✅ **GPU-Detection**: Erkennt NVIDIA, AMD und Intel GPUs automatisch
 - ✅ **VRAM-Monitoring**: Misst VRAM-Nutzung während des Benchmarks
+- ✅ **GTT Support (AMD)**: Nutzt Shared System RAM zusätzlich zu VRAM (z.B. 2GB VRAM + 46GB GTT = 48GB)
 - ✅ **Hardware-Profiling**: Optionales Monitoring von GPU-Temperatur und Power-Draw (NVIDIA/AMD/Intel)
 - ✅ **Progressive GPU-Offload**: Versucht automatisch verschiedene GPU-Offload-Levels (1.0 → 0.7 → 0.5 → 0.3)
 - ✅ **Server-Management**: Startet LM Studio Server automatisch falls nötig
@@ -99,6 +100,9 @@ Das Script wird:
 
 # Mit Sicherheitslimits
 ./run.py --enable-profiling --max-temp 85 --max-power 350
+
+# AMD GTT (Shared System RAM)
+./run.py --disable-gtt  # Nur VRAM nutzen (Standard: GTT aktiviert)
 ```
 
 ### Erweiterte Filter
