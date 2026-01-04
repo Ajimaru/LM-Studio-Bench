@@ -90,8 +90,13 @@ class GPUMonitor:
             logger.info(f"NVIDIA GPU erkannt, Tool: {nvidia_tool}")
             return
         
-        # AMD
+        # AMD - Suche in ROCm Versionsverzeichnissen
         amd_paths = ['/usr/bin', '/usr/local/bin', '/opt/rocm/bin']
+        # Erweitere AMD Pfade mit versionierten ROCm Verzeichnissen
+        import glob
+        rocm_versions = glob.glob('/opt/rocm-*/bin')
+        amd_paths.extend(rocm_versions)
+        
         amd_tool = self._find_tool('rocm-smi', amd_paths)
         if amd_tool:
             self.gpu_type = "AMD"
@@ -135,12 +140,20 @@ class GPUMonitor:
                     timeout=5
                 )
                 if result.returncode == 0:
-                    # Parse AMD output (format kann variieren)
+                    # Parse AMD rocm-smi output: "GPU[X] : VRAM Total Used Memory (B): XXXXXX"
                     for line in result.stdout.split('\n'):
-                        if 'Used' in line or 'used' in line:
-                            parts = line.split()
-                            if len(parts) >= 2:
-                                return parts[1]
+                        if 'VRAM Total Used Memory' in line:
+                            # Format: "GPU[0]          : VRAM Total Used Memory (B): 1674899456"
+                            parts = line.split(':')
+                            if len(parts) >= 3:
+                                # Letzter Teil contains "1674899456"
+                                bytes_used = parts[-1].strip()
+                                try:
+                                    # Konvertiere zu MB
+                                    mb_used = int(bytes_used) / (1024 * 1024)
+                                    return f"{int(mb_used)}"
+                                except ValueError:
+                                    pass
             
             elif self.gpu_type == "Intel":
                 # Intel GPU Top hat kein einfaches VRAM-Query
