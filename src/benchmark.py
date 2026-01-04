@@ -23,14 +23,11 @@ from datetime import datetime
 from statistics import quantiles, mean, median
 from tqdm import tqdm
 import re
-import io
-import base64
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
-from reportlab.lib.utils import ImageReader
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
@@ -1261,23 +1258,6 @@ class LMStudioBenchmark:
         
         return recommendations
     
-    def _plotly_fig_to_image(self, fig, width=700, height=400):
-        """Konvertiert Plotly Figure zu ReportLab Image für PDF-Einbettung"""
-        try:
-            # Versuche kaleido (bevorzugt)
-            img_bytes = fig.to_image(format="png", width=width, height=height, engine="kaleido")
-            return Image(ImageReader(io.BytesIO(img_bytes)), width=width*0.75, height=height*0.75)
-        except Exception as e:
-            logger.warning(f"Kaleido nicht verfügbar, verwende Fallback-Methode: {e}")
-            try:
-                # Fallback: orca
-                img_bytes = fig.to_image(format="png", width=width, height=height, engine="orca")
-                return Image(ImageReader(io.BytesIO(img_bytes)), width=width*0.75, height=height*0.75)
-            except Exception as e2:
-                logger.warning(f"Charts können nicht ins PDF eingebettet werden: {e2}")
-                logger.warning("Installiere 'kaleido' für Chart-Support: pip install kaleido")
-                return None
-    
     def load_all_historical_data(self) -> Dict[str, List[Dict]]:
         """Lädt alle historischen Benchmark-Ergebnisse und gruppiert nach Modell+Quantisierung"""
         trends = {}
@@ -1688,100 +1668,6 @@ class LMStudioBenchmark:
                 )
                 elements.append(Paragraph(rec_text, rec_style))
                 elements.append(Spacer(1, 20))
-            
-            # === Plotly-Charts einbetten (wenn verfügbar) ===
-            if PLOTLY_AVAILABLE and go is not None:
-                try:
-                    # Bar-Chart: Top 10 schnellste Modelle
-                    top_10 = sorted_results[:10]
-                    fig_bar = go.Figure(data=[
-                        go.Bar(
-                            x=[f"{r.model_name[:20]}\n{r.quantization}" for r in top_10],
-                            y=[r.avg_tokens_per_sec for r in top_10],
-                            text=[f"{r.avg_tokens_per_sec:.2f}" for r in top_10],
-                            textposition='auto',
-                            marker_color='#2d5aa8'
-                        )
-                    ])
-                    fig_bar.update_layout(
-                        title="Top 10 schnellste Modelle",
-                        xaxis_title="Modell + Quantisierung",
-                        yaxis_title="Tokens/s",
-                        height=400,
-                        font=dict(size=10)
-                    )
-                    
-                    img_bar = self._plotly_fig_to_image(fig_bar, width=700, height=400)
-                    if img_bar:
-                        elements.append(PageBreak())
-                        elements.append(Paragraph("📊 Performance-Charts", title_style))
-                        elements.append(Spacer(1, 15))
-                        elements.append(Paragraph("Top 10 schnellste Modelle", heading_style))
-                        elements.append(img_bar)
-                        elements.append(Spacer(1, 20))
-                    
-                    # Scatter-Plot: Modellgröße vs Speed
-                    fig_scatter = go.Figure(data=[
-                        go.Scatter(
-                            x=[r.model_size_gb for r in self.results],
-                            y=[r.avg_tokens_per_sec for r in self.results],
-                            mode='markers',
-                            text=[f"{r.model_name[:15]}" for r in self.results],
-                            marker=dict(
-                                size=8,
-                                color=[r.tokens_per_sec_per_gb for r in self.results],
-                                colorscale='Viridis',
-                                showscale=True,
-                                colorbar=dict(title="Effizienz")
-                            )
-                        )
-                    ])
-                    fig_scatter.update_layout(
-                        title="Modellgröße vs Performance",
-                        xaxis_title="Modellgröße (GB)",
-                        yaxis_title="Tokens/s",
-                        height=400,
-                        font=dict(size=10)
-                    )
-                    
-                    img_scatter = self._plotly_fig_to_image(fig_scatter, width=700, height=400)
-                    if img_scatter:
-                        elements.append(Paragraph("Modellgröße vs Performance", heading_style))
-                        elements.append(img_scatter)
-                        elements.append(Spacer(1, 20))
-                    
-                    # Effizienz-Chart
-                    fig_efficiency = go.Figure(data=[
-                        go.Scatter(
-                            x=[r.tokens_per_sec_per_gb for r in self.results],
-                            y=[r.tokens_per_sec_per_billion_params for r in self.results],
-                            mode='markers',
-                            text=[f"{r.model_name[:15]}" for r in self.results],
-                            marker=dict(
-                                size=8,
-                                color=[r.avg_tokens_per_sec for r in self.results],
-                                colorscale='RdYlGn',
-                                showscale=True,
-                                colorbar=dict(title="Speed")
-                            )
-                        )
-                    ])
-                    fig_efficiency.update_layout(
-                        title="Effizienz-Analyse",
-                        xaxis_title="Tokens/s pro GB",
-                        yaxis_title="Tokens/s pro Milliarde Parameter",
-                        height=400,
-                        font=dict(size=10)
-                    )
-                    
-                    img_efficiency = self._plotly_fig_to_image(fig_efficiency, width=700, height=400)
-                    if img_efficiency:
-                        elements.append(Paragraph("Effizienz-Analyse", heading_style))
-                        elements.append(img_efficiency)
-                        elements.append(Spacer(1, 20))
-                
-                except Exception as e:
-                    logger.warning(f"Charts konnten nicht ins PDF eingebettet werden: {e}")
             
             # === NEUE SEITE: Vision-Modelle ===
             vision_models = [r for r in self.results if r.has_vision]
