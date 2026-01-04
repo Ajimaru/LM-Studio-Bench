@@ -28,6 +28,7 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
    ```bash
    git clone <repository-url>
    cd local-llm-bench
+
 ```text
 
 2. **Virtuelle Umgebung erstellen und aktivieren**:
