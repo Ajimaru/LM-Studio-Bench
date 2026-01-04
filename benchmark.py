@@ -893,7 +893,95 @@ class LMStudioBenchmark:
         
         return comparison
     
-
+    def load_all_historical_data(self) -> Dict[str, List[Dict]]:
+        """Lädt alle historischen Benchmark-Ergebnisse und gruppiert nach Modell+Quantisierung"""
+        trends = {}
+        results_dir = RESULTS_DIR
+        
+        # Lade alle JSON-Dateien
+        for json_file in sorted(results_dir.glob("benchmark_results_*.json")):
+            try:
+                with open(json_file) as f:
+                    data = json.load(f)
+                    
+                for item in data:
+                    key = f"{item['model_name']}@{item['quantization']}"
+                    if key not in trends:
+                        trends[key] = []
+                    
+                    # Extrahiere Datum aus Timestamp
+                    timestamp_str = item.get('timestamp', '2026-01-01 00:00:00')
+                    trends[key].append({
+                        'timestamp': timestamp_str,
+                        'speed': item['avg_tokens_per_sec'],
+                        'ttft': item['avg_ttft'],
+                        'vram': item.get('vram_mb', 0)
+                    })
+            except Exception as e:
+                logger.debug(f"Fehler beim Laden von {json_file}: {e}")
+        
+        return trends
+    
+    def generate_trend_chart(self) -> Optional[str]:
+        """Generiert Plotly Line-Chart für Performance-Trends über Zeit"""
+        if not PLOTLY_AVAILABLE or not self.previous_results:
+            return None
+        
+        try:
+            trends = self.load_all_historical_data()
+            if not trends:
+                return None
+            
+            # Erstelle Line-Chart mit Trends
+            fig = go.Figure()
+            
+            # Farben für verschiedene Modelle
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+            color_idx = 0
+            
+            for key, history in sorted(trends.items()):
+                if len(history) < 2:  # Nur Trends mit mindestens 2 Datenpunkten
+                    continue
+                
+                # Sortiere nach Timestamp
+                history_sorted = sorted(history, key=lambda x: x['timestamp'])
+                
+                timestamps = [h['timestamp'] for h in history_sorted]
+                speeds = [h['speed'] for h in history_sorted]
+                
+                model_name = key.split('@')[0].split('/')[-1][:15]
+                quantization = key.split('@')[1][:6]
+                
+                fig.add_trace(go.Scatter(
+                    x=timestamps,
+                    y=speeds,
+                    mode='lines+markers',
+                    name=f"{model_name} ({quantization})",
+                    line=dict(color=colors[color_idx % len(colors)]),
+                    marker=dict(size=6)
+                ))
+                
+                color_idx += 1
+            
+            fig.update_layout(
+                title="Performance-Trends über Zeit",
+                xaxis_title="Datum",
+                yaxis_title="Tokens/s",
+                hovermode='x unified',
+                height=600,
+                template='plotly_white'
+            )
+            
+            # Gebe Plotly JSON zurück
+            return json.dumps({
+                'data': fig.to_dict()['data'],
+                'layout': fig.to_dict()['layout']
+            })
+        
+        except Exception as e:
+            logger.debug(f"Fehler beim Erstellen von Trend-Chart: {e}")
+            return None
+    
     def export_results(self):
         """Exportiert Ergebnisse als JSON, CSV, PDF und HTML"""
         if not self.results:
@@ -1367,7 +1455,17 @@ class LMStudioBenchmark:
         
         <h2>Effizienz-Analyse</h2>
         <div class="chart" id="efficiency-chart"></div>
-        
+        """)
+                
+                # Trend-Chart wenn vorhanden
+                trend_json = self.generate_trend_chart()
+                if trend_json:
+                    f.write("""
+        <h2>📈 Performance-Trends über Zeit</h2>
+        <div class="chart" id="trend-chart"></div>
+        """)
+                
+                f.write(f"""
         <div class="timestamp">
             Generiert: {time.strftime('%d.%m.%Y %H:%M:%S')}
         </div>
@@ -1377,7 +1475,15 @@ class LMStudioBenchmark:
         Plotly.newPlot('bar-chart', {json.dumps(fig_bar.to_dict()['data'])}, {json.dumps(fig_bar.to_dict()['layout'])});
         Plotly.newPlot('scatter-chart', {json.dumps(fig_scatter.to_dict()['data'])}, {json.dumps(fig_scatter.to_dict()['layout'])});
         Plotly.newPlot('efficiency-chart', {json.dumps(fig_efficiency.to_dict()['data'])}, {json.dumps(fig_efficiency.to_dict()['layout'])});
-    </script>
+""")
+                
+                # Trend-Chart Script
+                if trend_json:
+                    trend_data = json.loads(trend_json)
+                    f.write(f"""        Plotly.newPlot('trend-chart', {json.dumps(trend_data['data'])}, {json.dumps(trend_data['layout'])});
+""")
+                
+                f.write("""    </script>
 </body>
 </html>
 """)
