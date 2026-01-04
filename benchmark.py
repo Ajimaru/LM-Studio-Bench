@@ -17,6 +17,7 @@ import argparse
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict
+from datetime import datetime
 import psutil
 from tqdm import tqdm
 from reportlab.lib.pagesizes import letter, A4
@@ -404,7 +405,7 @@ class ModelDiscovery:
 class LMStudioBenchmark:
     """Haupt-Benchmark-Klasse"""
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
@@ -412,9 +413,67 @@ class LMStudioBenchmark:
         self.prompt = prompt
         self.model_limit = model_limit
         self.filter_args = filter_args or {}
+        self.compare_with = compare_with
+        self.previous_results: List[BenchmarkResult] = []
         
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
+        
+        # Lade frühere Ergebnisse wenn Vergleich gewünscht
+        if self.compare_with:
+            self._load_previous_results()
+    
+    def _load_previous_results(self):
+        """Lädt frühere Benchmark-Ergebnisse zum Vergleich"""
+        try:
+            # Suche nach passenden JSON-Datei
+            if self.compare_with.endswith('.json'):
+                json_file = RESULTS_DIR / self.compare_with
+            else:
+                # Versuche Datum zu parsen (z.B. "20260104" oder "latest")
+                if self.compare_with.lower() == "latest":
+                    # Finde neueste Datei
+                    json_files = sorted(RESULTS_DIR.glob('benchmark_results_*.json'))
+                    if not json_files:
+                        logger.warning("Keine früheren Benchmark-Dateien gefunden")
+                        return
+                    json_file = json_files[-1]
+                else:
+                    json_file = RESULTS_DIR / f"benchmark_results_{self.compare_with}.json"
+            
+            if not json_file.exists():
+                logger.warning(f"Datei nicht gefunden: {json_file}")
+                return
+            
+            with open(json_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                self.previous_results = [BenchmarkResult(**item) for item in data]
+            
+            logger.info(f"✓ {len(self.previous_results)} frühere Ergebnisse geladen aus {json_file.name}")
+        except Exception as e:
+            logger.error(f"Fehler beim Laden von frühen Ergebnissen: {e}")
+    
+    def _calculate_delta(self, current: BenchmarkResult) -> Optional[Dict]:
+        """Berechnet Delta zu früherem Benchmark für selbes Modell+Quantisierung"""
+        if not self.previous_results:
+            return None
+        
+        # Suche nach exaktem Match (selbes Modell + Quantisierung)
+        for prev in self.previous_results:
+            if prev.model_name == current.model_name and prev.quantization == current.quantization:
+                speed_delta = current.avg_tokens_per_sec - prev.avg_tokens_per_sec
+                speed_delta_pct = (speed_delta / prev.avg_tokens_per_sec * 100) if prev.avg_tokens_per_sec > 0 else 0
+                
+                return {
+                    'prev_speed': prev.avg_tokens_per_sec,
+                    'current_speed': current.avg_tokens_per_sec,
+                    'speed_delta': speed_delta,
+                    'speed_delta_pct': speed_delta_pct,
+                    'prev_timestamp': prev.timestamp
+                }
+        
+        return None
+
     
     def benchmark_model(self, model_key: str) -> Optional[BenchmarkResult]:
         """Führt Benchmark für ein spezifisches Modell durch"""
@@ -1012,6 +1071,13 @@ Beispiele:
         help='Maximale Modellgröße in GB (z.B. 10.0)'
     )
     
+    parser.add_argument(
+        '--compare-with',
+        type=str,
+        default=None,
+        help='Vergleiche mit früheren Ergebnissen (z.B. "20260104_172200.json" oder "latest")'
+    )
+    
     args = parser.parse_args()
     
     # Validierung
@@ -1047,6 +1113,9 @@ Beispiele:
     if active_filters:
         logger.info(f"Aktive Filter: {', '.join(active_filters)}")
     
+    if args.compare_with:
+        logger.info(f"Historischer Vergleich: {args.compare_with}")
+    
     logger.info(f"Geschätzte Gesamtzeit: ~{int(args.runs * 45 * (args.limit or 9) / 9)} Minuten")
     logger.info("")
     
@@ -1055,7 +1124,8 @@ Beispiele:
         context_length=args.context,
         prompt=args.prompt,
         model_limit=args.limit,
-        filter_args=filter_args
+        filter_args=filter_args,
+        compare_with=args.compare_with
     )
     benchmark.run_all_benchmarks()
     
