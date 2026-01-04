@@ -1,0 +1,243 @@
+# LM Studio Model Benchmark
+
+Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Testet systematisch verschiedene Modelle und Quantisierungen, um Token/s-Geschwindigkeiten zu messen und zu vergleichen.
+
+## Features
+
+- ✅ **Automatische Modell-Discovery**: Findet alle lokal installierten Modelle und Quantisierungen
+- ✅ **GPU-Detection**: Erkennt NVIDIA, AMD und Intel GPUs automatisch
+- ✅ **VRAM-Monitoring**: Misst VRAM-Nutzung während des Benchmarks
+- ✅ **Progressive GPU-Offload**: Versucht automatisch verschiedene GPU-Offload-Levels (1.0 → 0.7 → 0.5 → 0.3)
+- ✅ **Server-Management**: Startet LM Studio Server automatisch falls nötig
+- ✅ **Standardisierte Tests**: Verwendet denselben Prompt für alle Modelle
+- ✅ **Statistische Auswertung**: Warmup + mehrere Messungen für genaue Ergebnisse
+- ✅ **Export**: Ergebnisse als JSON und CSV
+
+## Systemanforderungen
+
+- **OS**: Linux (primär), Windows, macOS
+- **Python**: 3.8 oder höher
+- **GPU**: ~12GB VRAM empfohlen (NVIDIA/AMD/Intel)
+- **Software**: [LM Studio](https://lmstudio.ai/) lokal installiert mit `lms` CLI verfügbar
+
+## Installation
+
+1. **Repository klonen**:
+   ```bash
+   git clone <repository-url>
+   cd local-llm-bench
+   ```
+
+2. **Python-Dependencies installieren**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **LM Studio CLI prüfen**:
+   ```bash
+   lms --version
+   ```
+
+## Nutzung
+
+### Benchmark starten
+
+```bash
+python benchmark.py
+```
+
+Das Script wird:
+1. LM Studio Server prüfen/starten
+2. Alle installierten Modelle finden
+3. Jeden mit standardisiertem Prompt testen
+4. Ergebnisse in `results/` speichern
+
+### Optionen
+
+Das Script verwendet folgende Standard-Einstellungen:
+
+- **Prompt**: "Erkläre maschinelles Lernen in 3 Sätzen"
+- **Context Length**: 2048 Tokens
+- **Warmup**: 1 Durchlauf
+- **Messungen**: 3 Durchläufe
+- **GPU-Offload**: Automatisch (1.0 → 0.7 → 0.5 → 0.3)
+
+Diese können in [benchmark.py](benchmark.py) angepasst werden (siehe Konstanten am Anfang).
+
+## Output
+
+### Ergebnis-Dateien
+
+Ergebnisse werden im Verzeichnis `results/` gespeichert:
+
+- `benchmark_results_YYYYMMDD_HHMMSS.json` - Strukturierte Daten
+- `benchmark_results_YYYYMMDD_HHMMSS.csv` - Tabelle (Excel/Sheets-kompatibel)
+
+### Beispiel CSV-Output
+
+```csv
+model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp
+llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 10:30:45
+qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12
+```
+
+### Logs
+
+- **Console**: Echtzeit-Fortschritt mit tqdm Progress-Bar
+- **errors.log**: Fehler und Warnungen für Debugging
+
+## Gemessene Metriken
+
+| Metrik | Beschreibung |
+|--------|--------------|
+| **avg_tokens_per_sec** | Durchschnittliche Token-Generierungsgeschwindigkeit |
+| **avg_ttft** | Time to First Token - Latenz bis zum ersten generierten Token |
+| **avg_gen_time** | Gesamtzeit für die Antwort-Generierung |
+| **vram_mb** | VRAM-Nutzung während Inferenz (falls messbar) |
+| **gpu_offload** | Verwendeter GPU-Offload-Level (0.3 - 1.0) |
+| **prompt_tokens** | Anzahl Input-Tokens |
+| **completion_tokens** | Anzahl generierter Tokens |
+
+## Fehlerbehebung
+
+### "lms: command not found"
+
+LM Studio CLI ist nicht im PATH. Installiere/konfiguriere LM Studio:
+
+```bash
+# Prüfe Installation
+which lms
+```
+
+### "Keine Modelle gefunden"
+
+Stelle sicher dass Modelle in LM Studio heruntergeladen sind:
+
+```bash
+lms ls
+```
+
+### "GPU-Monitoring nicht verfügbar"
+
+GPU-Tools fehlen. Installiere je nach GPU:
+
+**NVIDIA**:
+```bash
+sudo apt install nvidia-utils
+```
+
+**AMD**:
+```bash
+# ROCm installieren
+```
+
+**Intel**:
+```bash
+sudo apt install intel-gpu-tools
+```
+
+### Modell lädt nicht (VRAM-Fehler)
+
+Das Script versucht automatisch niedrigere GPU-Offload-Levels. Bei 12GB VRAM:
+
+- ✅ 3B Modelle mit Q5_K_M
+- ✅ 7B Modelle mit Q4_K_M
+- ⚠️ 13B Modelle mit Q3_K_M (möglicherweise)
+- ❌ 32B+ Modelle (nicht empfohlen)
+
+## Anpassung
+
+### Eigene Prompts
+
+Ändere in [benchmark.py](benchmark.py):
+
+```python
+STANDARD_PROMPT = "Dein eigener Test-Prompt"
+```
+
+### Mehr/Weniger Durchläufe
+
+```python
+NUM_MEASUREMENT_RUNS = 5  # Standard: 3
+```
+
+### Context Length
+
+```python
+CONTEXT_LENGTH = 4096  # Standard: 2048
+```
+
+## Projekt-Struktur
+
+```
+local-llm-bench/
+├── benchmark.py              # Haupt-Script
+├── requirements.txt          # Python-Dependencies
+├── results/                  # Benchmark-Ergebnisse
+│   ├── benchmark_results_*.json
+│   └── benchmark_results_*.csv
+├── errors.log                # Fehler-Log
+├── PLAN.md                   # Implementierungsplan
+├── README.md                 # Diese Datei
+└── .github/
+    └── copilot-instructions.md
+```
+
+## Technische Details
+
+### GPU-Detection
+
+Das Tool sucht GPU-Monitoring-Tools in:
+
+- Standard PATH
+- `/usr/bin`
+- `/usr/local/bin`
+- `/opt/rocm/bin` (AMD)
+- `/usr/lib/xpu` (Intel)
+
+### GPU-Offload-Strategie
+
+Bei Ladefehlern wird automatisch reduziert:
+
+1. 🟢 `gpuOffload: 1.0` (100% GPU)
+2. 🟡 `gpuOffload: 0.7` (70% GPU)
+3. 🟠 `gpuOffload: 0.5` (50% GPU)
+4. 🔴 `gpuOffload: 0.3` (30% GPU)
+5. ❌ Fehler → Überspringen + Loggen
+
+### Benchmark-Ablauf
+
+Für jedes Modell:
+
+1. **Laden**: Mit optimalem GPU-Offload
+2. **Warmup**: 1x Inferenz (verwerfen)
+3. **Messung**: 3x Inferenz
+4. **Stats**: Durchschnitt berechnen
+5. **Entladen**: Modell aus Speicher entfernen
+6. **Nächstes Modell**
+
+## Contributing
+
+Contributions sind willkommen! Bitte:
+
+1. Fork das Repository
+2. Erstelle einen Feature-Branch
+3. Committe deine Änderungen
+4. Push zum Branch
+5. Öffne einen Pull Request
+
+## Lizenz
+
+MIT License - siehe LICENSE-Datei
+
+## Support
+
+Bei Problemen:
+
+1. Prüfe `errors.log`
+2. Stelle sicher dass LM Studio läuft
+3. Öffne ein Issue mit Logs und System-Info
+
+---
+
+**Hinweis**: Dieses Tool ist für Entwicklung/Testing gedacht. Für Produktions-Deployments siehe LM Studio Dokumentation.
