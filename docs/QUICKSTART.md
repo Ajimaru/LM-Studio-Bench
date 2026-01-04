@@ -16,6 +16,7 @@ pip install -r requirements.txt
 ```text
 
 ✅ Tests all installed models with 3 runs each (~1-2 hours)
+✅ Automatically caches results - reruns are instant!
 
 ### Quick Test (3 Models)
 
@@ -24,6 +25,17 @@ pip install -r requirements.txt
 ```text
 
 ✅ Fast test with 3 random models (~5-10 minutes)
+✅ Already tested models loaded from cache
+
+### Development Mode (Fastest)
+
+```bash
+./run.py --dev-mode
+```text
+
+✅ Automatically selects smallest model
+✅ Single run for quick validation (~30 seconds)
+✅ Perfect for testing changes
 
 ### Test Single Model
 
@@ -93,7 +105,40 @@ pip install -r requirements.txt
 ./run.py --limit 5 --rank-by vram
 ```text
 
-### 3️⃣ Historical Comparison & Trends
+### 3️⃣ Cache Management
+
+**View Cached Results:**
+
+```bash
+./run.py --list-cache
+```text
+
+✅ Shows all cached models with performance metrics
+
+**Force Retest (Ignore Cache):**
+
+```bash
+./run.py --retest --limit 3
+```text
+
+✅ Retests models even if cached
+
+**Export Cache as JSON:**
+
+```bash
+./run.py --export-cache my_backup.json
+```text
+
+✅ Exports entire cache database
+
+**Cache Behavior:**
+
+- First run: Tests all models (~2 hours for 20 models)
+- Second run: Loads from cache (~1 second!)
+- Automatic invalidation on parameter changes (prompt, context, temperature)
+- Shows "X of Y models cached" before starting
+
+### 4️⃣ Historical Comparison & Trends
 
 **Compare with Latest Benchmark:**
 
@@ -109,7 +154,7 @@ pip install -r requirements.txt
 ./run.py --limit 3 --runs 1 --compare-with benchmark_results_20260104_170000.json
 ```text
 
-### 4️⃣ Custom Configuration
+### 5️⃣ Custom Configuration
 
 **Adjust Number of Runs:**
 

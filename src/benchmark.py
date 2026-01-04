@@ -14,20 +14,19 @@ import os
 import time
 import shutil
 import argparse
+import sqlite3
+import hashlib
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
 from datetime import datetime
-import psutil
 from statistics import quantiles, mean, median
 from tqdm import tqdm
-from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
@@ -62,6 +61,7 @@ GPU_OFFLOAD_LEVELS = [1.0, 0.7, 0.5, 0.3]
 NUM_WARMUP_RUNS = 1
 NUM_MEASUREMENT_RUNS = 3
 RESULTS_DIR = PROJECT_ROOT / "results"
+DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
 
 # Optimierte Inference-Parameter für standardisierte Benchmarks
 # (Für konsistente, reproduzierbare Messungen)
@@ -105,6 +105,197 @@ class BenchmarkResult:
     # Historischer Vergleich (optional)
     speed_delta_pct: Optional[float] = None     # Performance-Veränderung (%) vs. vorheriger Benchmark
     prev_timestamp: Optional[str] = None         # Zeitstempel des vorherigen Benchmarks
+
+
+class BenchmarkCache:
+    """SQLite-Cache für Benchmark-Ergebnisse"""
+    
+    def __init__(self, db_path: Path = DATABASE_FILE):
+        self.db_path = db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+    
+    def _init_db(self):
+        """Erstellt Datenbank-Schema"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS benchmark_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_key TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                quantization TEXT NOT NULL,
+                inference_params_hash TEXT NOT NULL,
+                gpu_type TEXT NOT NULL,
+                gpu_offload REAL NOT NULL,
+                vram_mb TEXT NOT NULL,
+                avg_tokens_per_sec REAL NOT NULL,
+                avg_ttft REAL NOT NULL,
+                avg_gen_time REAL NOT NULL,
+                prompt_tokens INTEGER NOT NULL,
+                completion_tokens INTEGER NOT NULL,
+                timestamp TEXT NOT NULL,
+                params_size TEXT NOT NULL,
+                architecture TEXT NOT NULL,
+                max_context_length INTEGER NOT NULL,
+                model_size_gb REAL NOT NULL,
+                has_vision INTEGER NOT NULL,
+                has_tools INTEGER NOT NULL,
+                tokens_per_sec_per_gb REAL NOT NULL,
+                tokens_per_sec_per_billion_params REAL NOT NULL,
+                speed_delta_pct REAL,
+                prev_timestamp TEXT,
+                prompt TEXT NOT NULL,
+                context_length INTEGER NOT NULL,
+                UNIQUE(model_key, inference_params_hash)
+            )
+        ''')
+        
+        # Index für schnellere Lookups
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_model_key_hash 
+            ON benchmark_results(model_key, inference_params_hash)
+        ''')
+        
+        conn.commit()
+        conn.close()
+    
+    @staticmethod
+    def compute_params_hash(prompt: str, context_length: int, inference_params: dict) -> str:
+        """Berechnet Hash aus allen relevanten Parametern"""
+        params_dict = {
+            'prompt': prompt,
+            'context_length': context_length,
+            **inference_params
+        }
+        hash_input = json.dumps(params_dict, sort_keys=True)
+        return hashlib.md5(hash_input.encode()).hexdigest()[:8]
+    
+    def get_cached_result(self, model_key: str, params_hash: str) -> Optional[BenchmarkResult]:
+        """Holt gecachtes Ergebnis aus Datenbank"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM benchmark_results 
+            WHERE model_key = ? AND inference_params_hash = ?
+            ORDER BY timestamp DESC LIMIT 1
+        ''', (model_key, params_hash))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            # Konvertiere DB-Row zu BenchmarkResult
+            return BenchmarkResult(
+                model_name=row[2],
+                quantization=row[3],
+                gpu_type=row[5],
+                gpu_offload=row[6],
+                vram_mb=row[7],
+                avg_tokens_per_sec=row[8],
+                avg_ttft=row[9],
+                avg_gen_time=row[10],
+                prompt_tokens=row[11],
+                completion_tokens=row[12],
+                timestamp=row[13],
+                params_size=row[14],
+                architecture=row[15],
+                max_context_length=row[16],
+                model_size_gb=row[17],
+                has_vision=bool(row[18]),
+                has_tools=bool(row[19]),
+                tokens_per_sec_per_gb=row[20],
+                tokens_per_sec_per_billion_params=row[21],
+                speed_delta_pct=row[22],
+                prev_timestamp=row[23]
+            )
+        return None
+    
+    def save_result(self, result: BenchmarkResult, model_key: str, params_hash: str, 
+                   prompt: str, context_length: int):
+        """Speichert Benchmark-Ergebnis in Datenbank"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT OR REPLACE INTO benchmark_results (
+                    model_key, model_name, quantization, inference_params_hash,
+                    gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec,
+                    avg_ttft, avg_gen_time, prompt_tokens, completion_tokens,
+                    timestamp, params_size, architecture, max_context_length,
+                    model_size_gb, has_vision, has_tools, tokens_per_sec_per_gb,
+                    tokens_per_sec_per_billion_params, speed_delta_pct, prev_timestamp,
+                    prompt, context_length
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                model_key, result.model_name, result.quantization, params_hash,
+                result.gpu_type, result.gpu_offload, result.vram_mb, result.avg_tokens_per_sec,
+                result.avg_ttft, result.avg_gen_time, result.prompt_tokens, result.completion_tokens,
+                result.timestamp, result.params_size, result.architecture, result.max_context_length,
+                result.model_size_gb, int(result.has_vision), int(result.has_tools),
+                result.tokens_per_sec_per_gb, result.tokens_per_sec_per_billion_params,
+                result.speed_delta_pct, result.prev_timestamp, prompt, context_length
+            ))
+            
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Fehler beim Speichern in Cache: {e}")
+        finally:
+            conn.close()
+    
+    def list_cached_models(self) -> List[Dict]:
+        """Gibt alle gecachten Modelle zurück"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT model_key, model_name, quantization, avg_tokens_per_sec, 
+                   timestamp, inference_params_hash, params_size
+            FROM benchmark_results
+            ORDER BY timestamp DESC
+        ''')
+        
+        results = []
+        for row in cursor.fetchall():
+            results.append({
+                'model_key': row[0],
+                'model_name': row[1],
+                'quantization': row[2],
+                'avg_tokens_per_sec': row[3],
+                'timestamp': row[4],
+                'params_hash': row[5],
+                'params_size': row[6]
+            })
+        
+        conn.close()
+        return results
+    
+    def export_to_json(self, output_file: Path):
+        """Exportiert Cache als JSON"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT * FROM benchmark_results ORDER BY timestamp DESC')
+        
+        columns = [desc[0] for desc in cursor.description]
+        results = []
+        
+        for row in cursor.fetchall():
+            result_dict = dict(zip(columns, row))
+            # Konvertiere Boolean-Werte
+            result_dict['has_vision'] = bool(result_dict['has_vision'])
+            result_dict['has_tools'] = bool(result_dict['has_tools'])
+            results.append(result_dict)
+        
+        conn.close()
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(results, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"Cache exportiert: {output_file}")
 
 
 class GPUMonitor:
@@ -280,8 +471,7 @@ class ModelDiscovery:
     @staticmethod
     def _get_metadata_cache() -> Dict[str, Dict]:
         """Cache für Modell-Metadaten (geladen einmal am Anfang)"""
-        if not hasattr(ModelDiscovery, '_metadata_cache'):
-            ModelDiscovery._metadata_cache = {}
+        if not ModelDiscovery._metadata_cache:  # Prüfe ob Cache leer ist
             try:
                 result = subprocess.run(
                     ['lms', 'ls', '--json'],
@@ -290,7 +480,6 @@ class ModelDiscovery:
                     timeout=30
                 )
                 if result.returncode == 0:
-                    import json
                     data = json.loads(result.stdout)
                     for model_data in data:
                         if model_data.get('type') == 'llm':
@@ -425,7 +614,7 @@ class ModelDiscovery:
 class LMStudioBenchmark:
     """Haupt-Benchmark-Klasse"""
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed'):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
@@ -435,7 +624,12 @@ class LMStudioBenchmark:
         self.filter_args = filter_args or {}
         self.compare_with = compare_with
         self.rank_by = rank_by
+        self.use_cache = use_cache
         self.previous_results: List[BenchmarkResult] = []
+        self.cache = BenchmarkCache() if use_cache else None
+        self.params_hash = BenchmarkCache.compute_params_hash(
+            prompt, context_length, OPTIMIZED_INFERENCE_PARAMS
+        )
         
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
@@ -558,6 +752,11 @@ class LMStudioBenchmark:
                     model_key
                 )
                 
+                # Speichere in Cache
+                if self.cache:
+                    self.cache.save_result(result, model_key, self.params_hash, 
+                                          self.prompt, self.context_length)
+                
                 logger.info(f"✓ {model_key}: {result.avg_tokens_per_sec:.2f} tokens/s")
                 return result
             else:
@@ -623,6 +822,12 @@ class LMStudioBenchmark:
                 repeat_penalty=OPTIMIZED_INFERENCE_PARAMS['repeat_penalty'],
                 max_tokens=OPTIMIZED_INFERENCE_PARAMS['max_tokens']
             )
+            
+            # DEBUG: Logging der konfigurierten Parameter
+            logger.info(f"Verwende Prediction Config: temp={prediction_config.temperature}, "
+                       f"top_k={prediction_config.top_k_sampling}, top_p={prediction_config.top_p_sampling}, "
+                       f"min_p={prediction_config.min_p_sampling}, repeat_penalty={prediction_config.repeat_penalty}, "
+                       f"max_tokens={prediction_config.max_tokens}")
             
             # Führe Inferenz durch mit optimierten Parametern
             start_time = time.time()
@@ -721,6 +926,9 @@ class LMStudioBenchmark:
             logger.error("Server konnte nicht gestartet werden, breche ab")
             return
         
+        # Initialisiere Metadata-Cache frühzeitig
+        ModelDiscovery._get_metadata_cache()
+        
         # Hole alle Modelle
         models = ModelDiscovery.get_installed_models()
         if not models:
@@ -738,7 +946,42 @@ class LMStudioBenchmark:
             logger.info(f"Modell-Limit gesetzt: Testet nur erste {self.model_limit} von {len(models)} Modellen")
             models = models[:self.model_limit]
         
-        logger.info(f"Starte Benchmark für {len(models)} Modelle...")
+        # Prüfe Cache und zeige Stats
+        if self.cache and self.use_cache:
+            cached_models = []
+            new_models = []
+            
+            for model_key in models:
+                cached = self.cache.get_cached_result(model_key, self.params_hash)
+                if cached:
+                    cached_models.append((model_key, cached))
+                else:
+                    new_models.append(model_key)
+            
+            if cached_models:
+                logger.info("")
+                logger.info("=== Gecachte Modelle ===")
+                logger.info(f"{len(cached_models)} von {len(models)} Modellen bereits getestet (werden aus Cache geladen):")
+                for model_key, cached in cached_models[:10]:  # Zeige max. 10
+                    date_part = cached.timestamp.split('T')[0] if 'T' in cached.timestamp else cached.timestamp[:10]
+                    logger.info(f"  • {model_key}: {cached.avg_tokens_per_sec:.2f} tok/s (zuletzt: {date_part})")
+                if len(cached_models) > 10:
+                    logger.info(f"  ... und {len(cached_models) - 10} weitere")
+                logger.info("")
+                
+                # Lade gecachte Ergebnisse
+                for model_key, cached in cached_models:
+                    self.results.append(cached)
+            
+            if new_models:
+                logger.info(f"Starte Benchmark für {len(new_models)} neue Modelle...")
+                models = new_models
+            else:
+                logger.info("Alle Modelle bereits gecacht - keine neuen Tests notwendig")
+                self.export_results()
+                return
+        else:
+            logger.info(f"Starte Benchmark für {len(models)} Modelle...")
         
         # Benchmark für jedes Modell
         for model_key in tqdm(models, desc="Benchmarking Modelle"):
@@ -1648,7 +1891,80 @@ Beispiele:
         help='Sortiere Ergebnisse nach: speed (tokens/s), efficiency (tokens/s pro GB), ttft (Time to First Token), vram (VRAM-Nutzung)'
     )
     
+    # Cache-Verwaltung
+    parser.add_argument(
+        '--retest',
+        action='store_true',
+        help='Ignoriere Cache und teste alle Modelle neu'
+    )
+    
+    parser.add_argument(
+        '--dev-mode',
+        action='store_true',
+        help='Entwicklungs-Modus: Testet automatisch das kleinste verfügbare Modell mit -l 1 -r 1'
+    )
+    
+    parser.add_argument(
+        '--list-cache',
+        action='store_true',
+        help='Zeige alle gecachten Modelle und beende'
+    )
+    
+    parser.add_argument(
+        '--export-cache',
+        type=str,
+        default=None,
+        metavar='FILE',
+        help='Exportiere Cache-Inhalte als JSON (z.B. "cache_export.json") und beende'
+    )
+    
     args = parser.parse_args()
+    
+    # Cache-Verwaltungs-Befehle (beenden vor Benchmark)
+    if args.list_cache:
+        cache = BenchmarkCache()
+        cached = cache.list_cached_models()
+        if cached:
+            print("\n=== Gecachte Benchmark-Ergebnisse ===")
+            print(f"{'Modell':<50} {'Quant':<10} {'Params':<8} {'tok/s':<10} {'Datum':<12} {'Hash':<10}")
+            print("-" * 110)
+            for entry in cached:
+                print(f"{entry['model_name']:<50} {entry['quantization']:<10} {entry['params_size']:<8} "
+                      f"{entry['avg_tokens_per_sec']:<10.2f} {entry['timestamp'][:10]:<12} {entry['params_hash']:<10}")
+            print(f"\nGesamt: {len(cached)} Einträge")
+        else:
+            print("Cache ist leer - keine Ergebnisse gespeichert")
+        return
+    
+    if args.export_cache:
+        cache = BenchmarkCache()
+        output_file = RESULTS_DIR / args.export_cache
+        cache.export_to_json(output_file)
+        print(f"Cache exportiert nach: {output_file}")
+        return
+    
+    # Dev-Mode: Überschreibe Einstellungen
+    if args.dev_mode:
+        logger.info("=== Entwicklungs-Modus aktiviert ===")
+        args.runs = 1
+        args.limit = 1
+        # Finde kleinstes Modell
+        all_models = ModelDiscovery.get_installed_models()
+        if all_models:
+            # Hole Metadaten und sortiere nach Größe
+            model_sizes = []
+            for model_key in all_models:
+                metadata = ModelDiscovery.get_model_metadata(model_key)
+                model_sizes.append((model_key, metadata.get('model_size_gb', 999)))
+            
+            model_sizes.sort(key=lambda x: x[1])
+            smallest = model_sizes[0][0]
+            logger.info(f"Kleinstes Modell ausgewählt: {smallest} ({model_sizes[0][1]:.2f} GB)")
+            logger.info(f"Konfiguration: 1 Messung, Context {args.context}")
+            logger.info("")
+        else:
+            logger.error("Keine Modelle gefunden für Dev-Mode")
+            return
     
     # Validierung
     if args.runs < 1:
@@ -1696,7 +2012,8 @@ Beispiele:
         model_limit=args.limit,
         filter_args=filter_args,
         compare_with=args.compare_with,
-        rank_by=args.rank_by
+        rank_by=args.rank_by,
+        use_cache=not args.retest
     )
     benchmark.run_all_benchmarks()
     

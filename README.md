@@ -11,7 +11,9 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **Server-Management**: Startet LM Studio Server automatisch falls nötig
 - ✅ **Standardisierte Tests**: Verwendet denselben Prompt für alle Modelle
 - ✅ **Statistische Auswertung**: Warmup + mehrere Messungen für genaue Ergebnisse
-- ✅ **Export**: Ergebnisse als JSON, CSV und PDF (Landscape-Format)
+- ✅ **SQLite-Cache**: Automatisches Caching von Benchmark-Ergebnissen (überspringt bereits getestete Modelle)
+- ✅ **Dev-Mode**: Automatische Auswahl des kleinsten Modells für schnelle Tests während Entwicklung
+- ✅ **Export**: Ergebnisse als JSON, CSV, PDF und HTML (mit interaktiven Charts)
 - ✅ **Umfangreiche Metadaten**: Parametergröße, Architektur, Context-Länge, Dateigröße, Vision- und Tool-Support
 
 ## Systemanforderungen
@@ -114,6 +116,25 @@ Das Script wird:
 ./run.py --quants q4 --arch gemma --max-size 5 --limit 3
 ```text
 
+#### Cache-Verwaltung
+
+```bash
+# Cache nutzen (Standard - überspringt bereits getestete Modelle)
+./run.py --limit 5
+
+# Cache ignorieren und alle neu testen
+./run.py --retest --limit 5
+
+# Entwicklungs-Modus (kleinstes Modell, 1 Run)
+./run.py --dev-mode
+
+# Zeige alle gecachten Ergebnisse
+./run.py --list-cache
+
+# Exportiere Cache als JSON
+./run.py --export-cache my_cache.json
+```text
+
 #### Standard-Einstellungen
 
 - **Prompt**: "Erkläre maschinelles Lernen in 3 Sätzen"
@@ -146,6 +167,8 @@ Ergebnisse werden im Verzeichnis `results/` gespeichert:
 - `benchmark_results_YYYYMMDD_HHMMSS.json` - Strukturierte Daten (für Automatisierung)
 - `benchmark_results_YYYYMMDD_HHMMSS.csv` - Tabelle (Excel/Sheets-kompatibel)
 - `benchmark_results_YYYYMMDD_HHMMSS.pdf` - Formatierter Report (zum Teilen/Archivieren)
+- `benchmark_results_YYYYMMDD_HHMMSS.html` - Interaktive Plotly-Charts
+- `benchmark_cache.db` - SQLite-Datenbank mit allen Benchmark-Ergebnissen (automatisches Caching)
 
 ### PDF-Report
 

@@ -35,14 +35,19 @@ project-root/
 ├── requirements.txt    # Dependencies
 ├── .gitignore          # Git-Ausschlüsse
 ├── src/
-│   └── benchmark.py    # Haupt-Anwendung (1,676 Zeilen)
+│   └── benchmark.py    # Haupt-Anwendung (~2,000 Zeilen)
 ├── docs/               # Öffentliche Dokumentation
 │   ├── QUICKSTART.md   # Schnelleinstieg
 │   └── LLM_METADATA_GUIDE.md
 ├── development/        # Interne Notizen (in .gitignore)
 │   ├── PLAN.md
 │   └── FEATURES.md
-├── results/            # Benchmark-Ergebnisse (JSON/CSV/PDF/HTML)
+├── results/            # Benchmark-Ergebnisse
+│   ├── benchmark_results_*.json
+│   ├── benchmark_results_*.csv
+│   ├── benchmark_results_*.pdf
+│   ├── benchmark_results_*.html
+│   └── benchmark_cache.db  # SQLite-Cache
 └── logs/               # Error-Logs mit Datum (error_YYYY-MM-DD.log)
 ```
 
