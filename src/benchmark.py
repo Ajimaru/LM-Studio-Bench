@@ -1223,68 +1223,6 @@ class LMStudioBenchmark:
         
         return True
     
-    def _matches_filters(self, result: BenchmarkResult) -> bool:
-        """Prüft ob ein BenchmarkResult die aktiven Filter erfüllt"""
-        # Vision-Filter
-        if self.filter_args.get('only_vision') and not result.has_vision:
-            return False
-        
-        # Tools-Filter
-        if self.filter_args.get('only_tools') and not result.has_tools:
-            return False
-        
-        # Quantisierung-Filter
-        if self.filter_args.get('quants'):
-            quants = [q.strip().lower() for q in self.filter_args['quants'].split(',')]
-            if not any(q in result.quantization.lower() for q in quants):
-                return False
-        
-        # Architektur-Filter
-        if self.filter_args.get('arch'):
-            archs = [a.strip().lower() for a in self.filter_args['arch'].split(',')]
-            if not any(a in result.architecture.lower() for a in archs):
-                return False
-        
-        # Parameter-Filter
-        if self.filter_args.get('params'):
-            params = [p.strip().upper() for p in self.filter_args['params'].split(',')]
-            if result.params_size.upper() not in params:
-                return False
-        
-        # Min Context-Filter
-        if self.filter_args.get('min_context'):
-            if result.max_context_length < self.filter_args['min_context']:
-                return False
-        
-        # Max Size-Filter
-        if self.filter_args.get('max_size'):
-            if result.model_size_gb > self.filter_args['max_size']:
-                return False
-        
-        # Include-Pattern (Regex)
-        if self.filter_args.get('include_models'):
-            import re
-            try:
-                pattern = re.compile(self.filter_args['include_models'], re.IGNORECASE)
-                model_full = f"{result.model_name}@{result.quantization}"
-                if not pattern.search(model_full):
-                    return False
-            except re.error:
-                pass
-        
-        # Exclude-Pattern (Regex)
-        if self.filter_args.get('exclude_models'):
-            import re
-            try:
-                pattern = re.compile(self.filter_args['exclude_models'], re.IGNORECASE)
-                model_full = f"{result.model_name}@{result.quantization}"
-                if pattern.search(model_full):
-                    return False
-            except re.error:
-                pass
-        
-        return True
-    
     def _calculate_delta(self, current: BenchmarkResult) -> Optional[Dict]:
         """Berechnet Delta zu früherem Benchmark für selbes Modell+Quantisierung"""
         if not self.previous_results:
