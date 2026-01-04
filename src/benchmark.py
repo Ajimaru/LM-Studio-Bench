@@ -125,7 +125,7 @@ class BenchmarkResult:
 class HardwareMonitor:
     """Echtzeit-Monitoring von GPU-Temperatur und Power-Draw"""
     
-    def __init__(self, gpu_type: str, gpu_tool: str, enabled: bool = False):
+    def __init__(self, gpu_type: Optional[str], gpu_tool: Optional[str], enabled: bool = False):
         self.gpu_type = gpu_type
         self.gpu_tool = gpu_tool
         self.enabled = enabled
@@ -187,6 +187,9 @@ class HardwareMonitor:
     def _get_temperature(self) -> Optional[float]:
         """Liest aktuelle GPU-Temperatur"""
         try:
+            if not self.gpu_tool:
+                return None
+            
             if self.gpu_type == "NVIDIA":
                 result = subprocess.run(
                     [self.gpu_tool, '--query-gpu=temperature.gpu', '--format=csv,noheader,nounits'],
@@ -222,6 +225,9 @@ class HardwareMonitor:
     def _get_power_draw(self) -> Optional[float]:
         """Liest GPU Power-Draw in Watts"""
         try:
+            if not self.gpu_tool:
+                return None
+            
             if self.gpu_type == "NVIDIA":
                 result = subprocess.run(
                     [self.gpu_tool, '--query-gpu=power.draw', '--format=csv,noheader,nounits'],
@@ -810,8 +816,8 @@ class LMStudioBenchmark:
         
         # Hardware Monitor für Profiling
         self.hardware_monitor = HardwareMonitor(
-            self.gpu_monitor.gpu_type,
-            self.gpu_monitor.gpu_tool,
+            self.gpu_monitor.gpu_type or "Unknown",
+            self.gpu_monitor.gpu_tool or "",
             enabled=enable_profiling
         )
         
@@ -821,13 +827,13 @@ class LMStudioBenchmark:
             'context': context_length,
             'prompt': prompt[:50] + '...' if len(prompt) > 50 else prompt,
             'limit': model_limit,
-            'only_vision': filter_args.get('only_vision', False),
-            'only_tools': filter_args.get('only_tools', False),
-            'quants': filter_args.get('quants'),
-            'arch': filter_args.get('arch'),
-            'params': filter_args.get('params'),
-            'include_models': filter_args.get('include_models'),
-            'exclude_models': filter_args.get('exclude_models'),
+            'only_vision': self.filter_args.get('only_vision', False),
+            'only_tools': self.filter_args.get('only_tools', False),
+            'quants': self.filter_args.get('quants'),
+            'arch': self.filter_args.get('arch'),
+            'params': self.filter_args.get('params'),
+            'include_models': self.filter_args.get('include_models'),
+            'exclude_models': self.filter_args.get('exclude_models'),
             'compare_with': compare_with,
             'rank_by': rank_by,
             'retest': not use_cache,
@@ -945,7 +951,7 @@ class LMStudioBenchmark:
                 return None
             
             # Hole alle gecachten Ergebnisse mit gleicher Architektur
-            conn = self.cache.conn
+            conn = sqlite3.connect(self.cache.db_path)
             cursor = conn.cursor()
             
             cursor.execute("""
@@ -959,6 +965,7 @@ class LMStudioBenchmark:
             """, (architecture, model_size_gb * 0.8, model_size_gb * 1.2))
             
             results = cursor.fetchall()
+            conn.close()
             
             if results:
                 # Durchschnitt der erfolgreichen Offload-Levels
