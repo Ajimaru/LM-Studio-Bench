@@ -1085,7 +1085,6 @@ class LMStudioBenchmark:
                 ['Metrik', 'Wert'],
                 ['Anzahl Modelle getestet', str(len(self.results))],
                 ['Messungen pro Modell', str(self.num_measurement_runs)],
-                ['Context Length', f"{self.context_length} Tokens"],
                 ['Standard-Prompt', self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt],
                 ['Vision-Modelle', f"{vision_count} ({vision_count*100//len(self.results) if self.results else 0}%)"],
                 ['Tool-fähige Modelle', f"{tools_count} ({tools_count*100//len(self.results) if self.results else 0}%)"],
