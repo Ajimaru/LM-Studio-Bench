@@ -4,11 +4,16 @@ Wrapper script - startet benchmark.py aus src/ Ordner
 """
 
 import sys
+import os
 import subprocess
 from pathlib import Path
 
-# Starte benchmark.py aus src/ Ordner
-src_dir = Path(__file__).parent / "src"
+# Setze Working Directory zur Root des Projekts
+project_root = Path(__file__).parent
+os.chdir(project_root)
+
+# Starte benchmark.py aus src/ Ordner mit richtigen Pfaden
+src_dir = project_root / "src"
 benchmark_script = src_dir / "benchmark.py"
 
 if not benchmark_script.exists():
