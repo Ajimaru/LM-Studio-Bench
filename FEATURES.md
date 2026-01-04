@@ -69,16 +69,16 @@
 ### 📊 Vergleich & Analyse (Priorität: Mittel)
 
 - ✅ Historischer Vergleich (frühere Runs laden und vergleichen) - `--compare-with latest|filename`
-- [ ] Delta-Anzeige (Performance-Veränderungen über Zeit)
+- ✅ Delta-Anzeige (Performance-Veränderungen über Zeit) - Δ% Spalte in PDF/CSV
 - ✅ Ranking-System nach verschiedenen Kriterien (Speed, Effizienz, VRAM) - `--rank-by speed|efficiency|ttft|vram`
 - ✅ Best-of-Quantization (bestes Q-Level pro Modell finden) - PDF-Sektion
-- [ ] Percentile-Statistiken (P50, P95, P99 für Metriken)
+- ✅ Percentile-Statistiken (P50, P95, P99 für Metriken) - PDF-Sektion
 
 ### 📄 PDF-Report-Verbesserungen (Priorität: Mittel)
 
 - ✅ Bar-Charts für Top 10 schnellste Modelle
 - [ ] Best-Practice-Empfehlungen basierend auf Hardware
-- [ ] Quantisierungs-Vergleichstabelle (Q4 vs Q5 vs Q6 Side-by-Side)
+- ✅ Quantisierungs-Vergleichstabelle (Q4 vs Q5 vs Q6 vs Q8 Side-by-Side) - PDF-Sektion
 - [ ] Separate Seiten für verschiedene Kategorien
 
 ### 📈 Visualisierung (Priorität: Mittel)
