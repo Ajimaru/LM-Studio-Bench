@@ -82,6 +82,10 @@ class BenchmarkResult:
     model_size_gb: float               # z.B. 3.11 (Dateigröße in GB)
     has_vision: bool                   # Vision-Support
     has_tools: bool                    # Tool-Calling Support
+    
+    # Effizienz-Metriken
+    tokens_per_sec_per_gb: float       # Tokens/s pro GB Modellgröße
+    tokens_per_sec_per_billion_params: float  # Tokens/s pro Milliarde Parameter
 
 
 class GPUMonitor:
@@ -336,18 +340,78 @@ class ModelDiscovery:
         except Exception as e:
             logger.error(f"Fehler beim Abrufen der Modelle: {e}")
             return []
+    
+    @staticmethod
+    def filter_models(models: List[str], filter_args: Dict) -> List[str]:
+        """Filtert Modelle basierend auf CLI-Argumenten"""
+        if not filter_args:
+            return models
+        
+        # Lade Metadaten-Cache einmal
+        metadata_cache = ModelDiscovery._get_metadata_cache()
+        filtered = []
+        
+        for model_key in models:
+            # Hole Metadaten für Modell
+            metadata = ModelDiscovery.get_model_metadata(model_key)
+            
+            # Filter: nur Vision-Modelle
+            if filter_args.get('only_vision') and not metadata['has_vision']:
+                continue
+            
+            # Filter: nur Tool-Modelle
+            if filter_args.get('only_tools') and not metadata['has_tools']:
+                continue
+            
+            # Filter: Quantisierungen
+            if filter_args.get('quants'):
+                quants_list = [q.strip().lower() for q in filter_args['quants'].split(',')]
+                # Extrahiere Quantisierung aus model_key (z.B. "model@q4_k_m")
+                quant = model_key.split('@')[-1].lower() if '@' in model_key else ''
+                # Prüfe ob Quantisierung in der Liste ist
+                if not any(q in quant for q in quants_list):
+                    continue
+            
+            # Filter: Architekturen
+            if filter_args.get('arch'):
+                arch_list = [a.strip().lower() for a in filter_args['arch'].split(',')]
+                if metadata['architecture'].lower() not in arch_list:
+                    continue
+            
+            # Filter: Parametergrößen
+            if filter_args.get('params'):
+                params_list = [p.strip().upper() for p in filter_args['params'].split(',')]
+                if metadata['params_size'].upper() not in params_list:
+                    continue
+            
+            # Filter: Minimale Context-Length
+            if filter_args.get('min_context'):
+                if metadata['max_context_length'] < filter_args['min_context']:
+                    continue
+            
+            # Filter: Maximale Dateigröße
+            if filter_args.get('max_size'):
+                if metadata['model_size_gb'] > filter_args['max_size']:
+                    continue
+            
+            filtered.append(model_key)
+        
+        logger.info(f"Nach Filterung: {len(filtered)}/{len(models)} Modelle übrig")
+        return filtered
+
 
 
 class LMStudioBenchmark:
     """Haupt-Benchmark-Klasse"""
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
         self.context_length = context_length
         self.prompt = prompt
         self.model_limit = model_limit
+        self.filter_args = filter_args or {}
         
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
@@ -522,6 +586,21 @@ class LMStudioBenchmark:
         # Hole Metadaten
         metadata = ModelDiscovery.get_model_metadata(model_key)
         
+        # Berechne Effizienz-Metriken
+        model_size_gb = metadata.get('model_size_gb', 0.0)
+        params_size_str = metadata.get('params_size', 'unknown')
+        
+        # tokens/s pro GB
+        tokens_per_sec_per_gb = round(avg_tokens_per_sec / model_size_gb, 2) if model_size_gb > 0 else 0.0
+        
+        # tokens/s pro Milliarde Parameter
+        # Extrahiere Zahl aus params_size (z.B. "7B" -> 7.0, "8.3B" -> 8.3)
+        try:
+            params_billion = float(params_size_str.upper().replace('B', '').strip())
+            tokens_per_sec_per_billion_params = round(avg_tokens_per_sec / params_billion, 2)
+        except (ValueError, AttributeError):
+            tokens_per_sec_per_billion_params = 0.0
+        
         return BenchmarkResult(
             model_name=model_name,
             quantization=quantization,
@@ -537,9 +616,11 @@ class LMStudioBenchmark:
             params_size=metadata.get('params_size', 'unknown'),
             architecture=metadata.get('architecture', 'unknown'),
             max_context_length=metadata.get('max_context_length', 0),
-            model_size_gb=metadata.get('model_size_gb', 0.0),
+            model_size_gb=model_size_gb,
             has_vision=metadata.get('has_vision', False),
-            has_tools=metadata.get('has_tools', False)
+            has_tools=metadata.get('has_tools', False),
+            tokens_per_sec_per_gb=tokens_per_sec_per_gb,
+            tokens_per_sec_per_billion_params=tokens_per_sec_per_billion_params
         )
     
     def run_all_benchmarks(self):
@@ -555,6 +636,12 @@ class LMStudioBenchmark:
             logger.error("Keine Modelle gefunden")
             return
         
+        # Wende Filter an
+        models = ModelDiscovery.filter_models(models, self.filter_args)
+        if not models:
+            logger.error("Keine Modelle nach Filterung übrig")
+            return
+        
         # Wende Limit an wenn gesetzt
         if self.model_limit and self.model_limit < len(models):
             logger.info(f"Modell-Limit gesetzt: Testet nur erste {self.model_limit} von {len(models)} Modellen")
@@ -567,6 +654,7 @@ class LMStudioBenchmark:
             result = self.benchmark_model(model_key)
             if result:
                 self.results.append(result)
+
         
         # Exportiere Ergebnisse
         self.export_results()
@@ -649,12 +737,23 @@ class LMStudioBenchmark:
             
             # Zusammenfassung
             elements.append(Paragraph("Benchmark Summary", heading_style))
+            
+            # Berechne Statistiken
+            vision_count = sum(1 for r in self.results if r.has_vision)
+            tools_count = sum(1 for r in self.results if r.has_tools)
+            avg_size_gb = sum(r.model_size_gb for r in self.results) / len(self.results) if self.results else 0
+            avg_tokens_per_sec = sum(r.avg_tokens_per_sec for r in self.results) / len(self.results) if self.results else 0
+            
             summary_data = [
                 ['Metrik', 'Wert'],
                 ['Anzahl Modelle getestet', str(len(self.results))],
                 ['Messungen pro Modell', str(self.num_measurement_runs)],
                 ['Context Length', f"{self.context_length} Tokens"],
                 ['Standard-Prompt', self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt],
+                ['Vision-Modelle', f"{vision_count} ({vision_count*100//len(self.results) if self.results else 0}%)"],
+                ['Tool-fähige Modelle', f"{tools_count} ({tools_count*100//len(self.results) if self.results else 0}%)"],
+                ['Ø Modellgröße', f"{avg_size_gb:.2f} GB"],
+                ['Ø Geschwindigkeit', f"{avg_tokens_per_sec:.2f} tokens/s"],
             ]
             summary_table = Table(summary_data, colWidths=[3*inch, 3*inch])
             summary_table.setStyle(TableStyle([
@@ -798,6 +897,54 @@ Beispiele:
         help='Maximale Anzahl von Modellen zum Testen (z.B. 3 testet nur die ersten 3 Modelle)'
     )
     
+    # Erweiterte Filter-Optionen
+    parser.add_argument(
+        '--only-vision',
+        action='store_true',
+        help='Nur Modelle mit Vision-Fähigkeit (Multimodal) testen'
+    )
+    
+    parser.add_argument(
+        '--only-tools',
+        action='store_true',
+        help='Nur Modelle mit Tool-Calling-Support testen'
+    )
+    
+    parser.add_argument(
+        '--quants',
+        type=str,
+        default=None,
+        help='Nur bestimmte Quantisierungen testen (z.B. "q4,q5,q6")'
+    )
+    
+    parser.add_argument(
+        '--arch',
+        type=str,
+        default=None,
+        help='Nur bestimmte Architekturen testen (z.B. "llama,mistral,gemma")'
+    )
+    
+    parser.add_argument(
+        '--params',
+        type=str,
+        default=None,
+        help='Nur bestimmte Parametergrößen testen (z.B. "3B,7B,8B")'
+    )
+    
+    parser.add_argument(
+        '--min-context',
+        type=int,
+        default=None,
+        help='Minimale Context-Length in Tokens (z.B. 32000)'
+    )
+    
+    parser.add_argument(
+        '--max-size',
+        type=float,
+        default=None,
+        help='Maximale Modellgröße in GB (z.B. 10.0)'
+    )
+    
     args = parser.parse_args()
     
     # Validierung
@@ -810,12 +957,29 @@ Beispiele:
     if args.limit is not None and args.limit < 1:
         parser.error('--limit muss >= 1 sein')
     
+    # Erstelle Filter-Dictionary aus CLI-Argumenten
+    filter_args = {
+        'only_vision': args.only_vision,
+        'only_tools': args.only_tools,
+        'quants': args.quants,
+        'arch': args.arch,
+        'params': args.params,
+        'min_context': args.min_context,
+        'max_size': args.max_size,
+    }
+    
     logger.info("=== LM Studio Model Benchmark ===")
     logger.info(f"Prompt: '{args.prompt}'")
     logger.info(f"Context Length: {args.context} Tokens")
     logger.info(f"Messungen pro Modell: {args.runs} (+ {NUM_WARMUP_RUNS} Warmup)")
     if args.limit:
         logger.info(f"Modell-Limit: Testet max. {args.limit} Modelle")
+    
+    # Zeige aktive Filter
+    active_filters = [k for k, v in filter_args.items() if v]
+    if active_filters:
+        logger.info(f"Aktive Filter: {', '.join(active_filters)}")
+    
     logger.info(f"Geschätzte Gesamtzeit: ~{int(args.runs * 45 * (args.limit or 9) / 9)} Minuten")
     logger.info("")
     
@@ -823,7 +987,8 @@ Beispiele:
         num_runs=args.runs,
         context_length=args.context,
         prompt=args.prompt,
-        model_limit=args.limit
+        model_limit=args.limit,
+        filter_args=filter_args
     )
     benchmark.run_all_benchmarks()
     

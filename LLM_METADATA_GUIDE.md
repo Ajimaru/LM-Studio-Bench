@@ -52,6 +52,7 @@ lms version             # LM Studio Version
 ## 🔍 Praktische Beispiele mit Ihren Modellen
 
 ### Beispiel 1: Vision-Modelle auflisten
+
 ```bash
 lms ls --json | jq '.[] | select(.vision == true) | {displayName, paramsString, maxContextLength}'
 ```
@@ -64,21 +65,25 @@ lms ls --json | jq '.[] | select(.vision == true) | {displayName, paramsString, 
 ```
 
 ### Beispiel 2: Nur Tool-Calling Modelle
+
 ```bash
 lms ls --json | jq '.[] | select(.trainedForToolUse == true) | .displayName'
 ```
 
 ### Beispiel 3: Modelle nach Größe sortieren
+
 ```bash
 lms ls --json | jq 'sort_by(.sizeBytes) | .[] | {displayName, sizeGB: (.sizeBytes/1024/1024/1024|round*100/100)}'
 ```
 
 ### Beispiel 4: Modelle mit großem Context (≥128k Tokens)
+
 ```bash
 lms ls --json | jq '.[] | select(.maxContextLength >= 131072) | {modelKey, maxContextLength}'
 ```
 
 ### Beispiel 5: Modell-Architektur Verteilung
+
 ```bash
 lms ls --json | jq -r '.[] | .architecture' | sort | uniq -c
 ```
@@ -118,30 +123,35 @@ for model in large_models:
 ## 💡 Häufige Anwendungsfälle
 
 ### Use Case 1: Schnelle Performance-Tests
+
 Filter nur kleine Modelle < 1GB für schnelle Benchmarks:
 ```bash
 lms ls --json | jq '.[] | select(.sizeBytes < 1000000000) | .modelKey'
 ```
 
 ### Use Case 2: Langtext-Verarbeitung
+
 Modelle mit großem Context für Dokumentanalyse:
 ```bash
 lms ls --json | jq '.[] | select(.maxContextLength >= 100000) | .displayName'
 ```
 
 ### Use Case 3: Bildverarbeitung
+
 Multi-Modal Modelle für Vision-Tasks:
 ```bash
 lms ls --json | jq '.[] | select(.vision == true) | .modelKey'
 ```
 
 ### Use Case 4: Tool-Integration
+
 Modelle mit Function-Calling für Agent-Systeme:
 ```bash
 lms ls --json | jq '.[] | select(.trainedForToolUse == true) | .displayName'
 ```
 
 ### Use Case 5: Quantisierungs-Vergleich
+
 Alle verfügbaren Quantisierungen eines Modells:
 ```bash
 lms ls "google/gemma-3-1b" --json | jq '.variants[]'
@@ -174,17 +184,20 @@ for model in benchmark_candidates:
 ## 📝 Tipps & Tricks
 
 ### Größe konvertieren
+
 ```bash
 # Bytes zu GB
 python3 -c "print(f'{2986817071/1024**3:.2f} GB')"  # Output: 2.78 GB
 ```
 
 ### JSON Pretty-Print
+
 ```bash
 lms ls --json | jq '.' | less
 ```
 
 ### Schnelle Statistiken
+
 ```bash
 # Durchschnittliche Modellgröße
 lms ls --json | jq '[.[].sizeBytes] | add / length / 1024 / 1024 / 1024' 
@@ -208,13 +221,16 @@ lms unload --all        # Alle Modelle entladen
 ## 🐛 Troubleshooting
 
 **Problem: Keine Ausgabe bei `lms ls --json`**
+
 - Sicherstellen dass LM Studio Server läuft: `lms server start`
 - Port-Konflikt prüfen
 
 **Problem: `jq` nicht installiert**
+
 - Installation: `sudo apt install jq` (Linux) oder `brew install jq` (macOS)
 - Alternative: Python Parsing verwenden
 
 **Problem: Unbegrenzte Ausgabe**
+
 - Nutze `| head -n 5` zum Begrenzen
 - Oder pipe zu `less` für paging: `| less`

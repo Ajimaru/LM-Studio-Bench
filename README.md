@@ -74,9 +74,46 @@ Das Script wird:
 3. Jeden mit standardisiertem Prompt testen
 4. Ergebnisse in `results/` speichern
 
-### Optionen
+### CLI-Optionen
 
-Das Script verwendet folgende Standard-Einstellungen:
+#### Basis-Parameter
+
+```bash
+python benchmark.py --runs 1           # Anzahl Messungen pro Modell
+python benchmark.py --context 4096     # Context Length in Tokens
+python benchmark.py --prompt "..."      # Custom Prompt
+python benchmark.py --limit 5          # Max. Anzahl Modelle testen
+```
+
+#### Erweiterte Filter
+
+```bash
+# Nur bestimmte Quantisierungen
+python benchmark.py --quants q4,q5
+
+# Nur bestimmte Architekturen
+python benchmark.py --arch llama,mistral
+
+# Nur bestimmte Parametergrößen
+python benchmark.py --params 3B,7B
+
+# Nur Vision-Modelle
+python benchmark.py --only-vision
+
+# Nur Tool-fähige Modelle
+python benchmark.py --only-tools
+
+# Minimale Context-Length
+python benchmark.py --min-context 32000
+
+# Maximale Modellgröße
+python benchmark.py --max-size 10.0
+
+# Filter kombinieren
+python benchmark.py --quants q4 --arch gemma --max-size 5 --limit 3
+```
+
+#### Standard-Einstellungen
 
 - **Prompt**: "Erkläre maschinelles Lernen in 3 Sätzen"
 - **Context Length**: 2048 Tokens
@@ -112,6 +149,7 @@ Ergebnisse werden im Verzeichnis `results/` gespeichert:
 ### PDF-Report
 
 Der PDF-Report wird im **Landscape A4-Format** erstellt und enthält:
+
 - **Summary**: Benchmark-Konfiguration (Modellanzahl, Context Length, Prompt)
 - **Detaillierte Tabelle**: Alle Metriken inkl. Metadaten (Parametergröße, Architektur, Dateigröße)
 - **Visuelle Indikatoren**: Emoji-Icons für Vision-Fähigkeit (👁) und Tool-Support (🔧)
@@ -122,9 +160,9 @@ Perfekt zum Teilen von Benchmark-Ergebnissen oder zum Archivieren!
 ### Beispiel CSV-Output
 
 ```csv
-model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp,params_size,architecture,max_context_length,model_size_gb,has_vision,has_tools
-llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 10:30:45,3B,llama,8192,1.92,False,False
-qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12,7B,qwen,131072,4.38,False,True
+model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp,params_size,architecture,max_context_length,model_size_gb,has_vision,has_tools,tokens_per_sec_per_gb,tokens_per_sec_per_billion_params
+llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 10:30:45,3B,llama,8192,1.92,False,False,26.79,17.14
+qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12,7B,qwen,131072,4.38,False,True,8.85,5.54
 ```
 
 ### Logs
@@ -148,6 +186,8 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 | **model_size_gb** | Dateigröße des Modells in GB (auf 2 Dezimalstellen) |
 | **has_vision** | Vision-Fähigkeit (Multimodal: Text + Bilder) |
 | **has_tools** | Tool-Calling-Support (Function/Tool-Use) |
+| **tokens_per_sec_per_gb** | Effizienz: Tokens/s pro GB Modellgröße |
+| **tokens_per_sec_per_billion_params** | Effizienz: Tokens/s pro Milliarde Parameter |
 
 ## Fehlerbehebung
 
