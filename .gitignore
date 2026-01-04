@@ -127,3 +127,7 @@ Thumbs.db
 *.temp
 *.bak
 *~
+# Logging
+logs/
+error.log
+error_*.log

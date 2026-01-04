@@ -36,12 +36,17 @@ except (ImportError, ModuleNotFoundError):
     PLOTLY_AVAILABLE = False
 
 
-# Logging konfigurieren
+# Erstelle logs-Verzeichnis falls nicht vorhanden
+LOGS_DIR = Path('logs')
+LOGS_DIR.mkdir(exist_ok=True)
+
+# Logging konfigurieren mit Datums-Format
+log_filename = LOGS_DIR / f"error_{datetime.now().strftime('%Y-%m-%d')}.log"
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('errors.log', mode='w'),  # 'w' mode: neu schreiben bei jedem Start
+        logging.FileHandler(log_filename, mode='w'),  # 'w' mode: neu schreiben bei jedem Start
         logging.StreamHandler()
     ]
 )
