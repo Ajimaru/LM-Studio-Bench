@@ -1108,6 +1108,37 @@ class LMStudioBenchmark:
             elements.append(summary_table)
             elements.append(Spacer(1, 20))
             
+            # Parameter-Tabelle
+            elements.append(Paragraph("Benchmark Parameter", heading_style))
+            
+            params_data = [
+                ['Parameter', 'Wert'],
+                ['Context Length', f"{self.context_length} Tokens"],
+                ['Temperature', str(OPTIMIZED_INFERENCE_PARAMS['temperature'])],
+                ['Top-K Sampling', str(OPTIMIZED_INFERENCE_PARAMS['top_k_sampling'])],
+                ['Top-P Sampling', str(OPTIMIZED_INFERENCE_PARAMS['top_p_sampling'])],
+                ['Min-P Sampling', str(OPTIMIZED_INFERENCE_PARAMS['min_p_sampling'])],
+                ['Repeat Penalty', str(OPTIMIZED_INFERENCE_PARAMS['repeat_penalty'])],
+                ['Max Tokens', str(OPTIMIZED_INFERENCE_PARAMS['max_tokens'])],
+                ['GPU-Offload Levels', ', '.join(map(str, GPU_OFFLOAD_LEVELS))],
+            ]
+            
+            params_table = Table(params_data, colWidths=[3*inch, 3*inch])
+            params_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#e8f0ff')),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f5ff')])
+            ]))
+            elements.append(params_table)
+            elements.append(Spacer(1, 20))
+            
             # Ergebnisse-Tabelle
             elements.append(Paragraph("Detaillierte Ergebnisse", heading_style))
             
