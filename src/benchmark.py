@@ -1411,7 +1411,7 @@ class LMStudioBenchmark:
             )
             
             # DEBUG: Logging der konfigurierten Parameter
-            logger.info(f"🧠 Verwende Prediction Config: temp={prediction_config.temperature}, "
+            logger.info(f"⚙️ Verwende Prediction Config: temp={prediction_config.temperature}, "
                        f"top_k={prediction_config.top_k_sampling}, top_p={prediction_config.top_p_sampling}, "
                        f"min_p={prediction_config.min_p_sampling}, repeat_penalty={prediction_config.repeat_penalty}, "
                        f"max_tokens={prediction_config.max_tokens}")
