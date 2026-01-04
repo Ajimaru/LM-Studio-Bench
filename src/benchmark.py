@@ -1557,6 +1557,11 @@ class LMStudioBenchmark:
         try:
             html_file = RESULTS_DIR / f"benchmark_results_{timestamp}.html"
             
+            # Lade HTML-Template
+            template_path = Path(__file__).parent / "report_template.html.template"
+            with open(template_path, 'r', encoding='utf-8') as f:
+                html_template = f.read()
+            
             # Sortiere Ergebnisse nach Ranking-Kriterium (aber für HTML Charts immer nach Speed)
             sorted_results = self.sort_results('speed')  # HTML Charts zeigen immer Top 10 nach Speed
             
@@ -1639,144 +1644,46 @@ class LMStudioBenchmark:
                 'Ø Modellgröße': f"{sum(r.model_size_gb for r in self.results) / len(self.results):.2f} GB",
             }
             
-            # Erstelle HTML mit allen Charts
-            with open(html_file, 'w', encoding='utf-8') as f:
-                f.write(f"""
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LM Studio Benchmark Report</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }}
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-            background-color: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }}
-        h1 {{
-            color: #1f4788;
-            text-align: center;
-            border-bottom: 3px solid #2d5aa8;
-            padding-bottom: 10px;
-        }}
-        h2 {{
-            color: #2d5aa8;
-            margin-top: 30px;
-            border-left: 4px solid #2d5aa8;
-            padding-left: 10px;
-        }}
-        .summary {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }}
-        .summary-box {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px;
-            border-radius: 6px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }}
-        .summary-label {{
-            font-size: 12px;
-            text-transform: uppercase;
-            opacity: 0.9;
-            margin-bottom: 5px;
-        }}
-        .summary-value {{
-            font-size: 18px;
-            font-weight: bold;
-        }}
-        .chart {{
-            margin: 30px 0;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            padding: 15px;
-            background-color: #fafafa;
-        }}
-        .timestamp {{
-            text-align: center;
-            color: #999;
-            font-size: 12px;
-            margin-top: 30px;
-            border-top: 1px solid #e0e0e0;
-            padding-top: 15px;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>📊 LM Studio Model Benchmark Report</h1>
-        
-        <div class="summary">
-""")
-                
-                # Summary-Boxen
-                colors_list = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe']
-                for i, (label, value) in enumerate(summary_stats.items()):
-                    color = colors_list[i % len(colors_list)]
-                    f.write(f"""
+            # Erstelle Summary-Boxen HTML
+            summary_boxes = ""
+            colors_list = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe']
+            for i, (label, value) in enumerate(summary_stats.items()):
+                color = colors_list[i % len(colors_list)]
+                summary_boxes += f"""
             <div class="summary-box" style="background: linear-gradient(135deg, {color} 0%, {color}dd 100%);">
                 <div class="summary-label">{label}</div>
                 <div class="summary-value">{value}</div>
             </div>
-""")
-                
-                f.write("""
-        </div>
-        
-        <h2>Performance Rankings</h2>
-        <div class="chart" id="bar-chart"></div>
-        
-        <h2>Modellgröße vs Performance</h2>
-        <div class="chart" id="scatter-chart"></div>
-        
-        <h2>Effizienz-Analyse</h2>
-        <div class="chart" id="efficiency-chart"></div>
-        """)
-                
-                # Trend-Chart wenn vorhanden
-                trend_json = self.generate_trend_chart()
-                if trend_json:
-                    f.write("""
+"""
+            
+            # Trend-Chart wenn vorhanden
+            trend_json = self.generate_trend_chart()
+            if trend_json:
+                trend_section = """
         <h2>📈 Performance-Trends über Zeit</h2>
         <div class="chart" id="trend-chart"></div>
-        """)
-                
-                f.write(f"""
-        <div class="timestamp">
-            Generiert: {time.strftime('%d.%m.%Y %H:%M:%S')}
-        </div>
-    </div>
-    
-    <script>
-        Plotly.newPlot('bar-chart', {json.dumps(fig_bar.to_dict()['data'])}, {json.dumps(fig_bar.to_dict()['layout'])});
-        Plotly.newPlot('scatter-chart', {json.dumps(fig_scatter.to_dict()['data'])}, {json.dumps(fig_scatter.to_dict()['layout'])});
-        Plotly.newPlot('efficiency-chart', {json.dumps(fig_efficiency.to_dict()['data'])}, {json.dumps(fig_efficiency.to_dict()['layout'])});
-""")
-                
-                # Trend-Chart Script
-                if trend_json:
-                    trend_data = json.loads(trend_json)
-                    f.write(f"""        Plotly.newPlot('trend-chart', {json.dumps(trend_data['data'])}, {json.dumps(trend_data['layout'])});
-""")
-                
-                f.write("""    </script>
-</body>
-</html>
-""")
+"""
+                trend_data = json.loads(trend_json)
+                trend_script = f"        Plotly.newPlot('trend-chart', {json.dumps(trend_data['data'])}, {json.dumps(trend_data['layout'])});"
+            else:
+                trend_section = ""
+                trend_script = ""
+            
+            # Ersetze Platzhalter im Template
+            html_output = html_template.replace('{{SUMMARY_BOXES}}', summary_boxes)
+            html_output = html_output.replace('{{TREND_SECTION}}', trend_section)
+            html_output = html_output.replace('{{TIMESTAMP}}', time.strftime('%d.%m.%Y %H:%M:%S'))
+            html_output = html_output.replace('{{BAR_DATA}}', json.dumps(fig_bar.to_dict()['data']))
+            html_output = html_output.replace('{{BAR_LAYOUT}}', json.dumps(fig_bar.to_dict()['layout']))
+            html_output = html_output.replace('{{SCATTER_DATA}}', json.dumps(fig_scatter.to_dict()['data']))
+            html_output = html_output.replace('{{SCATTER_LAYOUT}}', json.dumps(fig_scatter.to_dict()['layout']))
+            html_output = html_output.replace('{{EFFICIENCY_DATA}}', json.dumps(fig_efficiency.to_dict()['data']))
+            html_output = html_output.replace('{{EFFICIENCY_LAYOUT}}', json.dumps(fig_efficiency.to_dict()['layout']))
+            html_output = html_output.replace('{{TREND_SCRIPT}}', trend_script)
+            
+            # Schreibe HTML-Datei
+            with open(html_file, 'w', encoding='utf-8') as f:
+                f.write(html_output)
             
             logger.info(f"HTML-Ergebnisse gespeichert: {html_file}")
         

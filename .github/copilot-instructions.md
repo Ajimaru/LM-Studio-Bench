@@ -35,7 +35,8 @@ project-root/
 ├── requirements.txt    # Dependencies
 ├── .gitignore          # Git-Ausschlüsse
 ├── src/
-│   └── benchmark.py    # Haupt-Anwendung (~2,000 Zeilen)
+│   ├── benchmark.py    # Haupt-Anwendung (~1,900 Zeilen)
+│   └── report_template.html.template  # HTML-Report-Template
 ├── docs/               # Öffentliche Dokumentation
 │   ├── QUICKSTART.md   # Schnelleinstieg
 │   └── LLM_METADATA_GUIDE.md
@@ -48,7 +49,9 @@ project-root/
 │   ├── benchmark_results_*.pdf
 │   ├── benchmark_results_*.html
 │   └── benchmark_cache.db  # SQLite-Cache
-└── logs/               # Error-Logs mit Datum (error_YYYY-MM-DD.log)
+├── logs/               # Error-Logs mit Datum (error_YYYY-MM-DD.log)
+└── .vscode/            # VSCode-Einstellungen
+    └── settings.json
 ```
 
 ### Output-Format
