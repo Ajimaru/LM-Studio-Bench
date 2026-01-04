@@ -85,6 +85,42 @@ pip install -r requirements.txt
 ./run.py --only-vision --runs 1
 ```text
 
+**Regex-based Filtering (Include):**
+
+```bash
+# Only Qwen or Phi models
+./run.py --include-models "qwen|phi" --runs 1
+
+# Only Llama 7B models
+./run.py --include-models "llama.*7b" --runs 1
+
+# Only Q4 quantizations
+./run.py --include-models ".*q4.*" --runs 1
+```text
+
+**Regex-based Filtering (Exclude):**
+
+```bash
+# Exclude uncensored models
+./run.py --exclude-models "uncensored" --runs 1
+
+# Exclude Q2 and Q3 quantizations
+./run.py --exclude-models "q2|q3" --runs 1
+
+# Exclude all vision models
+./run.py --exclude-models ".*vision.*" --runs 1
+```text
+
+**Combined Filters (AND logic):**
+
+```bash
+# Include llama, exclude q2, only tools
+./run.py --include-models "llama" --exclude-models "q2" --only-tools --runs 1
+
+# Vision models, 7B params, max 12GB
+./run.py --only-vision --params 7B --max-size 12 --runs 1
+```text
+
 ### 2️⃣ Ranking & Sorting
 
 **Sort by Efficiency (Default: Speed):**

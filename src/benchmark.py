@@ -22,6 +22,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from statistics import quantiles, mean, median
 from tqdm import tqdm
+import re
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -561,9 +562,35 @@ class ModelDiscovery:
         metadata_cache = ModelDiscovery._get_metadata_cache()
         filtered = []
         
+        # Kompiliere Regex-Pattern falls vorhanden
+        include_pattern = None
+        exclude_pattern = None
+        
+        if filter_args.get('include_models'):
+            try:
+                include_pattern = re.compile(filter_args['include_models'], re.IGNORECASE)
+            except re.error as e:
+                logger.error(f"Ungültiges include-models Pattern: {e}")
+                return []
+        
+        if filter_args.get('exclude_models'):
+            try:
+                exclude_pattern = re.compile(filter_args['exclude_models'], re.IGNORECASE)
+            except re.error as e:
+                logger.error(f"Ungültiges exclude-models Pattern: {e}")
+                return []
+        
         for model_key in models:
             # Hole Metadaten für Modell
             metadata = ModelDiscovery.get_model_metadata(model_key)
+            
+            # Filter: Include-Pattern (wenn gesetzt, muss es matchen)
+            if include_pattern and not include_pattern.search(model_key):
+                continue
+            
+            # Filter: Exclude-Pattern (wenn gesetzt und matched, überspringen)
+            if exclude_pattern and exclude_pattern.search(model_key):
+                continue
             
             # Filter: nur Vision-Modelle
             if filter_args.get('only_vision') and not metadata['has_vision']:
@@ -573,7 +600,7 @@ class ModelDiscovery:
             if filter_args.get('only_tools') and not metadata['has_tools']:
                 continue
             
-            # Filter: Quantisierungen
+            # Filter: Quantisierungen (OR-Verknüpfung)
             if filter_args.get('quants'):
                 quants_list = [q.strip().lower() for q in filter_args['quants'].split(',')]
                 # Extrahiere Quantisierung aus model_key (z.B. "model@q4_k_m")
@@ -582,13 +609,13 @@ class ModelDiscovery:
                 if not any(q in quant for q in quants_list):
                     continue
             
-            # Filter: Architekturen
+            # Filter: Architekturen (OR-Verknüpfung)
             if filter_args.get('arch'):
                 arch_list = [a.strip().lower() for a in filter_args['arch'].split(',')]
                 if metadata['architecture'].lower() not in arch_list:
                     continue
             
-            # Filter: Parametergrößen
+            # Filter: Parametergrößen (OR-Verknüpfung)
             if filter_args.get('params'):
                 params_list = [p.strip().upper() for p in filter_args['params'].split(',')]
                 if metadata['params_size'].upper() not in params_list:
@@ -1783,6 +1810,21 @@ Beispiele:
         help='Maximale Modellgröße in GB (z.B. 10.0)'
     )
     
+    # Regex-basierte Filter
+    parser.add_argument(
+        '--include-models',
+        type=str,
+        default=None,
+        help='Nur Modelle die dem Regex-Pattern entsprechen (z.B. "llama.*7b" oder "qwen|phi")'
+    )
+    
+    parser.add_argument(
+        '--exclude-models',
+        type=str,
+        default=None,
+        help='Schließe Modelle aus die dem Regex-Pattern entsprechen (z.B. ".*uncensored.*" oder "test|experimental")'
+    )
+    
     parser.add_argument(
         '--compare-with',
         type=str,
@@ -1892,6 +1934,8 @@ Beispiele:
         'params': args.params,
         'min_context': args.min_context,
         'max_size': args.max_size,
+        'include_models': args.include_models,
+        'exclude_models': args.exclude_models,
     }
     
     logger.info("=== LM Studio Model Benchmark ===")

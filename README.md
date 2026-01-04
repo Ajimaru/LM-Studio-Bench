@@ -112,8 +112,19 @@ Das Script wird:
 # Maximale Modellgröße
 ./run.py --max-size 10.0
 
-# Filter kombinieren
-./run.py --quants q4 --arch gemma --max-size 5 --limit 3
+# Regex-Filter: Include (nur Modelle die matchen)
+./run.py --include-models "qwen|phi"       # Qwen oder Phi
+./run.py --include-models "llama.*7b"      # Llama 7B Modelle
+./run.py --include-models ".*q4.*"         # Alle Q4 Quantisierungen
+
+# Regex-Filter: Exclude (schließe Modelle aus)
+./run.py --exclude-models "uncensored"     # Keine uncensored Modelle
+./run.py --exclude-models "q2|q3"          # Keine Q2/Q3 Quantisierungen
+./run.py --exclude-models ".*vision.*"     # Keine Vision-Modelle
+
+# Filter kombinieren (AND-Verknüpfung)
+./run.py --include-models "llama" --exclude-models "q2" --only-tools
+./run.py --only-vision --params 7B --max-size 12
 ```text
 
 #### Cache-Verwaltung
