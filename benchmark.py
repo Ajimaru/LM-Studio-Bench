@@ -41,7 +41,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('errors.log'),
+        logging.FileHandler('errors.log', mode='w'),  # 'w' mode: neu schreiben bei jedem Start
         logging.StreamHandler()
     ]
 )
