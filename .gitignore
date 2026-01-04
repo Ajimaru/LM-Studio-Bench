@@ -131,3 +131,6 @@ Thumbs.db
 logs/
 error.log
 error_*.log
+
+# Development (internal notes)
+development/

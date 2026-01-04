@@ -37,7 +37,7 @@ except (ImportError, ModuleNotFoundError):
 
 
 # Erstelle logs-Verzeichnis falls nicht vorhanden
-LOGS_DIR = Path('logs')
+LOGS_DIR = Path('../logs')
 LOGS_DIR.mkdir(exist_ok=True)
 
 # Logging konfigurieren mit Datums-Format
@@ -59,7 +59,7 @@ CONTEXT_LENGTH = 2048
 GPU_OFFLOAD_LEVELS = [1.0, 0.7, 0.5, 0.3]
 NUM_WARMUP_RUNS = 1
 NUM_MEASUREMENT_RUNS = 3
-RESULTS_DIR = Path("results")
+RESULTS_DIR = Path("../results")
 
 # Optimierte Inference-Parameter für standardisierte Benchmarks
 # (Für konsistente, reproduzierbare Messungen)

@@ -28,18 +28,29 @@ Dies ist ein Python-Benchmark-Tool für LM Studio, das automatisch alle lokal in
 
 ### Dateistruktur
 ```
-benchmark.py          # Haupt-Script
-requirements.txt      # Dependencies
-results/             # Benchmark-Ergebnisse (JSON/CSV)
-errors.log           # Fehler-Log
-PLAN.md              # Implementierungsplan
-README.md            # Dokumentation
+project-root/
+├── run.py              # Wrapper-Script (entry point)
+├── README.md           # Hauptdokumentation
+├── requirements.txt    # Dependencies
+├── .gitignore          # Git-Ausschlüsse
+├── src/
+│   └── benchmark.py    # Haupt-Anwendung (1,676 Zeilen)
+├── docs/               # Öffentliche Dokumentation
+│   ├── QUICKSTART.md   # Schnelleinstieg
+│   └── LLM_METADATA_GUIDE.md
+├── development/        # Interne Notizen (in .gitignore)
+│   ├── PLAN.md
+│   └── FEATURES.md
+├── results/            # Benchmark-Ergebnisse (JSON/CSV/PDF/HTML)
+└── logs/               # Error-Logs mit Datum (error_YYYY-MM-DD.log)
 ```
 
 ### Output-Format
-- JSON: Strukturiert, maschinell lesbar
-- CSV: Tabellarisch, Excel/Sheets-kompatibel
-- Felder: model_name, quantization, gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec, avg_ttft, avg_gen_time, prompt_tokens, completion_tokens
+- **JSON**: Strukturiert, 21 Felder (11 Metriken + 6 Metadaten + 2 Effizienz + 2 Delta)
+- **CSV**: Tabellarisch, Excel/Sheets-kompatibel
+- **PDF**: Landscape A4 mit Tabellen, Diagrammen und Analyse
+- **HTML**: Interaktive Plotly-Diagramme (Bar, Scatter, Trend-Charts)
+- Felder: model_name, quantization, gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec, tokens_per_sec_per_gb, speed_delta_pct, etc.
 
 ### Test-Konfiguration
 - **Prompt**: "Erkläre maschinelles Lernen in 3 Sätzen"
@@ -54,11 +65,17 @@ README.md            # Dokumentation
 - Alle Pfade OS-agnostisch (pathlib.Path)
 - CSV mit UTF-8 encoding
 - JSON mit indent=2 für Lesbarkeit
+- Type Hints vollständig (Pylance type-safe)
+- Plotly-Availability prüfen für HTML/PDF exports
+- Error Recovery: Niemals ganzen Benchmark abbrechen, einzelne Modelle überspringen
 
 ## Implementierungsplan
-- siehe PLAN.md
+- Interne Roadmap: siehe `development/PLAN.md`
+- Öffentliche Features: siehe `development/FEATURES.md`
 
 ## Troubleshooting
 - Prüfe LM Studio Installation mit `lms --help`
-- benutze `errors.log` für Debugging
-- benutze LMStudio logs in `~/.lmstudio/server-logs/` für tiefere Fehleranalyse
+- Nutze Log-Dateien in `logs/` für Debugging (Format: error_YYYY-MM-DD.log)
+- Nutze LMStudio logs in `~/.lmstudio/server-logs/` für tiefere Fehleranalyse
+- Bei Plotly-Fehlern: HTML/PDF fallback auf Text-Ausgabe
+- GPU-Probleme: Prüfe VRAM mit `nvidia-smi` (NVIDIA), `rocm-smi` (AMD), `intel_gpu_top` (Intel)

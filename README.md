@@ -64,7 +64,7 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 source .venv/bin/activate  # Linux/macOS
 .venv\Scripts\activate   # Windows
 
-python benchmark.py
+./run.py
 ```
 
 Das Script wird:
@@ -79,38 +79,38 @@ Das Script wird:
 #### Basis-Parameter
 
 ```bash
-python benchmark.py --runs 1           # Anzahl Messungen pro Modell
-python benchmark.py --context 4096     # Context Length in Tokens
-python benchmark.py --prompt "..."      # Custom Prompt
-python benchmark.py --limit 5          # Max. Anzahl Modelle testen
+./run.py --runs 1           # Anzahl Messungen pro Modell
+./run.py --context 4096     # Context Length in Tokens
+./run.py --prompt "..."      # Custom Prompt
+./run.py --limit 5          # Max. Anzahl Modelle testen
 ```
 
 #### Erweiterte Filter
 
 ```bash
 # Nur bestimmte Quantisierungen
-python benchmark.py --quants q4,q5
+./run.py --quants q4,q5
 
 # Nur bestimmte Architekturen
-python benchmark.py --arch llama,mistral
+./run.py --arch llama,mistral
 
 # Nur bestimmte Parametergrößen
-python benchmark.py --params 3B,7B
+./run.py --params 3B,7B
 
 # Nur Vision-Modelle
-python benchmark.py --only-vision
+./run.py --only-vision
 
 # Nur Tool-fähige Modelle
-python benchmark.py --only-tools
+./run.py --only-tools
 
 # Minimale Context-Length
-python benchmark.py --min-context 32000
+./run.py --min-context 32000
 
 # Maximale Modellgröße
-python benchmark.py --max-size 10.0
+./run.py --max-size 10.0
 
 # Filter kombinieren
-python benchmark.py --quants q4 --arch gemma --max-size 5 --limit 3
+./run.py --quants q4 --arch gemma --max-size 5 --limit 3
 ```
 
 #### Standard-Einstellungen
