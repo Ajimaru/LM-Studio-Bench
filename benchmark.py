@@ -13,6 +13,7 @@ import logging
 import os
 import time
 import shutil
+import argparse
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -269,9 +270,12 @@ class ModelDiscovery:
 class LMStudioBenchmark:
     """Haupt-Benchmark-Klasse"""
     
-    def __init__(self):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen"):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
+        self.num_measurement_runs = num_runs
+        self.context_length = context_length
+        self.prompt = prompt
         
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
@@ -310,19 +314,19 @@ class LMStudioBenchmark:
                     return None
             
             # Messungen
-            logger.info(f"Führe {NUM_MEASUREMENT_RUNS} Messungen durch...")
+            logger.info(f"Führe {self.num_measurement_runs} Messungen durch...")
             measurements = []
             vram_after = "N/A"  # Initialisiere Standard-Wert
-            for run in range(NUM_MEASUREMENT_RUNS):
+            for run in range(self.num_measurement_runs):
                 vram_before = self.gpu_monitor.get_vram_usage()
                 stats = self._run_inference(model_key)
                 vram_after = self.gpu_monitor.get_vram_usage()
                 
                 if stats:
                     measurements.append(stats)
-                    logger.info(f"Run {run+1}/{NUM_MEASUREMENT_RUNS}: {stats['tokens_per_second']:.2f} tokens/s")
+                    logger.info(f"Run {run+1}/{self.num_measurement_runs}: {stats['tokens_per_second']:.2f} tokens/s")
                 else:
-                    logger.warning(f"Run {run+1}/{NUM_MEASUREMENT_RUNS} fehlgeschlagen")
+                    logger.warning(f"Run {run+1}/{self.num_measurement_runs} fehlgeschlagen")
             
             # Berechne Durchschnitte
             if measurements:
@@ -386,13 +390,13 @@ class LMStudioBenchmark:
             model = lms.llm(
                 model_key,
                 config=lms.LlmLoadModelConfig(
-                    context_length=CONTEXT_LENGTH
+                    context_length=self.context_length
                 )
             )
             
             # Führe Inferenz durch
             start_time = time.time()
-            result = model.respond(STANDARD_PROMPT)
+            result = model.respond(self.prompt)
             end_time = time.time()
             
             generation_time = end_time - start_time
@@ -497,13 +501,68 @@ class LMStudioBenchmark:
 
 
 def main():
-    """Hauptfunktion"""
-    logger.info("=== LM Studio Model Benchmark ===")
-    logger.info(f"Standard-Prompt: '{STANDARD_PROMPT}'")
-    logger.info(f"Context Length: {CONTEXT_LENGTH}")
-    logger.info(f"Messungen pro Modell: {NUM_MEASUREMENT_RUNS} (+ {NUM_WARMUP_RUNS} Warmup)")
+    """Hauptfunktion mit CLI-Argumenten"""
+    parser = argparse.ArgumentParser(
+        description="LM Studio Model Benchmark - Testet alle lokal installierten LLM-Modelle",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Beispiele:
+  python benchmark.py                    # Standard: 3 Messungen pro Modell
+  python benchmark.py --runs 1           # Schnell: 1 Messung pro Modell
+  python benchmark.py --runs 5           # Genau: 5 Messungen pro Modell
+  python benchmark.py --runs 2 --context 4096  # 2 Messungen, 4096 Token Context
+
+Zeitschätzung:
+  1 Messung:  ~45 Minuten für 9 Modelle
+  2 Messungen: ~90 Minuten für 9 Modelle
+  3 Messungen: ~135 Minuten für 9 Modelle (Standard)
+  5 Messungen: ~225 Minuten für 9 Modelle
+        """
+    )
     
-    benchmark = LMStudioBenchmark()
+    parser.add_argument(
+        '--runs', '-r',
+        type=int,
+        default=NUM_MEASUREMENT_RUNS,
+        help=f'Anzahl der Messungen pro Modell-Quantisierung (Standard: {NUM_MEASUREMENT_RUNS})'
+    )
+    
+    parser.add_argument(
+        '--context', '-c',
+        type=int,
+        default=CONTEXT_LENGTH,
+        help=f'Kontextlänge in Tokens (Standard: {CONTEXT_LENGTH})'
+    )
+    
+    parser.add_argument(
+        '--prompt', '-p',
+        type=str,
+        default=STANDARD_PROMPT,
+        help=f'Standard-Test-Prompt (Standard: "{STANDARD_PROMPT}")'
+    )
+    
+    args = parser.parse_args()
+    
+    # Validierung
+    if args.runs < 1:
+        parser.error('--runs muss >= 1 sein')
+    if args.context < 256:
+        parser.error('--context muss >= 256 sein')
+    if len(args.prompt.strip()) == 0:
+        parser.error('--prompt darf nicht leer sein')
+    
+    logger.info("=== LM Studio Model Benchmark ===")
+    logger.info(f"Prompt: '{args.prompt}'")
+    logger.info(f"Context Length: {args.context} Tokens")
+    logger.info(f"Messungen pro Modell: {args.runs} (+ {NUM_WARMUP_RUNS} Warmup)")
+    logger.info(f"Geschätzte Gesamtzeit: ~{int(args.runs * 45)} Minuten bei 9 Modellen")
+    logger.info("")
+    
+    benchmark = LMStudioBenchmark(
+        num_runs=args.runs,
+        context_length=args.context,
+        prompt=args.prompt
+    )
     benchmark.run_all_benchmarks()
     
     logger.info("Benchmark abgeschlossen!")
