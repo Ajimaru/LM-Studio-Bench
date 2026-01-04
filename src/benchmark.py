@@ -805,7 +805,9 @@ class ModelDiscovery:
             
             logger.info(f"🔍 {len(models)} Modelle gefunden")
             if models:
-                logger.info(f"📋 Erste 5 Modelle: {models[:5]}")
+                logger.info("📋 Erste 5 Modelle:")
+                for model in models[:5]:
+                    logger.info(f"  • {model}")
             return models
         
         except Exception as e:
