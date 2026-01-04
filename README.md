@@ -13,7 +13,10 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **Statistische Auswertung**: Warmup + mehrere Messungen für genaue Ergebnisse
 - ✅ **SQLite-Cache**: Automatisches Caching von Benchmark-Ergebnissen (überspringt bereits getestete Modelle)
 - ✅ **Dev-Mode**: Automatische Auswahl des kleinsten Modells für schnelle Tests während Entwicklung
-- ✅ **Export**: Ergebnisse als JSON, CSV, PDF und HTML (mit interaktiven Charts)
+- ✅ **Export**:
+  - JSON, CSV (Excel/Sheets-kompatibel)
+  - PDF (Multi-Page mit Best-Practice-Empfehlungen, separate Seiten für Vision/Tool/Architektur)
+  - HTML (interaktive Plotly-Charts mit Dark Mode)
 - ✅ **Umfangreiche Metadaten**: Parametergröße, Architektur, Context-Länge, Dateigröße, Vision- und Tool-Support
 
 ## Systemanforderungen

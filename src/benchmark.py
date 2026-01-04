@@ -27,7 +27,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
@@ -1175,6 +1175,88 @@ class LMStudioBenchmark:
         
         return comparison
     
+    def _generate_best_practices(self) -> List[str]:
+        """Generiert Best-Practice-Empfehlungen basierend auf Hardware und Benchmark-Ergebnissen"""
+        recommendations = []
+        
+        if not self.results:
+            return recommendations
+        
+        # GPU-Typ Detection
+        gpu_type = self.gpu_monitor.gpu_type or "Unknown"
+        
+        # Beste Modelle nach Kriterien
+        best_speed = max(self.results, key=lambda x: x.avg_tokens_per_sec)
+        best_efficiency = max(self.results, key=lambda x: x.tokens_per_sec_per_gb)
+        best_ttft = min(self.results, key=lambda x: x.avg_ttft if x.avg_ttft > 0 else float('inf'))
+        
+        # Finde beste Balance (Speed + Efficiency)
+        best_balance = max(self.results, key=lambda x: x.avg_tokens_per_sec * 0.6 + x.tokens_per_sec_per_gb * 0.4)
+        
+        # Hardware-spezifische Empfehlungen
+        recommendations.append(f"🖥️  Hardware: {gpu_type} GPU erkannt")
+        recommendations.append("")
+        
+        # Top-Empfehlung für Speed
+        recommendations.append(f"⚡ Schnellstes Modell:")
+        recommendations.append(f"   → {best_speed.model_name} ({best_speed.quantization})")
+        recommendations.append(f"   → {best_speed.avg_tokens_per_sec:.2f} tokens/s")
+        recommendations.append("")
+        
+        # Top-Empfehlung für Effizienz
+        recommendations.append(f"💎 Effizientestes Modell (tokens/s pro GB):")
+        recommendations.append(f"   → {best_efficiency.model_name} ({best_efficiency.quantization})")
+        recommendations.append(f"   → {best_efficiency.tokens_per_sec_per_gb:.2f} tokens/s/GB")
+        recommendations.append(f"   → Größe: {best_efficiency.model_size_gb:.2f} GB")
+        recommendations.append("")
+        
+        # Top-Empfehlung für TTFT
+        recommendations.append(f"🚀 Schnellste Reaktionszeit (TTFT):")
+        recommendations.append(f"   → {best_ttft.model_name} ({best_ttft.quantization})")
+        recommendations.append(f"   → {best_ttft.avg_ttft*1000:.0f} ms bis zum ersten Token")
+        recommendations.append("")
+        
+        # Beste Balance-Empfehlung
+        recommendations.append(f"⚖️  Beste Balance (Speed + Effizienz):")
+        recommendations.append(f"   → {best_balance.model_name} ({best_balance.quantization})")
+        recommendations.append(f"   → {best_balance.avg_tokens_per_sec:.2f} tokens/s, {best_balance.model_size_gb:.2f} GB")
+        recommendations.append("")
+        
+        # Quantisierungs-Empfehlungen
+        recommendations.append(f"📊 Quantisierungs-Tipps:")
+        q4_models = [r for r in self.results if 'q4' in r.quantization.lower()]
+        q6_models = [r for r in self.results if 'q6' in r.quantization.lower()]
+        
+        if q4_models and q6_models:
+            avg_q4_speed = sum(r.avg_tokens_per_sec for r in q4_models) / len(q4_models)
+            avg_q6_speed = sum(r.avg_tokens_per_sec for r in q6_models) / len(q6_models)
+            speed_diff = ((avg_q4_speed - avg_q6_speed) / avg_q6_speed) * 100
+            
+            recommendations.append(f"   → Q4 ist im Durchschnitt {abs(speed_diff):.0f}% {'schneller' if speed_diff > 0 else 'langsamer'} als Q6")
+            recommendations.append(f"   → Q4: Schneller, weniger Qualität | Q6: Langsamer, bessere Qualität")
+        
+        recommendations.append("")
+        
+        # VRAM-basierte Empfehlungen
+        vram_info = []
+        for result in sorted(self.results, key=lambda x: x.model_size_gb)[:3]:
+            if result.model_size_gb <= 4:
+                vram_info.append(f"   → <4 GB VRAM: {result.model_name} ({result.quantization})")
+        for result in sorted(self.results, key=lambda x: x.model_size_gb):
+            if 4 < result.model_size_gb <= 8:
+                vram_info.append(f"   → 4-8 GB VRAM: {result.model_name} ({result.quantization})")
+                break
+        for result in sorted(self.results, key=lambda x: x.model_size_gb):
+            if 8 < result.model_size_gb <= 12:
+                vram_info.append(f"   → 8-12 GB VRAM: {result.model_name} ({result.quantization})")
+                break
+        
+        if vram_info:
+            recommendations.append(f"🎯 VRAM-Empfehlungen:")
+            recommendations.extend(vram_info[:3])  # Max 3 Empfehlungen
+        
+        return recommendations
+    
     def load_all_historical_data(self) -> Dict[str, List[Dict]]:
         """Lädt alle historischen Benchmark-Ergebnisse und gruppiert nach Modell+Quantisierung"""
         trends = {}
@@ -1567,6 +1649,172 @@ class LMStudioBenchmark:
                 ('FONTSIZE', (0, 1), (-1, -1), 9),
             ]))
             elements.append(stats_table)
+            elements.append(Spacer(1, 20))
+            
+            # Best-Practice-Empfehlungen
+            elements.append(Paragraph("💡 Best-Practice-Empfehlungen", heading_style))
+            recommendations = self._generate_best_practices()
+            
+            if recommendations:
+                rec_text = "<br/>".join(recommendations)
+                rec_style = ParagraphStyle(
+                    'Recommendations',
+                    parent=styles['Normal'],
+                    fontSize=9,
+                    leading=12,
+                    leftIndent=10,
+                    fontName='Courier'
+                )
+                elements.append(Paragraph(rec_text, rec_style))
+                elements.append(Spacer(1, 20))
+            
+            # === NEUE SEITE: Vision-Modelle ===
+            vision_models = [r for r in self.results if r.has_vision]
+            if vision_models:
+                elements.append(PageBreak())
+                elements.append(Paragraph("👁️  Vision-Modelle (Multimodal)", title_style))
+                elements.append(Spacer(1, 12))
+                
+                elements.append(Paragraph(f"<font size=10>{len(vision_models)} Vision-fähige Modelle gefunden</font>", styles['Normal']))
+                elements.append(Spacer(1, 15))
+                
+                # Sortiere Vision-Modelle nach Speed
+                vision_sorted = sorted(vision_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+                
+                vision_data = [['Modell', 'Param', 'Size(GB)', 'Quant.', 'Tokens/s', 'TTFT (ms)', 'Effizienz']]
+                for r in vision_sorted:
+                    vision_data.append([
+                        r.model_name[:25],
+                        r.params_size[:6],
+                        f"{r.model_size_gb:.2f}",
+                        r.quantization[:8],
+                        f"{r.avg_tokens_per_sec:.2f}",
+                        f"{r.avg_ttft*1000:.1f}" if r.avg_ttft else "N/A",
+                        f"{r.tokens_per_sec_per_gb:.2f}"
+                    ])
+                
+                vision_table = Table(vision_data, colWidths=[2*inch, 0.7*inch, 0.8*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.9*inch])
+                vision_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4a90e2')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#e8f4ff')]),
+                ]))
+                elements.append(vision_table)
+                elements.append(Spacer(1, 15))
+                
+                # Top 3 Vision-Modelle
+                elements.append(Paragraph("Top 3 Vision-Modelle", heading_style))
+                top3_text = []
+                for i, r in enumerate(vision_sorted[:3], 1):
+                    top3_text.append(f"{i}. <b>{r.model_name}</b> ({r.quantization})")
+                    top3_text.append(f"   → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB")
+                    top3_text.append("")
+                
+                elements.append(Paragraph("<br/>".join(top3_text), styles['Normal']))
+            
+            # === NEUE SEITE: Tool-Modelle ===
+            tool_models = [r for r in self.results if r.has_tools]
+            if tool_models:
+                elements.append(PageBreak())
+                elements.append(Paragraph("🔧 Tool-Calling Modelle", title_style))
+                elements.append(Spacer(1, 12))
+                
+                elements.append(Paragraph(f"<font size=10>{len(tool_models)} Tool-fähige Modelle gefunden</font>", styles['Normal']))
+                elements.append(Spacer(1, 15))
+                
+                # Sortiere Tool-Modelle nach Speed
+                tool_sorted = sorted(tool_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+                
+                tool_data = [['Modell', 'Param', 'Size(GB)', 'Quant.', 'Tokens/s', 'TTFT (ms)', 'Effizienz']]
+                for r in tool_sorted:
+                    tool_data.append([
+                        r.model_name[:25],
+                        r.params_size[:6],
+                        f"{r.model_size_gb:.2f}",
+                        r.quantization[:8],
+                        f"{r.avg_tokens_per_sec:.2f}",
+                        f"{r.avg_ttft*1000:.1f}" if r.avg_ttft else "N/A",
+                        f"{r.tokens_per_sec_per_gb:.2f}"
+                    ])
+                
+                tool_table = Table(tool_data, colWidths=[2*inch, 0.7*inch, 0.8*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.9*inch])
+                tool_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e27a4a')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('FONTSIZE', (0, 1), (-1, -1), 8),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fff4e8')]),
+                ]))
+                elements.append(tool_table)
+                elements.append(Spacer(1, 15))
+                
+                # Top 3 Tool-Modelle
+                elements.append(Paragraph("Top 3 Tool-Calling Modelle", heading_style))
+                top3_text = []
+                for i, r in enumerate(tool_sorted[:3], 1):
+                    top3_text.append(f"{i}. <b>{r.model_name}</b> ({r.quantization})")
+                    top3_text.append(f"   → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB")
+                    top3_text.append("")
+                
+                elements.append(Paragraph("<br/>".join(top3_text), styles['Normal']))
+            
+            # === NEUE SEITE: Nach Architektur gruppiert ===
+            # Gruppiere nach Architektur
+            by_arch = {}
+            for r in self.results:
+                arch = r.architecture
+                if arch not in by_arch:
+                    by_arch[arch] = []
+                by_arch[arch].append(r)
+            
+            # Nur Architekturen mit mindestens 2 Modellen anzeigen
+            major_archs = {k: v for k, v in by_arch.items() if len(v) >= 2}
+            
+            if major_archs:
+                elements.append(PageBreak())
+                elements.append(Paragraph("🏗️  Modelle nach Architektur", title_style))
+                elements.append(Spacer(1, 12))
+                
+                for arch_name, arch_models in sorted(major_archs.items(), key=lambda x: -len(x[1])):
+                    arch_sorted = sorted(arch_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+                    
+                    elements.append(Paragraph(f"<b>{arch_name.upper()}</b> ({len(arch_models)} Modelle)", heading_style))
+                    elements.append(Spacer(1, 8))
+                    
+                    arch_data = [['Modell', 'Param', 'Quant.', 'Tokens/s', 'Size(GB)']]
+                    for r in arch_sorted[:5]:  # Top 5 pro Architektur
+                        arch_data.append([
+                            r.model_name[:30],
+                            r.params_size[:6],
+                            r.quantization[:8],
+                            f"{r.avg_tokens_per_sec:.2f}",
+                            f"{r.model_size_gb:.2f}"
+                        ])
+                    
+                    arch_table = Table(arch_data, colWidths=[2.5*inch, 0.7*inch, 0.9*inch, 0.9*inch, 0.8*inch])
+                    arch_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#6a4ae2')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, 0), 9),
+                        ('FONTSIZE', (0, 1), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0ecff')]),
+                    ]))
+                    elements.append(arch_table)
+                    elements.append(Spacer(1, 15))
             
             # Erstelle PDF
             doc.build(elements)
