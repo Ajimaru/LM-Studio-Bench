@@ -19,6 +19,12 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict
 import psutil
 from tqdm import tqdm
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.pdfgen import canvas
 
 
 # Logging konfigurieren
@@ -503,7 +509,7 @@ class LMStudioBenchmark:
         logger.info(f"Benchmark abgeschlossen. {len(self.results)}/{len(models)} Modelle erfolgreich getestet")
     
     def export_results(self):
-        """Exportiert Ergebnisse als JSON und CSV"""
+        """Exportiert Ergebnisse als JSON, CSV und PDF"""
         if not self.results:
             logger.warning("Keine Ergebnisse zum Exportieren")
             return
@@ -525,6 +531,158 @@ class LMStudioBenchmark:
                 for result in self.results:
                     writer.writerow(asdict(result))
         logger.info(f"CSV-Ergebnisse gespeichert: {csv_file}")
+        
+        # PDF Export
+        self._export_pdf(timestamp)
+    
+    def _export_pdf(self, timestamp: str):
+        """Exportiert Benchmark-Ergebnisse als PDF-Report"""
+        try:
+            pdf_file = RESULTS_DIR / f"benchmark_results_{timestamp}.pdf"
+            
+            # Erstelle PDF-Dokument
+            doc = SimpleDocTemplate(
+                str(pdf_file),
+                pagesize=A4,
+                rightMargin=0.75*inch,
+                leftMargin=0.75*inch,
+                topMargin=0.75*inch,
+                bottomMargin=0.75*inch,
+                title="LM Studio Benchmark Results"
+            )
+            
+            # Container für PDF-Elemente
+            elements = []
+            
+            # Styles
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=24,
+                textColor=colors.HexColor('#1f4788'),
+                spaceAfter=20,
+                alignment=1  # Center
+            )
+            heading_style = ParagraphStyle(
+                'CustomHeading',
+                parent=styles['Heading2'],
+                fontSize=14,
+                textColor=colors.HexColor('#2d5aa8'),
+                spaceAfter=12,
+                spaceBefore=12
+            )
+            
+            # Titel
+            elements.append(Paragraph("LM Studio Model Benchmark Report", title_style))
+            elements.append(Spacer(1, 12))
+            
+            # Generiert am
+            timestamp_display = time.strftime('%d.%m.%Y %H:%M:%S')
+            elements.append(Paragraph(f"<font size=10>Generiert: {timestamp_display}</font>", styles['Normal']))
+            elements.append(Spacer(1, 20))
+            
+            # Zusammenfassung
+            elements.append(Paragraph("Benchmark Summary", heading_style))
+            summary_data = [
+                ['Metrik', 'Wert'],
+                ['Anzahl Modelle getestet', str(len(self.results))],
+                ['Messungen pro Modell', str(self.num_measurement_runs)],
+                ['Context Length', f"{self.context_length} Tokens"],
+                ['Standard-Prompt', self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt],
+            ]
+            summary_table = Table(summary_data, colWidths=[3*inch, 3*inch])
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')])
+            ]))
+            elements.append(summary_table)
+            elements.append(Spacer(1, 20))
+            
+            # Ergebnisse-Tabelle
+            elements.append(Paragraph("Detaillierte Ergebnisse", heading_style))
+            
+            # Sortiere Ergebnisse nach Tokens/s (absteigend)
+            sorted_results = sorted(
+                self.results,
+                key=lambda x: x.avg_tokens_per_sec,
+                reverse=True
+            )
+            
+            # Erstelle Tabellen-Daten
+            table_data = [['Modell', 'Quant.', 'GPU', 'Tokens/s', 'TTFT (ms)', 'Gen.Zeit (s)', 'Prompt', 'Output']]
+            for result in sorted_results:
+                table_data.append([
+                    result.model_name[:25],  # Kürzen bei Bedarf
+                    result.quantization[:8],
+                    result.gpu_type[:6],
+                    f"{result.avg_tokens_per_sec:.2f}",
+                    f"{result.avg_ttft*1000:.1f}" if result.avg_ttft else "N/A",
+                    f"{result.avg_gen_time:.2f}",
+                    str(result.prompt_tokens),
+                    str(result.completion_tokens)
+                ])
+            
+            # Formatiere Tabelle
+            results_table = Table(table_data, colWidths=[1.8*inch, 0.8*inch, 0.7*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.6*inch, 0.6*inch])
+            results_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                ('TOPPADDING', (0, 0), (-1, 0), 10),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')]),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(results_table)
+            elements.append(Spacer(1, 20))
+            
+            # Performance-Statistiken
+            elements.append(Paragraph("Performance-Statistiken", heading_style))
+            max_tps_result = max(self.results, key=lambda x: x.avg_tokens_per_sec)
+            min_tps_result = min(self.results, key=lambda x: x.avg_tokens_per_sec)
+            avg_tps = sum(r.avg_tokens_per_sec for r in self.results) / len(self.results)
+            
+            stats_data = [
+                ['Statistik', 'Wert'],
+                ['Schnellstes Modell', f"{max_tps_result.model_name} ({max_tps_result.avg_tokens_per_sec:.2f} tokens/s)"],
+                ['Langsamstes Modell', f"{min_tps_result.model_name} ({min_tps_result.avg_tokens_per_sec:.2f} tokens/s)"],
+                ['Durchschnitt Tokens/s', f"{avg_tps:.2f}"],
+            ]
+            stats_table = Table(stats_data, colWidths=[3*inch, 3*inch])
+            stats_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.lightgreen),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ]))
+            elements.append(stats_table)
+            
+            # Erstelle PDF
+            doc.build(elements)
+            logger.info(f"PDF-Ergebnisse gespeichert: {pdf_file}")
+        
+        except Exception as e:
+            logger.error(f"Fehler beim Erstellen der PDF: {e}")
 
 
 def main():

@@ -104,8 +104,18 @@ Diese werden automatisch in `_run_inference()` über das Python SDK angewendet u
 
 Ergebnisse werden im Verzeichnis `results/` gespeichert:
 
-- `benchmark_results_YYYYMMDD_HHMMSS.json` - Strukturierte Daten
+- `benchmark_results_YYYYMMDD_HHMMSS.json` - Strukturierte Daten (für Automatisierung)
 - `benchmark_results_YYYYMMDD_HHMMSS.csv` - Tabelle (Excel/Sheets-kompatibel)
+- `benchmark_results_YYYYMMDD_HHMMSS.pdf` - Formatierter Report (zum Teilen/Archivieren)
+
+### PDF-Report
+
+Der PDF-Report enthält:
+- **Summary**: Benchmark-Konfiguration (Modellanzahl, Context Length, Prompt)
+- **Detaillierte Ergebnisse**: Sortiert nach Geschwindigkeit (tokens/s absteigend)
+- **Performance-Statistiken**: Schnellstes/Langsamstes Modell, Durchschnittswerte
+
+Perfekt zum Teilen von Benchmark-Ergebnissen oder zum Archivieren!
 
 ### Beispiel CSV-Output
 
