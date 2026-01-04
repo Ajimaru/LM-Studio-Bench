@@ -25,6 +25,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import landscape
 
 
 # Logging konfigurieren
@@ -78,6 +79,9 @@ class BenchmarkResult:
     params_size: str                   # z.B. "3B", "7B"
     architecture: str                  # z.B. "mistral3", "gemma3"
     max_context_length: int            # z.B. 262144
+    model_size_gb: float               # z.B. 3.11 (Dateigröße in GB)
+    has_vision: bool                   # Vision-Support
+    has_tools: bool                    # Tool-Calling Support
 
 
 class GPUMonitor:
@@ -270,6 +274,9 @@ class ModelDiscovery:
                                 'architecture': model_data.get('architecture', 'unknown'),
                                 'params_size': model_data.get('paramsString', 'unknown'),
                                 'max_context_length': model_data.get('maxContextLength', 0),
+                                'model_size_gb': round(model_data.get('sizeBytes', 0) / 1024**3, 2),
+                                'has_vision': model_data.get('vision', False),
+                                'has_tools': model_data.get('trainedForToolUse', False),
                             }
             except Exception as e:
                 logger.warning(f"Fehler beim Laden von Metadaten-Cache: {e}")
@@ -285,6 +292,9 @@ class ModelDiscovery:
             'architecture': 'unknown',
             'params_size': 'unknown',
             'max_context_length': 0,
+            'model_size_gb': 0.0,
+            'has_vision': False,
+            'has_tools': False,
         })
     
     @staticmethod
@@ -526,7 +536,10 @@ class LMStudioBenchmark:
             timestamp=time.strftime('%Y-%m-%d %H:%M:%S'),
             params_size=metadata.get('params_size', 'unknown'),
             architecture=metadata.get('architecture', 'unknown'),
-            max_context_length=metadata.get('max_context_length', 0)
+            max_context_length=metadata.get('max_context_length', 0),
+            model_size_gb=metadata.get('model_size_gb', 0.0),
+            has_vision=metadata.get('has_vision', False),
+            has_tools=metadata.get('has_tools', False)
         )
     
     def run_all_benchmarks(self):
@@ -592,14 +605,14 @@ class LMStudioBenchmark:
         try:
             pdf_file = RESULTS_DIR / f"benchmark_results_{timestamp}.pdf"
             
-            # Erstelle PDF-Dokument
+            # Erstelle PDF-Dokument mit Landscape-Format
             doc = SimpleDocTemplate(
                 str(pdf_file),
-                pagesize=A4,
-                rightMargin=0.75*inch,
-                leftMargin=0.75*inch,
-                topMargin=0.75*inch,
-                bottomMargin=0.75*inch,
+                pagesize=landscape(A4),
+                rightMargin=0.5*inch,
+                leftMargin=0.5*inch,
+                topMargin=0.5*inch,
+                bottomMargin=0.5*inch,
                 title="LM Studio Benchmark Results"
             )
             
@@ -670,21 +683,26 @@ class LMStudioBenchmark:
             )
             
             # Erstelle Tabellen-Daten
-            table_data = [['Modell', 'Param', 'Arch', 'Quant.', 'GPU', 'Tokens/s', 'TTFT (ms)', 'Gen.Zeit (s)']]
+            table_data = [['Modell', 'Param', 'Arch', 'Size(GB)', 'Vision', 'Tools', 'Quant.', 'GPU', 'Tokens/s', 'TTFT (ms)', 'Gen.Zeit (s)']]
             for result in sorted_results:
+                vision_icon = '👁' if result.has_vision else ''
+                tools_icon = '🔧' if result.has_tools else ''
                 table_data.append([
-                    result.model_name[:18],  # Kürzen bei Bedarf
+                    result.model_name[:15],  # Kürzen bei Bedarf
                     result.params_size[:4],
-                    result.architecture[:8],
+                    result.architecture[:7],
+                    f"{result.model_size_gb:.2f}",
+                    vision_icon,
+                    tools_icon,
                     result.quantization[:6],
-                    result.gpu_type[:6],
+                    result.gpu_type[:5],
                     f"{result.avg_tokens_per_sec:.2f}",
                     f"{result.avg_ttft*1000:.1f}" if result.avg_ttft else "N/A",
                     f"{result.avg_gen_time:.2f}",
                 ])
             
-            # Formatiere Tabelle
-            results_table = Table(table_data, colWidths=[1.5*inch, 0.6*inch, 0.7*inch, 0.65*inch, 0.6*inch, 0.75*inch, 0.75*inch, 0.8*inch])
+            # Formatiere Tabelle (Landscape mit mehr Spalten)
+            results_table = Table(table_data, colWidths=[1.2*inch, 0.55*inch, 0.6*inch, 0.65*inch, 0.45*inch, 0.45*inch, 0.6*inch, 0.5*inch, 0.65*inch, 0.65*inch, 0.7*inch])
             results_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),

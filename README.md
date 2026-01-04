@@ -11,7 +11,8 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **Server-Management**: Startet LM Studio Server automatisch falls nötig
 - ✅ **Standardisierte Tests**: Verwendet denselben Prompt für alle Modelle
 - ✅ **Statistische Auswertung**: Warmup + mehrere Messungen für genaue Ergebnisse
-- ✅ **Export**: Ergebnisse als JSON und CSV
+- ✅ **Export**: Ergebnisse als JSON, CSV und PDF (Landscape-Format)
+- ✅ **Umfangreiche Metadaten**: Parametergröße, Architektur, Context-Länge, Dateigröße, Vision- und Tool-Support
 
 ## Systemanforderungen
 
@@ -110,9 +111,10 @@ Ergebnisse werden im Verzeichnis `results/` gespeichert:
 
 ### PDF-Report
 
-Der PDF-Report enthält:
+Der PDF-Report wird im **Landscape A4-Format** erstellt und enthält:
 - **Summary**: Benchmark-Konfiguration (Modellanzahl, Context Length, Prompt)
-- **Detaillierte Ergebnisse**: Sortiert nach Geschwindigkeit (tokens/s absteigend)
+- **Detaillierte Tabelle**: Alle Metriken inkl. Metadaten (Parametergröße, Architektur, Dateigröße)
+- **Visuelle Indikatoren**: Emoji-Icons für Vision-Fähigkeit (👁) und Tool-Support (🔧)
 - **Performance-Statistiken**: Schnellstes/Langsamstes Modell, Durchschnittswerte
 
 Perfekt zum Teilen von Benchmark-Ergebnissen oder zum Archivieren!
@@ -120,9 +122,9 @@ Perfekt zum Teilen von Benchmark-Ergebnissen oder zum Archivieren!
 ### Beispiel CSV-Output
 
 ```csv
-model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp,params_size,architecture,max_context_length
-llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 10:30:45,3B,llama,8192
-qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12,7B,qwen,131072
+model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp,params_size,architecture,max_context_length,model_size_gb,has_vision,has_tools
+llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 10:30:45,3B,llama,8192,1.92,False,False
+qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12,7B,qwen,131072,4.38,False,True
 ```
 
 ### Logs
@@ -143,6 +145,9 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 | **params_size** | Parametergröße des Modells (z.B. "3B", "7B") |
 | **architecture** | Modell-Architektur (z.B. "mistral3", "gemma3") |
 | **max_context_length** | Max. Context-Länge des Modells in Tokens |
+| **model_size_gb** | Dateigröße des Modells in GB (auf 2 Dezimalstellen) |
+| **has_vision** | Vision-Fähigkeit (Multimodal: Text + Bilder) |
+| **has_tools** | Tool-Calling-Support (Function/Tool-Use) |
 
 ## Fehlerbehebung
 
