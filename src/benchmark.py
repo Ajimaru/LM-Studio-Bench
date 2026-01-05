@@ -2949,14 +2949,34 @@ def main():
     """Hauptfunktion mit CLI-Argumenten"""
     global log_filename
     
-    # Initialisiere Log-Datei NUR wenn Benchmark wirklich läuft (nicht beim Import)
-    log_filename = LOGS_DIR / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    file_handler = logging.FileHandler(log_filename, mode='w')
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    file_handler.addFilter(NoJSONFilter())
-    logging.root.addHandler(file_handler)
+    # Initialisiere Log-Datei NUR wenn direkt aufgerufen (nicht über WebApp)
+    # WebApp loggt bereits via read_output() zu ihrer eigenen Log-Datei
+    # Prüfe ob wir von einem Parent-Prozess gestartet wurden (WebApp subprocess)
+    import psutil
+    current_process = psutil.Process()
+    parent_process = current_process.parent()
     
-    logger.info(f"📝 Benchmark-Log: {log_filename}")
+    # Wenn Parent "python" ist und "web/app.py" im Command → kein File-Logging
+    is_webapp_subprocess = False
+    if parent_process and 'python' in parent_process.name().lower():
+        try:
+            parent_cmdline = ' '.join(parent_process.cmdline())
+            if 'web/app.py' in parent_cmdline or 'run.py' in parent_cmdline:
+                is_webapp_subprocess = True
+        except:
+            pass
+    
+    if not is_webapp_subprocess:
+        # Normaler direkter Aufruf → erstelle Log-Datei
+        log_filename = LOGS_DIR / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        file_handler = logging.FileHandler(log_filename, mode='w')
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        file_handler.addFilter(NoJSONFilter())
+        logging.root.addHandler(file_handler)
+        logger.info(f"📝 Benchmark-Log: {log_filename}")
+    else:
+        # WebApp Subprocess → nur Console-Logging (WebApp schreibt die Log-Datei)
+        logger.info("📝 Benchmark läuft als WebApp-Subprocess - Logging via WebApp")
     
     parser = argparse.ArgumentParser(
         description="LM Studio Model Benchmark - Testet alle lokal installierten LLM-Modelle",
