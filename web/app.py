@@ -332,8 +332,9 @@ class BenchmarkManager:
                 "value": cpu_value
             })
         
-        # Pattern für RAM: "💾 RAM: 8.5GB"
-        ram_match = re.search(r'RAM\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
+        # Pattern für RAM: "💾 RAM: 8.5GB" (aber NICHT "GPU VRAM:")
+        # Verwende negative Lookbehind, um "GPU VRAM:" auszuschließen
+        ram_match = re.search(r'(?<!GPU\s)RAM\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
         if ram_match:
             ram_value = float(ram_match.group(1))
             self.hardware_history["ram"].append({
