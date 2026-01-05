@@ -35,7 +35,7 @@ if "--help" in sys.argv or "-h" in sys.argv:
     print("      → Führt Benchmark direkt aus und zeigt Ergebnisse")
     print()
     print("  2️⃣  Web-Dashboard (Empfohlen):")
-    print("      ./run.py --webapp  (oder -w)")
+    print("      ./run.py --webapp  (oder --web oder -w)")
     print("      → Startet modernes Web-Interface mit Live-Streaming")
     print("      → Öffnet automatisch Browser auf http://localhost:8080")
     print("      → Features: Live-Logs, Results-Browser, Dark Mode")
@@ -44,7 +44,7 @@ if "--help" in sys.argv or "-h" in sys.argv:
     print()
     print("🌐 WEB-DASHBOARD OPTIONEN:")
     print()
-    print("  --webapp, -w          Startet FastAPI Web-Dashboard")
+    print("  --webapp, --web, -w   Startet FastAPI Web-Dashboard")
     print()
     print("=" * 60)
     print()
@@ -70,12 +70,12 @@ if "--help" in sys.argv or "-h" in sys.argv:
     
     sys.exit(0)
 
-# Prüfe auf --webapp oder -w Flag
-has_web_flag = "--webapp" in sys.argv or "-w" in sys.argv
+# Prüfe auf --webapp, --web oder -w Flag
+has_web_flag = "--webapp" in sys.argv or "--web" in sys.argv or "-w" in sys.argv
 
 if has_web_flag:
-    # Entferne --webapp/-w aus argv für saubere Übergabe
-    args = [arg for arg in sys.argv[1:] if arg not in ("--webapp", "-w")]
+    # Entferne --webapp/--web/-w aus argv für saubere Übergabe
+    args = [arg for arg in sys.argv[1:] if arg not in ("--webapp", "--web", "-w")]
     
     # Starte Web-Dashboard via app.py
     web_dir = project_root / "web"
