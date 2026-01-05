@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LM Studio Benchmark Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --dark: #1f2937;
+            --darker: #111827;
+            --light: #f3f4f6;
+            --border: #e5e7eb;
+            --text: #1f2937;
+            --text-light: #6b7280;
+            --bg: #ffffff;
+        }
+
+        body.dark-mode {
+            --dark: #f3f4f6;
+            --darker: #111827;
+            --light: #1f2937;
+            --border: #374151;
+            --text: #f3f4f6;
+            --text-light: #d1d5db;
+            --bg: #111827;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary) 0%, #1e40af 100%);
+            color: white;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .theme-toggle {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            font-size: 1.125rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .status-idle { background: #e5e7eb; color: #374151; }
+        .status-running { background: #dbeafe; color: #1e40af; animation: pulse 2s infinite; }
+        .status-paused { background: #fed7aa; color: #7c2d12; }
+        .status-completed { background: #dcfce7; color: #15803d; }
+        .status-stopped { background: #fee2e2; color: #7f1d1d; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #2563eb;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #059669;
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            color: white;
+        }
+
+        .btn-warning:hover:not(:disabled) {
+            background: #d97706;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #dc2626;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .terminal {
+            background: var(--darker);
+            color: #10b981;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.875rem;
+            height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.5;
+        }
+
+        .terminal line {
+            display: block;
+        }
+
+        .terminal::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .terminal::-webkit-scrollbar-track {
+            background: var(--light);
+            border-radius: 4px;
+        }
+
+        .terminal::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        .terminal::-webkit-scrollbar-thumb:hover {
+            background: var(--text-light);
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .info-item {
+            padding: 1rem;
+            background: var(--light);
+            border-radius: 0.5rem;
+            text-align: center;
+        }
+
+        .info-label {
+            font-size: 0.875rem;
+            color: var(--text-light);
+            margin-bottom: 0.25rem;
+        }
+
+        .info-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            background: var(--bg);
+            color: var(--text);
+            font-size: 1rem;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .checkbox-group {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: auto;
+            cursor: pointer;
+        }
+
+        .checkbox-item label {
+            margin-bottom: 0;
+            cursor: pointer;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+        }
+
+        .alert-success {
+            background: #dcfce7;
+            color: #15803d;
+            border: 1px solid #bbf7d0;
+        }
+
+        .alert-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fde68a;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #7f1d1d;
+            border: 1px solid #fecaca;
+        }
+
+        .section {
+            margin-top: 2rem;
+        }
+
+        .section h3 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+
+            header {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
+
+            .terminal {
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>
+            📊 LM Studio Benchmark Dashboard
+        </h1>
+        <button class="theme-toggle" onclick="toggleTheme()">🌙 Dark Mode</button>
+    </header>
+
+    <div class="container">
+        <!-- Status Section -->
+        <div class="grid">
+            <div class="card">
+                <h2>Status</h2>
+                <div class="status-badge" id="statusBadge" class="status-idle">
+                    ⏸️ Untätig
+                </div>
+                <div class="info-grid" style="margin-top: 1rem;">
+                    <div class="info-item">
+                        <div class="info-label">Laufzeit</div>
+                        <div class="info-value" id="uptime">--:--</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Clients</div>
+                        <div class="info-value" id="clients">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Control Panel -->
+            <div class="card">
+                <h2>Steuerung</h2>
+                <div class="controls">
+                    <button class="btn-primary" id="btnStart" onclick="toggleStartModal()">
+                        ▶️ Start
+                    </button>
+                    <button class="btn-warning" id="btnPause" onclick="pauseBenchmark()" disabled>
+                        ⏸️ Pause
+                    </button>
+                    <button class="btn-success" id="btnResume" onclick="resumeBenchmark()" disabled>
+                        ▶️ Fortsetzen
+                    </button>
+                    <button class="btn-danger" id="btnStop" onclick="stopBenchmark()" disabled>
+                        ⏹️ Stopp
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Start Modal -->
+        <div id="startModal" class="card hidden" style="margin-bottom: 2rem; border: 2px solid var(--primary);">
+            <h2>Benchmark Starten</h2>
+            
+            <div class="form-group">
+                <label>Runs (Messungen pro Modell)</label>
+                <input type="number" id="paramRuns" value="3" min="1" max="10">
+            </div>
+
+            <div class="form-group">
+                <label>Context Length</label>
+                <input type="number" id="paramContext" value="2048" min="512" max="32768">
+            </div>
+
+            <div class="form-group">
+                <label>Modell-Limit</label>
+                <input type="number" id="paramLimit" placeholder="Leer = alle Modelle" min="1">
+            </div>
+
+            <div class="form-group">
+                <label>Custom Prompt (optional)</label>
+                <input type="text" id="paramPrompt" placeholder="Leer = Standard-Prompt">
+            </div>
+
+            <div class="form-group">
+                <label>Include Pattern (Regex, optional)</label>
+                <input type="text" id="paramInclude" placeholder="z.B. mistral|llama">
+            </div>
+
+            <div class="form-group">
+                <label>Exclude Pattern (Regex, optional)</label>
+                <input type="text" id="paramExclude" placeholder="z.B. gpt|claude">
+            </div>
+
+            <div class="checkbox-group">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="paramVisionOnly">
+                    <label for="paramVisionOnly">Nur Vision-Modelle</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="paramToolsOnly">
+                    <label for="paramToolsOnly">Nur Tool-Modelle</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="paramRetest">
+                    <label for="paramRetest">Cache ignorieren</label>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" id="paramDevMode">
+                    <label for="paramDevMode">Dev-Mode (1 Modell, 1 Run)</label>
+                </div>
+            </div>
+
+            <div class="controls" style="gap: 1rem; margin-top: 1rem;">
+                <button class="btn-success" onclick="startBenchmark()">✅ Benchmark Starten</button>
+                <button class="btn-primary" onclick="toggleStartModal()">❌ Abbrechen</button>
+            </div>
+        </div>
+
+        <!-- Terminal Output -->
+        <div class="section">
+            <h3>📝 Live-Terminal</h3>
+            <div class="card" style="padding: 0;">
+                <div id="terminal" class="terminal"></div>
+            </div>
+        </div>
+
+        <!-- Alerts -->
+        <div id="alerts" style="margin-top: 2rem;"></div>
+    </div>
+
+    <script>
+        // ===== Globale Variablen =====
+        let websocket = null;
+        let statusCheckInterval = null;
+        let uptimeInterval = null;
+        let startTime = null;
+
+        // ===== Theme Toggle =====
+        function toggleTheme() {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
+        }
+
+        // Theme auf Laden einrichten
+        window.addEventListener('DOMContentLoaded', () => {
+            const theme = localStorage.getItem('theme');
+            if (theme === 'dark') {
+                document.body.classList.add('dark-mode');
+            }
+        });
+
+        // ===== Status Update =====
+        async function updateStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                updateStatusBadge(data.status, data.running);
+                
+                if (data.start_time) {
+                    startTime = new Date(data.start_time);
+                }
+            } catch (error) {
+                console.error('Status-Update Fehler:', error);
+            }
+        }
+
+        function updateStatusBadge(status, running) {
+            const badge = document.getElementById('statusBadge');
+            const btnStart = document.getElementById('btnStart');
+            const btnPause = document.getElementById('btnPause');
+            const btnResume = document.getElementById('btnResume');
+            const btnStop = document.getElementById('btnStop');
+
+            badge.className = `status-badge status-${status}`;
+            
+            const icons = {
+                idle: '⏸️ Untätig',
+                running: '🔄 Läuft',
+                paused: '⏸️ Pausiert',
+                completed: '✅ Abgeschlossen',
+                stopped: '⏹️ Gestoppt'
+            };
+            
+            badge.textContent = icons[status] || status;
+
+            // Button-Status anpassen
+            btnStart.disabled = running;
+            btnPause.disabled = status !== 'running';
+            btnResume.disabled = status !== 'paused';
+            btnStop.disabled = !running && status !== 'paused';
+        }
+
+        // ===== Uptime Anzeige =====
+        function updateUptime() {
+            if (!startTime) return;
+            
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const hours = Math.floor(elapsed / 3600);
+            const minutes = Math.floor((elapsed % 3600) / 60);
+            const seconds = elapsed % 60;
+            
+            document.getElementById('uptime').textContent = 
+                `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        // ===== WebSocket Setup =====
+        function setupWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            websocket = new WebSocket(`${protocol}//${window.location.host}/ws/benchmark`);
+
+            websocket.onopen = () => {
+                console.log('📡 WebSocket verbunden');
+                addAlert('WebSocket verbunden', 'success');
+            };
+
+            websocket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'output') {
+                    appendTerminalLine(data.line);
+                    updateStatusBadge(data.status, true);
+                } else if (data.type === 'status') {
+                    updateStatusBadge(data.status, data.running);
+                } else if (data.type === 'completed') {
+                    appendTerminalLine(data.message);
+                    updateStatusBadge('completed', false);
+                    startTime = null;
+                }
+            };
+
+            websocket.onerror = (error) => {
+                console.error('❌ WebSocket Fehler:', error);
+                addAlert('WebSocket Fehler', 'error');
+            };
+
+            websocket.onclose = () => {
+                console.log('WebSocket getrennt');
+            };
+        }
+
+        // ===== Terminal Ausgabe =====
+        function appendTerminalLine(line) {
+            const terminal = document.getElementById('terminal');
+            terminal.textContent += line;
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function clearTerminal() {
+            document.getElementById('terminal').textContent = '';
+        }
+
+        // ===== Benchmark Kontrolle =====
+        async function startBenchmark() {
+            const params = {
+                runs: parseInt(document.getElementById('paramRuns').value) || null,
+                context: parseInt(document.getElementById('paramContext').value) || null,
+                limit: parseInt(document.getElementById('paramLimit').value) || null,
+                prompt: document.getElementById('paramPrompt').value || null,
+                include_models: document.getElementById('paramInclude').value || null,
+                exclude_models: document.getElementById('paramExclude').value || null,
+                only_vision: document.getElementById('paramVisionOnly').checked,
+                only_tools: document.getElementById('paramToolsOnly').checked,
+                retest: document.getElementById('paramRetest').checked,
+                dev_mode: document.getElementById('paramDevMode').checked
+            };
+
+            try {
+                clearTerminal();
+                const response = await fetch('/api/benchmark/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(params)
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    addAlert(data.message, 'success');
+                    toggleStartModal();
+                    updateStatus();
+                } else {
+                    addAlert(data.message, 'error');
+                }
+            } catch (error) {
+                addAlert(`Fehler: ${error.message}`, 'error');
+            }
+        }
+
+        async function pauseBenchmark() {
+            try {
+                const response = await fetch('/api/benchmark/pause', { method: 'POST' });
+                const data = await response.json();
+                addAlert(data.message, data.success ? 'success' : 'error');
+                updateStatus();
+            } catch (error) {
+                addAlert(`Fehler: ${error.message}`, 'error');
+            }
+        }
+
+        async function resumeBenchmark() {
+            try {
+                const response = await fetch('/api/benchmark/resume', { method: 'POST' });
+                const data = await response.json();
+                addAlert(data.message, data.success ? 'success' : 'error');
+                updateStatus();
+            } catch (error) {
+                addAlert(`Fehler: ${error.message}`, 'error');
+            }
+        }
+
+        async function stopBenchmark() {
+            if (!confirm('Benchmark wirklich beenden?')) return;
+            
+            try {
+                const response = await fetch('/api/benchmark/stop', { method: 'POST' });
+                const data = await response.json();
+                addAlert(data.message, data.success ? 'success' : 'error');
+                updateStatus();
+                startTime = null;
+            } catch (error) {
+                addAlert(`Fehler: ${error.message}`, 'error');
+            }
+        }
+
+        // ===== UI Hilfsfunktionen =====
+        function toggleStartModal() {
+            document.getElementById('startModal').classList.toggle('hidden');
+        }
+
+        function addAlert(message, type = 'info') {
+            const alerts = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.innerHTML = `
+                <span>${message}</span>
+                <button onclick="this.parentElement.remove()" style="background: none; border: none; color: inherit; cursor: pointer; font-size: 1.5rem; padding: 0;">×</button>
+            `;
+            alerts.appendChild(alert);
+            setTimeout(() => alert.remove(), 5000);
+        }
+
+        // ===== Initialization =====
+        window.addEventListener('DOMContentLoaded', () => {
+            setupWebSocket();
+            updateStatus();
+            updateUptime();
+            
+            statusCheckInterval = setInterval(updateStatus, 2000);
+            uptimeInterval = setInterval(updateUptime, 1000);
+        });
+
+        window.addEventListener('beforeunload', () => {
+            if (statusCheckInterval) clearInterval(statusCheckInterval);
+            if (uptimeInterval) clearInterval(uptimeInterval);
+            if (websocket) websocket.close();
+        });
+    </script>
+</body>
+</html>
