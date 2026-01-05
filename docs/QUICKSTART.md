@@ -82,24 +82,35 @@ http://192.168.1.100:8080
 
 ## Advanced Features
 
-### 1️⃣ Hardware Profiling
+### 1️⃣ Hardware Profiling (6 Live Charts)
 
-**Enable GPU Temperature & Power Monitoring:**
+**Enable Complete Hardware Monitoring:**
 
 ```bash
 ./run.py --enable-profiling --runs 1 --limit 3
 ```
 
-**With Safety Limits:**
+**Monitored Metrics:**
+
+- 🌡️ GPU Temperatur (°C)
+- ⚡ GPU Leistung (W)
+- 💾 GPU VRAM (GB)
+- 🧠 GPU GTT (GB) - AMD only
+- 🖥️ System CPU-Auslastung (%)
+- 💾 System RAM-Auslastung (GB)
+
+✅ Alle Metriken werden live in der WebApp angezeigt
+✅ 6 interaktive Plotly.js Charts mit Min/Max/Avg Stats
+✅ Gleitendes Mittel für stabile RAM-Kurven
+✅ Jede Metrik wird jede Sekunde gemessen
+
+**Mit Safety Limits:**
 
 ```bash
 ./run.py --enable-profiling --max-temp 85 --max-power 350
 ```
 
-✅ Monitors GPU temperature and power draw in background thread
-✅ Supports NVIDIA (nvidia-smi), AMD (rocm-smi), Intel (intel_gpu_top)
-✅ Records min/max/avg values per benchmark run
-✅ Aborts benchmark if safety limits exceeded
+✅ Unterbricht Benchmark wenn Limits überschritten werden
 
 ### 2️⃣ AMD GTT Support (Shared System RAM)
 

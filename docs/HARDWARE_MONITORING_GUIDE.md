@@ -1,260 +1,148 @@
 # Hardware-Monitoring Live-Charts - Anleitung
 
-## 🐛 Bugfix: Hardware-Monitoring anzeigen
+## ✅ Status: Vollständig Implementiert
 
-### Problem
-Das Hardware-Monitoring (GPU-Temperatur, Power-Draw, VRAM-Auslastung) wurde nicht live in der WebApp angezeigt, obwohl es im Backend korrekt funktionierte.
+Das Hardware-Monitoring ist jetzt vollständig funktionsfähig mit stabilen Live-Charts für alle Metriken.
 
-### Ursache
-Die HardwareMonitor-Klasse sammelte die Daten in Background-Threads, gab sie aber nicht auf `stdout` aus. Die WebApp konnte daher keine Daten zum Parsen finden.
+## 📊 Implementierte Metriken
 
-### Lösung
+### GPU-Metriken
 
-#### 1. Backend: Hardware-Metriken auf stdout drucken
-In `src/benchmark.py` wurde die `_monitor_loop()` Methode aktualisiert:
+1. **🌡️ GPU Temperatur** (°C) - Rot
+   - NVIDIA: `nvidia-smi --query-gpu=temperature.gpu`
+   - AMD: `rocm-smi --showtemp`
+   - Intel: `intel-gpu-top` (wenn verfügbar)
 
-```python
-def _monitor_loop(self):
-    """Background-Thread für kontinuierliche Messungen"""
-    while self.monitoring:
-        try:
-            temp = self._get_temperature()
-            power = self._get_power_draw()
-            
-            with self.lock:
-                if temp is not None:
-                    self.temps.append(temp)
-                    # 🆕 Drucke auf stdout für Live-Monitoring in WebApp
-                    print(f"🌡️ GPU Temp: {temp:.1f}°C", flush=True)
-                if power is not None:
-                    self.powers.append(power)
-                    # 🆕 Drucke auf stdout für Live-Monitoring in WebApp
-                    print(f"⚡ GPU Power: {power:.1f}W", flush=True)
-            
-            time.sleep(1)  # Messungen jede Sekunde
-        except Exception as e:
-            logger.debug(f"Monitoring-Fehler: {e}")
-            time.sleep(2)
-```
+2. **⚡ GPU Leistung** (W) - Blau
+   - NVIDIA: `nvidia-smi --query-gpu=power.draw`
+   - AMD: `rocm-smi` (Current Socket Graphics Package Power)
+   - Intel: Alternative Messmethoden
 
-**Key Points:**
-- `flush=True` stellt sicher, dass die Ausgabe sofort verfügbar ist
-- Emoji-Präfixe machen die Ausgabe leicht erkennbar
-- Jede Sekunde wird eine neue Messung gedruckt
+3. **💾 GPU VRAM-Auslastung** (GB) - Grün
+   - NVIDIA: `nvidia-smi --query-gpu=memory.used`
+   - AMD: `rocm-smi --showmeminfo vram` (in Bytes)
 
-#### 2. WebApp: Regex-Patterns aktualisiert
-In `web/app.py` wurde die `parse_hardware_metrics()` Methode aktualisiert:
+4. **🧠 GPU GTT-Auslastung** (GB) - Violett
+   - AMD nur: `rocm-smi --showmeminfo gtt`
+   - System RAM das als VRAM genutzt wird
+   - Beispiel: 2GB VRAM + 46GB GTT = 48GB effektiv
 
-```python
-def parse_hardware_metrics(self, output_line: str):
-    """Parse Hardware-Metriken aus Benchmark-Output"""
-    import re
-    
-    # Pattern für GPU-Temperatur: "🌡️ GPU Temp: 45.5°C"
-    temp_match = re.search(r'GPU\s+Temp\s*:\s*(\d+(?:\.\d+)?)°?C', output_line, re.IGNORECASE)
-    if temp_match:
-        temp_value = float(temp_match.group(1))
-        self.hardware_history["temperatures"].append({
-            "timestamp": datetime.now().isoformat(),
-            "value": temp_value
-        })
-    
-    # Pattern für Power: "⚡ GPU Power: 150.5W"
-    power_match = re.search(r'GPU\s+Power\s*:\s*(\d+(?:\.\d+)?)W', output_line, re.IGNORECASE)
-    if power_match:
-        power_value = float(power_match.group(1))
-        self.hardware_history["power"].append({
-            "timestamp": datetime.now().isoformat(),
-            "value": power_value
-        })
-```
+### System-Metriken (mit --enable-profiling)
 
-**Key Points:**
-- Regex-Patterns trimmen die Emojis und Formate
-- `re.IGNORECASE` erlaubt flexible Schreibweisen
-- Werte werden mit Timestamps in Listen gespeichert
+1. **🖥️ CPU-Auslastung** (%) - Orange
+   - `psutil.cpu_percent(interval=0.1)`
+   - 0-100% Range
+   - System-weit, nicht pro Prozess
 
-#### 3. WebSocket-Streaming
-Die WebSocket-Verbindung sendet die Hardware-Metriken alle 2 Sekunden an den Frontend:
+2. **💾 System-RAM-Auslastung** (GB) - Cyan
+   - `psutil.virtual_memory().used`
+   - **Smoothing**: Gleitendes Mittel über 3 Messungen
+   - Verhindert Spikes durch Cache/Buffer-Schwankungen
+   - Sehr stabile Kurven
 
-```python
-# In websocket_benchmark() Funktion
-if current_time - manager.last_hardware_send_time >= 2.0:
-    hardware_data = {
-        "temperatures": manager.hardware_history["temperatures"][-60:],
-        "power": manager.hardware_history["power"][-60:],
-        "vram": manager.hardware_history["vram"][-60:]
-    }
-    await websocket.send_json({"type": "hardware", "data": hardware_data})
-    manager.last_hardware_send_time = current_time
-```
+## 🔧 Aktivierung
 
-**Features:**
-- Drosselung: Nur alle 2 Sekunden senden (nicht jede Messung)
-- History: Letzte 60 Einträge pro Metrik (~2 Minuten)
-- Effizient: Nur neue Daten senden
+Hardware-Monitoring wird automatisch aktiviert mit:
 
-#### 4. Frontend: Plotly.js Charts
-In `web/templates/dashboard.html.jinja` werden die Daten in Echtzeit-Charts visualisiert:
-
-```javascript
-function updateTemperatureChart(data) {
-    const trace = {
-        x: data.map(d => new Date(d.timestamp).toLocaleTimeString()),
-        y: data.map(d => d.value),
-        type: 'scatter',
-        mode: 'lines+markers',
-        line: {color: '#ef4444', width: 2},  // Red for temperature
-        fill: 'tozeroy'
-    };
-    Plotly.newPlot('chart-temperature', [trace], layout, {responsive: true});
-}
-```
-
-**Features:**
-- Live-Updates alle 2 Sekunden
-- Min/Max/Avg Stats automatisch berechnet
-- Dark-Mode unterstützt
-- Responsive Design
-
----
-
-## 🧪 Testing
-
-### 1. Syntax-Validierung
 ```bash
-# Prüfe Python-Dateien auf Syntax-Fehler
-./.venv/bin/python -m py_compile web/app.py src/benchmark.py
+# WebApp mit Hardware-Monitoring
+./run.py --webapp
+
+# CLI mit Hardware-Monitoring
+./run.py --enable-profiling
+
+# Nur mit bestimmten Modellen
+./run.py --limit 2 --enable-profiling
 ```
 
-### 2. Regex-Pattern Validation
+## 📝 Logger-Ausgaben
+
+Wenn `--enable-profiling` aktiv ist, gibt das Benchmark jede Sekunde Metriken aus:
+
+```text
+🌡️ GPU Temp: 45.3°C
+⚡ GPU Power: 125.5W
+💾 GPU VRAM: 8.2GB
+🧠 GPU GTT: 0.0GB
+🖥️ CPU: 35.2%
+💾 RAM: 18.5GB
+```
+
+Diese Ausgaben werden:
+
+- ✅ In `logs/benchmark_YYYYMMDD_HHMMSS.log` gespeichert
+- ✅ In der WebApp im Terminal angezeigt
+- ✅ Als Charts visualisiert
+
+## 🎯 Datenfluss
+
+```
+Backend (benchmark.py)
+  ↓
+HardwareMonitor._monitor_loop()
+  ├─ _get_temperature()
+  ├─ _get_power_draw()
+  ├─ _get_vram_usage()
+  ├─ _get_gtt_usage()
+  ├─ _get_cpu_usage()
+  └─ _get_ram_usage()
+       ↓
+logger.info() → stdout + log file
+       ↓
+WebApp Backend (app.py)
+  ├─ _consume_output() Task (blocking readline)
+  ├─ parse_hardware_metrics() (Regex patterns)
+  └─ hardware_history dict
+       ↓
+WebSocket
+  └─ Sendet alle 2 Sekunden (letzte 60 Einträge)
+       ↓
+Frontend (dashboard.html.jinja)
+  └─ 6 Plotly.js Charts mit Live-Updates
+```
+
+## 🐛 Fixes und Optimierungen
+
+### Fix 1: rocm-smi 7.0.1 Format-Änderung
+
+**Problem**: rocm-smi änderte sein Output-Format
+**Lösung**: Regex-Parser extrakt letzte Zahl aus Zeile
+
 ```python
-import re
-
-# Test-Daten
-test_lines = [
-    "🌡️ GPU Temp: 45.5°C",
-    "⚡ GPU Power: 150.5W",
-]
-
-# Test Temperature
-temp_match = re.search(r'GPU\s+Temp\s*:\s*(\d+(?:\.\d+)?)°?C', test_lines[0])
-print(f"Temp: {float(temp_match.group(1))}°C")  # 45.5
-
-# Test Power
-power_match = re.search(r'GPU\s+Power\s*:\s*(\d+(?:\.\d+)?)W', test_lines[1])
-print(f"Power: {float(power_match.group(1))}W")  # 150.5
+match = re.search(r'[\d.]+\s*$', line.strip())
 ```
 
-### 3. WebApp Test
-```bash
-# Starte WebApp
-python run.py --webapp
+### Fix 2: Logger-Routing
 
-# Im Browser öffnen: http://localhost:<PORT>
+**Problem**: Hardware-Daten erschienen nicht in Log-Dateien
+**Lösung**: `print()` → `logger.info()` für stdout + file
 
-# Benchmark starten mit Hardware-Monitoring:
-1. Navigiere zu "Benchmark" View
-2. Starte ein Benchmark ("Start Benchmark" Button)
-3. Beobachte die 3 Hardware-Charts:
-   - 🌡️ GPU Temperatur (Rot)
-   - ⚡ GPU Leistung (Orange)
-   - 💾 GPU VRAM (Grün)
-```
+### Fix 3: WebApp Output-Streaming
 
----
+**Problem**: WebApp zeigte nur 10% der Hardware-Daten
+**Lösung**: `asyncio.wait_for()` → blocking `readline()` im executor
 
-## 📊 Output-Beispiele
+### Fix 4: RAM-Monitoring Spikes
 
-### Backend (Console)
-```
-[11:23:45] ⚙️ Starting benchmark for model: llama-7b-q4...
-[11:23:48] 🌡️ GPU Temp: 45.5°C
-[11:23:48] ⚡ GPU Power: 150.5W
-[11:23:49] 🌡️ GPU Temp: 46.2°C
-[11:23:49] ⚡ GPU Power: 155.0W
-[11:23:50] 🌡️ GPU Temp: 48.1°C
-[11:23:50] ⚡ GPU Power: 160.5W
-⚡ Run 1/3: 45.23 tokens/s
-```
+**Problem**: RAM-Chart sprang zwischen 1.8GB und 28.3GB
+**Lösung**: Gleitendes Mittel über 3 Messungen → sehr stabile Kurve
 
-### WebSocket (Browser DevTools)
-```json
-{
-  "type": "hardware",
-  "data": {
-    "temperatures": [
-      {"timestamp": "2026-01-05T11:23:48.123456", "value": 45.5},
-      {"timestamp": "2026-01-05T11:23:49.456789", "value": 46.2},
-      {"timestamp": "2026-01-05T11:23:50.789012", "value": 48.1}
-    ],
-    "power": [
-      {"timestamp": "2026-01-05T11:23:48.234567", "value": 150.5},
-      {"timestamp": "2026-01-05T11:23:49.567890", "value": 155.0},
-      {"timestamp": "2026-01-05T11:23:50.890123", "value": 160.5}
-    ],
-    "vram": []
-  }
-}
-```
+### Fix 5: Laufzeit-Counter stoppt nicht
 
----
+**Problem**: Laufzeit-Counter lief nach Benchmark-Ende weiter
+**Lösung**: `clearInterval(uptimeInterval)` bei completion
 
-## ⚠️ Bekannte Limitierungen
+### Fix 6: WebApp Initialization Race Conditions
 
-1. **GPU-Tool Abhängigkeit**: Hardware-Monitoring benötigt:
-   - NVIDIA: `nvidia-smi` Command
-   - AMD: `rocm-smi` Command
-   - Ohne GPU-Tool: Keine Temperatur/Power-Messungen
+**Problem**: Links waren nicht interaktiv, Light Mode beim Start
+**Lösung**: 3x DOMContentLoaded Events → 1x konsolidiertes Event
 
-2. **VRAM-Support**: Aktuell wird VRAM nicht vom Backend gemessen (nur Temperatur + Power)
+## 📊 Chart-Eigenschaften
 
-3. **Timing**: Hardware-Messungen erfolgen jede 1 Sekunde, WebSocket-Updates alle 2 Sekunden
+Alle Charts aktualisieren sich alle 2 Sekunden mit:
 
----
-
-## 🔧 Troubleshooting
-
-### Charts zeigen immer noch keine Daten?
-
-**Prüfen Sie:**
-1. Ist `--enable-profiling` aktiviert? (Optional, aber empfohlen)
-2. Sind die GPU-Tools (`nvidia-smi` / `rocm-smi`) installiert?
-3. Öffnen Sie Browser DevTools (F12) und prüfen Sie WebSocket-Messages unter Network/WS
-
-**Debug-Tipps:**
-- Schauen Sie in die Console-Ausgabe der WebApp
-- Suchen Sie nach `GPU Temp:` oder `GPU Power:` Zeilen
-- Wenn keine Ausgabe: Hardware-Monitor ist möglicherweise deaktiviert
-
-### Regex-Fehler beim Parsen?
-
-**Lösung:**
-- Prüfen Sie das exakte Output-Format mit `print(output_line)`
-- Testen Sie die Regex mit einem Online-Tool
-- Aktualisieren Sie die Regex-Patterns in `parse_hardware_metrics()`
-
----
-
-## 📝 Commits
-
-```
-🐛 Fix: Hardware-Monitoring Live-Ausgabe (408ab62)
-  - HardwareMonitor._monitor_loop() gibt Temperature und Power auf stdout aus
-  - Regex-Patterns in WebApp angepasst
-  - Live-Metriken werden während Benchmark-Ausführung angezeigt
-
-📝 Update: Phase 14.5 Bugfix-Dokumentation (3f09fae)
-  - Hardware-Output-Formate mit Emoji aktualisiert
-  - Bugfix dokumentiert
-```
-
----
-
-## 🎯 Nächste Schritte (Phase 14.6+)
-
-- [ ] VRAM-Monitoring (GPU Memory Usage)
-- [ ] Historische Daten-Speicherung (Zwischen Sessions)
-- [ ] Erweiterte Statistiken (P50, P95, P99)
-- [ ] Export der Monitoring-Daten (CSV/JSON)
-- [ ] Alerting bei Temperatur-Grenzen
+- **Min/Max/Avg Statistiken** - Echtzeit-Berechnung
+- **Letzte 60 Datenpunkte** - Ca. 2 Minuten Geschichte
+- **Responsive Design** - Passt sich Fenster an
+- **Dark Mode** - Standard für alle Charts
+- **Hover-Tooltips** - Zeige exakte Werte beim Hover

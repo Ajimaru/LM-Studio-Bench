@@ -7,8 +7,10 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - 🌐 **Web Dashboard**: Moderne FastAPI-basierte Web-UI mit Live-Streaming, Dark Mode und interaktivem Ergebnisse-Browser
 - ✅ **Automatische Modell-Discovery**: Findet alle lokal installierten Modelle und Quantisierungen
 - ✅ **GPU-Detection**: Erkennt NVIDIA, AMD und Intel GPUs automatisch
+- ✅ **6 Live Hardware-Charts**: GPU Temp, Power, VRAM, GTT (AMD) + System CPU & RAM
 - ✅ **VRAM-Monitoring**: Misst VRAM-Nutzung während des Benchmarks
 - ✅ **GTT Support (AMD)**: Nutzt Shared System RAM zusätzlich zu VRAM (z.B. 2GB VRAM + 46GB GTT = 48GB)
+- ✅ **System Profiling**: CPU-Auslastung und RAM-Nutzung mit `--enable-profiling`
 - ✅ **Hardware-Profiling**: Optionales Monitoring von GPU-Temperatur und Power-Draw (NVIDIA/AMD/Intel)
 - ✅ **Progressive GPU-Offload**: Versucht automatisch verschiedene GPU-Offload-Levels (1.0 → 0.7 → 0.5 → 0.3)
 - ✅ **Server-Management**: Startet LM Studio Server automatisch falls nötig
