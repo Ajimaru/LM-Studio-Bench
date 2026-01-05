@@ -368,6 +368,10 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
     if params.enable_profiling:
         args.append("--enable-profiling")
     
+    # Debug: Zeige übergebene Args
+    logger.info(f"🔧 Benchmark-Args: {args}")
+    logger.info(f"📊 enable_profiling={params.enable_profiling}")
+    
     success = await manager.start_benchmark(args)
     return {
         "success": success,
