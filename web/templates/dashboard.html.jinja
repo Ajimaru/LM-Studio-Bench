@@ -715,9 +715,6 @@
         <div class="grid">
             <div class="card">
                 <h2>Status</h2>
-        <div class="grid">
-            <div class="card">
-                <h2>Status</h2>
                 <div class="status-badge" id="statusBadge" class="status-idle">
                     ⏸️ Untätig
                 </div>
@@ -946,10 +943,10 @@
         <!-- END BENCHMARK VIEW -->
 
         <!-- RESULTS VIEW -->
-        <div id="view-results" class="view-container hidden">
-            <div class="section">
+        <div id="view-results" class="view-container hidden" style="min-height: 500px;">
+            <div class="section" style="min-height: 400px;">
                 <h3>📊 Benchmark-Ergebnisse</h3>
-                <div class="card" style="padding: 1rem;">
+                <div class="card" style="padding: 1rem; min-height: 300px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <div>
                             <span id="cache-stats-text-results" style="font-size: 0.9rem; opacity: 0.8;">Lade Cache-Statistiken...</span>
@@ -1547,6 +1544,22 @@
                 }).join('');
                 tbody.innerHTML = rowsHtml;
                 console.log('renderResults: rows=', sorted.length, 'html-length=', rowsHtml.length, 'first=', sorted[0]);
+                console.log('tbody after render:', tbody.innerHTML.substring(0, 500));
+                console.log('tbody children:', tbody.children.length);
+                const viewResults = document.getElementById('view-results');
+                const section = viewResults.querySelector('.section');
+                const card = viewResults.querySelector('.card');
+                const table = document.getElementById('results-table');
+                console.log('view-results hidden?', viewResults.classList.contains('hidden'));
+                console.log('view-results display:', window.getComputedStyle(viewResults).display);
+                console.log('view-results height:', viewResults.offsetHeight, 'scrollHeight:', viewResults.scrollHeight);
+                console.log('section height:', section?.offsetHeight, 'scrollHeight:', section?.scrollHeight);
+                console.log('card height:', card?.offsetHeight, 'scrollHeight:', card?.scrollHeight);
+                console.log('table height:', table?.offsetHeight, 'scrollHeight:', table?.scrollHeight);
+                console.log('tbody height:', tbody?.offsetHeight, 'scrollHeight:', tbody?.scrollHeight);
+                // Force reflow
+                viewResults.style.minHeight = 'auto';
+                console.log('After reflow - view-results height:', viewResults.offsetHeight);
             } catch (err) {
                 console.error('renderResults Fehler:', err, sorted[0]);
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">Fehler beim Rendern. Siehe Konsole.</td></tr>';
