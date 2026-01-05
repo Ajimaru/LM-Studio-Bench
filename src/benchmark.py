@@ -3107,11 +3107,12 @@ def main():
     parent_process = current_process.parent()
     
     # Wenn Parent "python" ist und "web/app.py" im Command → kein File-Logging
+    # (CLI über run.py soll weiterhin eine Log-Datei schreiben)
     is_webapp_subprocess = False
     if parent_process and 'python' in parent_process.name().lower():
         try:
             parent_cmdline = ' '.join(parent_process.cmdline())
-            if 'web/app.py' in parent_cmdline or 'run.py' in parent_cmdline:
+            if 'web/app.py' in parent_cmdline:
                 is_webapp_subprocess = True
         except:
             pass

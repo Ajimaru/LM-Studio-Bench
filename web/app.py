@@ -19,7 +19,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -101,6 +101,8 @@ class BenchmarkManager:
         self.current_output = ""
         self.connected_clients = set()
         self.benchmark_log_file: Optional[Path] = None  # Log-Datei nur für aktive Benchmarks
+        self.output_queue: Optional[asyncio.Queue[str]] = None  # Puffer für neue Output-Chunks
+        self.output_task: Optional[asyncio.Task] = None
         
         # Hardware-Monitoring Daten
         self.hardware_history = {
@@ -113,6 +115,41 @@ class BenchmarkManager:
     def is_running(self) -> bool:
         return self.process is not None and self.process.poll() is None
 
+    async def _consume_output(self):
+        """Liest kontinuierlich stdout und legt neue Chunks in output_queue."""
+        if self.output_queue is None:
+            self.output_queue = asyncio.Queue()
+
+        try:
+            while True:
+                output = await self.read_output()
+                if output:
+                    await self.output_queue.put(output)
+                if not self.is_running():
+                    break
+                await asyncio.sleep(0.05)
+
+            # Restoutput nach Prozessende lesen
+            while True:
+                output = await self.read_output()
+                if not output:
+                    break
+                await self.output_queue.put(output)
+        except Exception as e:
+            logger.error(f"❌ Fehler im Output-Consumer: {e}")
+
+    def drain_output_queue(self) -> str:
+        """Holt alle aktuell verfügbaren Output-Chunks ohne zu blockieren."""
+        if not self.output_queue:
+            return ""
+        chunks: List[str] = []
+        try:
+            while True:
+                chunks.append(self.output_queue.get_nowait())
+        except asyncio.QueueEmpty:
+            pass
+        return ''.join(chunks)
+
     async def start_benchmark(self, args: list) -> bool:
         """Startet neuen Benchmark-Prozess"""
         if self.is_running():
@@ -120,6 +157,11 @@ class BenchmarkManager:
             return False
 
         try:
+            # Output-Puffer/Task zurücksetzen
+            self.output_queue = asyncio.Queue()
+            if self.output_task and not self.output_task.done():
+                self.output_task.cancel()
+
             self.process = subprocess.Popen(
                 [sys.executable, str(BENCHMARK_SCRIPT)] + args,
                 stdout=subprocess.PIPE,
@@ -137,6 +179,9 @@ class BenchmarkManager:
             logs_dir.mkdir(parents=True, exist_ok=True)
             self.benchmark_log_file = logs_dir / f"benchmark_{self.start_time.strftime('%Y%m%d_%H%M%S')}.log"
             
+            # Starte Hintergrund-Task zum kontinuierlichen Lesen des Outputs
+            self.output_task = asyncio.create_task(self._consume_output())
+
             logger.info(f"✅ Benchmark gestartet mit PID {self.process.pid}")
             logger.info(f"📝 Benchmark-Log wird geschrieben nach: {self.benchmark_log_file}")
             return True
@@ -193,6 +238,8 @@ class BenchmarkManager:
             
             self.status = "stopped"
             self.process = None
+            if self.output_task and not self.output_task.done():
+                self.output_task.cancel()
             return True
         except Exception as e:
             logger.error(f"❌ Fehler beim Stoppen: {e}")
@@ -750,7 +797,7 @@ async def websocket_benchmark(websocket: WebSocket):
             
             # Lese Output wenn Benchmark läuft
             if manager.is_running():
-                output = await manager.read_output()
+                output = manager.drain_output_queue()
                 if output:
                     try:
                         await websocket.send_json({
