@@ -420,6 +420,73 @@ async def get_cache_stats() -> dict:
         return {"success": False, "error": str(e)}
 
 
+@app.delete("/api/cache/{model_key}")
+async def delete_cache_entry(model_key: str) -> dict:
+    """Löscht einen einzelnen Cache-Eintrag"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+    
+    try:
+        import sqlite3
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        
+        # Prüfe ob Eintrag existiert
+        cursor.execute("SELECT COUNT(*) FROM benchmark_results WHERE model_key = ?", (model_key,))
+        count = cursor.fetchone()[0]
+        
+        if count == 0:
+            conn.close()
+            return {"success": False, "error": f"Model {model_key} nicht im Cache gefunden"}
+        
+        # Lösche Eintrag
+        cursor.execute("DELETE FROM benchmark_results WHERE model_key = ?", (model_key,))
+        conn.commit()
+        deleted_count = cursor.rowcount
+        conn.close()
+        
+        logger.info(f"🗑️ Cache-Eintrag gelöscht: {model_key}")
+        return {
+            "success": True,
+            "message": f"✅ {deleted_count} Eintrag(e) gelöscht",
+            "model_key": model_key
+        }
+    except Exception as e:
+        logger.error(f"❌ Fehler beim Löschen des Cache-Eintrags: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/cache/clear")
+async def clear_cache() -> dict:
+    """Leert den gesamten Cache"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+    
+    try:
+        import sqlite3
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        
+        # Zähle Einträge vor dem Löschen
+        cursor.execute("SELECT COUNT(*) FROM benchmark_results")
+        count_before = cursor.fetchone()[0]
+        
+        # Lösche alle Einträge
+        cursor.execute("DELETE FROM benchmark_results")
+        conn.commit()
+        conn.close()
+        
+        logger.warning(f"⚠️ Cache komplett geleert: {count_before} Einträge gelöscht")
+        return {
+            "success": True,
+            "message": f"✅ Cache geleert: {count_before} Einträge gelöscht",
+            "deleted_count": count_before
+        }
+    except Exception as e:
+        logger.error(f"❌ Fehler beim Leeren des Cache: {e}")
+        return {"success": False, "error": str(e)}
+
+
 @app.get("/api/output")
 async def get_output() -> dict:
     """Gibt aktuellen Output"""
