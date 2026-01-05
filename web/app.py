@@ -89,6 +89,9 @@ app = FastAPI(
     description="Web-Dashboard zur Steuerung und Überwachung von LM Studio Benchmarks"
 )
 
+# Mount Results-Verzeichnis für statische Dateien (PDF, HTML, JSON, CSV)
+app.mount("/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
+
 # Jinja2 Template Environment
 template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
 
@@ -937,8 +940,8 @@ async def get_latest_results() -> dict:
         # Sortiere nach Modifizierungszeit, neueste zuerst
         latest_file = max(json_files, key=lambda x: x.stat().st_mtime)
         
-        # Gib nur den Dateinamen zurück (ohne Pfad)
-        return {"latest": f"results/{latest_file.name}"}
+        # Gib nur den Dateinamen zurück (ohne Pfad, weil /results/ schon gemountet ist)
+        return {"latest": latest_file.name}
     except Exception as e:
         logger.error(f"Fehler beim Finden der neuesten Ergebnisse: {e}")
         return {"latest": None}

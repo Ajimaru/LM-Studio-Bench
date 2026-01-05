@@ -1037,7 +1037,8 @@
                 const data = await response.json();
                 
                 if (data.latest) {
-                    const baseFileName = data.latest.replace('results/', '').replace(/\.\w+$/, '');
+                    // data.latest enthält nur den Dateinamen (z.B. "benchmark_results_20260105_195003.json")
+                    const baseFileName = data.latest.replace(/\.\w+$/, '');
                     
                     // Aktualisiere die Links
                     document.getElementById('exportResults').href = `/results/${baseFileName}.json`;
