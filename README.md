@@ -398,11 +398,63 @@ Contributions sind willkommen! Bitte:
 
 MIT License - siehe LICENSE-Datei
 
+## Web-Dashboard (Phase 13)
+
+Interaktives Web-Interface zur Steuerung und Live-Überwachung von Benchmarks.
+
+### Verwendung
+
+```bash
+# Dashboard mit automatischem freien Port starten
+./run.py --web
+
+# Dashboard auf spezifischem Port starten
+./run.py --web --port 9000
+
+# Kurze Syntax
+./run.py -w -p 8888
+```
+
+Das Dashboard ist dann verfügbar unter: **http://localhost:PORT**
+
+### Features
+
+- 🌐 **Modernes Web-UI**: Responsives Dashboard mit Dark Mode
+- ⚡ **Live-Streaming**: WebSocket für Echtzeit-Terminal-Ausgabe
+- 🎮 **Benchmark-Kontrolle**: Start, Pause, Resume, Stop
+- ⚙️ **Parameter-Konfiguration**: Alle CLI-Parameter über GUI
+- 📊 **Status-Überwachung**: Live-Updates und Uptime-Zähler
+- 🔌 **REST API**: Vollständige API für Automatisierung (`/docs` für OpenAPI)
+
+### REST API Endpoints
+
+- `GET /` - Dashboard UI
+- `GET /api/status` - Benchmark-Status
+- `GET /api/output` - Terminal-Ausgabe
+- `POST /api/benchmark/start` - Benchmark starten
+- `POST /api/benchmark/pause` - Pausieren
+- `POST /api/benchmark/resume` - Fortsetzen
+- `POST /api/benchmark/stop` - Stoppen
+- `WS /ws/benchmark` - WebSocket Live-Streaming
+
+### Parameter im Dashboard
+
+Alle Benchmark-Parameter können über das Dashboard konfiguriert werden:
+
+- Runs (Messungen pro Modell)
+- Context Length
+- Modell-Limit
+- Custom Prompt
+- Include/Exclude Regex-Patterns
+- Vision/Tools/Retest/DevMode Flags
+
+---
+
 ## Support
 
 Bei Problemen:
 
-1. Prüfe `errors.log`
+1. Prüfe `logs/` für Error-Logs
 2. Stelle sicher dass LM Studio läuft
 3. Öffne ein Issue mit Logs und System-Info
 
