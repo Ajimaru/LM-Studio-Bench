@@ -870,6 +870,25 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="chart-card">
+                    <h4>🧠 GTT-RAM-Auslastung</h4>
+                    <div id="chart-gtt" style="height: 300px;"></div>
+                    <div class="chart-stats">
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Min</div>
+                            <div class="chart-stat-value" id="gtt-min">--GB</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Ø</div>
+                            <div class="chart-stat-value" id="gtt-avg">--GB</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Max</div>
+                            <div class="chart-stat-value" id="gtt-max">--GB</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1539,6 +1558,9 @@
             if (hardwareData.vram && hardwareData.vram.length > 0) {
                 updateVramChart(hardwareData.vram);
             }
+            if (hardwareData.gtt && hardwareData.gtt.length > 0) {
+                updateGttChart(hardwareData.gtt);
+            }
         }
 
         function updateTemperatureChart(data) {
@@ -1647,6 +1669,42 @@
             document.getElementById('vram-min').textContent = `${min.toFixed(2)}GB`;
             document.getElementById('vram-max').textContent = `${max.toFixed(2)}GB`;
             document.getElementById('vram-avg').textContent = `${avg}GB`;
+        }
+
+        function updateGttChart(data) {
+            const timestamps = data.map(d => new Date(d.timestamp).toLocaleTimeString('de-DE'));
+            const values = data.map(d => d.value);
+            
+            const trace = {
+                x: timestamps,
+                y: values,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'GTT (GB)',
+                line: {color: '#8b5cf6', width: 2},
+                marker: {size: 4},
+                fill: 'tozeroy',
+                fillcolor: 'rgba(139, 92, 246, 0.1)'
+            };
+            
+            const layout = {
+                title: false,
+                hovermode: 'x unified',
+                margin: {l: 50, r: 20, t: 20, b: 40},
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+            };
+            
+            Plotly.newPlot('chart-gtt', [trace], layout, {responsive: true, displayModeBar: false});
+            
+            // Update Stats
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const avg = (values.reduce((a,b) => a+b, 0) / values.length).toFixed(2);
+            document.getElementById('gtt-min').textContent = `${min.toFixed(2)}GB`;
+            document.getElementById('gtt-max').textContent = `${max.toFixed(2)}GB`;
+            document.getElementById('gtt-avg').textContent = `${avg}GB`;
         }
 
         // ===== Initialization =====
