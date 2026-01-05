@@ -98,7 +98,7 @@ class BenchmarkManager:
 
     def pause_benchmark(self) -> bool:
         """Pausiert laufenden Benchmark"""
-        if not self.is_running():
+        if not self.is_running() or not self.process:
             logger.warning("Kein laufender Benchmark")
             return False
         try:
@@ -151,7 +151,7 @@ class BenchmarkManager:
 
     async def read_output(self) -> str:
         """Liest verfügbaren Output aus Prozess mit Timeout"""
-        if not self.process:
+        if not self.process or not self.process.stdout:
             return ""
 
         try:
