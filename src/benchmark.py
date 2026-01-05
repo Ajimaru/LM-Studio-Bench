@@ -1627,7 +1627,7 @@ class LMStudioBenchmark:
         """Analysiert beste Quantisierung pro Modell nach verschiedenen Kriterien"""
         best_by_model = {}
         
-        for result in self.results:
+        for result in results:
             model_key = result.model_name
             
             if model_key not in best_by_model:
@@ -1661,11 +1661,11 @@ class LMStudioBenchmark:
     def sort_results(self, rank_by: str = 'speed') -> List[BenchmarkResult]:
         """Sortiert Ergebnisse nach verschiedenen Kriterien"""
         if rank_by == 'speed':
-            return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+            return sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
         elif rank_by == 'efficiency':
-            return sorted(self.results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True)
+            return sorted(results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True)
         elif rank_by == 'ttft':
-            return sorted(self.results, key=lambda x: x.avg_ttft, reverse=False)  # Niedrig = gut
+            return sorted(results, key=lambda x: x.avg_ttft, reverse=False)  # Niedrig = gut
         elif rank_by == 'vram':
             # Parse VRAM-Wert (z.B. "2048 MB" -> 2048)
             def get_vram_mb(result):
@@ -1673,19 +1673,19 @@ class LMStudioBenchmark:
                     return float(result.vram_mb.split()[0]) if isinstance(result.vram_mb, str) else float(result.vram_mb)
                 except:
                     return 999999
-            return sorted(self.results, key=get_vram_mb, reverse=False)  # Niedrig = besser
+            return sorted(results, key=get_vram_mb, reverse=False)  # Niedrig = besser
         else:
-            return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)  # Default
+            return sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)  # Default
     
     def calculate_percentile_stats(self) -> Dict[str, Dict]:
         """Berechnet P50, P95, P99 Statistiken für Benchmark-Metriken"""
-        if not self.results or len(self.results) < 3:
+        if not self.results or len(results) < 3:
             return {}
         
-        speeds = [r.avg_tokens_per_sec for r in self.results if r.avg_tokens_per_sec > 0]
-        ttfts = [r.avg_ttft for r in self.results if r.avg_ttft > 0]
+        speeds = [r.avg_tokens_per_sec for r in results if r.avg_tokens_per_sec > 0]
+        ttfts = [r.avg_ttft for r in results if r.avg_ttft > 0]
         vram_values = []
-        for r in self.results:
+        for r in results:
             try:
                 vram_mb = float(r.vram_mb.split()[0]) if isinstance(r.vram_mb, str) else float(r.vram_mb)
                 vram_values.append(vram_mb)
@@ -1742,7 +1742,7 @@ class LMStudioBenchmark:
         
         # Gruppiere Ergebnisse nach Modell und Quantisierung
         model_quants = {}
-        for result in self.results:
+        for result in results:
             if result.model_name not in model_quants:
                 model_quants[result.model_name] = {}
             
@@ -1787,12 +1787,12 @@ class LMStudioBenchmark:
         gpu_type = self.gpu_monitor.gpu_type or "Unknown"
         
         # Beste Modelle nach Kriterien
-        best_speed = max(self.results, key=lambda x: x.avg_tokens_per_sec)
-        best_efficiency = max(self.results, key=lambda x: x.tokens_per_sec_per_gb)
-        best_ttft = min(self.results, key=lambda x: x.avg_ttft if x.avg_ttft > 0 else float('inf'))
+        best_speed = max(results, key=lambda x: x.avg_tokens_per_sec)
+        best_efficiency = max(results, key=lambda x: x.tokens_per_sec_per_gb)
+        best_ttft = min(results, key=lambda x: x.avg_ttft if x.avg_ttft > 0 else float('inf'))
         
         # Finde beste Balance (Speed + Efficiency)
-        best_balance = max(self.results, key=lambda x: x.avg_tokens_per_sec * 0.6 + x.tokens_per_sec_per_gb * 0.4)
+        best_balance = max(results, key=lambda x: x.avg_tokens_per_sec * 0.6 + x.tokens_per_sec_per_gb * 0.4)
         
         # Hardware-spezifische Empfehlungen
         recommendations.append(f"🖥️  Hardware: {gpu_type} GPU erkannt")
@@ -1825,8 +1825,8 @@ class LMStudioBenchmark:
         
         # Quantisierungs-Empfehlungen
         recommendations.append(f"📊 Quantisierungs-Tipps:")
-        q4_models = [r for r in self.results if 'q4' in r.quantization.lower()]
-        q6_models = [r for r in self.results if 'q6' in r.quantization.lower()]
+        q4_models = [r for r in results if 'q4' in r.quantization.lower()]
+        q6_models = [r for r in results if 'q6' in r.quantization.lower()]
         
         if q4_models and q6_models:
             avg_q4_speed = sum(r.avg_tokens_per_sec for r in q4_models) / len(q4_models)
@@ -1840,14 +1840,14 @@ class LMStudioBenchmark:
         
         # VRAM-basierte Empfehlungen
         vram_info = []
-        for result in sorted(self.results, key=lambda x: x.model_size_gb)[:3]:
+        for result in sorted(results, key=lambda x: x.model_size_gb)[:3]:
             if result.model_size_gb <= 4:
                 vram_info.append(f"   → <4 GB VRAM: {result.model_name} ({result.quantization})")
-        for result in sorted(self.results, key=lambda x: x.model_size_gb):
+        for result in sorted(results, key=lambda x: x.model_size_gb):
             if 4 < result.model_size_gb <= 8:
                 vram_info.append(f"   → 4-8 GB VRAM: {result.model_name} ({result.quantization})")
                 break
-        for result in sorted(self.results, key=lambda x: x.model_size_gb):
+        for result in sorted(results, key=lambda x: x.model_size_gb):
             if 8 < result.model_size_gb <= 12:
                 vram_info.append(f"   → 8-12 GB VRAM: {result.model_name} ({result.quantization})")
                 break
@@ -2036,18 +2036,18 @@ class LMStudioBenchmark:
             elements.append(Paragraph("Benchmark Summary", heading_style))
             
             # Berechne Statistiken
-            vision_count = sum(1 for r in self.results if r.has_vision)
-            tools_count = sum(1 for r in self.results if r.has_tools)
-            avg_size_gb = sum(r.model_size_gb for r in self.results) / len(self.results) if self.results else 0
-            avg_tokens_per_sec = sum(r.avg_tokens_per_sec for r in self.results) / len(self.results) if self.results else 0
+            vision_count = sum(1 for r in results if r.has_vision)
+            tools_count = sum(1 for r in results if r.has_tools)
+            avg_size_gb = sum(r.model_size_gb for r in results) / len(results) if self.results else 0
+            avg_tokens_per_sec = sum(r.avg_tokens_per_sec for r in results) / len(results) if self.results else 0
             
             summary_data = [
                 ['Metrik', 'Wert'],
-                ['Anzahl Modelle getestet', str(len(self.results))],
+                ['Anzahl Modelle getestet', str(len(results))],
                 ['Messungen pro Modell', str(self.num_measurement_runs)],
                 ['Standard-Prompt', self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt],
-                ['Vision-Modelle', f"{vision_count} ({vision_count*100//len(self.results) if self.results else 0}%)"],
-                ['Tool-fähige Modelle', f"{tools_count} ({tools_count*100//len(self.results) if self.results else 0}%)"],
+                ['Vision-Modelle', f"{vision_count} ({vision_count*100//len(results) if self.results else 0}%)"],
+                ['Tool-fähige Modelle', f"{tools_count} ({tools_count*100//len(results) if self.results else 0}%)"],
                 ['Ø Modellgröße', f"{avg_size_gb:.2f} GB"],
                 ['Ø Geschwindigkeit', f"{avg_tokens_per_sec:.2f} tokens/s"],
             ]
@@ -2248,9 +2248,9 @@ class LMStudioBenchmark:
             
             # Performance-Statistiken
             elements.append(Paragraph("Performance-Statistiken", heading_style))
-            max_tps_result = max(self.results, key=lambda x: x.avg_tokens_per_sec)
-            min_tps_result = min(self.results, key=lambda x: x.avg_tokens_per_sec)
-            avg_tps = sum(r.avg_tokens_per_sec for r in self.results) / len(self.results)
+            max_tps_result = max(results, key=lambda x: x.avg_tokens_per_sec)
+            min_tps_result = min(results, key=lambda x: x.avg_tokens_per_sec)
+            avg_tps = sum(r.avg_tokens_per_sec for r in results) / len(results)
             
             # Percentile berechnen
             percentile_stats = self.calculate_percentile_stats()
@@ -2304,7 +2304,7 @@ class LMStudioBenchmark:
                 elements.append(Spacer(1, 20))
             
             # === NEUE SEITE: Vision-Modelle ===
-            vision_models = [r for r in self.results if r.has_vision]
+            vision_models = [r for r in results if r.has_vision]
             if vision_models:
                 elements.append(PageBreak())
                 elements.append(Paragraph("👁️  Vision-Modelle (Multimodal)", title_style))
@@ -2354,7 +2354,7 @@ class LMStudioBenchmark:
                 elements.append(Paragraph("<br/>".join(top3_text), styles['Normal']))
             
             # === NEUE SEITE: Tool-Modelle ===
-            tool_models = [r for r in self.results if r.has_tools]
+            tool_models = [r for r in results if r.has_tools]
             if tool_models:
                 elements.append(PageBreak())
                 elements.append(Paragraph("🔧 Tool-Calling Modelle", title_style))
@@ -2406,7 +2406,7 @@ class LMStudioBenchmark:
             # === NEUE SEITE: Nach Architektur gruppiert ===
             # Gruppiere nach Architektur
             by_arch = {}
-            for r in self.results:
+            for r in results:
                 arch = r.architecture
                 if arch not in by_arch:
                     by_arch[arch] = []
@@ -2452,7 +2452,7 @@ class LMStudioBenchmark:
                     elements.append(Spacer(1, 15))
             
             # Hardware-Profiling Seite (wenn aktiviert)
-            if self.enable_profiling and any(r.temp_celsius_avg for r in self.results):
+            if self.enable_profiling and any(r.temp_celsius_avg for r in results):
                 elements.append(PageBreak())
                 elements.append(Paragraph("🌡️ Hardware-Profiling Report", title_style))
                 elements.append(Spacer(1, 12))
@@ -2461,8 +2461,8 @@ class LMStudioBenchmark:
                 elements.append(Paragraph("Temperatur- und Power-Analyse", heading_style))
                 
                 # Sammel Profiling-Daten
-                temps_avg = [r.temp_celsius_avg for r in self.results if r.temp_celsius_avg]
-                powers_avg = [r.power_watts_avg for r in self.results if r.power_watts_avg]
+                temps_avg = [r.temp_celsius_avg for r in results if r.temp_celsius_avg]
+                powers_avg = [r.power_watts_avg for r in results if r.power_watts_avg]
                 
                 profile_summary = [
                     ['Metrik', 'Min', 'Max', 'Durchschnitt'],
@@ -2502,7 +2502,7 @@ class LMStudioBenchmark:
                 elements.append(Paragraph("Profiling pro Modell", heading_style))
                 
                 profile_data = [['Modell', 'Quant.', 'Temp Min', 'Temp Max', 'Temp Ø (°C)', 'Power Min', 'Power Max', 'Power Ø (W)']]
-                for r in sorted(self.results, key=lambda x: x.temp_celsius_avg or 0, reverse=True):
+                for r in sorted(results, key=lambda x: x.temp_celsius_avg or 0, reverse=True):
                     if r.temp_celsius_avg or r.power_watts_avg:
                         temp_min = f"{r.temp_celsius_min:.1f}" if r.temp_celsius_min else "-"
                         temp_max = f"{r.temp_celsius_max:.1f}" if r.temp_celsius_max else "-"
@@ -2586,13 +2586,13 @@ class LMStudioBenchmark:
             # Scatter-Plot: Modellgröße vs Speed
             fig_scatter = go.Figure(data=[
                 go.Scatter(
-                    x=[r.model_size_gb for r in self.results],
-                    y=[r.avg_tokens_per_sec for r in self.results],
+                    x=[r.model_size_gb for r in results],
+                    y=[r.avg_tokens_per_sec for r in results],
                     mode='markers',
-                    text=[f"{r.model_name}<br>{r.quantization}<br>{r.avg_tokens_per_sec:.2f} t/s" for r in self.results],
+                    text=[f"{r.model_name}<br>{r.quantization}<br>{r.avg_tokens_per_sec:.2f} t/s" for r in results],
                     marker=dict(
-                        size=[r.avg_tokens_per_sec / 2 for r in self.results],
-                        color=[r.tokens_per_sec_per_gb for r in self.results],
+                        size=[r.avg_tokens_per_sec / 2 for r in results],
+                        color=[r.tokens_per_sec_per_gb for r in results],
                         colorscale='Viridis',
                         showscale=True,
                         colorbar=dict(title="Effizienz<br>(t/s pro GB)")
@@ -2611,13 +2611,13 @@ class LMStudioBenchmark:
             # Scatter-Plot: Parameter vs Effizienz
             fig_efficiency = go.Figure(data=[
                 go.Scatter(
-                    x=[r.tokens_per_sec_per_gb for r in self.results],
-                    y=[r.tokens_per_sec_per_billion_params for r in self.results],
+                    x=[r.tokens_per_sec_per_gb for r in results],
+                    y=[r.tokens_per_sec_per_billion_params for r in results],
                     mode='markers',
-                    text=[f"{r.model_name} ({r.quantization})" for r in self.results],
+                    text=[f"{r.model_name} ({r.quantization})" for r in results],
                     marker=dict(
                         size=8,
-                        color=[r.avg_tokens_per_sec for r in self.results],
+                        color=[r.avg_tokens_per_sec for r in results],
                         colorscale='RdYlGn',
                         showscale=True,
                         colorbar=dict(title="Speed<br>(tokens/s)")
@@ -2633,20 +2633,20 @@ class LMStudioBenchmark:
             )
             
             # Summary-Tabelle
-            vision_count = sum(1 for r in self.results if r.has_vision)
-            tools_count = sum(1 for r in self.results if r.has_tools)
-            avg_size_gb = sum(r.model_size_gb for r in self.results) / len(self.results) if self.results else 0
-            avg_tokens_per_sec = sum(r.avg_tokens_per_sec for r in self.results) / len(self.results) if self.results else 0
+            vision_count = sum(1 for r in results if r.has_vision)
+            tools_count = sum(1 for r in results if r.has_tools)
+            avg_size_gb = sum(r.model_size_gb for r in results) / len(results) if self.results else 0
+            avg_tokens_per_sec = sum(r.avg_tokens_per_sec for r in results) / len(results) if self.results else 0
             
             summary_stats = {
-                'Anzahl Modelle': len(self.results),
+                'Anzahl Modelle': len(results),
                 'Messungen pro Modell': self.num_measurement_runs,
                 'Standard-Prompt': self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt,
                 'Schnellstes': f"{sorted_results[0].model_name[:20]} ({sorted_results[0].avg_tokens_per_sec:.2f} t/s)",
                 'Langsamster': f"{sorted_results[-1].model_name[:20]} ({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)",
                 'Ø Geschwindigkeit': f"{avg_tokens_per_sec:.2f} t/s",
-                'Vision-Modelle': f"{vision_count} ({vision_count*100//len(self.results) if self.results else 0}%)",
-                'Tool-fähige Modelle': f"{tools_count} ({tools_count*100//len(self.results) if self.results else 0}%)",
+                'Vision-Modelle': f"{vision_count} ({vision_count*100//len(results) if self.results else 0}%)",
+                'Tool-fähige Modelle': f"{tools_count} ({tools_count*100//len(results) if self.results else 0}%)",
                 'Ø Modellgröße': f"{avg_size_gb:.2f} GB",
             }
             
@@ -2733,7 +2733,7 @@ class LMStudioBenchmark:
             best_practices_html = "\n".join(recommendations) if recommendations else "Keine Empfehlungen verfügbar"
             
             # Vision-Modelle Sektion
-            vision_models = [r for r in self.results if r.has_vision]
+            vision_models = [r for r in results if r.has_vision]
             if vision_models:
                 vision_sorted = sorted(vision_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
                 vision_rows = ""
@@ -2779,7 +2779,7 @@ class LMStudioBenchmark:
                 vision_section = ""
             
             # Tool-Modelle Sektion
-            tool_models = [r for r in self.results if r.has_tools]
+            tool_models = [r for r in results if r.has_tools]
             if tool_models:
                 tool_sorted = sorted(tool_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
                 tool_rows = ""
@@ -2826,7 +2826,7 @@ class LMStudioBenchmark:
             
             # Architektur-Gruppierung
             by_arch = {}
-            for r in self.results:
+            for r in results:
                 arch = r.architecture
                 if arch not in by_arch:
                     by_arch[arch] = []
@@ -2872,12 +2872,12 @@ class LMStudioBenchmark:
             
             # Hardware-Profiling Sektion
             profiling_section = ""
-            if self.enable_profiling and any(r.temp_celsius_avg for r in self.results):
-                temps_avg = [r.temp_celsius_avg for r in self.results if r.temp_celsius_avg]
-                powers_avg = [r.power_watts_avg for r in self.results if r.power_watts_avg]
+            if self.enable_profiling and any(r.temp_celsius_avg for r in results):
+                temps_avg = [r.temp_celsius_avg for r in results if r.temp_celsius_avg]
+                powers_avg = [r.power_watts_avg for r in results if r.power_watts_avg]
                 
                 profile_rows = ""
-                for r in sorted(self.results, key=lambda x: x.temp_celsius_avg or 0, reverse=True):
+                for r in sorted(results, key=lambda x: x.temp_celsius_avg or 0, reverse=True):
                     if r.temp_celsius_avg or r.power_watts_avg:
                         temp_min = f"{r.temp_celsius_min:.1f}°C" if r.temp_celsius_min else "-"
                         temp_max = f"{r.temp_celsius_max:.1f}°C" if r.temp_celsius_max else "-"
