@@ -4,15 +4,14 @@ Wrapper script - Einstiegspunkt für das Benchmark-Tool
 
 Verwendung:
   ./run.py [args]              - Startet normalen Benchmark
-  ./run.py --web               - Startet FastAPI Web-Dashboard (automatischer freier Port)
-  ./run.py -w                  - Startet FastAPI Web-Dashboard (automatischer freier Port)
+  ./run.py --webapp            - Startet FastAPI Web-Dashboard
+  ./run.py -w                  - Startet FastAPI Web-Dashboard (Kurzform)
   
 Beispiele:
   ./run.py --limit 5           - Testet 5 neue Modelle
   ./run.py --export-only       - Generiert Reports aus Cache
-  ./run.py --web               - Startet Web-Dashboard auf zufälligem freien Port
-  ./run.py --web --port 9000   - Startet Web-Dashboard auf Port 9000
-  ./run.py -w -p 8888          - Web-Dashboard auf Port 8888
+  ./run.py --webapp            - Startet Web-Dashboard
+  ./run.py -w                  - Startet Web-Dashboard (Kurzform)
 """
 
 import sys
@@ -24,12 +23,59 @@ from pathlib import Path
 project_root = Path(__file__).parent
 os.chdir(project_root)
 
-# Prüfe auf --web oder -w Flag
-has_web_flag = "--web" in sys.argv or "-w" in sys.argv
+# Zeige erweiterte Hilfe bei --help/-h
+if "--help" in sys.argv or "-h" in sys.argv:
+    print("LM Studio Model Benchmark - Einstiegspunkt")
+    print("=" * 60)
+    print()
+    print("📊 BENCHMARK-MODI:")
+    print()
+    print("  1️⃣  CLI-Benchmark (Standard):")
+    print("      ./run.py [benchmark-args]")
+    print("      → Führt Benchmark direkt aus und zeigt Ergebnisse")
+    print()
+    print("  2️⃣  Web-Dashboard (Empfohlen):")
+    print("      ./run.py --webapp  (oder -w)")
+    print("      → Startet modernes Web-Interface mit Live-Streaming")
+    print("      → Öffnet automatisch Browser auf http://localhost:8080")
+    print("      → Features: Live-Logs, Results-Browser, Dark Mode")
+    print()
+    print("=" * 60)
+    print()
+    print("🌐 WEB-DASHBOARD OPTIONEN:")
+    print()
+    print("  --webapp, -w          Startet FastAPI Web-Dashboard")
+    print()
+    print("=" * 60)
+    print()
+    print("📋 BENCHMARK OPTIONEN (für CLI-Modus):")
+    print()
+    
+    # Zeige benchmark.py Hilfe
+    benchmark_script = project_root / "src" / "benchmark.py"
+    if benchmark_script.exists():
+        result = subprocess.run(
+            [sys.executable, str(benchmark_script), "--help"],
+            capture_output=True,
+            text=True
+        )
+        # Überspringe die erste Zeile (usage) von benchmark.py
+        lines = result.stdout.split('\n')
+        in_options = False
+        for line in lines:
+            if line.startswith('options:') or line.startswith('  -'):
+                in_options = True
+            if in_options:
+                print(line)
+    
+    sys.exit(0)
+
+# Prüfe auf --webapp oder -w Flag
+has_web_flag = "--webapp" in sys.argv or "-w" in sys.argv
 
 if has_web_flag:
-    # Entferne --web/-w aus argv für saubere Übergabe
-    args = [arg for arg in sys.argv[1:] if arg not in ("--web", "-w")]
+    # Entferne --webapp/-w aus argv für saubere Übergabe
+    args = [arg for arg in sys.argv[1:] if arg not in ("--webapp", "-w")]
     
     # Starte Web-Dashboard via app.py
     web_dir = project_root / "web"

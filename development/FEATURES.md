@@ -113,41 +113,30 @@
 
 ## 🏆 Nächste Schritte
 
-**Abgeschlossen**: Alle Core Features (Phase 1-5) ✅
+**Phase 13 - Web-Dashboard: ABGESCHLOSSEN** ✅ (2026-01-05)
 
-- Phase 1: Best-of-Quantization, Historical Comparison
-- Phase 2: HTML Reports, Ranking System
-- Phase 3: Delta Display, Percentiles, Quantization Comparison
-- Phase 4: Trend Visualization
-- Phase 5: **SQLite-Cache-System** (2026-01-04)
-  - Automatisches Caching aller Benchmark-Ergebnisse
-  - Cache-Verwaltungs-CLI (--list-cache, --export-cache, --retest)
-  - Dev-Mode mit automatischer Modell-Auswahl
-  - Parameter-basierte Cache-Invalidierung
-  - Performance: 0.6s statt 2+ Minuten für gecachte Modelle
-  - Metadata-Cache-Fix (unknown → korrekte Werte)
-  - HTML-Template-Extraktion (bessere Wartbarkeit)
-  - **Dark Mode & Navigation** (2026-01-04):
-    - Dark Mode als Standard-Theme (CSS Variables)
-    - Toggle-Button für Theme-Wechsel (LocalStorage)
-    - Dynamische Plotly-Chart-Farben
-    - Back-to-Top Button mit Scroll-Detection
+Alle Core Features (Phase 1-13) sind vollständig implementiert! 🎉
 
-- Phase 6: **Regex-basierte Filterung** (2026-01-04)
-  - `--include-models "pattern"` - Regex für gewünschte Modelle
-  - `--exclude-models "pattern"` - Regex zum Ausschließen
-  - AND-Verknüpfung zwischen verschiedenen Filtern
-  - OR-Verknüpfung innerhalb von Listen (--quants, --arch, --params)
-  - Case-insensitive Pattern Matching
-  - Fehlerbehandlung bei ungültigen Regex-Patterns
+- Phase 1: Best-of-Quantization, Historical Comparison ✅
+- Phase 2: HTML Reports, Ranking System ✅
+- Phase 3: Delta Display, Percentiles, Quantization Comparison ✅
+- Phase 4: Trend Visualization ✅
+- Phase 5: SQLite-Cache-System ✅
+- Phase 6: Regex-basierte Filterung ✅
+- Phase 7: PDF-Report-Erweiterungen ✅
+- Phase 8: HTML-Report-Erweiterungen ✅
+- Phase 9: Hardware-Profiling & Report-Parität ✅
+- Phase 10: GPU-Offload-Strategie-Optimierung ✅
+- Phase 11: GTT Support für AMD GPUs ✅
+- Phase 12: Instant Report Regeneration ✅
+- Phase 13: **Web-Dashboard** ✅
+  - Benchmark-Kontrollzentrum mit Live-Streaming
+  - Results Browser mit Cache-Management
+  - Dark Mode & UI Polish
+  - Separate Logging-System
+  - Report Content Filtering
 
-- Phase 7: **PDF-Report-Erweiterungen** (2026-01-04)
-  - **Best-Practice-Empfehlungen** - Intelligente Analyse-basierte Tipps:
-    - Hardware-spezifische Empfehlungen (GPU-Typ)
-    - Top-Modelle nach Kriterien (Speed, Effizienz, TTFT, Balance)
-    - Quantisierungs-Vergleich (Q4 vs Q6 Performance-Unterschiede)
-    - VRAM-basierte Empfehlungen (<4GB, 4-8GB, 8-12GB)
-  - **Separate PDF-Seiten** für bessere Organisation:
+### 🚀 Optionale Zukünftige Erweiterungen
     - Vision-Modelle (Multimodal) mit Top 3
     - Tool-Calling Modelle mit Top 3
     - Gruppierung nach Architektur (Top 5 pro Architektur)
@@ -259,45 +248,100 @@
     ./run.py --export-only --compare-with latest # Mit Delta-Vergleich
     ```
 
-- Phase 13: **Web-Dashboard** (2026-01-05 - In Arbeit)
+- Phase 13: **Web-Dashboard** ✅ (2026-01-05 - ABGESCHLOSSEN)
   - **Architektur**:
-    - `run.py --web` / `run.py -w` startet FastAPI Web-Dashboard
-    - `run.py [andere Args]` startet normalen Benchmark (bestehendes Verhalten)
-    - `web/app.py` steuert `src/benchmark.py` via Subprocess
+    - `run.py --webapp` / `run.py -w` startet FastAPI Web-Dashboard ✅
+    - `run.py [andere Args]` startet normalen Benchmark (bestehendes Verhalten) ✅
+    - `web/app.py` steuert `src/benchmark.py` via Subprocess ✅
   
-  - **Backend (FastAPI + Jinja2)**:
-    - 3 Dependencies: fastapi, uvicorn, jinja2
-    - REST API Endpoints für Daten-Zugriff
-    - Subprocess-Management für Benchmark-Kontrolle
-    - WebSocket (/ws/benchmark) für Live-Streaming von Metriken
-    - Status-Tracking (idle, running, paused, completed, stopped)
-    - Graceful Shutdown mit SIGTERM/SIGKILL Fallback
-    - Jinja2 Templates für HTML-Rendering
+  - **Backend (FastAPI + Jinja2)** ✅:
+    - 3 Dependencies: fastapi, uvicorn, jinja2 ✅
+    - REST API Endpoints für Daten-Zugriff ✅
+    - Subprocess-Management für Benchmark-Kontrolle ✅
+    - WebSocket (/ws/benchmark) für Live-Streaming von Metriken ✅
+    - Status-Tracking (idle, running, completed, stopped) ✅
+    - Graceful Shutdown mit SIGTERM/SIGKILL Fallback ✅
+    - Jinja2 Templates für HTML-Rendering ✅
+    - Separate Logging: `logs/webapp_*.log` und `logs/benchmark_*.log` ✅
   
   - **Phase 13.1: Benchmark-Kontrollzentrum** ✅ (2026-01-05 Completed):
-    - ▶️ Start-Button mit Parameter-Konfiguration vor Start
-    - ⏸️ Pause/Resume für längere Benchmarks
-    - ⏹️ Stop-Button mit Bestätigung
-    - Parameter-Anpassung im Dashboard:
+    - ▶️ Start-Button mit Parameter-Konfiguration vor Start ✅
+    - ⏹️ Stop-Button mit Bestätigung ✅
+    - Parameter-Anpassung im Dashboard: ✅
       - Runs, Context Length, Modell-Limit
       - Include/Exclude Regex-Patterns
       - Cache Ignore (--retest)
       - GPU-Settings (Offload Limit, VRAM Limit)
-    - Live Console-Ausgabe (scrollbare Logs)
-    - Status-Indicator (Idle/Running/Paused/Stopped)
-    - **Port-Konfiguration**:
-      - Automatische Erkennung freier Ports mit find_free_port()
-      - --port / -p CLI-Option für manuelle Port-Angabe
-      - Fallback auf Port 8000 wenn Socket-Binding fehlschlägt
-    - **WebSocket-Resilienz**:
+    - Live Console-Ausgabe (scrollbare Logs) ✅
+    - Status-Indicator (Idle/Running/Stopped) ✅
+    - **WebSocket-Resilienz**: ✅
       - Auto-Reconnect nach Desktop-Lock (3s Interval)
       - Keep-Alive Heartbeat (1s) zur Verbindungshaltung
       - 2s Timeout für read_output() Operationen
       - Clean Disconnection Handling
-    - **Type Safety**: Alle Pylance-Fehler behoben
-    - **Struktur**: Konsolidierte requirements.txt/README.md im Root
+    - **Type Safety**: Alle Pylance-Fehler behoben ✅
+    - **Struktur**: Konsolidierte requirements.txt/README.md im Root ✅
   
   - **Phase 13.3: Results Browser + Cache-Management** ✅ (2026-01-05 Completed):
+    - **Phase 13.3.1**: GET /api/results - Alle gecachten Benchmark-Ergebnisse ✅
+      - JSON-Response mit allen 21 Feldern pro Modell
+      - Direkte SQLite-Queries auf benchmark_results Tabelle
+      - Verfügbar für Tabellen-Rendering und Filterung
+    - **Phase 13.3.2**: GET /api/cache/stats - Cache-Statistiken ✅
+      - Total Entries, Avg Speed (tok/s)
+      - Fastest Model + Speed, Slowest Model + Speed
+      - DB Size in MB
+    - **Phase 13.3.3**: Cache-Management APIs ✅
+      - DELETE /api/cache/{model_key}: Einzeleintrag löschen
+        - Validiert Existenz vor Löschung
+        - Gibt deleted_count zurück
+      - POST /api/cache/clear: Gesamten Cache löschen
+        - Löscht alle benchmark_results Einträge
+        - Warning-Level Log für Audit-Trail
+    - **Phase 13.3.4**: Results Browser UI ✅ (2026-01-05 Completed)
+      - Interaktive HTML-Tabelle mit 7 Spalten:
+        - Model, Quantization, Tokens/s, VRAM, GPU-Offload, GPU-Typ, Aktionen
+      - Sortierbar nach allen Spalten (Click Header für Toggle)
+      - Cache-Statistiken-Anzeige:
+        - 📦 Anzahl Einträge | ⚡ Ø Speed | 🏆 Schnellstes Modell | 💾 DB-Größe
+      - Action-Buttons:
+        - 🔄 Aktualisieren (reload Results)
+        - 🗑️ Cache Löschen (mit Bestätigungs-Dialog)
+        - Pro-Row: 🗑️ Delete-Button für einzelne Einträge
+      - Empty-State Message wenn keine Ergebnisse
+      - Auto-Load beim Page-Load
+      - Number Formatting: 2 Decimals für Speed, 0 für VRAM, % für GPU-Offload
+  
+  - **Phase 13.5: Dark Mode & UI Polish** ✅ (2026-01-05 Completed):
+    - **Dark Mode**: ✅
+      - Standardmäßig aktiviert (localStorage: "theme":"dark")
+      - Toggle-Button (🌙/☀️) in Navigation
+      - CSS Variables für Farben (--bg-primary, --text-primary, etc.)
+      - Persistenz über Browser-Neustarts
+    - **Back-to-Top Button**: ✅
+      - Gradient-Design (purple #667eea → #764ba2)
+      - Erscheint ab 300px Scroll
+      - Smooth Scroll zum Seitenanfang
+      - Hover-Effekte
+    - **Responsive Design**: ✅
+      - Mobile/Tablet/Desktop-optimiert
+      - Flexbox/Grid-Layout
+    - **Auto-Browser-Open**: ✅
+      - Öffnet automatisch http://localhost:8080 beim Start
+      - Wartet auf Server-Bereitschaft (max 5s)
+  
+  - **Phase 13.6: Report Content Filtering** ✅ (2026-01-05 Completed):
+    - **Report-Export nur für neu getestete Modelle**: ✅
+      - Separate newly_tested_models Liste in run_all_benchmarks()
+      - _export_results_to_files() nimmt results_to_export Parameter
+      - JSON/CSV/PDF/HTML exportieren nur neue Modelle
+    - **Ergebnisse-Browser zeigt alle gecachten Modelle**: ✅
+      - GET /api/results liefert kompletten Cache
+      - Ermöglicht historische Vergleiche im Dashboard
+    - **Subprocess-Detection**: ✅
+      - benchmark.py erkennt Ausführung als Subprocess via psutil
+      - Deaktiviert File-Logging wenn von webapp.py gestartet
+      - Verhindert doppelte Log-Dateien
     - **Phase 13.3.1**: GET /api/results - Alle gecachten Benchmark-Ergebnisse
       - JSON-Response mit allen 21 Feldern pro Modell
       - Direkte SQLite-Queries auf benchmark_results Tabelle
@@ -327,64 +371,11 @@
       - Auto-Load beim Page-Load
       - Number Formatting: 2 Decimals für Speed, 0 für VRAM, % für GPU-Offload
   
-  - **Home/Dashboard-View** ⏳ (Geplant):
-    - Quick Stats: Durchschn. Speed, schnellstes Modell, VRAM, Cache-Status
-    - Server-Status: Online/Offline, verfügbare Modelle
-    - Gecachte Modelle: Anzahl, Last-Used Datum
-    - Quick-Actions: Start Benchmark, View Results, Manage Cache
-  
-  - **Live Benchmark Monitor** ⏳ (Geplant - während aktiver Tests):
-    - Progress-Bar: X/Y Modelle komplett
-    - Aktuelles Modell + aktuelle Run-Nummer
-    - Live-Metriken: Speed (tok/s), Temp (°C), VRAM (MB/GB)
-    - Top 5 bisher beste Modelle mit Echtzeit-Updates
-    - ETA bis Abschluss (geschätzt)
-    - Pause/Resume/Stop Buttons aktiv während Run
-  
-  - **Phase 13.4: Historical Comparison + Metrics** ⏳ (Geplant):
-    - Line-Charts für Performance-Trends über Zeit
-    - Auswählbare Modelle zum Vergleich
-    - Metriken: Speed, VRAM-Verbrauch, Effizienz (tok/s/GB)
-    - Date-Range Picker (Letzte Woche, Monat, Custom)
-    - Delta-Berechnung (Δ%) zwischen Runs
-    - Plotly-basierte Diagramme für Interaktivität
-    - Delta-Anzeige: Δ% Veränderung seit letztem Run
-  
-  - **Phase 13.5: Live Hardware-Monitoring Charts** ⏳ (Geplant):
-    - Real-Time Charts während Benchmark-Ausführung
-    - GPU Temperature, Power Consumption, VRAM Usage
-    - Plotly-basierte Live-Updates via WebSocket
-    - Min/Max/Avg Markers
-  
-  - **Phase 13.6: Advanced Filtering + Multi-Select** ⏳ (Geplant):
-    - Filter-Panel im Results Browser:
-      - Nach Architektur (llama, qwen, gemma, etc.)
-      - Nach Parameter-Größe (Slider 1B-70B)
-      - Nach Quantisierung (Multi-Select Q2-Q8)
-      - Nach Vision/Tools Support (Checkboxen)
-    - Multi-Select Modelle für Side-by-Side Vergleich
-    - Regex-Patterns für Include/Exclude
-    - Date-Range Filter
-  
-  - **Phase 13.7: Robustness + Polish** ⏳ (Geplant):
-    - Keyboard-Shortcuts (S=Start, P=Pause, Q=Stop)
-    - Toast-Notifications für wichtige Events
-    - Export Results Browser zu JSON/CSV/PDF
-    - Mobile Optimizations (Touch-Friendly Controls)
-    - WebSocket vs Polling Fallback bei Connection-Loss
-    - Detail-View pro Modell (Historische Runs, Charts, Metadaten)
-  
-  - **UI/UX**:
-    - Dark Mode (CSS Variables, toggle Button) ✅
-    - Responsive Design (Mobile/Tablet/Desktop) ✅
-    - Status-Badges mit Farben (Grün=OK, Orange=Warning, Rot=Error) ✅
-  
   - **Technische Details - Implementierte Endpoints**:
-    - GET /api/status - Benchmark-Status (idle/running/paused/stopped) ✅
+    - GET / - Dashboard Haupt-UI (Jinja2 Template) ✅
+    - GET /api/status - Benchmark-Status (idle/running/stopped) ✅
     - GET /api/benchmark/output - Terminal-Ausgabe (plaintext) ✅
     - POST /api/benchmark/start - Benchmark mit Parametern starten ✅
-    - POST /api/benchmark/pause - Pause ✅
-    - POST /api/benchmark/resume - Resume ✅
     - POST /api/benchmark/stop - Stop mit Cleanup ✅
     - GET /api/results - Alle gecachten Ergebnisse ✅
     - GET /api/cache/stats - Cache-Statistiken ✅
@@ -393,87 +384,53 @@
     - WebSocket /ws/benchmark - Live-Streaming (JSON) ✅
     - GET /health - Health-Check ✅
   
-  - **Geplante Endpoints**:
-    - GET /api/stats - Quick Stats (Speed, Models, Cache-Status)
-    - GET /api/models - Liste verfügbarer Modelle
-    - GET /api/models/{id} - Detail eines Modells
-    - GET /api/models/{id}/history - Historische Runs eines Modells
-    - POST /api/cache/export - Cache exportieren
+  - **WebSocket-Messages** (Implementiert): ✅
 
-    - **WebSocket-Messages** (Implementiert):
+    ```json
+    {
+      "type": "terminal_output",
+      "content": "🚀 Starte Benchmark für qwen/qwen3-7b@q4_k_m\n"
+    }
+    ```
 
-      ```json
-      {
-        "type": "terminal_output",
-        "content": "🚀 Starte Benchmark für qwen/qwen3-7b@q4_k_m\n"
-      }
-      ```
-
-    - **Subprocess-Management**:
-      - Start: subprocess.Popen mit capture_output
-      - Pause: signal.SIGSTOP
-      - Resume: signal.SIGCONT
-      - Stop: SIGTERM → wait(timeout=5) → SIGKILL fallback
-      - Cleanup: Temp-Dateien löschen, Datenbank committen
+  - **Subprocess-Management**: ✅
+    - Start: subprocess.Popen mit capture_output
+    - Stop: SIGTERM → wait(timeout=5) → SIGKILL fallback
+    - Cleanup: Temp-Dateien löschen, Datenbank committen
+    - Logging: Separate webapp_*.log und benchmark_*.log Dateien
   
-  - **Implementierungs-Phasen**:
-    - ✅ **Phase 13.1 (ABGESCHLOSSEN - 2026-01-05)**:
-      - FastAPI Backend + Jinja2 Templates (web/app.py - 461 Zeilen)
-      - REST API: 7 Endpoints (/, /api/status, /api/output, /api/benchmark/*)
-      - WebSocket: /ws/benchmark mit Live-Streaming
-      - BenchmarkManager-Klasse mit Subprocess-Kontrolle
-      - Dashboard UI: Responsive Design mit Dark Mode (555 Zeilen HTML/CSS/JS)
-      - Control Panel: Start (mit Parameter-Modal), Pause, Resume, Stop
-      - Live Terminal-Output (scrollbar, auto-scroll)
-      - Status-Badge mit Real-time Updates (idle/running/paused/completed/stopped)
-      - Automatische Port-Detection (find_free_port) + --port CLI-Option
-      - WebSocket Resilience: Auto-Reconnect bei Desktop-Lock (Keep-Alive Heartbeat)
-      - Timeout-Handling: 2-Sekunden-Timeout für Output-Reading
-      - Graceful Shutdown: SIGTERM → wait(5s) → SIGKILL
-      - Type-Safe: Alle Pylance-Fehler behoben
-    
-    - 📋 **Phase 13.2: Output-Handling & Error Recovery** (Nächste)
-      - Besseres Error-Logging im Dashboard
-      - Process-Timeout-Management
-      - User-Feedback bei Fehlern (Toast-Notifications)
-      - Retry-Mechanismen für gescheiterte Runs
-    
-    - 📋 **Phase 13.3: Results Browser + Cache-Management**
-      - GET /api/results - Alle gecachten Ergebnisse aus SQLite
-      - GET /api/cache/stats - Cache-Statistiken
-      - DELETE /api/cache/{model_key} - Einzelner Cache-Eintrag
-      - POST /api/cache/clear - Cache komplett leeren
-      - Results-Tabelle im Dashboard (sortierbar, filterbar)
-      - Cache-Management-Panel
-    
-    - 📋 **Phase 13.4: Historischer Vergleich + Metriken**
-      - GET /api/models/{id}/history - Historische Runs
-      - Line-Charts für Performance-Trends (Plotly)
-      - Delta-Berechnung (Δ%) zwischen Runs
-      - Multi-Model-Comparison (2-3 Modelle nebeneinander)
-    
-    - 📋 **Phase 13.5: Live Hardware-Monitoring**
-      - Live GPU-Temperatur-Chart während Benchmark
-      - Live Power-Draw-Chart
-      - Live VRAM-Auslastung
-      - Plotly-Integration für interaktive Charts
-    
-    - 📋 **Phase 13.6: Advanced Filtering**
-      - Filter-Panel im Results Browser
-      - Architektur, Quantization, Vision/Tools Filter
-      - Regex-Pattern-Support
-      - Date-Range Picker
-    
-    - 📋 **Phase 13.7: Robustheit & Polish**
-      - Keyboard-Shortcuts (S=Start, P=Pause, Q=Stop)
-      - Toast-Notifications für Events
-      - Mobile-Responsive-Optimierungen
-      - Cleanup bei abnormalen Exits
+  - **Implementierungs-Status**:
+    - ✅ **Phase 13.1**: Benchmark-Kontrollzentrum (ABGESCHLOSSEN - 2026-01-05)
+    - ✅ **Phase 13.3**: Results Browser + Cache-Management (ABGESCHLOSSEN - 2026-01-05)
+    - ✅ **Phase 13.5**: Dark Mode & UI Polish (ABGESCHLOSSEN - 2026-01-05)
+    - ✅ **Phase 13.6**: Report Content Filtering (ABGESCHLOSSEN - 2026-01-05)
+    - ✅ **Web-Dashboard vollständig implementiert!** 🎉
+  
+  - **Dateien**: ✅
+    - web/app.py - FastAPI Backend (736 Zeilen)
+    - web/templates/dashboard.html.jinja - Frontend UI (984 Zeilen)
+    - requirements.txt - Python Dependencies (konsolidiert)
+  
+  - **Optional - Zukünftige Erweiterungen**:
+    - Home/Dashboard-View mit Quick Stats
+    - Live Hardware-Monitoring Charts (GPU Temp/Power während Run)
+    - Historical Comparison + Line-Charts für Performance-Trends
+    - Advanced Filtering (Multi-Select, Date-Range Picker)
+    - Keyboard-Shortcuts (S=Start, Q=Stop)
+    - Toast-Notifications für Events
+    - Export Results Browser zu JSON/CSV/PDF
 
-**Optional**: Erweiterte Features
+### 🚀 Weitere Features
 
-- Multi-Prompt Benchmarks (mehrere Test-Prompts parallel)
-- GPU-Offload-Strategie-Optimierung (Intelligente Offset-Anpassung)
-- Slack/Email Notifications bei Abschluss
-- Model-Warmup-Optimierung (Adaptive Warmup-Runs)
-- A/B Testing Framework (Vergleich verschiedener Inference-Parameter)
+- [ ] Web-Dashboard - Erweiterte Features:
+  - [ ] Home/Dashboard-View mit Quick Stats
+  - [ ] Live Hardware-Monitoring Charts (GPU Temp/Power während Run)
+  - [ ] Historical Comparison + Line-Charts für Performance-Trends
+  - [ ] Advanced Filtering (Multi-Select, Date-Range Picker)
+  - [ ] Keyboard-Shortcuts (S=Start, Q=Stop)
+  - [ ] Toast-Notifications für Events
+  - [ ] Export Results Browser zu JSON/CSV/PDF
+- [ ] Multi-Prompt Benchmarks (mehrere Test-Prompts parallel)
+- [ ] Slack/Email Notifications bei Abschluss
+- [ ] Model-Warmup-Optimierung (Adaptive Warmup-Runs)
+- [ ] A/B Testing Framework (Vergleich verschiedener Inference-Parameter)
