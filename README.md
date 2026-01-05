@@ -82,12 +82,13 @@ source .venv/bin/activate  # Linux/macOS
 ```
 
 **Dashboard-Features:**
+
 - 📊 **Live-Streaming**: Benchmark-Output in Echtzeit via WebSocket
 - 🎨 **Dark Mode**: Modernes dunkles Design (per Default)
 - 📁 **Ergebnisse-Browser**: Durchsuche alle gecachten Benchmark-Ergebnisse
 - 🔧 **Flexible Konfiguration**: Alle CLI-Parameter als Web-Formular
 - 📱 **Responsive Design**: Funktioniert auf Desktop und Tablet
-- 🌐 **Netzwerk-Zugriff**: Öffne Dashboard auf anderen Geräten (http://your-ip:8080)
+- 🌐 **Netzwerk-Zugriff**: Öffne Dashboard auf anderen Geräten (<http://your-ip:8080>)
 - 📝 **Separate Logs**: `logs/webapp_*.log` (Dashboard) und `logs/benchmark_*.log` (Benchmark-Läufe)
 
 ### 💻 Kommandozeile (CLI)
@@ -205,14 +206,14 @@ Das Script wird:
 
 Für standardisierte und reproduzierbare Benchmarks werden optimierte Sampling-Parameter verwendet:
 
-| Parameter          | Wert | Grund                                                        |
-|--------------------|------|--------------------------------------------------------------|
-| **Temperatur**     | 0.1  | Niedrig für konsistente, deterministische Ergebnisse        |
-| **Top-K Sampling** | 40   | Sampling aus top 40 Tokens                                   |
-| **Top-P Sampling** | 0.9  | Nucleus-Sampling bei 90% kumulativer Wahrscheinlichkeit     |
-| **Min-P Sampling** | 0.05 | Minimum-Wahrscheinlichkeits-Schwelle                         |
-| **Repeat Penalty** | 1.2  | Reduziert Wiederholungen (default 1.1)                       |
-| **Max Tokens**     | 256  | Begrenzte Output-Länge für schnellere Tests                  |
+| Parameter          | Wert | Grund                                                     |
+|--------------------|------|-----------------------------------------------------------|
+| **Temperatur**     | 0.1  | Niedrig für konsistente, deterministische Ergebnisse      |
+| **Top-K Sampling** | 40   | Sampling aus top 40 Tokens                                |
+| **Top-P Sampling** | 0.9  | Nucleus-Sampling bei 90% kumulativer Wahrscheinlichkeit   |
+| **Min-P Sampling** | 0.05 | Minimum-Wahrscheinlichkeits-Schwelle                      |
+| **Repeat Penalty** | 1.2  | Reduziert Wiederholungen (default 1.1)                    |
+| **Max Tokens**     | 256  | Begrenzte Output-Länge für schnellere Tests               |
 
 Diese werden automatisch in `_run_inference()` über das Python SDK angewendet und können in der `OPTIMIZED_INFERENCE_PARAMS` Konstante angepasst werden (siehe [benchmark.py](benchmark.py) Zeile ~47).
 
@@ -283,7 +284,7 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 ## Gemessene Metriken
 
 | Metrik | Beschreibung |
-|--------|--------------|
+| ------ | ------------ |
 | **avg_tokens_per_sec** | Durchschnittliche Token-Generierungsgeschwindigkeit |
 | **avg_ttft** | Time to First Token - Latenz bis zum ersten generierten Token |
 | **avg_gen_time** | Gesamtzeit für die Antwort-Generierung |
@@ -375,7 +376,7 @@ CONTEXT_LENGTH = 4096  # Standard: 2048
 
 ## Projekt-Struktur
 
-```
+```text
 local-llm-bench/
 ├── benchmark.py              # Haupt-Script
 ├── requirements.txt          # Python-Dependencies
@@ -452,9 +453,9 @@ Modernes FastAPI-basiertes Web-Interface zur Steuerung und Live-Überwachung von
 ./run.py -w
 ```
 
-Das Dashboard ist standardmäßig verfügbar unter: http://localhost:8080
+Das Dashboard ist standardmäßig verfügbar unter: <http://localhost:8080>
 
-### Features
+### Dashboard Features
 
 - 🌐 **Modernes Web-UI**: Responsives Dashboard mit Dark Mode (Default)
 - ⚡ **Live-Streaming**: WebSocket für Echtzeit-Terminal-Ausgabe

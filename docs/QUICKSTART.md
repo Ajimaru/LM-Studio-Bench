@@ -15,7 +15,7 @@ pip install -r requirements.txt
 ./run.py --webapp
 ```
 
-✅ Opens browser automatically at http://localhost:8080
+✅ Opens browser automatically at <http://localhost:8080>
 ✅ Live streaming of benchmark output via WebSocket
 ✅ Browse all cached results with interactive tables
 ✅ Dark mode by default with toggle option
@@ -23,6 +23,7 @@ pip install -r requirements.txt
 ✅ Separate logs: `logs/webapp_*.log` and `logs/benchmark_*.log`
 
 **Dashboard Features:**
+
 - **Start Benchmark**: Configure and run benchmarks from web interface
 - **Live Output**: Real-time streaming with colored logs and progress
 - **Results Browser**: Filter and sort all cached benchmark results
@@ -380,7 +381,7 @@ Output:
 ## 🎯 Key Metrics
 
 | Metric | Description | Unit |
-|--------|-------------|------|
+| ------ | ----------- | ---- |
 | Speed | Throughput | tokens/s |
 | Efficiency | Speed per GB model size | tokens/s/GB |
 | TTFT | Time to First Token | ms |
@@ -389,7 +390,7 @@ Output:
 
 ## 📁 File Structure
 
-```
+```text
 results/
 ├── benchmark_results_20260104_170000.json
 ├── benchmark_results_20260104_170000.csv
@@ -399,17 +400,17 @@ results/
 
 ## 🐛 Troubleshooting
 
-**"No models found"**
+### No models found
 
 - Ensure LM Studio is installed and running
 - Check `lms ls --json` output
 
-**"Server not responding"**
+### Server not responding
 
 - Start LM Studio server manually
 - Check `~/.lmstudio/server-logs/`
 
-**"Permission denied on results/"**
+### Permission denied on results/
 
 ```bash
 mkdir -p results/
