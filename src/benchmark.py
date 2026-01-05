@@ -44,8 +44,9 @@ PROJECT_ROOT = SCRIPT_DIR.parent    # root
 LOGS_DIR = PROJECT_ROOT / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Logging konfigurieren mit Timestamp pro Run (nicht pro Tag)
-log_filename = LOGS_DIR / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+# Logging konfigurieren - Log-Datei wird NUR erstellt wenn als __main__ aufgerufen
+# NICHT beim Import (um WebApp-Startup nicht zu beeinflussen)
+log_filename = None  # Wird später gesetzt wenn __main__
 
 # Custom Filter um JSON-Logs von externen Libs zu filtern
 class NoJSONFilter(logging.Filter):
@@ -55,12 +56,12 @@ class NoJSONFilter(logging.Filter):
             return False
         return True
 
+# Initialisiere Logging mit Console nur (Log-Datei wird später hinzugefügt)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_filename, mode='w'),  # Neue Log-Datei pro Run
-        logging.StreamHandler()
+        logging.StreamHandler()  # Nur Console beim Import
     ]
 )
 logger = logging.getLogger(__name__)
@@ -2946,6 +2947,17 @@ class LMStudioBenchmark:
 
 def main():
     """Hauptfunktion mit CLI-Argumenten"""
+    global log_filename
+    
+    # Initialisiere Log-Datei NUR wenn Benchmark wirklich läuft (nicht beim Import)
+    log_filename = LOGS_DIR / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    file_handler = logging.FileHandler(log_filename, mode='w')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    file_handler.addFilter(NoJSONFilter())
+    logging.root.addHandler(file_handler)
+    
+    logger.info(f"📝 Benchmark-Log: {log_filename}")
+    
     parser = argparse.ArgumentParser(
         description="LM Studio Model Benchmark - Testet alle lokal installierten LLM-Modelle",
         formatter_class=argparse.RawDescriptionHelpFormatter,

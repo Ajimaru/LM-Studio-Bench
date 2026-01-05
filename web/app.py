@@ -124,13 +124,13 @@ class BenchmarkManager:
             self.start_time = datetime.now()
             self.current_output = ""
             
-            # Erstelle Benchmark-Log-Datei ERST wenn Benchmark tatsächlich startet
+            # Setze nur den Pfad - die Datei wird erst beim ersten Write erstellt
             logs_dir = RESULTS_DIR.parent / "logs"
             logs_dir.mkdir(parents=True, exist_ok=True)
             self.benchmark_log_file = logs_dir / f"benchmark_{self.start_time.strftime('%Y%m%d_%H%M%S')}.log"
             
             logger.info(f"✅ Benchmark gestartet mit PID {self.process.pid}")
-            logger.info(f"📝 Benchmark-Log: {self.benchmark_log_file}")
+            logger.info(f"📝 Benchmark-Log wird geschrieben nach: {self.benchmark_log_file}")
             return True
         except Exception as e:
             logger.error(f"❌ Fehler beim Starten des Benchmarks: {e}")
@@ -209,7 +209,8 @@ class BenchmarkManager:
             if output:
                 self.current_output += output
                 
-                # Schreibe in Benchmark-Log-Datei (nur wenn Benchmark läuft)
+                # Schreibe WIRKLICH in Log-Datei NUR wenn Output vorhanden ist
+                # Die Datei wird bei ersten Write automatisch erstellt
                 if self.benchmark_log_file:
                     try:
                         with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
@@ -220,7 +221,8 @@ class BenchmarkManager:
                 return output
             elif not self.is_running():
                 self.status = "completed"
-                logger.info(f"✅ Benchmark abgeschlossen. Log: {self.benchmark_log_file}")
+                if self.benchmark_log_file and self.benchmark_log_file.exists():
+                    logger.info(f"✅ Benchmark abgeschlossen. Log: {self.benchmark_log_file}")
             
             return ""
         except asyncio.TimeoutError:
