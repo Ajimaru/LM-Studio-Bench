@@ -2129,8 +2129,22 @@ class LMStudioBenchmark:
             # Ergebnisse-Tabelle
             elements.append(Paragraph("Detaillierte Ergebnisse", heading_style))
             
-            # Sortiere Ergebnisse nach Ranking-Kriterium
-            sorted_results = self.sort_results(self.rank_by)
+            # Sortiere Ergebnisse nach Ranking-Kriterium (NUR neu getestete Modelle!)
+            if self.rank_by == 'speed':
+                sorted_results = sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+            elif self.rank_by == 'efficiency':
+                sorted_results = sorted(results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True)
+            elif self.rank_by == 'ttft':
+                sorted_results = sorted(results, key=lambda x: x.avg_ttft, reverse=False)
+            elif self.rank_by == 'vram':
+                def get_vram_mb(result):
+                    try:
+                        return float(result.vram_mb.split()[0]) if isinstance(result.vram_mb, str) else float(result.vram_mb)
+                    except:
+                        return 999999
+                sorted_results = sorted(results, key=get_vram_mb, reverse=False)
+            else:
+                sorted_results = sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
             
             # Zeige Ranking-Kriterium
             rank_labels = {
@@ -2184,12 +2198,37 @@ class LMStudioBenchmark:
             elements.append(results_table)
             elements.append(Spacer(1, 20))
             
-            # Best-of-Quantization Analyse
+            # Best-of-Quantization Analyse (nur für exportierte Modelle)
             elements.append(Paragraph("Best-of-Quantization Analyse", heading_style))
-            best_quants = self._analyze_best_quantizations()
+            
+            # Analysiere nur die exportierten Ergebnisse
+            best_by_model = {}
+            for result in results:
+                if result.model_name not in best_by_model:
+                    best_by_model[result.model_name] = {
+                        'best_speed': None,
+                        'best_efficiency': None,
+                        'best_ttft': None
+                    }
+                
+                # Best Speed
+                if not best_by_model[result.model_name]['best_speed'] or \
+                   result.avg_tokens_per_sec > best_by_model[result.model_name]['best_speed'].avg_tokens_per_sec:
+                    best_by_model[result.model_name]['best_speed'] = result
+                
+                # Best Efficiency
+                if not best_by_model[result.model_name]['best_efficiency'] or \
+                   result.tokens_per_sec_per_gb > best_by_model[result.model_name]['best_efficiency'].tokens_per_sec_per_gb:
+                    best_by_model[result.model_name]['best_efficiency'] = result
+                
+                # Best TTFT
+                if result.avg_ttft > 0:
+                    if not best_by_model[result.model_name]['best_ttft'] or \
+                       result.avg_ttft < best_by_model[result.model_name]['best_ttft'].avg_ttft:
+                        best_by_model[result.model_name]['best_ttft'] = result
             
             quant_data = [['Modell', 'Best Speed', 'Best Effizienz', 'Best TTFT']]
-            for model_name, analysis in sorted(best_quants.items()):
+            for model_name, analysis in sorted(best_by_model.items()):
                 speed_q = analysis['best_speed'].quantization if analysis['best_speed'] else '-'
                 efficiency_q = analysis['best_efficiency'].quantization if analysis['best_efficiency'] else '-'
                 ttft_q = analysis['best_ttft'].quantization if analysis['best_ttft'] else '-'
@@ -2215,8 +2254,40 @@ class LMStudioBenchmark:
             elements.append(quant_table)
             elements.append(Spacer(1, 20))
             
-            # Quantisierungs-Vergleich (Q4 vs Q5 vs Q6)
-            comp_data = self.generate_quantization_comparison()
+            # Quantisierungs-Vergleich (Q4 vs Q5 vs Q6) - nur für exportierte Modelle
+            model_quants = {}
+            for result in results:
+                if result.model_name not in model_quants:
+                    model_quants[result.model_name] = {}
+                
+                # Extrahiere Quantisierungs-Level (z.B. "q4_k_m" -> "q4")
+                quant_level = result.quantization.split('_')[0].lower()
+                if quant_level not in model_quants[result.model_name]:
+                    model_quants[result.model_name][quant_level] = result
+                else:
+                    # Nimm die beste Performance (höchste Tokens/s) falls mehrere Quantisierungen
+                    if result.avg_tokens_per_sec > model_quants[result.model_name][quant_level].avg_tokens_per_sec:
+                        model_quants[result.model_name][quant_level] = result
+            
+            # Erstelle Vergleich-Tabelle
+            comp_data = {}
+            for model, quants in sorted(model_quants.items()):
+                comp_data[model] = {
+                    'q4': None,
+                    'q5': None, 
+                    'q6': None,
+                    'q8': None
+                }
+                for q_level in ['q4', 'q5', 'q6', 'q8']:
+                    if q_level in quants:
+                        r = quants[q_level]
+                        comp_data[model][q_level] = {
+                            'speed': round(r.avg_tokens_per_sec, 2),
+                            'efficiency': round(r.tokens_per_sec_per_gb, 2),
+                            'vram_mb': r.vram_mb,
+                            'ttft': round(r.avg_ttft * 1000, 1)
+                        }
+            
             if comp_data:
                 elements.append(Paragraph("Quantisierungs-Vergleich (Q4 vs Q5 vs Q6)", heading_style))
                 
@@ -2252,8 +2323,15 @@ class LMStudioBenchmark:
             min_tps_result = min(results, key=lambda x: x.avg_tokens_per_sec)
             avg_tps = sum(r.avg_tokens_per_sec for r in results) / len(results)
             
-            # Percentile berechnen
-            percentile_stats = self.calculate_percentile_stats()
+            # Percentile berechnen (nur für exportierte Modelle)
+            speeds = sorted([r.avg_tokens_per_sec for r in results if r.avg_tokens_per_sec > 0])
+            percentile_stats = {}
+            if len(speeds) >= 3:
+                percentile_stats['speed'] = {
+                    'median': speeds[len(speeds)//2],
+                    'p95': speeds[int(len(speeds) * 0.95)],
+                    'p99': speeds[int(len(speeds) * 0.99)] if len(speeds) > 100 else speeds[-1]
+                }
             
             stats_data = [
                 ['Statistik', 'Wert'],
