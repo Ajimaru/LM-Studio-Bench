@@ -338,7 +338,11 @@ async def get_results() -> dict:
         # Konvertiere BenchmarkResult zu Dict
         results_data = []
         for result in results:
+            # model_key für Frontend (für Delete-Button)
+            model_key = f"{result.model_name}@{result.quantization}"
+            
             result_dict = {
+                "model_key": model_key,
                 "model_name": result.model_name,
                 "quantization": result.quantization,
                 "gpu_type": result.gpu_type,
