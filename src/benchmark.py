@@ -230,15 +230,15 @@ class HardwareMonitor:
                 with self.lock:
                     if temp is not None:
                         self.temps.append(temp)
-                        # Drucke auf stdout für Live-Monitoring in WebApp
-                        print(f"🌡️ GPU Temp: {temp:.1f}°C", flush=True)
+                        # Logger für Log-Datei UND stdout (via AutoFlushStream)
+                        logger.info(f"🌡️ GPU Temp: {temp:.1f}°C")
                     else:
                         logger.debug(f"⚠️ Keine Temperatur gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
                     
                     if power is not None:
                         self.powers.append(power)
-                        # Drucke auf stdout für Live-Monitoring in WebApp
-                        print(f"⚡ GPU Power: {power:.1f}W", flush=True)
+                        # Logger für Log-Datei UND stdout (via AutoFlushStream)
+                        logger.info(f"⚡ GPU Power: {power:.1f}W")
                     else:
                         logger.debug(f"⚠️ Keine Power gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
                 
