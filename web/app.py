@@ -120,47 +120,52 @@ class BenchmarkManager:
         if self.output_queue is None:
             self.output_queue = asyncio.Queue()
 
+        logger.info("🔄 Output-Consumer-Task gestartet")
+        
         try:
-            while True:
-                output = await self.read_output()
-                if output:
+            loop = asyncio.get_event_loop()
+            
+            while self.is_running():
+                if not self.process or not self.process.stdout:
+                    await asyncio.sleep(0.01)
+                    continue
+                
+                try:
+                    # Blockierendes Lesen in Executor (wartet bis Zeile da ist)
+                    line = await loop.run_in_executor(
+                        None,
+                        self.process.stdout.readline
+                    )
+                    
+                    if not line:
+                        # EOF erreicht
+                        break
+                    
                     # Schreibe sofort in Log-Datei
                     if self.benchmark_log_file:
                         try:
                             with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
-                                f.write(output)
+                                f.write(line)
                         except Exception as log_error:
-                            logger.error(f"❌ Fehler beim Schreiben in Log-Datei: {log_error}")
+                            logger.error(f"❌ Log-Write-Fehler: {log_error}")
                     
                     # Parse Hardware-Metriken
-                    for line in output.splitlines():
-                        self.parse_hardware_metrics(line)
-                    
-                    # In Queue für WebSocket legen
-                    await self.output_queue.put(output)
-                
-                if not self.is_running():
-                    break
-                await asyncio.sleep(0.01)  # Schnelleres Polling (10ms)
-
-            # Restoutput nach Prozessende lesen
-            for _ in range(10):  # Max 10 Versuche
-                output = await self.read_output()
-                if not output:
-                    break
-                if self.benchmark_log_file:
-                    try:
-                        with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
-                            f.write(output)
-                    except Exception as log_error:
-                        logger.error(f"❌ Fehler beim Schreiben in Log-Datei: {log_error}")
-                for line in output.splitlines():
                     self.parse_hardware_metrics(line)
-                await self.output_queue.put(output)
+                    
+                    # In Queue für WebSocket
+                    await self.output_queue.put(line)
+                    self.current_output += line
+                    
+                except Exception as read_error:
+                    logger.error(f"❌ Read-Fehler: {read_error}")
+                    break
+            
+            logger.info("🔄 Output-Consumer-Task beendet (Prozess gestoppt)")
             
             # Completion-Log
             if self.benchmark_log_file and self.benchmark_log_file.exists():
-                logger.info(f"✅ Benchmark abgeschlossen. Log: {self.benchmark_log_file}")
+                logger.info(f"✅ Benchmark-Log: {self.benchmark_log_file}")
+                
         except Exception as e:
             logger.error(f"❌ Fehler im Output-Consumer: {e}")
 
