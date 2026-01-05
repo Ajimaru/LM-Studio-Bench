@@ -755,9 +755,6 @@
                 <div class="card" style="flex: 0 0 auto;">
                     <h2>📥 Ergebnisse</h2>
                     <div class="controls">
-                        <a href="#" id="exportResults" class="btn-primary" style="text-decoration: none;">
-                            📋 Results
-                        </a>
                         <a href="#" id="exportHTML" class="btn-primary" style="text-decoration: none;">
                             🌐 HTML
                         </a>
@@ -1041,14 +1038,13 @@
                     const baseFileName = data.latest.replace(/\.\w+$/, '');
                     
                     // Aktualisiere die Links
-                    document.getElementById('exportResults').href = `/results/${baseFileName}.json`;
                     document.getElementById('exportHTML').href = `/results/${baseFileName}.html`;
                     document.getElementById('exportPDF').href = `/results/${baseFileName}.pdf`;
                     document.getElementById('exportJSON').href = `/results/${baseFileName}.json`;
                     document.getElementById('exportCSV').href = `/results/${baseFileName}.csv`;
                 } else {
                     // Fallback: Alle Links auf resultsverzeichnis
-                    const links = ['exportResults', 'exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
+                    const links = ['exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
                     links.forEach(id => {
                         document.getElementById(id).href = '/results/';
                     });
@@ -1056,7 +1052,7 @@
             } catch (error) {
                 console.error('Fehler beim Laden der Export-Links:', error);
                 // Fallback: Alle Links auf results-verzeichnis
-                const links = ['exportResults', 'exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
+                const links = ['exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
                 links.forEach(id => {
                     document.getElementById(id).href = '/results/';
                 });
