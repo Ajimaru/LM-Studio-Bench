@@ -4,6 +4,7 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 
 ## Features
 
+- 🌐 **Web Dashboard**: Moderne FastAPI-basierte Web-UI mit Live-Streaming, Dark Mode und interaktivem Ergebnisse-Browser
 - ✅ **Automatische Modell-Discovery**: Findet alle lokal installierten Modelle und Quantisierungen
 - ✅ **GPU-Detection**: Erkennt NVIDIA, AMD und Intel GPUs automatisch
 - ✅ **VRAM-Monitoring**: Misst VRAM-Nutzung während des Benchmarks
@@ -16,7 +17,7 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **SQLite-Cache**: Automatisches Caching von Benchmark-Ergebnissen (überspringt bereits getestete Modelle)
 - ✅ **Intelligente Limits**: Mit `-l 5` werden 5 NEUE Modelle getestet + alle gecachten Modelle geladen
 - ✅ **Dev-Mode**: Automatische Auswahl des kleinsten Modells für schnelle Tests während Entwicklung
-- ✅ **Saubere Logging**: Emoji-Icons, formatierte Modell-Listen, gefilterte Third-Party-Debug-Logs
+- ✅ **Saubere Logging**: Emoji-Icons, formatierte Modell-Listen, gefilterte Third-Party-Debug-Logs, separate Log-Dateien für WebApp und Benchmarks
 - ✅ **Export**:
   - JSON, CSV (Excel/Sheets-kompatibel)
   - PDF (Multi-Page mit Best-Practice-Empfehlungen, Vision/Tool/Architektur-Seiten, optionale Plotly-Charts)
@@ -67,13 +68,33 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 
 ## Nutzung
 
-### Benchmark starten
+### 🌐 Web Dashboard (Empfohlen)
+
+Starte die moderne Web-UI mit Live-Streaming und interaktivem Ergebnisse-Browser:
 
 ```bash
 # Stelle sicher dass die virtuelle Umgebung aktiviert ist
 source .venv/bin/activate  # Linux/macOS
 .venv\Scripts\activate   # Windows
 
+# Web-Dashboard starten (öffnet automatisch Browser)
+./run.py --webapp
+```
+
+**Dashboard-Features:**
+- 📊 **Live-Streaming**: Benchmark-Output in Echtzeit via WebSocket
+- 🎨 **Dark Mode**: Modernes dunkles Design (per Default)
+- 📁 **Ergebnisse-Browser**: Durchsuche alle gecachten Benchmark-Ergebnisse
+- 🔧 **Flexible Konfiguration**: Alle CLI-Parameter als Web-Formular
+- 📱 **Responsive Design**: Funktioniert auf Desktop und Tablet
+- 🌐 **Netzwerk-Zugriff**: Öffne Dashboard auf anderen Geräten (http://your-ip:8080)
+- 📝 **Separate Logs**: `logs/webapp_*.log` (Dashboard) und `logs/benchmark_*.log` (Benchmark-Läufe)
+
+### 💻 Kommandozeile (CLI)
+
+Alternativ kannst du Benchmarks direkt über die Kommandozeile starten:
+
+```bash
 ./run.py
 ```
 
@@ -197,15 +218,32 @@ Diese werden automatisch in `_run_inference()` über das Python SDK angewendet u
 
 ## Output
 
+### Log-Dateien
+
+Das Tool verwendet separate Log-Dateien für verschiedene Komponenten:
+
+```text
+logs/
+├── webapp_20260105_112201.log       # Web-Dashboard Logs (nur wenn --webapp verwendet)
+└── benchmark_20260105_113045.log    # Benchmark-Ausführungs-Logs
+```
+
+- **WebApp-Logs** (`webapp_*.log`): FastAPI Server, WebSocket-Events, HTTP-Requests
+- **Benchmark-Logs** (`benchmark_*.log`): Modell-Tests, VRAM-Monitoring, Fehler
+- Logs werden nur erstellt wenn die jeweilige Komponente aktiv ist
+- Timestamps im Format `YYYYMMDD_HHMMSS`
+
 ### Ergebnis-Dateien
 
-Ergebnisse werden im Verzeichnis `results/` gespeichert:
+**Benchmark-Reports** werden im Verzeichnis `results/` gespeichert:
 
 - `benchmark_results_YYYYMMDD_HHMMSS.json` - Strukturierte Daten (für Automatisierung)
 - `benchmark_results_YYYYMMDD_HHMMSS.csv` - Tabelle (Excel/Sheets-kompatibel)
 - `benchmark_results_YYYYMMDD_HHMMSS.pdf` - Formatierter Report (zum Teilen/Archivieren)
 - `benchmark_results_YYYYMMDD_HHMMSS.html` - Interaktive Plotly-Charts
 - `benchmark_cache.db` - SQLite-Datenbank mit allen Benchmark-Ergebnissen (automatisches Caching)
+
+**Wichtig:** Reports enthalten nur die **neu getesteten Modelle** aus dem aktuellen Benchmark-Lauf. Der interaktive Ergebnisse-Browser im Web-Dashboard zeigt alle gecachten Ergebnisse für historische Vergleiche.
 
 ### PDF-Report
 
@@ -400,30 +438,33 @@ MIT License - siehe LICENSE-Datei
 
 ## Web-Dashboard (Phase 13)
 
-Interaktives Web-Interface zur Steuerung und Live-Überwachung von Benchmarks.
+## 🌐 Web Dashboard
+
+Modernes FastAPI-basiertes Web-Interface zur Steuerung und Live-Überwachung von Benchmarks.
 
 ### Verwendung
 
 ```bash
-# Dashboard mit automatischem freien Port starten
-./run.py --web
+# Dashboard starten (öffnet automatisch Browser)
+./run.py --webapp
 
-# Dashboard auf spezifischem Port starten
-./run.py --web --port 9000
-
-# Kurze Syntax
-./run.py -w -p 8888
+# Oder kurze Syntax
+./run.py -w
 ```
 
-Das Dashboard ist dann verfügbar unter: **http://localhost:PORT**
+Das Dashboard ist standardmäßig verfügbar unter: http://localhost:8080
 
 ### Features
 
-- 🌐 **Modernes Web-UI**: Responsives Dashboard mit Dark Mode
+- 🌐 **Modernes Web-UI**: Responsives Dashboard mit Dark Mode (Default)
 - ⚡ **Live-Streaming**: WebSocket für Echtzeit-Terminal-Ausgabe
-- 🎮 **Benchmark-Kontrolle**: Start, Pause, Resume, Stop
+- 🎮 **Benchmark-Kontrolle**: Start/Stop über Web-Interface
 - ⚙️ **Parameter-Konfiguration**: Alle CLI-Parameter über GUI
-- 📊 **Status-Überwachung**: Live-Updates und Uptime-Zähler
+- 📊 **Ergebnisse-Browser**: Durchsuche alle gecachten Benchmark-Ergebnisse
+- 📥 **Export-Funktionen**: Download JSON/CSV/PDF/HTML Reports
+- 🌐 **Netzwerk-Zugriff**: Erreichbar von anderen Geräten im Netzwerk
+- 📝 **Separate Logs**: `logs/webapp_*.log` und `logs/benchmark_*.log`
+- 🎨 **Dark Mode**: Modernes dunkles Design mit Toggle-Option
 - 🔌 **REST API**: Vollständige API für Automatisierung (`/docs` für OpenAPI)
 
 ### REST API Endpoints

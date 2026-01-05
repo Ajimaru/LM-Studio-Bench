@@ -1627,7 +1627,7 @@ class LMStudioBenchmark:
         """Analysiert beste Quantisierung pro Modell nach verschiedenen Kriterien"""
         best_by_model = {}
         
-        for result in results:
+        for result in self.results:
             model_key = result.model_name
             
             if model_key not in best_by_model:
@@ -1661,11 +1661,11 @@ class LMStudioBenchmark:
     def sort_results(self, rank_by: str = 'speed') -> List[BenchmarkResult]:
         """Sortiert Ergebnisse nach verschiedenen Kriterien"""
         if rank_by == 'speed':
-            return sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+            return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
         elif rank_by == 'efficiency':
-            return sorted(results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True)
+            return sorted(self.results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True)
         elif rank_by == 'ttft':
-            return sorted(results, key=lambda x: x.avg_ttft, reverse=False)  # Niedrig = gut
+            return sorted(self.results, key=lambda x: x.avg_ttft, reverse=False)  # Niedrig = gut
         elif rank_by == 'vram':
             # Parse VRAM-Wert (z.B. "2048 MB" -> 2048)
             def get_vram_mb(result):
@@ -1673,19 +1673,19 @@ class LMStudioBenchmark:
                     return float(result.vram_mb.split()[0]) if isinstance(result.vram_mb, str) else float(result.vram_mb)
                 except:
                     return 999999
-            return sorted(results, key=get_vram_mb, reverse=False)  # Niedrig = besser
+            return sorted(self.results, key=get_vram_mb, reverse=False)  # Niedrig = besser
         else:
-            return sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)  # Default
+            return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)  # Default
     
     def calculate_percentile_stats(self) -> Dict[str, Dict]:
         """Berechnet P50, P95, P99 Statistiken für Benchmark-Metriken"""
-        if not self.results or len(results) < 3:
+        if not self.results or len(self.results) < 3:
             return {}
         
-        speeds = [r.avg_tokens_per_sec for r in results if r.avg_tokens_per_sec > 0]
-        ttfts = [r.avg_ttft for r in results if r.avg_ttft > 0]
+        speeds = [r.avg_tokens_per_sec for r in self.results if r.avg_tokens_per_sec > 0]
+        ttfts = [r.avg_ttft for r in self.results if r.avg_ttft > 0]
         vram_values = []
-        for r in results:
+        for r in self.results:
             try:
                 vram_mb = float(r.vram_mb.split()[0]) if isinstance(r.vram_mb, str) else float(r.vram_mb)
                 vram_values.append(vram_mb)
@@ -1742,7 +1742,7 @@ class LMStudioBenchmark:
         
         # Gruppiere Ergebnisse nach Modell und Quantisierung
         model_quants = {}
-        for result in results:
+        for result in self.results:
             if result.model_name not in model_quants:
                 model_quants[result.model_name] = {}
             
@@ -1787,12 +1787,12 @@ class LMStudioBenchmark:
         gpu_type = self.gpu_monitor.gpu_type or "Unknown"
         
         # Beste Modelle nach Kriterien
-        best_speed = max(results, key=lambda x: x.avg_tokens_per_sec)
-        best_efficiency = max(results, key=lambda x: x.tokens_per_sec_per_gb)
-        best_ttft = min(results, key=lambda x: x.avg_ttft if x.avg_ttft > 0 else float('inf'))
+        best_speed = max(self.results, key=lambda x: x.avg_tokens_per_sec)
+        best_efficiency = max(self.results, key=lambda x: x.tokens_per_sec_per_gb)
+        best_ttft = min(self.results, key=lambda x: x.avg_ttft if x.avg_ttft > 0 else float('inf'))
         
         # Finde beste Balance (Speed + Efficiency)
-        best_balance = max(results, key=lambda x: x.avg_tokens_per_sec * 0.6 + x.tokens_per_sec_per_gb * 0.4)
+        best_balance = max(self.results, key=lambda x: x.avg_tokens_per_sec * 0.6 + x.tokens_per_sec_per_gb * 0.4)
         
         # Hardware-spezifische Empfehlungen
         recommendations.append(f"🖥️  Hardware: {gpu_type} GPU erkannt")
@@ -1825,8 +1825,8 @@ class LMStudioBenchmark:
         
         # Quantisierungs-Empfehlungen
         recommendations.append(f"📊 Quantisierungs-Tipps:")
-        q4_models = [r for r in results if 'q4' in r.quantization.lower()]
-        q6_models = [r for r in results if 'q6' in r.quantization.lower()]
+        q4_models = [r for r in self.results if 'q4' in r.quantization.lower()]
+        q6_models = [r for r in self.results if 'q6' in r.quantization.lower()]
         
         if q4_models and q6_models:
             avg_q4_speed = sum(r.avg_tokens_per_sec for r in q4_models) / len(q4_models)
@@ -1840,14 +1840,14 @@ class LMStudioBenchmark:
         
         # VRAM-basierte Empfehlungen
         vram_info = []
-        for result in sorted(results, key=lambda x: x.model_size_gb)[:3]:
+        for result in sorted(self.results, key=lambda x: x.model_size_gb)[:3]:
             if result.model_size_gb <= 4:
                 vram_info.append(f"   → <4 GB VRAM: {result.model_name} ({result.quantization})")
-        for result in sorted(results, key=lambda x: x.model_size_gb):
+        for result in sorted(self.results, key=lambda x: x.model_size_gb):
             if 4 < result.model_size_gb <= 8:
                 vram_info.append(f"   → 4-8 GB VRAM: {result.model_name} ({result.quantization})")
                 break
-        for result in sorted(results, key=lambda x: x.model_size_gb):
+        for result in sorted(self.results, key=lambda x: x.model_size_gb):
             if 8 < result.model_size_gb <= 12:
                 vram_info.append(f"   → 8-12 GB VRAM: {result.model_name} ({result.quantization})")
                 break

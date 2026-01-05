@@ -7,7 +7,39 @@ cd ~/local-llm-bench
 pip install -r requirements.txt
 ```
 
-## Basic Usage
+## 🌐 Web Dashboard (Recommended)
+
+### Start Web UI
+
+```bash
+./run.py --webapp
+```
+
+✅ Opens browser automatically at http://localhost:8080
+✅ Live streaming of benchmark output via WebSocket
+✅ Browse all cached results with interactive tables
+✅ Dark mode by default with toggle option
+✅ All CLI parameters available as web form
+✅ Separate logs: `logs/webapp_*.log` and `logs/benchmark_*.log`
+
+**Dashboard Features:**
+- **Start Benchmark**: Configure and run benchmarks from web interface
+- **Live Output**: Real-time streaming with colored logs and progress
+- **Results Browser**: Filter and sort all cached benchmark results
+- **Export**: Download JSON/CSV/PDF/HTML reports
+- **Network Access**: Access from other devices on same network
+
+### Network Access
+
+```bash
+# Access dashboard from other devices
+http://your-ip:8080
+
+# Example:
+http://192.168.1.100:8080
+```
+
+## 💻 Command Line (CLI)
 
 ### Simple Benchmark (All Models)
 
