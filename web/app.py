@@ -191,44 +191,55 @@ class BenchmarkManager:
             return False
 
     async def read_output(self) -> str:
-        """Liest verfügbaren Output aus Prozess mit Timeout"""
+        """Liest ALLE verfügbaren Zeilen aus Prozess ohne Blocking"""
         if not self.process or not self.process.stdout:
             return ""
 
         try:
-            # Nicht-blockierendes Lesen mit Timeout
+            # Lese ALLE verfügbaren Zeilen (nicht nur eine!)
             loop = asyncio.get_event_loop()
-            output = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    self.process.stdout.readline
-                ),
-                timeout=2.0  # 2 Sekunden Timeout
-            )
+            lines = []
             
-            if output:
-                self.current_output += output
+            # Lese so viele Zeilen wie verfügbar sind (nicht-blockierend)
+            while True:
+                try:
+                    # Versuche eine Zeile zu lesen mit kurzem Timeout
+                    output = await asyncio.wait_for(
+                        loop.run_in_executor(
+                            None,
+                            self.process.stdout.readline
+                        ),
+                        timeout=0.1  # Kurzer Timeout (100ms) pro Zeile
+                    )
+                    
+                    if output:
+                        lines.append(output)
+                    else:
+                        # Keine weitere Zeile verfügbar
+                        break
+                except asyncio.TimeoutError:
+                    # Timeout bedeutet keine weiteren Zeilen verfügbar
+                    break
+            
+            # Kombiniere alle gelesenen Zeilen
+            if lines:
+                combined_output = ''.join(lines)
+                self.current_output += combined_output
                 
-                # Schreibe WIRKLICH in Log-Datei NUR wenn Output vorhanden ist
-                # Die Datei wird bei ersten Write automatisch erstellt
+                # Schreibe in Log-Datei NUR wenn Output vorhanden ist
                 if self.benchmark_log_file:
                     try:
                         with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
-                            f.write(output)
+                            f.write(combined_output)
                     except Exception as log_error:
                         logger.error(f"❌ Fehler beim Schreiben in Log-Datei: {log_error}")
                 
-                return output
+                return combined_output
             elif not self.is_running():
                 self.status = "completed"
                 if self.benchmark_log_file and self.benchmark_log_file.exists():
                     logger.info(f"✅ Benchmark abgeschlossen. Log: {self.benchmark_log_file}")
             
-            return ""
-        except asyncio.TimeoutError:
-            # Timeout ist normal - bedeutet kein Output verfügbar
-            if not self.is_running():
-                self.status = "completed"
             return ""
         except Exception as e:
             logger.error(f"❌ Fehler beim Lesen des Outputs: {e}")
