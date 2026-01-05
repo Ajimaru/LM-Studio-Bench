@@ -17,7 +17,7 @@ import argparse
 import sqlite3
 import hashlib
 import threading
-import psutil  # System CPU/RAM monitoring
+import psutil
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict, field
@@ -462,10 +462,12 @@ class HardwareMonitor:
             return None
     
     def _get_ram_usage(self) -> Optional[float]:
-        """Liest System RAM-Nutzung in GB"""
+        """Liest System RAM-Nutzung in GB (nur aktiv genutzte RAM, ohne Cache/Buffers)"""
         try:
             mem = psutil.virtual_memory()
-            return mem.used / (1024**3)  # Bytes zu GB
+            # active = tatsächlich von Prozessen genutzte RAM (ohne Cache/Buffers)
+            # Dies ist stabiler als "used" oder "total-available" während Benchmarks
+            return mem.active / (1024**3)  # Bytes zu GB
         except Exception:
             return None
 
