@@ -124,17 +124,43 @@ class BenchmarkManager:
             while True:
                 output = await self.read_output()
                 if output:
+                    # Schreibe sofort in Log-Datei
+                    if self.benchmark_log_file:
+                        try:
+                            with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
+                                f.write(output)
+                        except Exception as log_error:
+                            logger.error(f"❌ Fehler beim Schreiben in Log-Datei: {log_error}")
+                    
+                    # Parse Hardware-Metriken
+                    for line in output.splitlines():
+                        self.parse_hardware_metrics(line)
+                    
+                    # In Queue für WebSocket legen
                     await self.output_queue.put(output)
+                
                 if not self.is_running():
                     break
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.01)  # Schnelleres Polling (10ms)
 
             # Restoutput nach Prozessende lesen
-            while True:
+            for _ in range(10):  # Max 10 Versuche
                 output = await self.read_output()
                 if not output:
                     break
+                if self.benchmark_log_file:
+                    try:
+                        with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
+                            f.write(output)
+                    except Exception as log_error:
+                        logger.error(f"❌ Fehler beim Schreiben in Log-Datei: {log_error}")
+                for line in output.splitlines():
+                    self.parse_hardware_metrics(line)
                 await self.output_queue.put(output)
+            
+            # Completion-Log
+            if self.benchmark_log_file and self.benchmark_log_file.exists():
+                logger.info(f"✅ Benchmark abgeschlossen. Log: {self.benchmark_log_file}")
         except Exception as e:
             logger.error(f"❌ Fehler im Output-Consumer: {e}")
 
@@ -311,24 +337,7 @@ class BenchmarkManager:
             if lines:
                 combined_output = ''.join(lines)
                 self.current_output += combined_output
-                
-                # Parse Hardware-Metriken aus jeder Zeile
-                for line in lines:
-                    self.parse_hardware_metrics(line)
-                
-                # Schreibe in Log-Datei NUR wenn Output vorhanden ist
-                if self.benchmark_log_file:
-                    try:
-                        with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
-                            f.write(combined_output)
-                    except Exception as log_error:
-                        logger.error(f"❌ Fehler beim Schreiben in Log-Datei: {log_error}")
-                
                 return combined_output
-            elif not self.is_running():
-                self.status = "completed"
-                if self.benchmark_log_file and self.benchmark_log_file.exists():
-                    logger.info(f"✅ Benchmark abgeschlossen. Log: {self.benchmark_log_file}")
             
             return ""
         except Exception as e:
