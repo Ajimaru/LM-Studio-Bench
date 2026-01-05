@@ -610,11 +610,15 @@
         // ===== WebSocket Setup =====
         function setupWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            websocket = new WebSocket(`${protocol}//${window.location.host}/ws/benchmark`);
+            const wsUrl = `${protocol}//${window.location.host}/ws/benchmark`;
+            console.log('🔌 Versuche WebSocket Verbindung zu:', wsUrl);
+            
+            websocket = new WebSocket(wsUrl);
 
             websocket.onopen = () => {
-                console.log('📡 WebSocket verbunden');
-                addAlert('WebSocket verbunden', 'success');
+                console.log('✅ WebSocket verbunden');
+                addAlert('✅ WebSocket verbunden', 'success');
+                updateStatus(); // Sofort Status aktualisieren
             };
 
             websocket.onmessage = (event) => {
@@ -634,7 +638,7 @@
 
             websocket.onerror = (error) => {
                 console.error('❌ WebSocket Fehler:', error);
-                addAlert('⚠️ WebSocket-Verbindung unterbrochen (versuche neu zu verbinden...)', 'warning');
+                addAlert('⚠️ WebSocket-Fehler (versuche neu zu verbinden...)', 'warning');
                 // Versuche Reconnect nach 3 Sekunden
                 setTimeout(() => {
                     console.log('🔄 Versuche WebSocket Reconnect...');
