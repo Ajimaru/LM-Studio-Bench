@@ -484,9 +484,9 @@ Die folgenden Phasen wurden bereits vollständig implementiert:
 - Phase 14.5: **Web-Dashboard - Live Hardware-Monitoring Charts** ✅ (2026-01-05 - ABGESCHLOSSEN):
   - **Plotly.js Echtzeit-Charts**: Temperature, Power, VRAM Line-Charts ✅
   - **Hardware-Daten-Parsing**: Regex-basierte Extraktion aus Benchmark-Output ✅
-    - GPU-Temperatur-Erkennung: "GPU Temp: 45°C", "Temperature: 45"
-    - Power-Messung: "Power: 150W", "GPU Power: 150"
-    - VRAM-Tracking: "VRAM: 8.5GB", "GPU Memory: 8.5"
+    - GPU-Temperatur-Erkennung: "🌡️ GPU Temp: 45.5°C"
+    - Power-Messung: "⚡ GPU Power: 150.5W"
+    - VRAM-Tracking: "💾 GPU VRAM: 8.5GB"
   - **WebSocket Hardware-Messages**: Periodisches Streaming alle 2 Sekunden ✅
     - Historische Daten: Letzte 60 Einträge pro Metrik (2 Minuten)
     - JSON-Format mit Timestamps für jede Messung
@@ -497,6 +497,10 @@ Die folgenden Phasen wurden bereits vollständig implementiert:
     - Farbcodiert: Red=Temp, Orange=Power, Green=VRAM
   - **Backend**: BenchmarkManager.parse_hardware_metrics(), Hardware-History Dict
   - **Frontend**: updateHardwareCharts() mit Plotly.newPlot(), Dark-Mode Support
+  - **Bugfix (2026-01-05)**: 🐛 HardwareMonitor gibt jetzt live auf stdout aus ✅
+    - Monitor-Thread druckt Metriken alle 1 Sekunde
+    - WebApp parst und streamt via WebSocket zu Frontend
+    - Regex-Patterns auf neue Emoji-Formate aktualisiert
 
 - [ ] Web-Dashboard - Phase 14.6: Historical Comparison UI
 - [ ] Web-Dashboard - Phase 14.7: Advanced Filtering
