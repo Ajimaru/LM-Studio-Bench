@@ -998,7 +998,6 @@
         let statusCheckInterval = null;
         let uptimeInterval = null;
         let startTime = null;
-        let uptimeInterval = null;  // Timer für Laufzeit-Counter
 
         // ===== Theme Toggle =====
         function toggleTheme() {
@@ -1007,6 +1006,8 @@
         }
 
         // Theme auf Laden einrichten (Dark Mode ist Standard)
+        // Results beim Laden initialisieren
+        // WebSocket & Timers starten
         window.addEventListener('DOMContentLoaded', () => {
             const theme = localStorage.getItem('theme') || 'dark';  // Dark als Standard
             if (theme === 'dark') {
@@ -1015,6 +1016,17 @@
             
             // Lade Dashboard-Stats wenn Home-View aktiv
             loadDashboardStats();
+            
+            // Lade Results
+            loadResults();
+            
+            // Starte WebSocket & Timers
+            setupWebSocket();
+            updateStatus();
+            updateUptime();
+            
+            statusCheckInterval = setInterval(updateStatus, 2000);
+            uptimeInterval = setInterval(updateUptime, 1000);
         });
 
         // ===== View Switching =====
@@ -1574,11 +1586,6 @@
             }
         }
 
-        // Results beim Laden initialisieren
-        window.addEventListener('DOMContentLoaded', () => {
-            loadResults();
-        });
-
         // ===== UI Hilfsfunktionen =====
         function toggleStartModal() {
             document.getElementById('startModal').classList.toggle('hidden');
@@ -1834,16 +1841,6 @@
             document.getElementById('ram-max').textContent = `${max.toFixed(2)}GB`;
             document.getElementById('ram-avg').textContent = `${avg}GB`;
         }
-
-        // ===== Initialization =====
-        window.addEventListener('DOMContentLoaded', () => {
-            setupWebSocket();
-            updateStatus();
-            updateUptime();
-            
-            statusCheckInterval = setInterval(updateStatus, 2000);
-            uptimeInterval = setInterval(updateUptime, 1000);
-        });
 
         window.addEventListener('beforeunload', () => {
             if (statusCheckInterval) clearInterval(statusCheckInterval);
