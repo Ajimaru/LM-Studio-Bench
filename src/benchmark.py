@@ -181,6 +181,7 @@ class HardwareMonitor:
         self.temps: List[float] = []
         self.powers: List[float] = []
         self.vrams: List[float] = []  # VRAM-Nutzung in GB
+        self.gtts: List[float] = []   # GTT-Nutzung in GB (System RAM für AMD GPUs)
         self.lock = threading.Lock()
     
     def start(self):
@@ -210,6 +211,7 @@ class HardwareMonitor:
             temps = self.temps.copy()
             powers = self.powers.copy()
             vrams = self.vrams.copy()
+            gtts = self.gtts.copy()
         
         stats = {
             'temp_celsius_min': min(temps) if temps else None,
@@ -221,6 +223,9 @@ class HardwareMonitor:
             'vram_gb_min': min(vrams) if vrams else None,
             'vram_gb_max': max(vrams) if vrams else None,
             'vram_gb_avg': mean(vrams) if vrams else None,
+            'gtt_gb_min': min(gtts) if gtts else None,
+            'gtt_gb_max': max(gtts) if gtts else None,
+            'gtt_gb_avg': mean(gtts) if gtts else None,
         }
         return stats
     
@@ -232,6 +237,7 @@ class HardwareMonitor:
                 temp = self._get_temperature()
                 power = self._get_power_draw()
                 vram = self._get_vram_usage()
+                gtt = self._get_gtt_usage()
                 
                 with self.lock:
                     if temp is not None:
@@ -254,6 +260,13 @@ class HardwareMonitor:
                         logger.info(f"💾 GPU VRAM: {vram:.1f}GB")
                     else:
                         logger.debug(f"⚠️ Keine VRAM gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
+                    
+                    if gtt is not None:
+                        self.gtts.append(gtt)
+                        # Logger für Log-Datei UND stdout (via AutoFlushStream)
+                        logger.info(f"🧠 GPU GTT: {gtt:.1f}GB")
+                    else:
+                        logger.debug(f"⚠️ Keine GTT gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
                 
                 time.sleep(1)  # Messungen jede Sekunde
             except Exception as e:
@@ -385,6 +398,34 @@ class HardwareMonitor:
                             if match:
                                 vram_bytes = float(match.group(1))
                                 return vram_bytes / (1024**3)  # Bytes zu GB
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+        
+        return None
+    
+    def _get_gtt_usage(self) -> Optional[float]:
+        """Liest GTT-Nutzung in GB (System RAM für AMD GPUs)"""
+        try:
+            # GTT ist nur für AMD GPUs verfügbar
+            if self.gpu_type != "AMD" or not self.gpu_tool:
+                return None
+            
+            result = subprocess.run(
+                [self.gpu_tool, '--showmeminfo', 'gtt'],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                # Parse AMD rocm-smi output:
+                # Format: "GPU[0]          : GTT Total Used Memory (B): 1234567890"
+                import re
+                for line in result.stdout.split('\n'):
+                    if 'GPU[' in line and 'Used Memory' in line:
+                        match = re.search(r'(\d+)\s*$', line.strip())
+                        if match:
+                            gtt_bytes = float(match.group(1))
+                            return gtt_bytes / (1024**3)  # Bytes zu GB
         except (subprocess.TimeoutExpired, Exception):
             pass
         
