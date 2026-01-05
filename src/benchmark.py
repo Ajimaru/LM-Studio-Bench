@@ -185,6 +185,7 @@ class HardwareMonitor:
         self.gtts: List[float] = []   # GTT-Nutzung in GB (System RAM für AMD GPUs)
         self.cpus: List[float] = []   # CPU-Auslastung in %
         self.rams: List[float] = []   # RAM-Nutzung in GB
+        self.ram_readings: List[float] = []  # Für RAM-Smoothing (gleitendes Mittel)
         self.lock = threading.Lock()
     
     def start(self):
@@ -462,12 +463,19 @@ class HardwareMonitor:
             return None
     
     def _get_ram_usage(self) -> Optional[float]:
-        """Liest System RAM-Nutzung in GB (nur aktiv genutzte RAM, ohne Cache/Buffers)"""
+        """Liest System RAM-Nutzung in GB mit Smoothing (gleitendes Mittel über 3 Messungen)"""
         try:
             mem = psutil.virtual_memory()
-            # active = tatsächlich von Prozessen genutzte RAM (ohne Cache/Buffers)
-            # Dies ist stabiler als "used" oder "total-available" während Benchmarks
-            return mem.active / (1024**3)  # Bytes zu GB
+            # Nutze mem.used - das ist am zuverlässigsten
+            current_ram = mem.used / (1024**3)  # Bytes zu GB
+            
+            # Gleitendes Mittel: Keep last 3 readings für Smoothing
+            self.ram_readings.append(current_ram)
+            if len(self.ram_readings) > 3:
+                self.ram_readings.pop(0)
+            
+            # Gib Durchschnitt der letzten 3 (oder weniger) Messungen zurück
+            return sum(self.ram_readings) / len(self.ram_readings)
         except Exception:
             return None
 

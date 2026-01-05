@@ -998,6 +998,7 @@
         let statusCheckInterval = null;
         let uptimeInterval = null;
         let startTime = null;
+        let uptimeInterval = null;  // Timer für Laufzeit-Counter
 
         // ===== Theme Toggle =====
         function toggleTheme() {
@@ -1311,6 +1312,11 @@
                     appendTerminalLine(data.message);
                     updateStatusBadge('completed', false);
                     startTime = null;
+                    // Stop uptime counter
+                    if (uptimeInterval) {
+                        clearInterval(uptimeInterval);
+                        uptimeInterval = null;
+                    }
                 } else if (data.type === 'hardware') {
                     updateHardwareCharts(data.data);
                 }
@@ -1417,6 +1423,11 @@
                 showToast(data.message || 'Gestoppt', data.success ? 'success' : 'error');
                 updateStatus();
                 startTime = null;
+                // Stop uptime counter
+                if (uptimeInterval) {
+                    clearInterval(uptimeInterval);
+                    uptimeInterval = null;
+                }
             } catch (error) {
                 showToast(`Fehler: ${error.message}`, 'error');
             }
