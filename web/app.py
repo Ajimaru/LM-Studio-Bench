@@ -125,10 +125,10 @@ class BenchmarkManager:
         try:
             loop = asyncio.get_event_loop()
             
-            while self.is_running():
+            # Lese bis EOF (auch nach Prozessende)
+            while True:
                 if not self.process or not self.process.stdout:
-                    await asyncio.sleep(0.01)
-                    continue
+                    break
                 
                 try:
                     # Blockierendes Lesen in Executor (wartet bis Zeile da ist)
@@ -138,7 +138,7 @@ class BenchmarkManager:
                     )
                     
                     if not line:
-                        # EOF erreicht
+                        # EOF erreicht - Prozess ist fertig
                         break
                     
                     # Schreibe sofort in Log-Datei
@@ -160,7 +160,11 @@ class BenchmarkManager:
                     logger.error(f"❌ Read-Fehler: {read_error}")
                     break
             
-            logger.info("🔄 Output-Consumer-Task beendet (Prozess gestoppt)")
+            # Setze Status auf completed wenn Prozess fertig
+            if not self.is_running():
+                self.status = "completed"
+            
+            logger.info("🔄 Output-Consumer-Task beendet (EOF erreicht)")
             
             # Completion-Log
             if self.benchmark_log_file and self.benchmark_log_file.exists():

@@ -180,6 +180,7 @@ class HardwareMonitor:
         self.thread: Optional[threading.Thread] = None
         self.temps: List[float] = []
         self.powers: List[float] = []
+        self.vrams: List[float] = []  # VRAM-Nutzung in GB
         self.lock = threading.Lock()
     
     def start(self):
@@ -208,6 +209,7 @@ class HardwareMonitor:
         with self.lock:
             temps = self.temps.copy()
             powers = self.powers.copy()
+            vrams = self.vrams.copy()
         
         stats = {
             'temp_celsius_min': min(temps) if temps else None,
@@ -216,6 +218,9 @@ class HardwareMonitor:
             'power_watts_min': min(powers) if powers else None,
             'power_watts_max': max(powers) if powers else None,
             'power_watts_avg': mean(powers) if powers else None,
+            'vram_gb_min': min(vrams) if vrams else None,
+            'vram_gb_max': max(vrams) if vrams else None,
+            'vram_gb_avg': mean(vrams) if vrams else None,
         }
         return stats
     
@@ -226,6 +231,7 @@ class HardwareMonitor:
             try:
                 temp = self._get_temperature()
                 power = self._get_power_draw()
+                vram = self._get_vram_usage()
                 
                 with self.lock:
                     if temp is not None:
@@ -241,6 +247,13 @@ class HardwareMonitor:
                         logger.info(f"⚡ GPU Power: {power:.1f}W")
                     else:
                         logger.debug(f"⚠️ Keine Power gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
+                    
+                    if vram is not None:
+                        self.vrams.append(vram)
+                        # Logger für Log-Datei UND stdout (via AutoFlushStream)
+                        logger.info(f"💾 GPU VRAM: {vram:.1f}GB")
+                    else:
+                        logger.debug(f"⚠️ Keine VRAM gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
                 
                 time.sleep(1)  # Messungen jede Sekunde
             except Exception as e:
@@ -333,6 +346,45 @@ class HardwareMonitor:
                                 return float(power_str)
                             except (ValueError, IndexError):
                                 pass
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+        
+        return None
+    
+    def _get_vram_usage(self) -> Optional[float]:
+        """Liest GPU VRAM-Nutzung in GB"""
+        try:
+            if not self.gpu_tool:
+                return None
+            
+            if self.gpu_type == "NVIDIA":
+                result = subprocess.run(
+                    [self.gpu_tool, '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    vram_mb = float(result.stdout.strip().split('\n')[0])
+                    return vram_mb / 1024.0  # MB zu GB
+            
+            elif self.gpu_type == "AMD":
+                result = subprocess.run(
+                    [self.gpu_tool, '--showmeminfo', 'vram'],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    # Parse AMD rocm-smi output:
+                    # Format: "GPU[0]          : VRAM Total Used Memory (B): 1234567890"
+                    import re
+                    for line in result.stdout.split('\n'):
+                        if 'GPU[' in line and 'Used Memory' in line:
+                            match = re.search(r'(\d+)\s*$', line.strip())
+                            if match:
+                                vram_bytes = float(match.group(1))
+                                return vram_bytes / (1024**3)  # Bytes zu GB
         except (subprocess.TimeoutExpired, Exception):
             pass
         
