@@ -399,11 +399,15 @@ async def get_cache_stats() -> dict:
         if not results:
             return {
                 "success": True,
-                "total_models": 0,
-                "avg_speed": 0,
-                "fastest_model": None,
-                "slowest_model": None,
-                "db_size_mb": 0
+                "stats": {
+                    "total_entries": 0,
+                    "avg_tokens_per_sec": 0,
+                    "fastest_model": "Keine Daten",
+                    "fastest_speed": 0,
+                    "slowest_model": "Keine Daten",
+                    "slowest_speed": 0,
+                    "db_size_mb": 0
+                }
             }
         
         speeds = [r.avg_tokens_per_sec for r in results]
@@ -415,19 +419,19 @@ async def get_cache_stats() -> dict:
         
         return {
             "success": True,
-            "total_models": len(results),
-            "avg_speed": sum(speeds) / len(speeds),
-            "fastest_model": {
-                "name": f"{fastest.model_name}@{fastest.quantization}",
-                "speed": fastest.avg_tokens_per_sec
-            },
-            "slowest_model": {
-                "name": f"{slowest.model_name}@{slowest.quantization}",
-                "speed": slowest.avg_tokens_per_sec
-            },
-            "db_size_mb": round(db_size_mb, 2)
+            "stats": {
+                "total_entries": len(results),
+                "avg_tokens_per_sec": sum(speeds) / len(speeds),
+                "fastest_model": f"{fastest.model_name}@{fastest.quantization}",
+                "fastest_speed": fastest.avg_tokens_per_sec,
+                "slowest_model": f"{slowest.model_name}@{slowest.quantization}",
+                "slowest_speed": slowest.avg_tokens_per_sec,
+                "db_size_mb": round(db_size_mb, 2)
+            }
         }
     except Exception as e:
+        logger.error(f"❌ Fehler beim Abrufen von Cache-Statistiken: {e}")
+        return {"success": False, "error": str(e)}
         logger.error(f"❌ Fehler beim Laden der Cache-Stats: {e}")
         return {"success": False, "error": str(e)}
 
