@@ -1685,7 +1685,9 @@
                 margin: {l: 50, r: 20, t: 20, b: 40},
                 plot_bgcolor: 'rgba(0,0,0,0.02)',
                 paper_bgcolor: 'rgba(0,0,0,0)',
-                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'},
+                xaxis: {showgrid: false, showticklabels: false},
+                yaxis: {showgrid: false}
             };
             
             Plotly.newPlot('chart-temperature', [trace], layout, {responsive: true, displayModeBar: false});
@@ -1721,7 +1723,9 @@
                 margin: {l: 50, r: 20, t: 20, b: 40},
                 plot_bgcolor: 'rgba(0,0,0,0.02)',
                 paper_bgcolor: 'rgba(0,0,0,0)',
-                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'},
+                xaxis: {showgrid: false, showticklabels: false},
+                yaxis: {showgrid: false}
             };
             
             Plotly.newPlot('chart-power', [trace], layout, {responsive: true, displayModeBar: false});
@@ -1757,7 +1761,9 @@
                 margin: {l: 50, r: 20, t: 20, b: 40},
                 plot_bgcolor: 'rgba(0,0,0,0.02)',
                 paper_bgcolor: 'rgba(0,0,0,0)',
-                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'},
+                xaxis: {showgrid: false, showticklabels: false},
+                yaxis: {showgrid: false}
             };
             
             Plotly.newPlot('chart-vram', [trace], layout, {responsive: true, displayModeBar: false});
@@ -1793,7 +1799,9 @@
                 margin: {l: 50, r: 20, t: 20, b: 40},
                 plot_bgcolor: 'rgba(0,0,0,0.02)',
                 paper_bgcolor: 'rgba(0,0,0,0)',
-                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'},
+                xaxis: {showgrid: false, showticklabels: false},
+                yaxis: {showgrid: false}
             };
             
             Plotly.newPlot('chart-gtt', [trace], layout, {responsive: true, displayModeBar: false});
@@ -1830,7 +1838,8 @@
                 plot_bgcolor: 'rgba(0,0,0,0.02)',
                 paper_bgcolor: 'rgba(0,0,0,0)',
                 font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'},
-                yaxis: {range: [0, 100]}
+                xaxis: {showgrid: false, showticklabels: false},
+                yaxis: {range: [0, 100], showgrid: false}
             };
             
             Plotly.newPlot('chart-cpu', [trace], layout, {responsive: true, displayModeBar: false});
@@ -1866,7 +1875,9 @@
                 margin: {l: 50, r: 20, t: 20, b: 40},
                 plot_bgcolor: 'rgba(0,0,0,0.02)',
                 paper_bgcolor: 'rgba(0,0,0,0)',
-                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'},
+                xaxis: {showgrid: false, showticklabels: false},
+                yaxis: {showgrid: false}
             };
             
             Plotly.newPlot('chart-ram', [trace], layout, {responsive: true, displayModeBar: false});
