@@ -49,6 +49,18 @@ PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
 BENCHMARK_SCRIPT = SRC_DIR / "benchmark.py"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+RESULTS_DIR = PROJECT_ROOT / "results"
+DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
+
+# Importiere BenchmarkCache aus benchmark.py
+import sys
+sys.path.insert(0, str(SRC_DIR))
+try:
+    from benchmark import BenchmarkCache, BenchmarkResult
+except ImportError as e:
+    logger.error(f"❌ Konnte benchmark.py nicht importieren: {e}")
+    BenchmarkCache = None  # type: ignore
+    BenchmarkResult = None  # type: ignore
 
 # FastAPI App initialisieren
 app = FastAPI(
@@ -295,6 +307,117 @@ async def stop_benchmark() -> dict:
         "status": manager.status,
         "message": "⏹️ Beendet" if success else "❌ Fehler"
     }
+
+
+@app.get("/api/results")
+async def get_results() -> dict:
+    """Gibt alle gecachten Benchmark-Ergebnisse zurück"""
+    if not BenchmarkCache:
+        return {
+            "success": False,
+            "error": "BenchmarkCache nicht verfügbar",
+            "results": []
+        }
+    
+    try:
+        cache = BenchmarkCache(DATABASE_FILE)
+        results = cache.get_all_results()
+        
+        # Konvertiere BenchmarkResult zu Dict
+        results_data = []
+        for result in results:
+            result_dict = {
+                "model_name": result.model_name,
+                "quantization": result.quantization,
+                "gpu_type": result.gpu_type,
+                "gpu_offload": result.gpu_offload,
+                "vram_mb": result.vram_mb,
+                "avg_tokens_per_sec": result.avg_tokens_per_sec,
+                "avg_ttft": result.avg_ttft,
+                "avg_gen_time": result.avg_gen_time,
+                "prompt_tokens": result.prompt_tokens,
+                "completion_tokens": result.completion_tokens,
+                "timestamp": result.timestamp,
+                "params_size": result.params_size,
+                "architecture": result.architecture,
+                "max_context_length": result.max_context_length,
+                "model_size_gb": result.model_size_gb,
+                "has_vision": result.has_vision,
+                "has_tools": result.has_tools,
+                "tokens_per_sec_per_gb": result.tokens_per_sec_per_gb,
+                "tokens_per_sec_per_billion_params": result.tokens_per_sec_per_billion_params,
+                "speed_delta_pct": result.speed_delta_pct,
+                "prev_timestamp": result.prev_timestamp
+            }
+            
+            # Optionale Felder (Hardware-Profiling)
+            if hasattr(result, 'temp_celsius_avg') and result.temp_celsius_avg:
+                result_dict["temp_celsius_avg"] = result.temp_celsius_avg
+            if hasattr(result, 'power_watts_avg') and result.power_watts_avg:
+                result_dict["power_watts_avg"] = result.power_watts_avg
+            if hasattr(result, 'gtt_enabled'):
+                result_dict["gtt_enabled"] = result.gtt_enabled
+            
+            results_data.append(result_dict)
+        
+        return {
+            "success": True,
+            "count": len(results_data),
+            "results": results_data
+        }
+    except Exception as e:
+        logger.error(f"❌ Fehler beim Laden der Ergebnisse: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "results": []
+        }
+
+
+@app.get("/api/cache/stats")
+async def get_cache_stats() -> dict:
+    """Gibt Cache-Statistiken zurück"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+    
+    try:
+        cache = BenchmarkCache(DATABASE_FILE)
+        results = cache.get_all_results()
+        
+        if not results:
+            return {
+                "success": True,
+                "total_models": 0,
+                "avg_speed": 0,
+                "fastest_model": None,
+                "slowest_model": None,
+                "db_size_mb": 0
+            }
+        
+        speeds = [r.avg_tokens_per_sec for r in results]
+        fastest = max(results, key=lambda r: r.avg_tokens_per_sec)
+        slowest = min(results, key=lambda r: r.avg_tokens_per_sec)
+        
+        # DB-Größe
+        db_size_mb = DATABASE_FILE.stat().st_size / (1024 * 1024) if DATABASE_FILE.exists() else 0
+        
+        return {
+            "success": True,
+            "total_models": len(results),
+            "avg_speed": sum(speeds) / len(speeds),
+            "fastest_model": {
+                "name": f"{fastest.model_name}@{fastest.quantization}",
+                "speed": fastest.avg_tokens_per_sec
+            },
+            "slowest_model": {
+                "name": f"{slowest.model_name}@{slowest.quantization}",
+                "speed": slowest.avg_tokens_per_sec
+            },
+            "db_size_mb": round(db_size_mb, 2)
+        }
+    except Exception as e:
+        logger.error(f"❌ Fehler beim Laden der Cache-Stats: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/output")
