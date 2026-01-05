@@ -309,6 +309,7 @@ class BenchmarkParams(BaseModel):
     exclude_models: Optional[str] = None
     retest: bool = False
     dev_mode: bool = False
+    enable_profiling: bool = True  # Hardware-Monitoring aktivieren (Standard: ON)
 
 
 # ============================================================================
@@ -363,6 +364,9 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
         args.append("--retest")
     if params.dev_mode:
         args.append("--dev-mode")
+    # Hardware-Profiling aktivieren (für Live-Monitoring Charts)
+    if params.enable_profiling:
+        args.append("--enable-profiling")
     
     success = await manager.start_benchmark(args)
     return {

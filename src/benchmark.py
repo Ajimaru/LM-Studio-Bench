@@ -159,15 +159,24 @@ class HardwareMonitor:
         self.temps: List[float] = []
         self.powers: List[float] = []
         self.lock = threading.Lock()
+        # Demo/Fallback-Modus wenn keine GPU-Tools verfügbar
+        self.use_demo_mode = False
+        self.demo_counter = 0
     
     def start(self):
         """Starte Background-Monitoring"""
-        if not self.enabled or not self.gpu_tool:
+        if not self.enabled:
             return
+        
+        # Prüfe ob GPU-Tool verfügbar ist
+        if not self.gpu_tool:
+            logger.warning("⚠️ Keine GPU-Tools gefunden (nvidia-smi/rocm-smi). Starte Demo-Modus...")
+            self.use_demo_mode = True
         
         self.monitoring = True
         self.temps.clear()
         self.powers.clear()
+        self.demo_counter = 0
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.thread.start()
     
