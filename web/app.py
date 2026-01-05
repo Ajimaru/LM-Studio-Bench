@@ -919,6 +919,32 @@ async def websocket_benchmark(websocket: WebSocket):
 
 
 # ============================================================================
+# Latest Results Export
+# ============================================================================
+
+@app.get("/api/latest-results")
+async def get_latest_results() -> dict:
+    """Findet die neuesten Benchmark-Ergebnisse"""
+    try:
+        results_dir = RESULTS_DIR  # /home/robby/Temp/local-llm-bench/results/
+        
+        # Finde alle benchmark_results_*.json Dateien
+        json_files = list(results_dir.glob("benchmark_results_*.json"))
+        
+        if not json_files:
+            return {"latest": None}
+        
+        # Sortiere nach Modifizierungszeit, neueste zuerst
+        latest_file = max(json_files, key=lambda x: x.stat().st_mtime)
+        
+        # Gib nur den Dateinamen zurück (ohne Pfad)
+        return {"latest": f"results/{latest_file.name}"}
+    except Exception as e:
+        logger.error(f"Fehler beim Finden der neuesten Ergebnisse: {e}")
+        return {"latest": None}
+
+
+# ============================================================================
 # Health Check
 # ============================================================================
 

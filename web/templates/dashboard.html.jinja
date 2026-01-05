@@ -138,7 +138,7 @@
             flex-wrap: wrap;
         }
 
-        button {
+        button, .controls > a {
             padding: 0.75rem 1.5rem;
             border: none;
             border-radius: 0.5rem;
@@ -730,22 +730,47 @@
                 </div>
             </div>
 
-            <!-- Control Panel -->
-            <div class="card">
-                <h2>Steuerung</h2>
-                <div class="controls">
-                    <button class="btn-primary" id="btnStart" onclick="toggleStartModal()" title="Shortcut: S">
-                        ▶️ Start <span style="opacity: 0.7; font-size: 0.8em;">(S)</span>
-                    </button>
-                    <button class="btn-warning" id="btnPause" onclick="pauseBenchmark()" disabled>
-                        ⏸️ Pause
-                    </button>
-                    <button class="btn-success" id="btnResume" onclick="resumeBenchmark()" disabled>
-                        ▶️ Fortsetzen
-                    </button>
-                    <button class="btn-danger" id="btnStop" onclick="stopBenchmark()" disabled title="Shortcut: Q">
-                        ⏹️ Stopp <span style="opacity: 0.7; font-size: 0.8em;">(Q)</span>
-                    </button>
+            <!-- Control Panel Container (Steuerung + Export zusammen) -->
+            <div style="display: flex; flex-direction: column; gap: 1rem; max-height: calc(100% - 20px);">
+                <!-- Steuerung Card -->
+                <div class="card" style="flex: 0 0 auto;">
+                    <h2>Steuerung</h2>
+                    <div class="controls">
+                        <button class="btn-primary" id="btnStart" onclick="toggleStartModal()" title="Shortcut: S">
+                            ▶️ Start <span style="opacity: 0.7; font-size: 0.8em;">(S)</span>
+                        </button>
+                        <button class="btn-warning" id="btnPause" onclick="pauseBenchmark()" disabled>
+                            ⏸️ Pause
+                        </button>
+                        <button class="btn-success" id="btnResume" onclick="resumeBenchmark()" disabled>
+                            ▶️ Fortsetzen
+                        </button>
+                        <button class="btn-danger" id="btnStop" onclick="stopBenchmark()" disabled title="Shortcut: Q">
+                            ⏹️ Stopp <span style="opacity: 0.7; font-size: 0.8em;">(Q)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Export Card -->
+                <div class="card" style="flex: 0 0 auto;">
+                    <h2>📥 Ergebnisse</h2>
+                    <div class="controls">
+                        <a href="#" id="exportResults" class="btn-primary" style="text-decoration: none;">
+                            📋 Results
+                        </a>
+                        <a href="#" id="exportHTML" class="btn-primary" style="text-decoration: none;">
+                            🌐 HTML
+                        </a>
+                        <a href="#" id="exportPDF" class="btn-primary" style="text-decoration: none;">
+                            📄 PDF
+                        </a>
+                        <a href="#" id="exportJSON" class="btn-primary" style="text-decoration: none;">
+                            { } JSON
+                        </a>
+                        <a href="#" id="exportCSV" class="btn-primary" style="text-decoration: none;">
+                            📊 CSV
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1004,6 +1029,39 @@
             localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
         }
 
+        // ===== Update Export Links =====
+        async function updateExportLinks() {
+            try {
+                // Hole die neuesten Benchmark-Ergebnisse vom Server
+                const response = await fetch('/api/latest-results');
+                const data = await response.json();
+                
+                if (data.latest) {
+                    const baseFileName = data.latest.replace('results/', '').replace(/\.\w+$/, '');
+                    
+                    // Aktualisiere die Links
+                    document.getElementById('exportResults').href = `/results/${baseFileName}.json`;
+                    document.getElementById('exportHTML').href = `/results/${baseFileName}.html`;
+                    document.getElementById('exportPDF').href = `/results/${baseFileName}.pdf`;
+                    document.getElementById('exportJSON').href = `/results/${baseFileName}.json`;
+                    document.getElementById('exportCSV').href = `/results/${baseFileName}.csv`;
+                } else {
+                    // Fallback: Alle Links auf resultsverzeichnis
+                    const links = ['exportResults', 'exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
+                    links.forEach(id => {
+                        document.getElementById(id).href = '/results/';
+                    });
+                }
+            } catch (error) {
+                console.error('Fehler beim Laden der Export-Links:', error);
+                // Fallback: Alle Links auf results-verzeichnis
+                const links = ['exportResults', 'exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
+                links.forEach(id => {
+                    document.getElementById(id).href = '/results/';
+                });
+            }
+        }
+
         // Theme auf Laden einrichten (Dark Mode ist Standard)
         // Results beim Laden initialisieren
         // WebSocket & Timers starten
@@ -1018,6 +1076,9 @@
             
             // Lade Results
             loadResults();
+            
+            // Aktualisiere Export-Links
+            updateExportLinks();
             
             // Starte WebSocket & Timers
             setupWebSocket();
@@ -1331,6 +1392,13 @@
                         clearInterval(uptimeInterval);
                         uptimeInterval = null;
                     }
+                    // Aktualisiere Export-Links mit neuen Ergebnissen
+                    updateExportLinks();
+                    // Lade Results neu
+                    setTimeout(() => {
+                        loadResults();
+                        updateCacheStats();
+                    }, 1000);
                 } else if (data.type === 'hardware') {
                     updateHardwareCharts(data.data);
                 }
