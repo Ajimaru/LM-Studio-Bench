@@ -214,10 +214,10 @@
         body.dark-mode #backToTopBtn {
             box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
         }
-        }
 
-        .btn-danger:hover:not(:disabled) {
-            background: #dc2626;
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
 
         button:disabled {
@@ -936,8 +936,6 @@
                 }
             } catch (error) {
                 addAlert(`❌ Fehler: ${error.message}`, 'error');
-            }
-        }
             }
         }
 
