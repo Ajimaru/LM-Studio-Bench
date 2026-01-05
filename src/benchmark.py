@@ -59,6 +59,23 @@ class NoJSONFilter(logging.Filter):
 # Initialisiere Logging mit Console nur (Log-Datei wird später hinzugefügt)
 # StreamHandler nutzt standardmäßig sys.stderr - wir erzwingen sys.stdout für WebApp-Kompatibilität
 import sys
+
+# Auto-Flush für stdout - wichtig für WebApp-Subprocess-Kommunikation
+class AutoFlushStream:
+    """Wrapper der bei jedem write() automatisch flusht"""
+    def __init__(self, stream):
+        self.stream = stream
+    def write(self, data):
+        self.stream.write(data)
+        self.stream.flush()
+    def flush(self):
+        self.stream.flush()
+    def __getattr__(self, attr):
+        return getattr(self.stream, attr)
+
+# Ersetze sys.stdout mit Auto-Flush Version
+sys.stdout = AutoFlushStream(sys.stdout)
+
 stream_handler = logging.StreamHandler(stream=sys.stdout)
 stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
