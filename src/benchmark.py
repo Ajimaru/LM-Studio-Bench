@@ -1726,6 +1726,19 @@ class LMStudioBenchmark:
         else:
             logger.warning("⚠️ Keine neuen Modelle getestet - keine Reports generiert")
         
+        # Entlade alle Modelle am Ende (Cleanup)
+        try:
+            subprocess.run(
+                ['lms', 'unload', '--all'],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            logger.info("🧹 Alle Modelle entladen (Cleanup)")
+            time.sleep(1)  # Warte bis Speicher freigegeben
+        except Exception as e:
+            logger.warning(f"⚠️ Fehler beim Entladen aller Modelle: {e}")
+        
         logger.info(f"✅ Benchmark abgeschlossen. {len(newly_tested_models)}/{len(models)} Modelle erfolgreich getestet")
     
     def _analyze_best_quantizations(self) -> Dict[str, Dict]:
