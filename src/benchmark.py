@@ -201,8 +201,12 @@ class HardwareMonitor:
                 with self.lock:
                     if temp is not None:
                         self.temps.append(temp)
+                        # Drucke auf stdout für Live-Monitoring in WebApp
+                        print(f"🌡️ GPU Temp: {temp:.1f}°C", flush=True)
                     if power is not None:
                         self.powers.append(power)
+                        # Drucke auf stdout für Live-Monitoring in WebApp
+                        print(f"⚡ GPU Power: {power:.1f}W", flush=True)
                 
                 time.sleep(1)  # Messungen jede Sekunde
             except Exception as e:

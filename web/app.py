@@ -202,8 +202,8 @@ class BenchmarkManager:
         """Parse Hardware-Metriken aus Benchmark-Output"""
         import re
         
-        # Pattern für GPU-Temperatur: "GPU Temp: 45°C" oder "Temperature: 45"
-        temp_match = re.search(r'(?:GPU\s+Temp|Temperature)\s*:\s*(\d+(?:\.\d+)?)', output_line, re.IGNORECASE)
+        # Pattern für GPU-Temperatur: "🌡️ GPU Temp: 45.5°C"
+        temp_match = re.search(r'GPU\s+Temp\s*:\s*(\d+(?:\.\d+)?)°?C', output_line, re.IGNORECASE)
         if temp_match:
             temp_value = float(temp_match.group(1))
             self.hardware_history["temperatures"].append({
@@ -211,8 +211,8 @@ class BenchmarkManager:
                 "value": temp_value
             })
         
-        # Pattern für Power: "Power: 150W" oder "GPU Power: 150"
-        power_match = re.search(r'(?:GPU\s+)?Power\s*:\s*(\d+(?:\.\d+)?)', output_line, re.IGNORECASE)
+        # Pattern für Power: "⚡ GPU Power: 150.5W"
+        power_match = re.search(r'GPU\s+Power\s*:\s*(\d+(?:\.\d+)?)W', output_line, re.IGNORECASE)
         if power_match:
             power_value = float(power_match.group(1))
             self.hardware_history["power"].append({
@@ -220,8 +220,8 @@ class BenchmarkManager:
                 "value": power_value
             })
         
-        # Pattern für VRAM: "VRAM: 8.5GB" oder "GPU Memory: 8.5"
-        vram_match = re.search(r'(?:VRAM|GPU\s+Memory)\s*:\s*(\d+(?:\.\d+)?)', output_line, re.IGNORECASE)
+        # Pattern für VRAM (falls zukünftig hinzugefügt): "💾 GPU VRAM: 8.5GB"
+        vram_match = re.search(r'GPU\s+VRAM\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
         if vram_match:
             vram_value = float(vram_match.group(1))
             self.hardware_history["vram"].append({
