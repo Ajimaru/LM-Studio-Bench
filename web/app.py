@@ -56,7 +56,7 @@ DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
 import sys
 sys.path.insert(0, str(SRC_DIR))
 try:
-    from benchmark import BenchmarkCache, BenchmarkResult
+    from benchmark import BenchmarkCache, BenchmarkResult  # type: ignore
 except ImportError as e:
     logger.error(f"❌ Konnte benchmark.py nicht importieren: {e}")
     BenchmarkCache = None  # type: ignore
