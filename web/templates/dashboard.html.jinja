@@ -184,6 +184,42 @@
             background: #dc2626;
         }
 
+        /* Back to Top Button */
+        #backToTopBtn {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            display: none;
+            z-index: 999;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+            transition: all 0.3s ease;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #backToTopBtn:hover {
+            background: #2563eb;
+            box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5);
+            transform: translateY(-3px);
+        }
+
+        body.dark-mode #backToTopBtn {
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+        }
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #dc2626;
+        }
+
         button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
@@ -531,6 +567,9 @@
         <div id="alerts" style="margin-top: 2rem;"></div>
     </div>
 
+    <!-- Back to Top Button -->
+    <button id="backToTopBtn" title="Nach oben scrollen">⬆️</button>
+
     <script>
         // ===== Globale Variablen =====
         let websocket = null;
@@ -544,13 +583,33 @@
             localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
         }
 
-        // Theme auf Laden einrichten
+        // Theme auf Laden einrichten (Dark Mode ist Standard)
         window.addEventListener('DOMContentLoaded', () => {
-            const theme = localStorage.getItem('theme');
+            const theme = localStorage.getItem('theme') || 'dark';  // Dark als Standard
             if (theme === 'dark') {
                 document.body.classList.add('dark-mode');
             }
         });
+
+        // ===== Back to Top Button =====
+        function initBackToTop() {
+            const backToTopBtn = document.getElementById('backToTopBtn');
+            
+            window.addEventListener('scroll', () => {
+                if (window.pageYOffset > 300) {
+                    backToTopBtn.style.display = 'block';
+                } else {
+                    backToTopBtn.style.display = 'none';
+                }
+            });
+            
+            backToTopBtn.addEventListener('click', () => {
+                window.scrollTo({
+                    top: 0,
+                    behavior: 'smooth'
+                });
+            });
+        }
 
         // ===== Status Update =====
         async function updateStatus() {
@@ -885,6 +944,7 @@
         // Results beim Laden initialisieren
         window.addEventListener('DOMContentLoaded', () => {
             loadResults();
+            initBackToTop();
         });
 
         // ===== UI Hilfsfunktionen =====
