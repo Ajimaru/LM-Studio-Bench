@@ -101,6 +101,14 @@ class BenchmarkManager:
         self.current_output = ""
         self.connected_clients = set()
         self.benchmark_log_file: Optional[Path] = None  # Log-Datei nur für aktive Benchmarks
+        
+        # Hardware-Monitoring Daten
+        self.hardware_history = {
+            "temperatures": [],  # Liste von {"timestamp": ISO, "value": float}
+            "power": [],
+            "vram": []
+        }
+        self.last_hardware_send_time: float = 0  # Zur Drosselung von WebSocket-Updates
 
     def is_running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -190,6 +198,37 @@ class BenchmarkManager:
             logger.error(f"❌ Fehler beim Stoppen: {e}")
             return False
 
+    def parse_hardware_metrics(self, output_line: str):
+        """Parse Hardware-Metriken aus Benchmark-Output"""
+        import re
+        
+        # Pattern für GPU-Temperatur: "GPU Temp: 45°C" oder "Temperature: 45"
+        temp_match = re.search(r'(?:GPU\s+Temp|Temperature)\s*:\s*(\d+(?:\.\d+)?)', output_line, re.IGNORECASE)
+        if temp_match:
+            temp_value = float(temp_match.group(1))
+            self.hardware_history["temperatures"].append({
+                "timestamp": datetime.now().isoformat(),
+                "value": temp_value
+            })
+        
+        # Pattern für Power: "Power: 150W" oder "GPU Power: 150"
+        power_match = re.search(r'(?:GPU\s+)?Power\s*:\s*(\d+(?:\.\d+)?)', output_line, re.IGNORECASE)
+        if power_match:
+            power_value = float(power_match.group(1))
+            self.hardware_history["power"].append({
+                "timestamp": datetime.now().isoformat(),
+                "value": power_value
+            })
+        
+        # Pattern für VRAM: "VRAM: 8.5GB" oder "GPU Memory: 8.5"
+        vram_match = re.search(r'(?:VRAM|GPU\s+Memory)\s*:\s*(\d+(?:\.\d+)?)', output_line, re.IGNORECASE)
+        if vram_match:
+            vram_value = float(vram_match.group(1))
+            self.hardware_history["vram"].append({
+                "timestamp": datetime.now().isoformat(),
+                "value": vram_value
+            })
+
     async def read_output(self) -> str:
         """Liest ALLE verfügbaren Zeilen aus Prozess ohne Blocking"""
         if not self.process or not self.process.stdout:
@@ -225,6 +264,10 @@ class BenchmarkManager:
             if lines:
                 combined_output = ''.join(lines)
                 self.current_output += combined_output
+                
+                # Parse Hardware-Metriken aus jeder Zeile
+                for line in lines:
+                    self.parse_hardware_metrics(line)
                 
                 # Schreibe in Log-Datei NUR wenn Output vorhanden ist
                 if self.benchmark_log_file:
@@ -711,6 +754,27 @@ async def websocket_benchmark(websocket: WebSocket):
                     except Exception as e:
                         logger.error(f"❌ WebSocket Send Error: {e}")
                         break
+                
+                # Sende Hardware-Monitoring-Daten periodisch (alle 2s)
+                current_time = time.time()
+                if current_time - manager.last_hardware_send_time >= 2.0:
+                    if manager.hardware_history["temperatures"] or manager.hardware_history["power"] or manager.hardware_history["vram"]:
+                        try:
+                            # Behalte nur letzte 60 Einträge pro Metrik (2 Minuten bei 2s Intervall)
+                            max_history = 60
+                            hardware_data = {
+                                "temperatures": manager.hardware_history["temperatures"][-max_history:],
+                                "power": manager.hardware_history["power"][-max_history:],
+                                "vram": manager.hardware_history["vram"][-max_history:]
+                            }
+                            
+                            await websocket.send_json({
+                                "type": "hardware",
+                                "data": hardware_data
+                            })
+                            manager.last_hardware_send_time = current_time
+                        except Exception as e:
+                            logger.error(f"❌ WebSocket Hardware Send Error: {e}")
             else:
                 # Keep-Alive Heartbeat: Sende Status periodisch
                 heartbeat_count += 1

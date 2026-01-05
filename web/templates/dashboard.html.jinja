@@ -8,6 +8,9 @@
     <!-- Favicon - Bar Chart Design -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%233b82f6' rx='16'/><rect x='15' y='60' width='15' height='35' fill='%2310b981' rx='2'/><rect x='40' y='35' width='15' height='60' fill='%2310b981' rx='2'/><rect x='65' y='20' width='15' height='75' fill='%2310b981' rx='2'/></svg>">
     
+    <!-- Plotly.js für Hardware-Monitoring Charts -->
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -522,6 +525,53 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
 
+        /* Hardware Monitoring Charts */
+        .hardware-charts-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .chart-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .chart-card h4 {
+            margin-bottom: 0.75rem;
+            color: var(--primary);
+            font-size: 1rem;
+        }
+
+        .chart-stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.85rem;
+        }
+
+        .chart-stat {
+            text-align: center;
+        }
+
+        .chart-stat-label {
+            color: var(--text-light);
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .chart-stat-value {
+            color: var(--primary);
+            font-weight: bold;
+            font-size: 1rem;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 1rem;
@@ -757,6 +807,69 @@
             <div class="controls" style="gap: 1rem; margin-top: 1rem;">
                 <button class="btn-success" onclick="startBenchmark()">✅ Benchmark Starten</button>
                 <button class="btn-primary" onclick="toggleStartModal()">❌ Abbrechen</button>
+            </div>
+        </div>
+
+        <!-- Hardware Monitoring Charts -->
+        <div class="section">
+            <h3>💻 Hardware-Monitoring (Live)</h3>
+            <div class="hardware-charts-container">
+                <div class="chart-card">
+                    <h4>🌡️ GPU-Temperatur</h4>
+                    <div id="chart-temperature" style="height: 300px;"></div>
+                    <div class="chart-stats">
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Min</div>
+                            <div class="chart-stat-value" id="temp-min">--°C</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Ø</div>
+                            <div class="chart-stat-value" id="temp-avg">--°C</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Max</div>
+                            <div class="chart-stat-value" id="temp-max">--°C</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <h4>⚡ GPU-Leistung</h4>
+                    <div id="chart-power" style="height: 300px;"></div>
+                    <div class="chart-stats">
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Min</div>
+                            <div class="chart-stat-value" id="power-min">--W</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Ø</div>
+                            <div class="chart-stat-value" id="power-avg">--W</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Max</div>
+                            <div class="chart-stat-value" id="power-max">--W</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <h4>💾 GPU-VRAM-Auslastung</h4>
+                    <div id="chart-vram" style="height: 300px;"></div>
+                    <div class="chart-stats">
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Min</div>
+                            <div class="chart-stat-value" id="vram-min">--GB</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Ø</div>
+                            <div class="chart-stat-value" id="vram-avg">--GB</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Max</div>
+                            <div class="chart-stat-value" id="vram-max">--GB</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1141,6 +1254,8 @@
                     appendTerminalLine(data.message);
                     updateStatusBadge('completed', false);
                     startTime = null;
+                } else if (data.type === 'hardware') {
+                    updateHardwareCharts(data.data);
                 }
             };
 
@@ -1410,6 +1525,127 @@
             `;
             alerts.appendChild(alert);
             setTimeout(() => alert.remove(), 5000);
+        }
+
+        // ===== Hardware Monitoring Charts =====
+        function updateHardwareCharts(hardwareData) {
+            if (hardwareData.temperatures && hardwareData.temperatures.length > 0) {
+                updateTemperatureChart(hardwareData.temperatures);
+            }
+            if (hardwareData.power && hardwareData.power.length > 0) {
+                updatePowerChart(hardwareData.power);
+            }
+            if (hardwareData.vram && hardwareData.vram.length > 0) {
+                updateVramChart(hardwareData.vram);
+            }
+        }
+
+        function updateTemperatureChart(data) {
+            const timestamps = data.map(d => new Date(d.timestamp).toLocaleTimeString('de-DE'));
+            const values = data.map(d => d.value);
+            
+            const trace = {
+                x: timestamps,
+                y: values,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Temperature (°C)',
+                line: {color: '#ef4444', width: 2},
+                marker: {size: 4},
+                fill: 'tozeroy',
+                fillcolor: 'rgba(239, 68, 68, 0.1)'
+            };
+            
+            const layout = {
+                title: false,
+                hovermode: 'x unified',
+                margin: {l: 50, r: 20, t: 20, b: 40},
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+            };
+            
+            Plotly.newPlot('chart-temperature', [trace], layout, {responsive: true, displayModeBar: false});
+            
+            // Update Stats
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const avg = (values.reduce((a,b) => a+b, 0) / values.length).toFixed(1);
+            document.getElementById('temp-min').textContent = `${min.toFixed(1)}°C`;
+            document.getElementById('temp-max').textContent = `${max.toFixed(1)}°C`;
+            document.getElementById('temp-avg').textContent = `${avg}°C`;
+        }
+
+        function updatePowerChart(data) {
+            const timestamps = data.map(d => new Date(d.timestamp).toLocaleTimeString('de-DE'));
+            const values = data.map(d => d.value);
+            
+            const trace = {
+                x: timestamps,
+                y: values,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Power (W)',
+                line: {color: '#f59e0b', width: 2},
+                marker: {size: 4},
+                fill: 'tozeroy',
+                fillcolor: 'rgba(245, 158, 11, 0.1)'
+            };
+            
+            const layout = {
+                title: false,
+                hovermode: 'x unified',
+                margin: {l: 50, r: 20, t: 20, b: 40},
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+            };
+            
+            Plotly.newPlot('chart-power', [trace], layout, {responsive: true, displayModeBar: false});
+            
+            // Update Stats
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const avg = (values.reduce((a,b) => a+b, 0) / values.length).toFixed(1);
+            document.getElementById('power-min').textContent = `${min.toFixed(0)}W`;
+            document.getElementById('power-max').textContent = `${max.toFixed(0)}W`;
+            document.getElementById('power-avg').textContent = `${avg}W`;
+        }
+
+        function updateVramChart(data) {
+            const timestamps = data.map(d => new Date(d.timestamp).toLocaleTimeString('de-DE'));
+            const values = data.map(d => d.value);
+            
+            const trace = {
+                x: timestamps,
+                y: values,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'VRAM (GB)',
+                line: {color: '#10b981', width: 2},
+                marker: {size: 4},
+                fill: 'tozeroy',
+                fillcolor: 'rgba(16, 185, 129, 0.1)'
+            };
+            
+            const layout = {
+                title: false,
+                hovermode: 'x unified',
+                margin: {l: 50, r: 20, t: 20, b: 40},
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+            };
+            
+            Plotly.newPlot('chart-vram', [trace], layout, {responsive: true, displayModeBar: false});
+            
+            // Update Stats
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const avg = (values.reduce((a,b) => a+b, 0) / values.length).toFixed(2);
+            document.getElementById('vram-min').textContent = `${min.toFixed(2)}GB`;
+            document.getElementById('vram-max').textContent = `${max.toFixed(2)}GB`;
+            document.getElementById('vram-avg').textContent = `${avg}GB`;
         }
 
         // ===== Initialization =====

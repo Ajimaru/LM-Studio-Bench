@@ -481,11 +481,23 @@ Die folgenden Phasen wurden bereits vollständig implementiert:
     - Keyboard-Event-Listener: Document-Level mit Input-Prevention
     - Dashboard-Stats-Loading: Auto-Load bei Home-View-Aktivierung
 
-- [ ] Web-Dashboard - Phase 14.5: Live Hardware-Monitoring Charts:
-  - [ ] Plotly.js Line-Charts für GPU-Monitoring
-  - [ ] Echtzeit-Daten: Temperature, Power Draw, VRAM Usage
-  - [ ] Verlaufs-Anzeige während Benchmark-Run
-  - [ ] Requires: Erweiterung von WebSocket-Messages
+- Phase 14.5: **Web-Dashboard - Live Hardware-Monitoring Charts** ✅ (2026-01-05 - ABGESCHLOSSEN):
+  - **Plotly.js Echtzeit-Charts**: Temperature, Power, VRAM Line-Charts ✅
+  - **Hardware-Daten-Parsing**: Regex-basierte Extraktion aus Benchmark-Output ✅
+    - GPU-Temperatur-Erkennung: "GPU Temp: 45°C", "Temperature: 45"
+    - Power-Messung: "Power: 150W", "GPU Power: 150"
+    - VRAM-Tracking: "VRAM: 8.5GB", "GPU Memory: 8.5"
+  - **WebSocket Hardware-Messages**: Periodisches Streaming alle 2 Sekunden ✅
+    - Historische Daten: Letzte 60 Einträge pro Metrik (2 Minuten)
+    - JSON-Format mit Timestamps für jede Messung
+  - **Chart-Styling**: ✅
+    - Responsive Plotly-Charts mit Dark-Mode Support
+    - Min/Max/Avg Stats unter jedem Chart
+    - Gradient-Fills für visuellen Effekt
+    - Farbcodiert: Red=Temp, Orange=Power, Green=VRAM
+  - **Backend**: BenchmarkManager.parse_hardware_metrics(), Hardware-History Dict
+  - **Frontend**: updateHardwareCharts() mit Plotly.newPlot(), Dark-Mode Support
+
 - [ ] Web-Dashboard - Phase 14.6: Historical Comparison UI
 - [ ] Web-Dashboard - Phase 14.7: Advanced Filtering
 - [ ] Web-Dashboard - Phase 14.4: Export Results Browser
