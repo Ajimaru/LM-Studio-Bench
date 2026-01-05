@@ -238,7 +238,8 @@ async def get_status() -> dict:
         "uptime_seconds": (
             (datetime.now() - manager.start_time).total_seconds()
             if manager.start_time and manager.is_running() else None
-        )
+        ),
+        "connected_clients": len(manager.connected_clients)
     }
 
 

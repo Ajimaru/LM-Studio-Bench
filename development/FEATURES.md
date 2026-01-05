@@ -274,7 +274,7 @@
     - Graceful Shutdown mit SIGTERM/SIGKILL Fallback
     - Jinja2 Templates für HTML-Rendering
   
-  - **Benchmark-Kontrollzentrum**:
+  - **Phase 13.1: Benchmark-Kontrollzentrum** ✅ (2026-01-05 Completed):
     - ▶️ Start-Button mit Parameter-Konfiguration vor Start
     - ⏸️ Pause/Resume für längere Benchmarks
     - ⏹️ Stop-Button mit Bestätigung
@@ -285,14 +285,55 @@
       - GPU-Settings (Offload Limit, VRAM Limit)
     - Live Console-Ausgabe (scrollbare Logs)
     - Status-Indicator (Idle/Running/Paused/Stopped)
+    - **Port-Konfiguration**:
+      - Automatische Erkennung freier Ports mit find_free_port()
+      - --port / -p CLI-Option für manuelle Port-Angabe
+      - Fallback auf Port 8000 wenn Socket-Binding fehlschlägt
+    - **WebSocket-Resilienz**:
+      - Auto-Reconnect nach Desktop-Lock (3s Interval)
+      - Keep-Alive Heartbeat (1s) zur Verbindungshaltung
+      - 2s Timeout für read_output() Operationen
+      - Clean Disconnection Handling
+    - **Type Safety**: Alle Pylance-Fehler behoben
+    - **Struktur**: Konsolidierte requirements.txt/README.md im Root
   
-  - **Home/Dashboard-View**:
+  - **Phase 13.3: Results Browser + Cache-Management** ✅ (2026-01-05 Completed):
+    - **Phase 13.3.1**: GET /api/results - Alle gecachten Benchmark-Ergebnisse
+      - JSON-Response mit allen 21 Feldern pro Modell
+      - Direkte SQLite-Queries auf benchmark_results Tabelle
+      - Verfügbar für Tabellen-Rendering und Filterung
+    - **Phase 13.3.2**: GET /api/cache/stats - Cache-Statistiken
+      - Total Entries, Avg Speed (tok/s)
+      - Fastest Model + Speed, Slowest Model + Speed
+      - DB Size in MB
+    - **Phase 13.3.3**: Cache-Management APIs
+      - DELETE /api/cache/{model_key}: Einzeleintrag löschen
+        - Validiert Existenz vor Löschung
+        - Gibt deleted_count zurück
+      - POST /api/cache/clear: Gesamten Cache löschen
+        - Löscht alle benchmark_results Einträge
+        - Warning-Level Log für Audit-Trail
+    - **Phase 13.3.4**: Results Browser UI ✅ (2026-01-05 Completed)
+      - Interaktive HTML-Tabelle mit 7 Spalten:
+        - Model, Quantization, Tokens/s, VRAM, GPU-Offload, GPU-Typ, Aktionen
+      - Sortierbar nach allen Spalten (Click Header für Toggle)
+      - Cache-Statistiken-Anzeige:
+        - 📦 Anzahl Einträge | ⚡ Ø Speed | 🏆 Schnellstes Modell | 💾 DB-Größe
+      - Action-Buttons:
+        - 🔄 Aktualisieren (reload Results)
+        - 🗑️ Cache Löschen (mit Bestätigungs-Dialog)
+        - Pro-Row: 🗑️ Delete-Button für einzelne Einträge
+      - Empty-State Message wenn keine Ergebnisse
+      - Auto-Load beim Page-Load
+      - Number Formatting: 2 Decimals für Speed, 0 für VRAM, % für GPU-Offload
+  
+  - **Home/Dashboard-View** ⏳ (Geplant):
     - Quick Stats: Durchschn. Speed, schnellstes Modell, VRAM, Cache-Status
     - Server-Status: Online/Offline, verfügbare Modelle
     - Gecachte Modelle: Anzahl, Last-Used Datum
     - Quick-Actions: Start Benchmark, View Results, Manage Cache
   
-  - **Live Benchmark Monitor** (während aktiver Tests):
+  - **Live Benchmark Monitor** ⏳ (Geplant - während aktiver Tests):
     - Progress-Bar: X/Y Modelle komplett
     - Aktuelles Modell + aktuelle Run-Nummer
     - Live-Metriken: Speed (tok/s), Temp (°C), VRAM (MB/GB)
@@ -300,68 +341,71 @@
     - ETA bis Abschluss (geschätzt)
     - Pause/Resume/Stop Buttons aktiv während Run
   
-  - **Results Browser**:
-    - Interaktive HTML-Tabelle mit allen gecachten Ergebnissen
-    - Sortierbar nach: Speed, VRAM, Effizienz, Params, Quantization
-    - Filterbar nach: Architektur, Parameter-Größe, Quantisierung, Vision/Tools
-    - Multi-Select für Modell-Vergleich (2-3 Modelle nebeneinander)
-    - Detail-View pro Modell: Historische Runs, Charts, Metadaten
-    - Export: JSON/CSV/PDF für gefilterte Daten
-  
-  - **Historischer Vergleich**:
+  - **Phase 13.4: Historical Comparison + Metrics** ⏳ (Geplant):
     - Line-Charts für Performance-Trends über Zeit
     - Auswählbare Modelle zum Vergleich
     - Metriken: Speed, VRAM-Verbrauch, Effizienz (tok/s/GB)
     - Date-Range Picker (Letzte Woche, Monat, Custom)
+    - Delta-Berechnung (Δ%) zwischen Runs
+    - Plotly-basierte Diagramme für Interaktivität
     - Delta-Anzeige: Δ% Veränderung seit letztem Run
   
-  - **Cache-Management Interface**:
-    - Zeige alle gecachten Einträge mit Details
-    - Sortierbar nach: Model Name, Last-Used, Size, Speed
-    - Delete einzelner Cache-Einträge
-    - Bulk-Delete mit Filter
-    - Cache komplett leeren mit Bestätigung
-    - Export Cache als JSON
-    - Cache-Größe und Speicherplatz
+  - **Phase 13.5: Live Hardware-Monitoring Charts** ⏳ (Geplant):
+    - Real-Time Charts während Benchmark-Ausführung
+    - GPU Temperature, Power Consumption, VRAM Usage
+    - Plotly-basierte Live-Updates via WebSocket
+    - Min/Max/Avg Markers
+  
+  - **Phase 13.6: Advanced Filtering + Multi-Select** ⏳ (Geplant):
+    - Filter-Panel im Results Browser:
+      - Nach Architektur (llama, qwen, gemma, etc.)
+      - Nach Parameter-Größe (Slider 1B-70B)
+      - Nach Quantisierung (Multi-Select Q2-Q8)
+      - Nach Vision/Tools Support (Checkboxen)
+    - Multi-Select Modelle für Side-by-Side Vergleich
+    - Regex-Patterns für Include/Exclude
+    - Date-Range Filter
+  
+  - **Phase 13.7: Robustness + Polish** ⏳ (Geplant):
+    - Keyboard-Shortcuts (S=Start, P=Pause, Q=Stop)
+    - Toast-Notifications für wichtige Events
+    - Export Results Browser zu JSON/CSV/PDF
+    - Mobile Optimizations (Touch-Friendly Controls)
+    - WebSocket vs Polling Fallback bei Connection-Loss
+    - Detail-View pro Modell (Historische Runs, Charts, Metadaten)
   
   - **UI/UX**:
-    - Dark Mode (CSS Variables, toggle Button)
-    - Responsive Design (Mobile/Tablet/Desktop)
-    - WebSocket vs Polling Fallback
-    - Status-Badges mit Farben (Grün=OK, Orange=Warning, Rot=Error)
-    - Toast-Notifications für wichtige Events
-    - Keyboard-Shortcuts (S=Start, P=Pause, Q=Stop)
+    - Dark Mode (CSS Variables, toggle Button) ✅
+    - Responsive Design (Mobile/Tablet/Desktop) ✅
+    - Status-Badges mit Farben (Grün=OK, Orange=Warning, Rot=Error) ✅
   
-  - **Technische Details**:
-    - **Endpoints**:
-      - GET /api/stats - Quick Stats (Speed, Models, Cache-Status)
-      - GET /api/results - Alle gecachten Ergebnisse
-      - GET /api/models - Liste verfügbarer Modelle
-      - GET /api/models/{id} - Detail eines Modells
-      - POST /api/benchmark/start - Benchmark mit Parametern starten
-      - POST /api/benchmark/pause - Pause
-      - POST /api/benchmark/resume - Resume
-      - POST /api/benchmark/stop - Stop mit Cleanup
-      - GET /api/benchmark/status - Aktueller Status
-      - WebSocket /ws/benchmark - Live-Streaming
-      - POST /api/cache/export - Cache exportieren
-      - DELETE /api/cache/{id} - Eintrag löschen
+  - **Technische Details - Implementierte Endpoints**:
+    - GET /api/status - Benchmark-Status (idle/running/paused/stopped) ✅
+    - GET /api/benchmark/output - Terminal-Ausgabe (plaintext) ✅
+    - POST /api/benchmark/start - Benchmark mit Parametern starten ✅
+    - POST /api/benchmark/pause - Pause ✅
+    - POST /api/benchmark/resume - Resume ✅
+    - POST /api/benchmark/stop - Stop mit Cleanup ✅
+    - GET /api/results - Alle gecachten Ergebnisse ✅
+    - GET /api/cache/stats - Cache-Statistiken ✅
+    - DELETE /api/cache/{model_key} - Einzelnen Cache-Eintrag löschen ✅
+    - POST /api/cache/clear - Gesamten Cache leeren ✅
+    - WebSocket /ws/benchmark - Live-Streaming (JSON) ✅
+    - GET /health - Health-Check ✅
+  
+  - **Geplante Endpoints**:
+    - GET /api/stats - Quick Stats (Speed, Models, Cache-Status)
+    - GET /api/models - Liste verfügbarer Modelle
+    - GET /api/models/{id} - Detail eines Modells
+    - GET /api/models/{id}/history - Historische Runs eines Modells
+    - POST /api/cache/export - Cache exportieren
 
-    - **WebSocket-Messages** (Live):
+    - **WebSocket-Messages** (Implementiert):
 
       ```json
       {
-        "type": "benchmark_progress",
-        "current_model": "qwen/qwen3-7b@q4_k_m",
-        "current_run": 2,
-        "total_runs": 3,
-        "models_completed": 8,
-        "total_models": 30,
-        "speed_tok_per_sec": 13.45,
-        "vram_mb": 7200,
-        "temp_celsius": 65,
-        "eta_seconds": 1200,
-        "message": "Run 2/3 abgeschlossen..."
+        "type": "terminal_output",
+        "content": "🚀 Starte Benchmark für qwen/qwen3-7b@q4_k_m\n"
       }
       ```
 
