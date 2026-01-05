@@ -57,11 +57,16 @@ class NoJSONFilter(logging.Filter):
         return True
 
 # Initialisiere Logging mit Console nur (Log-Datei wird später hinzugefügt)
+# StreamHandler nutzt standardmäßig sys.stderr - wir erzwingen sys.stdout für WebApp-Kompatibilität
+import sys
+stream_handler = logging.StreamHandler(stream=sys.stdout)
+stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler()  # Nur Console beim Import
+        stream_handler  # Explizit auf stdout für WebApp-Integration
     ]
 )
 logger = logging.getLogger(__name__)
@@ -159,24 +164,15 @@ class HardwareMonitor:
         self.temps: List[float] = []
         self.powers: List[float] = []
         self.lock = threading.Lock()
-        # Demo/Fallback-Modus wenn keine GPU-Tools verfügbar
-        self.use_demo_mode = False
-        self.demo_counter = 0
     
     def start(self):
         """Starte Background-Monitoring"""
-        if not self.enabled:
+        if not self.enabled or not self.gpu_tool:
             return
-        
-        # Prüfe ob GPU-Tool verfügbar ist
-        if not self.gpu_tool:
-            logger.warning("⚠️ Keine GPU-Tools gefunden (nvidia-smi/rocm-smi). Starte Demo-Modus...")
-            self.use_demo_mode = True
         
         self.monitoring = True
         self.temps.clear()
         self.powers.clear()
-        self.demo_counter = 0
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.thread.start()
     
