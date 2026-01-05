@@ -1554,6 +1554,9 @@ class LMStudioBenchmark:
             logger.error("❌ Keine Modelle nach Filterung übrig")
             return
         
+        # Separate Listen für neu getestete vs. gecachte Modelle
+        newly_tested_models = []  # NUR für Reports
+        
         # Prüfe Cache und zeige Stats
         if self.cache and self.use_cache:
             cached_models = []
@@ -1584,7 +1587,8 @@ class LMStudioBenchmark:
                     logger.info(f"  ... und {len(cached_models) - 10} weitere")
                 logger.info("")
                 
-                # Lade gecachte Ergebnisse
+                # Lade gecachte Ergebnisse in self.results (für interne Verwendung)
+                # ABER NICHT in newly_tested_models (für Reports)
                 for model_key, cached in cached_models:
                     self.results.append(cached)
             
@@ -1593,7 +1597,7 @@ class LMStudioBenchmark:
                 models = new_models
             else:
                 logger.info("✅ Alle Modelle bereits gecacht - keine neuen Tests notwendig")
-                self.export_results()
+                logger.info("📝 Reports werden übersprungen (keine neuen Daten)")
                 return
         else:
             # Wende Limit an wenn gesetzt (kein Cache)
@@ -1607,12 +1611,17 @@ class LMStudioBenchmark:
             result = self.benchmark_model(model_key)
             if result:
                 self.results.append(result)
+                newly_tested_models.append(result)  # NUR neu getestete!
 
         
-        # Exportiere Ergebnisse
-        self.export_results()
+        # Exportiere NUR neu getestete Modelle (nicht gecachte!)
+        if newly_tested_models:
+            logger.info(f"📊 Exportiere Reports für {len(newly_tested_models)} neu getestete Modelle...")
+            self._export_results_to_files(newly_tested_models)
+        else:
+            logger.warning("⚠️ Keine neuen Modelle getestet - keine Reports generiert")
         
-        logger.info(f"✅ Benchmark abgeschlossen. {len(self.results)}/{len(models)} Modelle erfolgreich getestet")
+        logger.info(f"✅ Benchmark abgeschlossen. {len(newly_tested_models)}/{len(models)} Modelle erfolgreich getestet")
     
     def _analyze_best_quantizations(self) -> Dict[str, Dict]:
         """Analysiert beste Quantisierung pro Modell nach verschiedenen Kriterien"""
@@ -1938,9 +1947,9 @@ class LMStudioBenchmark:
             logger.debug(f"Fehler beim Erstellen von Trend-Chart: {e}")
             return None
     
-    def export_results(self):
-        """Exportiert Ergebnisse als JSON, CSV, PDF und HTML"""
-        if not self.results:
+    def _export_results_to_files(self, results_to_export):
+        """Exportiert gegebene Ergebnisse als JSON, CSV, PDF und HTML"""
+        if not results_to_export:
             logger.warning("⚠️ Keine Ergebnisse zum Exportieren")
             return
         
@@ -1949,29 +1958,36 @@ class LMStudioBenchmark:
         # JSON Export
         json_file = RESULTS_DIR / f"benchmark_results_{timestamp}.json"
         with open(json_file, 'w', encoding='utf-8') as f:
-            json.dump([asdict(r) for r in self.results], f, indent=2, ensure_ascii=False)
+            json.dump([asdict(r) for r in results_to_export], f, indent=2, ensure_ascii=False)
         logger.info(f"📄 JSON-Ergebnisse gespeichert: {json_file}")
         
         # CSV Export
         csv_file = RESULTS_DIR / f"benchmark_results_{timestamp}.csv"
         with open(csv_file, 'w', newline='', encoding='utf-8') as f:
-            if self.results:
-                writer = csv.DictWriter(f, fieldnames=asdict(self.results[0]).keys())
+            if results_to_export:
+                writer = csv.DictWriter(f, fieldnames=asdict(results_to_export[0]).keys())
                 writer.writeheader()
-                for result in self.results:
+                for result in results_to_export:
                     writer.writerow(asdict(result))
         logger.info(f"📊 CSV-Ergebnisse gespeichert: {csv_file}")
         
         # PDF Export
-        self._export_pdf(timestamp)
+        self._export_pdf(timestamp, results_to_export)
         
         # HTML Export (optional)
         if PLOTLY_AVAILABLE:
-            self._export_html(timestamp)
+            self._export_html(timestamp, results_to_export)
     
-    def _export_pdf(self, timestamp: str):
-        """Exportiert Benchmark-Ergebnisse als PDF-Report"""
+    def export_results(self):
+        """Legacy-Wrapper für direkte Aufrufe (z.B. --export-only)"""
+        self._export_results_to_files(self.results)
+    
+    def _export_pdf(self, timestamp: str, results_to_export):
+        """Exportiert gegebene Benchmark-Ergebnisse als PDF-Report"""
         try:
+            # Verwende results_to_export statt self.results
+            results = results_to_export
+            
             pdf_file = RESULTS_DIR / f"benchmark_results_{timestamp}.pdf"
             
             # Erstelle PDF-Dokument mit Landscape-Format
@@ -2528,13 +2544,16 @@ class LMStudioBenchmark:
         except Exception as e:
             logger.error(f"❌ Fehler beim Erstellen der PDF: {e}")
     
-    def _export_html(self, timestamp: str):
-        """Exportiert Benchmark-Ergebnisse als interaktiven HTML-Report mit Plotly Charts"""
+    def _export_html(self, timestamp: str, results_to_export):
+        """Exportiert gegebene Benchmark-Ergebnisse als interaktiven HTML-Report mit Plotly Charts"""
         if not PLOTLY_AVAILABLE or go is None:
             logger.warning("⚠️ Plotly nicht verfügbar, überspringe HTML-Export")
             return
         
         try:
+            # Verwende results_to_export statt self.results
+            results = results_to_export
+            
             html_file = RESULTS_DIR / f"benchmark_results_{timestamp}.html"
             
             # Lade HTML-Template
