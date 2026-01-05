@@ -109,7 +109,9 @@ class BenchmarkManager:
             "temperatures": [],  # Liste von {"timestamp": ISO, "value": float}
             "power": [],
             "vram": [],
-            "gtt": []  # GTT-Nutzung (System RAM für AMD GPUs)
+            "gtt": [],  # GTT-Nutzung (System RAM für AMD GPUs)
+            "cpu": [],  # CPU-Auslastung in %
+            "ram": []   # RAM-Nutzung in GB
         }
         self.last_hardware_send_time: float = 0  # Zur Drosselung von WebSocket-Updates
 
@@ -319,6 +321,24 @@ class BenchmarkManager:
             self.hardware_history["gtt"].append({
                 "timestamp": datetime.now().isoformat(),
                 "value": gtt_value
+            })
+        
+        # Pattern für CPU: "🖥️ CPU: 45.2%"
+        cpu_match = re.search(r'CPU\s*:\s*(\d+(?:\.\d+)?)%', output_line, re.IGNORECASE)
+        if cpu_match:
+            cpu_value = float(cpu_match.group(1))
+            self.hardware_history["cpu"].append({
+                "timestamp": datetime.now().isoformat(),
+                "value": cpu_value
+            })
+        
+        # Pattern für RAM: "💾 RAM: 8.5GB"
+        ram_match = re.search(r'RAM\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
+        if ram_match:
+            ram_value = float(ram_match.group(1))
+            self.hardware_history["ram"].append({
+                "timestamp": datetime.now().isoformat(),
+                "value": ram_value
             })
 
     async def read_output(self) -> str:
@@ -841,7 +861,7 @@ async def websocket_benchmark(websocket: WebSocket):
                 # Sende Hardware-Monitoring-Daten periodisch (alle 2s)
                 current_time = time.time()
                 if current_time - manager.last_hardware_send_time >= 2.0:
-                    if manager.hardware_history["temperatures"] or manager.hardware_history["power"] or manager.hardware_history["vram"] or manager.hardware_history["gtt"]:
+                    if manager.hardware_history["temperatures"] or manager.hardware_history["power"] or manager.hardware_history["vram"] or manager.hardware_history["gtt"] or manager.hardware_history["cpu"] or manager.hardware_history["ram"]:
                         try:
                             # Behalte nur letzte 60 Einträge pro Metrik (2 Minuten bei 2s Intervall)
                             max_history = 60
@@ -849,7 +869,9 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "temperatures": manager.hardware_history["temperatures"][-max_history:],
                                 "power": manager.hardware_history["power"][-max_history:],
                                 "vram": manager.hardware_history["vram"][-max_history:],
-                                "gtt": manager.hardware_history["gtt"][-max_history:]
+                                "gtt": manager.hardware_history["gtt"][-max_history:],
+                                "cpu": manager.hardware_history["cpu"][-max_history:],
+                                "ram": manager.hardware_history["ram"][-max_history:]
                             }
                             
                             await websocket.send_json({

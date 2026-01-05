@@ -17,6 +17,7 @@ import argparse
 import sqlite3
 import hashlib
 import threading
+import psutil  # System CPU/RAM monitoring
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict, field
@@ -182,6 +183,8 @@ class HardwareMonitor:
         self.powers: List[float] = []
         self.vrams: List[float] = []  # VRAM-Nutzung in GB
         self.gtts: List[float] = []   # GTT-Nutzung in GB (System RAM für AMD GPUs)
+        self.cpus: List[float] = []   # CPU-Auslastung in %
+        self.rams: List[float] = []   # RAM-Nutzung in GB
         self.lock = threading.Lock()
     
     def start(self):
@@ -212,6 +215,8 @@ class HardwareMonitor:
             powers = self.powers.copy()
             vrams = self.vrams.copy()
             gtts = self.gtts.copy()
+            cpus = self.cpus.copy()
+            rams = self.rams.copy()
         
         stats = {
             'temp_celsius_min': min(temps) if temps else None,
@@ -226,6 +231,12 @@ class HardwareMonitor:
             'gtt_gb_min': min(gtts) if gtts else None,
             'gtt_gb_max': max(gtts) if gtts else None,
             'gtt_gb_avg': mean(gtts) if gtts else None,
+            'cpu_percent_min': min(cpus) if cpus else None,
+            'cpu_percent_max': max(cpus) if cpus else None,
+            'cpu_percent_avg': mean(cpus) if cpus else None,
+            'ram_gb_min': min(rams) if rams else None,
+            'ram_gb_max': max(rams) if rams else None,
+            'ram_gb_avg': mean(rams) if rams else None,
         }
         return stats
     
@@ -238,6 +249,8 @@ class HardwareMonitor:
                 power = self._get_power_draw()
                 vram = self._get_vram_usage()
                 gtt = self._get_gtt_usage()
+                cpu = self._get_cpu_usage()
+                ram = self._get_ram_usage()
                 
                 with self.lock:
                     if temp is not None:
@@ -267,6 +280,16 @@ class HardwareMonitor:
                         logger.info(f"🧠 GPU GTT: {gtt:.1f}GB")
                     else:
                         logger.debug(f"⚠️ Keine GTT gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
+                    
+                    if cpu is not None:
+                        self.cpus.append(cpu)
+                        # Logger für Log-Datei UND stdout (via AutoFlushStream)
+                        logger.info(f"🖥️ CPU: {cpu:.1f}%")
+                    
+                    if ram is not None:
+                        self.rams.append(ram)
+                        # Logger für Log-Datei UND stdout (via AutoFlushStream)
+                        logger.info(f"💾 RAM: {ram:.1f}GB")
                 
                 time.sleep(1)  # Messungen jede Sekunde
             except Exception as e:
@@ -430,6 +453,21 @@ class HardwareMonitor:
             pass
         
         return None
+    
+    def _get_cpu_usage(self) -> Optional[float]:
+        """Liest System CPU-Auslastung in %"""
+        try:
+            return psutil.cpu_percent(interval=0.1)
+        except Exception:
+            return None
+    
+    def _get_ram_usage(self) -> Optional[float]:
+        """Liest System RAM-Nutzung in GB"""
+        try:
+            mem = psutil.virtual_memory()
+            return mem.used / (1024**3)  # Bytes zu GB
+        except Exception:
+            return None
 
 
 class BenchmarkCache:

@@ -889,6 +889,44 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="chart-card">
+                    <h4>🖥️ CPU-Auslastung</h4>
+                    <div id="chart-cpu" style="height: 300px;"></div>
+                    <div class="chart-stats">
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Min</div>
+                            <div class="chart-stat-value" id="cpu-min">--%</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Ø</div>
+                            <div class="chart-stat-value" id="cpu-avg">--%</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Max</div>
+                            <div class="chart-stat-value" id="cpu-max">--%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-card">
+                    <h4>💾 System-RAM-Auslastung</h4>
+                    <div id="chart-ram" style="height: 300px;"></div>
+                    <div class="chart-stats">
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Min</div>
+                            <div class="chart-stat-value" id="ram-min">--GB</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Ø</div>
+                            <div class="chart-stat-value" id="ram-avg">--GB</div>
+                        </div>
+                        <div class="chart-stat">
+                            <div class="chart-stat-label">Max</div>
+                            <div class="chart-stat-value" id="ram-max">--GB</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1561,6 +1599,12 @@
             if (hardwareData.gtt && hardwareData.gtt.length > 0) {
                 updateGttChart(hardwareData.gtt);
             }
+            if (hardwareData.cpu && hardwareData.cpu.length > 0) {
+                updateCpuChart(hardwareData.cpu);
+            }
+            if (hardwareData.ram && hardwareData.ram.length > 0) {
+                updateRamChart(hardwareData.ram);
+            }
         }
 
         function updateTemperatureChart(data) {
@@ -1705,6 +1749,79 @@
             document.getElementById('gtt-min').textContent = `${min.toFixed(2)}GB`;
             document.getElementById('gtt-max').textContent = `${max.toFixed(2)}GB`;
             document.getElementById('gtt-avg').textContent = `${avg}GB`;
+        }
+
+        function updateCpuChart(data) {
+            const timestamps = data.map(d => new Date(d.timestamp).toLocaleTimeString('de-DE'));
+            const values = data.map(d => d.value);
+            
+            const trace = {
+                x: timestamps,
+                y: values,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'CPU (%)',
+                line: {color: '#f59e0b', width: 2},
+                marker: {size: 4},
+                fill: 'tozeroy',
+                fillcolor: 'rgba(245, 158, 11, 0.1)'
+            };
+            
+            const layout = {
+                title: false,
+                hovermode: 'x unified',
+                margin: {l: 50, r: 20, t: 20, b: 40},
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'},
+                yaxis: {range: [0, 100]}
+            };
+            
+            Plotly.newPlot('chart-cpu', [trace], layout, {responsive: true, displayModeBar: false});
+            
+            // Update Stats
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const avg = (values.reduce((a,b) => a+b, 0) / values.length).toFixed(1);
+            document.getElementById('cpu-min').textContent = `${min.toFixed(0)}%`;
+            document.getElementById('cpu-max').textContent = `${max.toFixed(0)}%`;
+            document.getElementById('cpu-avg').textContent = `${avg}%`;
+        }
+
+        function updateRamChart(data) {
+            const timestamps = data.map(d => new Date(d.timestamp).toLocaleTimeString('de-DE'));
+            const values = data.map(d => d.value);
+            
+            const trace = {
+                x: timestamps,
+                y: values,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'RAM (GB)',
+                line: {color: '#06b6d4', width: 2},
+                marker: {size: 4},
+                fill: 'tozeroy',
+                fillcolor: 'rgba(6, 182, 212, 0.1)'
+            };
+            
+            const layout = {
+                title: false,
+                hovermode: 'x unified',
+                margin: {l: 50, r: 20, t: 20, b: 40},
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'}
+            };
+            
+            Plotly.newPlot('chart-ram', [trace], layout, {responsive: true, displayModeBar: false});
+            
+            // Update Stats
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const avg = (values.reduce((a,b) => a+b, 0) / values.length).toFixed(2);
+            document.getElementById('ram-min').textContent = `${min.toFixed(2)}GB`;
+            document.getElementById('ram-max').textContent = `${max.toFixed(2)}GB`;
+            document.getElementById('ram-avg').textContent = `${avg}GB`;
         }
 
         // ===== Initialization =====
