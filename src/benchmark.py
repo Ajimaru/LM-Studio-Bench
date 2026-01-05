@@ -167,9 +167,15 @@ class HardwareMonitor:
     
     def start(self):
         """Starte Background-Monitoring"""
-        if not self.enabled or not self.gpu_tool:
+        if not self.enabled:
+            logger.info("⚠️ Hardware-Monitoring deaktiviert (--enable-profiling nicht gesetzt)")
             return
         
+        if not self.gpu_tool:
+            logger.warning("⚠️ Keine GPU-Tools gefunden - Hardware-Monitoring nicht verfügbar")
+            return
+        
+        logger.info(f"🔥 Starte Hardware-Monitoring (GPU: {self.gpu_type}, Tool: {self.gpu_tool})")
         self.monitoring = True
         self.temps.clear()
         self.powers.clear()
@@ -198,6 +204,7 @@ class HardwareMonitor:
     
     def _monitor_loop(self):
         """Background-Thread für kontinuierliche Messungen"""
+        logger.info("🔍 Hardware-Monitor-Thread gestartet")
         while self.monitoring:
             try:
                 temp = self._get_temperature()
@@ -208,15 +215,21 @@ class HardwareMonitor:
                         self.temps.append(temp)
                         # Drucke auf stdout für Live-Monitoring in WebApp
                         print(f"🌡️ GPU Temp: {temp:.1f}°C", flush=True)
+                    else:
+                        logger.debug(f"⚠️ Keine Temperatur gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
+                    
                     if power is not None:
                         self.powers.append(power)
                         # Drucke auf stdout für Live-Monitoring in WebApp
                         print(f"⚡ GPU Power: {power:.1f}W", flush=True)
+                    else:
+                        logger.debug(f"⚠️ Keine Power gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
                 
                 time.sleep(1)  # Messungen jede Sekunde
             except Exception as e:
                 logger.debug(f"Monitoring-Fehler: {e}")
                 time.sleep(2)
+        logger.info("🛑 Hardware-Monitor-Thread gestoppt")
     
     def _get_temperature(self) -> Optional[float]:
         """Liest aktuelle GPU-Temperatur"""
