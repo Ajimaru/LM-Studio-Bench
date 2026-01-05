@@ -477,6 +477,44 @@
             </div>
         </div>
 
+        <!-- Results Browser -->
+        <div class="section">
+            <h3>📊 Benchmark-Ergebnisse</h3>
+            <div class="card" style="padding: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div>
+                        <span id="cache-stats-text" style="font-size: 0.9rem; opacity: 0.8;">Lade Cache-Statistiken...</span>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn-primary" onclick="loadResults()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">🔄 Aktualisieren</button>
+                        <button class="btn-danger" onclick="clearCache()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">🗑️ Cache Löschen</button>
+                    </div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table id="results-table" style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="background: rgba(0,0,0,0.1); border-bottom: 2px solid rgba(0,0,0,0.2);">
+                                <th onclick="sortTable(0)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 600;">Modell ⇅</th>
+                                <th onclick="sortTable(1)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 600;">Quantisierung ⇅</th>
+                                <th onclick="sortTable(2)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 600;">Tokens/s ⇅</th>
+                                <th onclick="sortTable(3)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 600;">VRAM (MB) ⇅</th>
+                                <th onclick="sortTable(4)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 600;">GPU-Offload ⇅</th>
+                                <th onclick="sortTable(5)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 600;">GPU-Typ ⇅</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Aktionen</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-tbody">
+                            <tr>
+                                <td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">
+                                    Keine Ergebnisse im Cache. Starte einen Benchmark!
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- Terminal Output -->
         <div class="section">
             <h3>📝 Live-Terminal</h3>
@@ -692,6 +730,128 @@
             } catch (error) {
                 addAlert(`Fehler: ${error.message}`, 'error');
             }
+        }
+
+        // ===== Results Browser =====
+        let resultsData = [];
+        let sortColumn = 2; // Default: Tokens/s
+        let sortAscending = false;
+
+        async function loadResults() {
+            try {
+                const response = await fetch('/api/results');
+                const data = await response.json();
+                resultsData = data.results || [];
+                renderResults();
+                updateCacheStats();
+                addAlert(`✅ ${resultsData.length} Ergebnisse geladen`, 'success');
+            } catch (error) {
+                addAlert(`Fehler beim Laden: ${error.message}`, 'error');
+            }
+        }
+
+        async function updateCacheStats() {
+            try {
+                const response = await fetch('/api/cache/stats');
+                const data = await response.json();
+                if (data.success && data.stats) {
+                    const stats = data.stats;
+                    document.getElementById('cache-stats-text').innerHTML = 
+                        `📦 ${stats.total_entries} Einträge | ⚡ Ø ${stats.avg_tokens_per_sec.toFixed(1)} tok/s | ` +
+                        `🏆 Schnellste: ${stats.fastest_model} (${stats.fastest_speed.toFixed(1)} tok/s) | ` +
+                        `💾 ${stats.db_size_mb.toFixed(2)} MB`;
+                }
+            } catch (error) {
+                console.error('Cache-Statistiken laden fehlgeschlagen:', error);
+            }
+        }
+
+        function renderResults() {
+            const tbody = document.getElementById('results-tbody');
+            if (resultsData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">Keine Ergebnisse im Cache. Starte einen Benchmark!</td></tr>';
+                return;
+            }
+
+            // Sortieren
+            const sorted = [...resultsData].sort((a, b) => {
+                let aVal, bVal;
+                switch(sortColumn) {
+                    case 0: aVal = a.model_name; bVal = b.model_name; break;
+                    case 1: aVal = a.quantization; bVal = b.quantization; break;
+                    case 2: aVal = a.avg_tokens_per_sec; bVal = b.avg_tokens_per_sec; break;
+                    case 3: aVal = a.vram_mb; bVal = b.vram_mb; break;
+                    case 4: aVal = a.gpu_offload; bVal = b.gpu_offload; break;
+                    case 5: aVal = a.gpu_type; bVal = b.gpu_type; break;
+                    default: aVal = a.avg_tokens_per_sec; bVal = b.avg_tokens_per_sec;
+                }
+                
+                if (typeof aVal === 'string') {
+                    return sortAscending ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                }
+                return sortAscending ? aVal - bVal : bVal - aVal;
+            });
+
+            tbody.innerHTML = sorted.map(row => `
+                <tr style="border-bottom: 1px solid rgba(0,0,0,0.1);">
+                    <td style="padding: 0.75rem;">${row.model_name}</td>
+                    <td style="padding: 0.75rem;">${row.quantization}</td>
+                    <td style="padding: 0.75rem; text-align: right; font-weight: 600;">${row.avg_tokens_per_sec.toFixed(2)}</td>
+                    <td style="padding: 0.75rem; text-align: right;">${row.vram_mb.toFixed(0)}</td>
+                    <td style="padding: 0.75rem; text-align: right;">${(row.gpu_offload * 100).toFixed(0)}%</td>
+                    <td style="padding: 0.75rem;">${row.gpu_type}</td>
+                    <td style="padding: 0.75rem; text-align: center;">
+                        <button onclick="deleteResult('${row.model_key}')" class="btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">🗑️</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function sortTable(column) {
+            if (sortColumn === column) {
+                sortAscending = !sortAscending;
+            } else {
+                sortColumn = column;
+                sortAscending = false;
+            }
+            renderResults();
+        }
+
+        async function deleteResult(modelKey) {
+            if (!confirm(`Cache-Eintrag für "${modelKey}" wirklich löschen?`)) return;
+            
+            try {
+                const response = await fetch(`/api/cache/${encodeURIComponent(modelKey)}`, { method: 'DELETE' });
+                const data = await response.json();
+                addAlert(data.message, data.success ? 'success' : 'error');
+                if (data.success) {
+                    await loadResults();
+                }
+            } catch (error) {
+                addAlert(`Fehler: ${error.message}`, 'error');
+            }
+        }
+
+        async function clearCache() {
+            if (!confirm('⚠️ WARNUNG: Alle Cache-Einträge werden gelöscht! Fortfahren?')) return;
+            
+            try {
+                const response = await fetch('/api/cache/clear', { method: 'POST' });
+                const data = await response.json();
+                addAlert(data.message, data.success ? 'success' : 'error');
+                if (data.success) {
+                    await loadResults();
+                }
+            } catch (error) {
+                addAlert(`Fehler: ${error.message}`, 'error');
+            }
+        }
+
+        // Results beim Laden initialisieren
+        window.addEventListener('DOMContentLoaded', () => {
+            loadResults();
+        });
+
         }
 
         // ===== UI Hilfsfunktionen =====
