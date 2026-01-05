@@ -273,11 +273,18 @@ class HardwareMonitor:
                     timeout=3
                 )
                 if result.returncode == 0:
-                    # Parse AMD rocm-smi output: "GPU[X]        : X.0c"
+                    # Parse AMD rocm-smi output:
+                    # Format: "GPU[0]          : Temperature (Sensor edge) (C): 47.0"
+                    import re
                     for line in result.stdout.split('\n'):
-                        if 'GPU[' in line and 'c' in line:
+                        if 'GPU[' in line and ('(C):' in line or 'c' in line.lower()):
                             try:
-                                temp_str = line.split(':')[1].strip().replace('c', '')
+                                # Versuche letzte Zahl in der Zeile zu extrahieren
+                                match = re.search(r'[\d.]+\s*$', line.strip())
+                                if match:
+                                    return float(match.group())
+                                # Fallback: Alte Methode
+                                temp_str = line.split(':')[-1].strip().replace('c', '').replace('C', '')
                                 return float(temp_str)
                             except (ValueError, IndexError):
                                 pass
@@ -311,11 +318,18 @@ class HardwareMonitor:
                     timeout=3
                 )
                 if result.returncode == 0:
-                    # Parse AMD rocm-smi output: "GPU[X]  : XXX.X W"
+                    # Parse AMD rocm-smi output:
+                    # Format: "GPU[0]          : Current Socket Graphics Package Power (W): 30.076"
+                    import re
                     for line in result.stdout.split('\n'):
-                        if 'GPU[' in line and 'W' in line:
+                        if 'GPU[' in line and ('(W):' in line or 'W' in line):
                             try:
-                                power_str = line.split(':')[1].strip().replace('W', '')
+                                # Versuche letzte Zahl in der Zeile zu extrahieren
+                                match = re.search(r'[\d.]+\s*$', line.strip())
+                                if match:
+                                    return float(match.group())
+                                # Fallback: Alte Methode
+                                power_str = line.split(':')[-1].strip().replace('W', '')
                                 return float(power_str)
                             except (ValueError, IndexError):
                                 pass
