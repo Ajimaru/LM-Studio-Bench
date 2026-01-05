@@ -179,6 +179,17 @@ class BenchmarkManager:
             
             if output:
                 self.current_output += output
+                
+                # Schreibe auch in Log-Datei
+                if self.start_time:
+                    log_file = RESULTS_DIR / f"web-benchmark-{self.start_time.strftime('%Y%m%d_%H%M%S')}.log"
+                    try:
+                        log_file.parent.mkdir(parents=True, exist_ok=True)
+                        with open(log_file, 'a', encoding='utf-8') as f:
+                            f.write(output)
+                    except Exception as log_error:
+                        logger.error(f"❌ Fehler beim Schreiben in Log-Datei: {log_error}")
+                
                 return output
             elif not self.is_running():
                 self.status = "completed"
