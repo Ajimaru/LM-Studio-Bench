@@ -27,12 +27,30 @@ from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
 
-# Logging konfigurieren
+# Logging konfigurieren - mit Console und File Handler
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# WebApp Startup Log-Datei
+def setup_webapp_logger():
+    """Erstellt separate WebApp Startup Log-Datei"""
+    logs_dir = Path(PROJECT_ROOT) / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_file = logs_dir / f"webapp_{timestamp}.log"
+    
+    # File Handler hinzufügen
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    ))
+    logger.addHandler(file_handler)
+    
+    return log_file
 
 # ============================================================================
 # Hilfsfunktionen
@@ -82,6 +100,7 @@ class BenchmarkManager:
         self.start_time: Optional[datetime] = None
         self.current_output = ""
         self.connected_clients = set()
+        self.benchmark_log_file: Optional[Path] = None  # Log-Datei nur für aktive Benchmarks
 
     def is_running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -104,7 +123,14 @@ class BenchmarkManager:
             self.status = "running"
             self.start_time = datetime.now()
             self.current_output = ""
+            
+            # Erstelle Benchmark-Log-Datei ERST wenn Benchmark tatsächlich startet
+            logs_dir = RESULTS_DIR.parent / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            self.benchmark_log_file = logs_dir / f"benchmark_{self.start_time.strftime('%Y%m%d_%H%M%S')}.log"
+            
             logger.info(f"✅ Benchmark gestartet mit PID {self.process.pid}")
+            logger.info(f"📝 Benchmark-Log: {self.benchmark_log_file}")
             return True
         except Exception as e:
             logger.error(f"❌ Fehler beim Starten des Benchmarks: {e}")
@@ -183,12 +209,10 @@ class BenchmarkManager:
             if output:
                 self.current_output += output
                 
-                # Schreibe auch in Log-Datei
-                if self.start_time:
-                    log_file = RESULTS_DIR / f"web-benchmark-{self.start_time.strftime('%Y%m%d_%H%M%S')}.log"
+                # Schreibe in Benchmark-Log-Datei (nur wenn Benchmark läuft)
+                if self.benchmark_log_file:
                     try:
-                        log_file.parent.mkdir(parents=True, exist_ok=True)
-                        with open(log_file, 'a', encoding='utf-8') as f:
+                        with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
                             f.write(output)
                     except Exception as log_error:
                         logger.error(f"❌ Fehler beim Schreiben in Log-Datei: {log_error}")
@@ -196,6 +220,7 @@ class BenchmarkManager:
                 return output
             elif not self.is_running():
                 self.status = "completed"
+                logger.info(f"✅ Benchmark abgeschlossen. Log: {self.benchmark_log_file}")
             
             return ""
         except asyncio.TimeoutError:
@@ -668,7 +693,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     
+    # Erstelle WebApp Startup Log-Datei
+    webapp_log_file = setup_webapp_logger()
+    
     logger.info("🌐 Starte FastAPI Web-Dashboard...")
+    logger.info(f"📝 WebApp-Log: {webapp_log_file}")
     logger.info(f"📁 Projekt-Root: {PROJECT_ROOT}")
     logger.info(f"📄 Benchmark-Script: {BENCHMARK_SCRIPT}")
     
