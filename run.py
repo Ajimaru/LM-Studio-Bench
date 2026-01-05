@@ -4,13 +4,15 @@ Wrapper script - Einstiegspunkt für das Benchmark-Tool
 
 Verwendung:
   ./run.py [args]              - Startet normalen Benchmark
-  ./run.py --web               - Startet FastAPI Web-Dashboard
-  ./run.py -w                  - Startet FastAPI Web-Dashboard
+  ./run.py --web               - Startet FastAPI Web-Dashboard (automatischer freier Port)
+  ./run.py -w                  - Startet FastAPI Web-Dashboard (automatischer freier Port)
   
 Beispiele:
   ./run.py --limit 5           - Testet 5 neue Modelle
   ./run.py --export-only       - Generiert Reports aus Cache
-  ./run.py --web               - Startet Web-Dashboard auf http://localhost:8000
+  ./run.py --web               - Startet Web-Dashboard auf zufälligem freien Port
+  ./run.py --web --port 9000   - Startet Web-Dashboard auf Port 9000
+  ./run.py -w -p 8888          - Web-Dashboard auf Port 8888
 """
 
 import sys

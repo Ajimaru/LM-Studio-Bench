@@ -5,11 +5,13 @@ FastAPI Web-Dashboard für LM Studio Benchmark
 Steuert benchmark.py via Subprocess und bietet Live-Monitoring über WebSocket.
 """
 
+import argparse
 import asyncio
 import json
 import logging
 import os
 import signal
+import socket
 import subprocess
 import sys
 from datetime import datetime
@@ -28,6 +30,19 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Hilfsfunktionen
+# ============================================================================
+
+def find_free_port() -> int:
+    """Sucht einen freien Port auf dem System"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
 
 # Pfade
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -384,6 +399,16 @@ async def shutdown_event():
 if __name__ == "__main__":
     import uvicorn
     
+    # ArgumentParser für Port-Option
+    parser = argparse.ArgumentParser(description="FastAPI Web-Dashboard für LM Studio Benchmark")
+    parser.add_argument(
+        "--port", "-p",
+        type=int,
+        default=None,
+        help="Port für Web-Dashboard (Standard: automatisch freien Port suchen)"
+    )
+    args = parser.parse_args()
+    
     logger.info("🌐 Starte FastAPI Web-Dashboard...")
     logger.info(f"📁 Projekt-Root: {PROJECT_ROOT}")
     logger.info(f"📄 Benchmark-Script: {BENCHMARK_SCRIPT}")
@@ -392,7 +417,15 @@ if __name__ == "__main__":
         logger.error(f"❌ Benchmark-Script nicht gefunden: {BENCHMARK_SCRIPT}")
         sys.exit(1)
     
-    logger.info("🚀 Dashboard verfügbar auf http://localhost:8000")
-    logger.info("📊 API Docs: http://localhost:8000/docs")
+    # Port bestimmen
+    if args.port:
+        port = args.port
+        logger.info(f"🔧 Verwende angegebenen Port: {port}")
+    else:
+        port = find_free_port()
+        logger.info(f"🎲 Nutze automatisch gefundenen freien Port: {port}")
     
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    logger.info(f"🚀 Dashboard verfügbar auf http://localhost:{port}")
+    logger.info(f"📊 API Docs: http://localhost:{port}/docs")
+    
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
