@@ -385,6 +385,143 @@
             color: var(--primary);
         }
 
+        /* Navigation Styles */
+        .nav-btn {
+            transition: all 0.3s;
+            opacity: 0.7;
+        }
+
+        .nav-btn:hover {
+            opacity: 1;
+            transform: translateY(-2px);
+        }
+
+        .nav-btn.active {
+            opacity: 1;
+            background: rgba(255,255,255,0.3) !important;
+            font-weight: 700;
+        }
+
+        .view-container {
+            display: block;
+        }
+
+        .view-container.hidden {
+            display: none;
+        }
+
+        /* Toast Notification Styles */
+        .toast-container {
+            position: fixed;
+            top: 5rem;
+            right: 1rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-width: 400px;
+        }
+
+        .toast {
+            background: white;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            animation: slideIn 0.3s ease-out;
+            border-left: 4px solid;
+        }
+
+        .toast.toast-success {
+            border-left-color: var(--success);
+        }
+
+        .toast.toast-error {
+            border-left-color: var(--danger);
+        }
+
+        .toast.toast-warning {
+            border-left-color: var(--warning);
+        }
+
+        .toast.toast-info {
+            border-left-color: var(--primary);
+        }
+
+        .toast-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .toast-content {
+            flex: 1;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            color: var(--text);
+        }
+
+        .toast-message {
+            font-size: 0.875rem;
+            color: var(--text-light);
+        }
+
+        .toast-close {
+            background: none;
+            border: none;
+            font-size: 1.25rem;
+            cursor: pointer;
+            color: var(--text-light);
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.25rem;
+            transition: all 0.2s;
+        }
+
+        .toast-close:hover {
+            background: rgba(0,0,0,0.1);
+            color: var(--text);
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+
+        .toast.removing {
+            animation: slideOut 0.3s ease-in forwards;
+        }
+
+        body.dark-mode .toast {
+            background: var(--darker);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 1rem;
@@ -412,11 +549,120 @@
         <h1>
             📊 LM Studio Benchmark Dashboard
         </h1>
-        <button class="theme-toggle" onclick="toggleTheme()">🌙 Dark Mode</button>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <nav style="display: flex; gap: 0.5rem;">
+                <button class="nav-btn active" data-view="home" onclick="showView('home')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">🏠 Home</button>
+                <button class="nav-btn" data-view="benchmark" onclick="showView('benchmark')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">⚡ Benchmark</button>
+                <button class="nav-btn" data-view="results" onclick="showView('results')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📊 Results</button>
+            </nav>
+            <button class="theme-toggle" onclick="toggleTheme()">🌙 Dark Mode</button>
+        </div>
     </header>
 
     <div class="container">
+        <!-- HOME VIEW -->
+        <div id="view-home" class="view-container">
+            <!-- Welcome Banner -->
+            <div class="card" style="background: linear-gradient(135deg, var(--primary) 0%, #1e40af 100%); color: white; margin-bottom: 2rem;">
+                <h2 style="color: white;">🚀 Willkommen zum LM Studio Benchmark Dashboard</h2>
+                <p style="opacity: 0.9; margin: 0.5rem 0;">Teste und vergleiche deine LLM-Modelle mit präzisen Performance-Metriken</p>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="grid" style="margin-bottom: 2rem;">
+                <div class="card" style="cursor: pointer; transition: transform 0.2s;" onclick="showView('benchmark')">
+                    <h2>⚡ Neuen Benchmark starten</h2>
+                    <p style="color: var(--text-light); margin: 0;">Teste Modelle und sammle Performance-Daten</p>
+                </div>
+                <div class="card" style="cursor: pointer; transition: transform 0.2s;" onclick="showView('results')">
+                    <h2>📊 Ergebnisse durchsuchen</h2>
+                    <p style="color: var(--text-light); margin: 0;">Analysiere gecachte Benchmark-Daten</p>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid">
+                <div class="card">
+                    <h2>📦 Cache-Statistiken</h2>
+                    <div class="info-item" style="padding: 0; background: none;">
+                        <div class="info-label">Gecachte Modelle</div>
+                        <div class="info-value" id="home-cache-count">--</div>
+                    </div>
+                    <div class="info-item" style="padding: 0; background: none; margin-top: 1rem;">
+                        <div class="info-label">Datenbank-Größe</div>
+                        <div class="info-value" id="home-db-size">-- MB</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>⚡ Performance</h2>
+                    <div class="info-item" style="padding: 0; background: none;">
+                        <div class="info-label">Durchschnitt</div>
+                        <div class="info-value" id="home-avg-speed">-- tok/s</div>
+                    </div>
+                    <div class="info-item" style="padding: 0; background: none; margin-top: 1rem;">
+                        <div class="info-label">Maximum</div>
+                        <div class="info-value" id="home-max-speed">-- tok/s</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>💻 System</h2>
+                    <div style="font-size: 0.9rem; color: var(--text-light); line-height: 1.6;">
+                        <div><strong>OS:</strong> <span id="home-os">--</span></div>
+                        <div><strong>Python:</strong> <span id="home-python">--</span></div>
+                        <div><strong>GPU:</strong> <span id="home-gpu">--</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Models -->
+            <div class="section">
+                <h3>🏆 Top 5 Schnellste Modelle</h3>
+                <div class="card">
+                    <table style="width: 100%; border-collapse: collapse;" id="home-top-models-table">
+                        <thead>
+                            <tr style="background: rgba(0,0,0,0.1); border-bottom: 2px solid rgba(0,0,0,0.2);">
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Modell</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Quantisierung</th>
+                                <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Tokens/s</th>
+                                <th style="padding: 0.75rem; text-align: right; font-weight: 600;">VRAM (MB)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="home-top-models">
+                            <tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Lade Daten...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recent Runs -->
+            <div class="section">
+                <h3>🕐 Letzte Benchmark-Runs</h3>
+                <div class="card">
+                    <table style="width: 100%; border-collapse: collapse;" id="home-recent-runs-table">
+                        <thead>
+                            <tr style="background: rgba(0,0,0,0.1); border-bottom: 2px solid rgba(0,0,0,0.2);">
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Modell</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Quantisierung</th>
+                                <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Tokens/s</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Zeitstempel</th>
+                            </tr>
+                        </thead>
+                        <tbody id="home-recent-runs">
+                            <tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Lade Daten...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- BENCHMARK VIEW -->
+        <div id="view-benchmark" class="view-container hidden">
         <!-- Status Section -->
+        <div class="grid">
+            <div class="card">
+                <h2>Status</h2>
         <div class="grid">
             <div class="card">
                 <h2>Status</h2>
@@ -439,8 +685,8 @@
             <div class="card">
                 <h2>Steuerung</h2>
                 <div class="controls">
-                    <button class="btn-primary" id="btnStart" onclick="toggleStartModal()">
-                        ▶️ Start
+                    <button class="btn-primary" id="btnStart" onclick="toggleStartModal()" title="Shortcut: S">
+                        ▶️ Start <span style="opacity: 0.7; font-size: 0.8em;">(S)</span>
                     </button>
                     <button class="btn-warning" id="btnPause" onclick="pauseBenchmark()" disabled>
                         ⏸️ Pause
@@ -448,8 +694,8 @@
                     <button class="btn-success" id="btnResume" onclick="resumeBenchmark()" disabled>
                         ▶️ Fortsetzen
                     </button>
-                    <button class="btn-danger" id="btnStop" onclick="stopBenchmark()" disabled>
-                        ⏹️ Stopp
+                    <button class="btn-danger" id="btnStop" onclick="stopBenchmark()" disabled title="Shortcut: Q">
+                        ⏹️ Stopp <span style="opacity: 0.7; font-size: 0.8em;">(Q)</span>
                     </button>
                 </div>
             </div>
@@ -514,44 +760,6 @@
             </div>
         </div>
 
-        <!-- Results Browser -->
-        <div class="section">
-            <h3>📊 Benchmark-Ergebnisse</h3>
-            <div class="card" style="padding: 1rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <div>
-                        <span id="cache-stats-text" style="font-size: 0.9rem; opacity: 0.8;">Lade Cache-Statistiken...</span>
-                    </div>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button class="btn-primary" onclick="loadResults()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">🔄 Aktualisieren</button>
-                        <button class="btn-danger" onclick="clearCache()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">🗑️ Cache Löschen</button>
-                    </div>
-                </div>
-                <div style="overflow-x: auto;">
-                    <table id="results-table" style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="background: rgba(0,0,0,0.1); border-bottom: 2px solid rgba(0,0,0,0.2);">
-                                <th onclick="sortTable(0)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 600;">Modell ⇅</th>
-                                <th onclick="sortTable(1)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 600;">Quantisierung ⇅</th>
-                                <th onclick="sortTable(2)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 600;">Tokens/s ⇅</th>
-                                <th onclick="sortTable(3)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 600;">VRAM (MB) ⇅</th>
-                                <th onclick="sortTable(4)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 600;">GPU-Offload ⇅</th>
-                                <th onclick="sortTable(5)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 600;">GPU-Typ ⇅</th>
-                                <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Aktionen</th>
-                            </tr>
-                        </thead>
-                        <tbody id="results-tbody">
-                            <tr>
-                                <td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">
-                                    Keine Ergebnisse im Cache. Starte einen Benchmark!
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
         <!-- Terminal Output -->
         <div class="section">
             <h3>📝 Live-Terminal</h3>
@@ -562,10 +770,57 @@
 
         <!-- Alerts -->
         <div id="alerts" style="margin-top: 2rem;"></div>
+        </div>
+        <!-- END BENCHMARK VIEW -->
+
+        <!-- RESULTS VIEW -->
+        <div id="view-results" class="view-container hidden">
+            <div class="section">
+                <h3>📊 Benchmark-Ergebnisse</h3>
+                <div class="card" style="padding: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div>
+                            <span id="cache-stats-text-results" style="font-size: 0.9rem; opacity: 0.8;">Lade Cache-Statistiken...</span>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn-primary" onclick="loadResults()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" title="Shortcut: R">🔄 Aktualisieren <span style="opacity: 0.7;">(R)</span></button>
+                            <button class="btn-danger" onclick="clearCache()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">🗑️ Cache Löschen</button>
+                        </div>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table id="results-table" style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: rgba(0,0,0,0.1); border-bottom: 2px solid rgba(0,0,0,0.2);">
+                                    <th onclick="sortTable(0)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 600;">Modell ⇅</th>
+                                    <th onclick="sortTable(1)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 600;">Quantisierung ⇅</th>
+                                    <th onclick="sortTable(2)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 600;">Tokens/s ⇅</th>
+                                    <th onclick="sortTable(3)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 600;">VRAM (MB) ⇅</th>
+                                    <th onclick="sortTable(4)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 600;">GPU-Offload ⇅</th>
+                                    <th onclick="sortTable(5)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 600;">GPU-Typ ⇅</th>
+                                    <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Aktionen</th>
+                                </tr>
+                            </thead>
+                            <tbody id="results-tbody">
+                                <tr>
+                                    <td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">
+                                        Keine Ergebnisse im Cache. Starte einen Benchmark!
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- END RESULTS VIEW -->
     </div>
+    <!-- END CONTAINER -->
 
     <!-- Back to Top Button -->
     <button class="back-to-top" title="Nach oben scrollen" onclick="scrollToTop()">⬆️</button>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
 
     <script>
         // ===== Globale Variablen =====
@@ -586,7 +841,203 @@
             if (theme === 'dark') {
                 document.body.classList.add('dark-mode');
             }
+            
+            // Lade Dashboard-Stats wenn Home-View aktiv
+            loadDashboardStats();
         });
+
+        // ===== View Switching =====
+        function showView(viewName) {
+            // Hide all views
+            document.querySelectorAll('.view-container').forEach(view => {
+                view.classList.add('hidden');
+            });
+            
+            // Show selected view
+            const selectedView = document.getElementById(`view-${viewName}`);
+            if (selectedView) {
+                selectedView.classList.remove('hidden');
+            }
+            
+            // Update navigation buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const activeBtn = document.querySelector(`.nav-btn[data-view="${viewName}"]`);
+            if (activeBtn) {
+                activeBtn.classList.add('active');
+            }
+            
+            // Load data for specific views
+            if (viewName === 'home') {
+                loadDashboardStats();
+            } else if (viewName === 'results') {
+                loadResults();
+                loadCacheStats();
+            } else if (viewName === 'benchmark') {
+                loadCacheStats();
+            }
+        }
+
+        // ===== Toast Notifications =====
+        function showToast(message, type = 'info', title = null, duration = 4000) {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            
+            const icons = {
+                success: '✅',
+                error: '❌',
+                warning: '⚠️',
+                info: 'ℹ️'
+            };
+            
+            const titles = {
+                success: title || 'Erfolg',
+                error: title || 'Fehler',
+                warning: title || 'Warnung',
+                info: title || 'Info'
+            };
+            
+            toast.innerHTML = `
+                <div class="toast-icon">${icons[type]}</div>
+                <div class="toast-content">
+                    <div class="toast-title">${titles[type]}</div>
+                    <div class="toast-message">${message}</div>
+                </div>
+                <button class="toast-close" onclick="closeToast(this)">×</button>
+            `;
+            
+            toastContainer.appendChild(toast);
+            
+            // Auto-dismiss
+            if (duration > 0) {
+                setTimeout(() => {
+                    closeToast(toast.querySelector('.toast-close'));
+                }, duration);
+            }
+        }
+
+        function closeToast(button) {
+            const toast = button.closest('.toast');
+            toast.classList.add('removing');
+            setTimeout(() => {
+                toast.remove();
+            }, 300);
+        }
+
+        // ===== Keyboard Shortcuts =====
+        document.addEventListener('keydown', (e) => {
+            // Ignore wenn Input-Feld aktiv
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
+            switch(e.key.toLowerCase()) {
+                case 's':
+                    e.preventDefault();
+                    showView('benchmark');
+                    if (!document.getElementById('startModal').classList.contains('hidden')) {
+                        startBenchmark();
+                    } else {
+                        toggleStartModal();
+                    }
+                    break;
+                case 'q':
+                    e.preventDefault();
+                    if (confirm('Benchmark wirklich stoppen?')) {
+                        stopBenchmark();
+                    }
+                    break;
+                case 'r':
+                    e.preventDefault();
+                    if (document.getElementById('view-results').classList.contains('hidden') === false) {
+                        loadResults();
+                        showToast('Ergebnisse aktualisiert', 'success');
+                    }
+                    break;
+                case 'escape':
+                    e.preventDefault();
+                    const modal = document.getElementById('startModal');
+                    if (!modal.classList.contains('hidden')) {
+                        toggleStartModal();
+                    }
+                    break;
+                case 'h':
+                    e.preventDefault();
+                    showView('home');
+                    break;
+                case 'b':
+                    e.preventDefault();
+                    showView('benchmark');
+                    break;
+            }
+        });
+
+        // ===== Dashboard Stats Loading =====
+        async function loadDashboardStats() {
+            try {
+                const response = await fetch('/api/dashboard/stats');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    console.error('Failed to load dashboard stats:', data.error);
+                    return;
+                }
+                
+                // Cache Stats
+                document.getElementById('home-cache-count').textContent = data.cache_stats.total_models || 0;
+                document.getElementById('home-db-size').textContent = `${data.cache_stats.db_size_mb} MB`;
+                
+                // Performance Stats
+                if (data.perf_stats.avg_speed) {
+                    document.getElementById('home-avg-speed').textContent = `${data.perf_stats.avg_speed} tok/s`;
+                    document.getElementById('home-max-speed').textContent = `${data.perf_stats.max_speed} tok/s`;
+                } else {
+                    document.getElementById('home-avg-speed').textContent = 'Keine Daten';
+                    document.getElementById('home-max-speed').textContent = 'Keine Daten';
+                }
+                
+                // System Info
+                document.getElementById('home-os').textContent = data.system_info.os || '--';
+                document.getElementById('home-python').textContent = data.system_info.python_version || '--';
+                document.getElementById('home-gpu').textContent = data.gpu_info ? data.gpu_info.type : 'Nicht erkannt';
+                
+                // Top Models Table
+                const topModelsBody = document.getElementById('home-top-models');
+                if (data.top_models && data.top_models.length > 0) {
+                    topModelsBody.innerHTML = data.top_models.map(model => `
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 0.75rem;">${model.model_name}</td>
+                            <td style="padding: 0.75rem;">${model.quantization}</td>
+                            <td style="padding: 0.75rem; text-align: right; font-weight: 600; color: var(--success);">${model.speed}</td>
+                            <td style="padding: 0.75rem; text-align: right;">${model.vram_mb}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    topModelsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Keine Daten verfügbar</td></tr>';
+                }
+                
+                // Recent Runs Table
+                const recentRunsBody = document.getElementById('home-recent-runs');
+                if (data.recent_runs && data.recent_runs.length > 0) {
+                    recentRunsBody.innerHTML = data.recent_runs.map(run => `
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 0.75rem;">${run.model_name}</td>
+                            <td style="padding: 0.75rem;">${run.quantization}</td>
+                            <td style="padding: 0.75rem; text-align: right; font-weight: 600;">${run.speed}</td>
+                            <td style="padding: 0.75rem;">${new Date(run.timestamp).toLocaleString('de-DE')}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    recentRunsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Keine Daten verfügbar</td></tr>';
+                }
+                
+            } catch (error) {
+                console.error('Error loading dashboard stats:', error);
+                showToast('Fehler beim Laden der Dashboard-Statistiken', 'error');
+            }
+        }
 
         // ===== Back to Top Button =====
         function scrollToTop() {
@@ -751,14 +1202,14 @@
                 
                 const data = await response.json();
                 if (data.success) {
-                    addAlert(data.message, 'success');
+                    showToast('Benchmark wurde gestartet', 'success');
                     toggleStartModal();
                     updateStatus();
                 } else {
-                    addAlert(data.message, 'error');
+                    showToast(data.message || 'Fehler beim Starten', 'error');
                 }
             } catch (error) {
-                addAlert(`Fehler: ${error.message}`, 'error');
+                showToast(`Fehler: ${error.message}`, 'error');
             }
         }
 
@@ -766,10 +1217,10 @@
             try {
                 const response = await fetch('/api/benchmark/pause', { method: 'POST' });
                 const data = await response.json();
-                addAlert(data.message, data.success ? 'success' : 'error');
+                showToast(data.message || 'Pausiert', data.success ? 'success' : 'error');
                 updateStatus();
             } catch (error) {
-                addAlert(`Fehler: ${error.message}`, 'error');
+                showToast(`Fehler: ${error.message}`, 'error');
             }
         }
 
@@ -777,10 +1228,10 @@
             try {
                 const response = await fetch('/api/benchmark/resume', { method: 'POST' });
                 const data = await response.json();
-                addAlert(data.message, data.success ? 'success' : 'error');
+                showToast(data.message || 'Fortgesetzt', data.success ? 'success' : 'error');
                 updateStatus();
             } catch (error) {
-                addAlert(`Fehler: ${error.message}`, 'error');
+                showToast(`Fehler: ${error.message}`, 'error');
             }
         }
 
@@ -790,11 +1241,11 @@
             try {
                 const response = await fetch('/api/benchmark/stop', { method: 'POST' });
                 const data = await response.json();
-                addAlert(data.message, data.success ? 'success' : 'error');
+                showToast(data.message || 'Gestoppt', data.success ? 'success' : 'error');
                 updateStatus();
                 startTime = null;
             } catch (error) {
-                addAlert(`Fehler: ${error.message}`, 'error');
+                showToast(`Fehler: ${error.message}`, 'error');
             }
         }
 
@@ -826,10 +1277,14 @@
                 const data = await response.json();
                 if (data.success && data.stats) {
                     const stats = data.stats;
-                    document.getElementById('cache-stats-text').innerHTML = 
+                    const statsText = 
                         `📦 ${stats.total_entries} Einträge | ⚡ Ø ${stats.avg_tokens_per_sec.toFixed(1)} tok/s | ` +
                         `🏆 Schnellste: ${stats.fastest_model} (${stats.fastest_speed.toFixed(1)} tok/s) | ` +
                         `💾 ${stats.db_size_mb.toFixed(2)} MB`;
+                    
+                    // Update both IDs (für Results-View)
+                    const elem = document.getElementById('cache-stats-text-results');
+                    if (elem) elem.innerHTML = statsText;
                 }
             } catch (error) {
                 console.error('Cache-Statistiken laden fehlgeschlagen:', error);
@@ -893,12 +1348,13 @@
             try {
                 const response = await fetch(`/api/cache/${encodeURIComponent(modelKey)}`, { method: 'DELETE' });
                 const data = await response.json();
-                addAlert(data.message, data.success ? 'success' : 'error');
+                showToast(data.message || 'Eintrag gelöscht', data.success ? 'success' : 'error');
                 if (data.success) {
                     await loadResults();
+                    await loadDashboardStats();
                 }
             } catch (error) {
-                addAlert(`Fehler: ${error.message}`, 'error');
+                showToast(`Fehler: ${error.message}`, 'error');
             }
         }
 
@@ -922,14 +1378,15 @@
                 const response = await fetch('/api/cache/clear', { method: 'POST' });
                 const data = await response.json();
                 if (data.success) {
-                    const backupMsg = data.backup_file ? `\n💾 Backup erstellt: ${data.backup_file}` : '';
-                    addAlert(`✅ Cache gelöscht: ${data.deleted_count} Einträge${backupMsg}`, 'success');
+                    const backupMsg = data.backup_file ? ` - Backup: ${data.backup_file}` : '';
+                    showToast(`Cache gelöscht: ${data.deleted_count} Einträge${backupMsg}`, 'success', 'Cache geleert', 6000);
                     await loadResults();
+                    await loadDashboardStats();
                 } else {
-                    addAlert(`❌ Fehler: ${data.message}`, 'error');
+                    showToast(data.message || 'Fehler beim Löschen', 'error');
                 }
             } catch (error) {
-                addAlert(`❌ Fehler: ${error.message}`, 'error');
+                showToast(`Fehler: ${error.message}`, 'error');
             }
         }
 

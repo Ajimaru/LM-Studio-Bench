@@ -442,14 +442,53 @@ Die folgenden Phasen wurden bereits vollständig implementiert:
 
 ### 🚀 Zukünftige Erweiterungen
 
-- [ ] Web-Dashboard - Erweiterte Features:
-  - [ ] Home/Dashboard-View mit Quick Stats
-  - [ ] Live Hardware-Monitoring Charts (GPU Temp/Power während Run)
-  - [ ] Historical Comparison + Line-Charts für Performance-Trends
-  - [ ] Advanced Filtering (Multi-Select, Date-Range Picker)
-  - [ ] Keyboard-Shortcuts (S=Start, Q=Stop)
-  - [ ] Toast-Notifications für Events
-  - [ ] Export Results Browser zu JSON/CSV/PDF
+- Phase 14: **Web-Dashboard - Erweiterte Features** ✅ (2026-01-05 - ABGESCHLOSSEN)
+  - **Phase 14.1: Home/Dashboard-View** ✅:
+    - Dedizierte Landing-Page mit Navigation (🏠 Home, ⚡ Benchmark, 📊 Results)
+    - Dashboard-Statistiken: Cache-Count, DB-Größe, Durchschnitts/Max-Speed
+    - System-Info-Widget: OS, Python-Version, GPU-Typ
+    - Top 5 schnellste Modelle Tabelle
+    - Letzte 10 Benchmark-Runs mit Zeitstempeln
+    - Quick-Action-Cards für Navigation zu Benchmark/Results
+    - GET /api/dashboard/stats Endpoint für aggregierte Daten
+    - View-Switching-System mit aktiver Navigation-Highlights
+  
+  - **Phase 14.2: Toast-Notifications** ✅:
+    - Non-Blocking Notification-System (Success/Warning/Error/Info)
+    - Auto-Dismiss mit konfigurierbarem Timeout (4s standard)
+    - Toast-Stack-Management für mehrere gleichzeitige Notifications
+    - Slide-In/Slide-Out Animationen
+    - Dark-Mode kompatibel
+    - Integration: Start/Stop Benchmark, Cache gelöscht, Fehler-Handling
+    - Ersetzt alte alert()-Dialoge mit modernem UI
+  
+  - **Phase 14.3: Keyboard-Shortcuts** ✅:
+    - `S` - Start Benchmark (öffnet Modal oder startet direkt)
+    - `Q` - Stop Benchmark (mit Bestätigung)
+    - `R` - Refresh Results (nur in Results-View)
+    - `H` - Home-View
+    - `B` - Benchmark-View
+    - `Esc` - Close Modal
+    - Visual Hints in Button-Labels (z.B. "Start (S)")
+    - Prevention bei aktiven Input-Feldern
+    - Tooltips für Shortcuts
+  
+  - **Technische Details**:
+    - CSS-Animations: slideIn/slideOut für Toasts
+    - Navigation: Active-State mit .active CSS-Klasse
+    - View-Switching: .hidden CSS-Toggle für View-Container
+    - Toast-Container: Fixed Position top-right mit Z-Index 9999
+    - Keyboard-Event-Listener: Document-Level mit Input-Prevention
+    - Dashboard-Stats-Loading: Auto-Load bei Home-View-Aktivierung
+
+- [ ] Web-Dashboard - Phase 14.5: Live Hardware-Monitoring Charts:
+  - [ ] Plotly.js Line-Charts für GPU-Monitoring
+  - [ ] Echtzeit-Daten: Temperature, Power Draw, VRAM Usage
+  - [ ] Verlaufs-Anzeige während Benchmark-Run
+  - [ ] Requires: Erweiterung von WebSocket-Messages
+- [ ] Web-Dashboard - Phase 14.6: Historical Comparison UI
+- [ ] Web-Dashboard - Phase 14.7: Advanced Filtering
+- [ ] Web-Dashboard - Phase 14.4: Export Results Browser
 - [ ] Multi-Prompt Benchmarks (mehrere Test-Prompts parallel)
 - [ ] Slack/Email Notifications bei Abschluss
 - [ ] Model-Warmup-Optimierung (Adaptive Warmup-Runs)

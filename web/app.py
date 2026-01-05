@@ -574,6 +574,91 @@ async def get_output() -> dict:
     }
 
 
+@app.get("/api/dashboard/stats")
+async def get_dashboard_stats() -> dict:
+    """Dashboard-Statistiken für Home-View"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+    
+    try:
+        import platform
+        import sqlite3
+        
+        cache = BenchmarkCache(DATABASE_FILE)
+        results = cache.get_all_results()
+        
+        # System-Info
+        system_info = {
+            "os": platform.system(),
+            "python_version": platform.python_version(),
+            "cpu": platform.processor() or platform.machine()
+        }
+        
+        # GPU-Info aus erstem Result (wenn verfügbar)
+        gpu_info = None
+        if results:
+            gpu_info = {
+                "type": results[0].gpu_type,
+                "vram_total_gb": None  # Kann später aus GPU-Query ermittelt werden
+            }
+        
+        # Cache-Statistiken
+        cache_stats = {
+            "total_models": len(results),
+            "total_runs": len(results),
+            "db_size_mb": round(DATABASE_FILE.stat().st_size / (1024 * 1024), 2) if DATABASE_FILE.exists() else 0
+        }
+        
+        # Performance-Statistiken
+        perf_stats = {}
+        if results:
+            speeds = [r.avg_tokens_per_sec for r in results]
+            perf_stats = {
+                "avg_speed": round(sum(speeds) / len(speeds), 2),
+                "max_speed": round(max(speeds), 2),
+                "min_speed": round(min(speeds), 2)
+            }
+        
+        # Top 5 Schnellste Modelle
+        top_models = []
+        if results:
+            sorted_results = sorted(results, key=lambda r: r.avg_tokens_per_sec, reverse=True)[:5]
+            for r in sorted_results:
+                top_models.append({
+                    "model_name": r.model_name,
+                    "quantization": r.quantization,
+                    "speed": round(r.avg_tokens_per_sec, 2),
+                    "vram_mb": r.vram_mb,
+                    "params_size": r.params_size
+                })
+        
+        # Letzte 10 Benchmark-Runs (mit Timestamp)
+        recent_runs = []
+        if results:
+            sorted_by_time = sorted(results, key=lambda r: r.timestamp, reverse=True)[:10]
+            for r in sorted_by_time:
+                recent_runs.append({
+                    "model_name": r.model_name,
+                    "quantization": r.quantization,
+                    "speed": round(r.avg_tokens_per_sec, 2),
+                    "timestamp": r.timestamp,
+                    "gpu_offload": r.gpu_offload
+                })
+        
+        return {
+            "success": True,
+            "system_info": system_info,
+            "gpu_info": gpu_info,
+            "cache_stats": cache_stats,
+            "perf_stats": perf_stats,
+            "top_models": top_models,
+            "recent_runs": recent_runs
+        }
+    except Exception as e:
+        logger.error(f"❌ Fehler beim Laden der Dashboard-Stats: {e}")
+        return {"success": False, "error": str(e)}
+
+
 # ============================================================================
 # WebSocket - Live Streaming
 # ============================================================================
