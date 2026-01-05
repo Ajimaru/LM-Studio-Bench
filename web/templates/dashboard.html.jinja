@@ -1519,7 +1519,7 @@
             });
 
             try {
-                tbody.innerHTML = sorted.map(row => {
+                const rowsHtml = sorted.map(row => {
                     const tok = Number(row.avg_tokens_per_sec) || 0;
                     const vram = Number(row.vram_mb) || 0;
                     const offload = Number(row.gpu_offload) || 0;
@@ -1528,7 +1528,7 @@
                     const gpu = row.gpu_type || 'n/a';
                     const key = row.model_key || `${model}@${quant}`;
                     return `
-                <tr style="border-bottom: 1px solid rgba(0,0,0,0.1);">
+                <tr style="border-bottom: 1px solid rgba(255,255,255,0.08);">
                     <td style="padding: 0.75rem;">${model}</td>
                     <td style="padding: 0.75rem;">${quant}</td>
                     <td style="padding: 0.75rem; text-align: right; font-weight: 600;">${tok.toFixed(2)}</td>
@@ -1540,6 +1540,8 @@
                     </td>
                 </tr>`;
                 }).join('');
+                tbody.innerHTML = rowsHtml;
+                console.log('renderResults: rows=', sorted.length, 'html-length=', rowsHtml.length, 'first=', sorted[0]);
             } catch (err) {
                 console.error('renderResults Fehler:', err, sorted[0]);
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">Fehler beim Rendern. Siehe Konsole.</td></tr>';
