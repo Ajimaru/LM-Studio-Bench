@@ -1027,6 +1027,9 @@
             
             statusCheckInterval = setInterval(updateStatus, 2000);
             uptimeInterval = setInterval(updateUptime, 1000);
+
+            // Stelle sicher, dass eine View sichtbar ist (Home als Default)
+            showView('home');
         });
 
         // ===== View Switching =====
