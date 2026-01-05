@@ -752,13 +752,17 @@
 
         async function loadResults() {
             try {
+                console.log('📥 Lade Results von /api/results...');
                 const response = await fetch('/api/results');
                 const data = await response.json();
+                console.log('📊 API Response:', data);
                 resultsData = data.results || [];
+                console.log(`✅ ${resultsData.length} Ergebnisse geladen:`, resultsData);
                 renderResults();
                 updateCacheStats();
                 addAlert(`✅ ${resultsData.length} Ergebnisse geladen`, 'success');
             } catch (error) {
+                console.error('❌ Fehler beim Laden:', error);
                 addAlert(`Fehler beim Laden: ${error.message}`, 'error');
             }
         }
