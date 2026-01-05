@@ -478,12 +478,26 @@ async def delete_cache_entry(model_key: str) -> dict:
 
 @app.post("/api/cache/clear")
 async def clear_cache() -> dict:
-    """Leert den gesamten Cache"""
+    """Leert den gesamten Cache mit Backup"""
     if not BenchmarkCache:
         return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
     
     try:
         import sqlite3
+        import shutil
+        
+        # Erstelle Backup vor dem Löschen
+        backup_dir = RESULTS_DIR / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup_file = backup_dir / f"benchmark_cache_{datetime.now().strftime('%Y%m%d_%H%M%S')}_backup.db"
+        
+        try:
+            shutil.copy2(DATABASE_FILE, backup_file)
+            logger.info(f"💾 Backup erstellt: {backup_file}")
+        except Exception as backup_error:
+            logger.warning(f"⚠️ Backup-Fehler (Cache wird trotzdem geleert): {backup_error}")
+            backup_file = None
+        
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         
@@ -497,10 +511,13 @@ async def clear_cache() -> dict:
         conn.close()
         
         logger.warning(f"⚠️ Cache komplett geleert: {count_before} Einträge gelöscht")
+        logger.warning(f"💾 Backup verfügbar unter: {backup_file}")
+        
         return {
             "success": True,
             "message": f"✅ Cache geleert: {count_before} Einträge gelöscht",
-            "deleted_count": count_before
+            "deleted_count": count_before,
+            "backup_file": str(backup_file) if backup_file else None
         }
     except Exception as e:
         logger.error(f"❌ Fehler beim Leeren des Cache: {e}")

@@ -850,17 +850,35 @@
         }
 
         async function clearCache() {
-            if (!confirm('⚠️ WARNUNG: Alle Cache-Einträge werden gelöscht! Fortfahren?')) return;
+            // Doppelte Bestätigung mit Detailinformation
+            const confirmClear = confirm(
+                '⚠️ WARNUNG: ALLE Benchmark-Ergebnisse werden gelöscht!\n\n' +
+                'Diese Aktion:\n' +
+                '• Löscht alle gecachten Ergebnisse\n' +
+                '• Kann NICHT rückgängig gemacht werden\n' +
+                '• Ein automatisches Backup wird erstellt\n\n' +
+                'Sicher fortfahren?'
+            );
+            if (!confirmClear) return;
+            
+            // Zweite Bestätigung
+            const finalConfirm = confirm('✋ LETZTE CHANCE!\n\nBin ich mir wirklich sicher? (Ja = Cache wird gelöscht)');
+            if (!finalConfirm) return;
             
             try {
                 const response = await fetch('/api/cache/clear', { method: 'POST' });
                 const data = await response.json();
-                addAlert(data.message, data.success ? 'success' : 'error');
                 if (data.success) {
+                    const backupMsg = data.backup_file ? `\n💾 Backup erstellt: ${data.backup_file}` : '';
+                    addAlert(`✅ Cache gelöscht: ${data.deleted_count} Einträge${backupMsg}`, 'success');
                     await loadResults();
+                } else {
+                    addAlert(`❌ Fehler: ${data.message}`, 'error');
                 }
             } catch (error) {
-                addAlert(`Fehler: ${error.message}`, 'error');
+                addAlert(`❌ Fehler: ${error.message}`, 'error');
+            }
+        }
             }
         }
 
