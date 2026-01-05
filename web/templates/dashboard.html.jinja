@@ -813,9 +813,9 @@
                 <tr style="border-bottom: 1px solid rgba(0,0,0,0.1);">
                     <td style="padding: 0.75rem;">${row.model_name}</td>
                     <td style="padding: 0.75rem;">${row.quantization}</td>
-                    <td style="padding: 0.75rem; text-align: right; font-weight: 600;">${row.avg_tokens_per_sec.toFixed(2)}</td>
-                    <td style="padding: 0.75rem; text-align: right;">${row.vram_mb.toFixed(0)}</td>
-                    <td style="padding: 0.75rem; text-align: right;">${(row.gpu_offload * 100).toFixed(0)}%</td>
+                    <td style="padding: 0.75rem; text-align: right; font-weight: 600;">${Number(row.avg_tokens_per_sec).toFixed(2)}</td>
+                    <td style="padding: 0.75rem; text-align: right;">${Number(row.vram_mb).toFixed(0)}</td>
+                    <td style="padding: 0.75rem; text-align: right;">${(Number(row.gpu_offload) * 100).toFixed(0)}%</td>
                     <td style="padding: 0.75rem;">${row.gpu_type}</td>
                     <td style="padding: 0.75rem; text-align: center;">
                         <button onclick="deleteResult('${row.model_key}')" class="btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">🗑️</button>
