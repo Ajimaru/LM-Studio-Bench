@@ -14,6 +14,9 @@ import signal
 import socket
 import subprocess
 import sys
+import webbrowser
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -681,7 +684,20 @@ if __name__ == "__main__":
         port = find_free_port()
         logger.info(f"🎲 Nutze automatisch gefundenen freien Port: {port}")
     
-    logger.info(f"🚀 Dashboard verfügbar auf http://localhost:{port}")
-    logger.info(f"📊 API Docs: http://localhost:{port}/docs")
+    dashboard_url = f"http://localhost:{port}"
+    logger.info(f"🚀 Dashboard verfügbar auf {dashboard_url}")
+    logger.info(f"📊 API Docs: {dashboard_url}/docs")
+    
+    # Öffne Browser in separatem Thread nach kurzer Verzögerung
+    def open_browser():
+        time.sleep(1.5)  # Warte bis Server bereit ist
+        try:
+            logger.info(f"🌐 Öffne Browser: {dashboard_url}")
+            webbrowser.open(dashboard_url)
+        except Exception as e:
+            logger.warning(f"⚠️ Konnte Browser nicht öffnen: {e}")
+    
+    browser_thread = threading.Thread(target=open_browser, daemon=True)
+    browser_thread.start()
     
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
