@@ -591,11 +591,23 @@
 
             websocket.onerror = (error) => {
                 console.error('❌ WebSocket Fehler:', error);
-                addAlert('WebSocket Fehler', 'error');
+                addAlert('⚠️ WebSocket-Verbindung unterbrochen (versuche neu zu verbinden...)', 'warning');
+                // Versuche Reconnect nach 3 Sekunden
+                setTimeout(() => {
+                    console.log('🔄 Versuche WebSocket Reconnect...');
+                    setupWebSocket();
+                }, 3000);
             };
 
             websocket.onclose = () => {
-                console.log('WebSocket getrennt');
+                console.log('❌ WebSocket getrennt');
+                // Wenn Benchmark noch läuft, versuche automatisch zu reconnecten
+                updateStatus().then(() => {
+                    if (document.getElementById('statusBadge').classList.contains('status-running')) {
+                        console.log('🔄 Benchmark läuft noch - versuche WebSocket Reconnect...');
+                        setTimeout(() => setupWebSocket(), 3000);
+                    }
+                });
             };
         }
 

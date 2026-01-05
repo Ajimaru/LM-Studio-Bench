@@ -150,16 +150,19 @@ class BenchmarkManager:
             return False
 
     async def read_output(self) -> str:
-        """Liest verfügbaren Output aus Prozess"""
+        """Liest verfügbaren Output aus Prozess mit Timeout"""
         if not self.process:
             return ""
 
         try:
-            # Nicht-blockierendes Lesen
+            # Nicht-blockierendes Lesen mit Timeout
             loop = asyncio.get_event_loop()
-            output = await loop.run_in_executor(
-                None,
-                self.process.stdout.readline
+            output = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    self.process.stdout.readline
+                ),
+                timeout=2.0  # 2 Sekunden Timeout
             )
             
             if output:
@@ -168,6 +171,11 @@ class BenchmarkManager:
             elif not self.is_running():
                 self.status = "completed"
             
+            return ""
+        except asyncio.TimeoutError:
+            # Timeout ist normal - bedeutet kein Output verfügbar
+            if not self.is_running():
+                self.status = "completed"
             return ""
         except Exception as e:
             logger.error(f"❌ Fehler beim Lesen des Outputs: {e}")
@@ -308,6 +316,8 @@ async def websocket_benchmark(websocket: WebSocket):
     await websocket.accept()
     manager.connected_clients.add(websocket)
     
+    heartbeat_count = 0
+    
     try:
         logger.info(f"✅ WebSocket Client verbunden (Total: {len(manager.connected_clients)})")
         
@@ -323,41 +333,60 @@ async def websocket_benchmark(websocket: WebSocket):
             # Prüfe auf Client-Nachrichten (mit kurzen Timeout)
             try:
                 # Client kann commands schicken (zukünftige Erweiterung)
-                data = await asyncio.wait_for(websocket.receive_json(), timeout=1.0)
+                data = await asyncio.wait_for(websocket.receive_json(), timeout=0.5)
                 logger.debug(f"📨 Client message: {data}")
             except asyncio.TimeoutError:
                 pass
             except WebSocketDisconnect:
+                logger.info("⚠️ WebSocket Client hat Verbindung getrennt")
+                break
+            except Exception as e:
+                logger.error(f"❌ WebSocket Receive Error: {e}")
                 break
             
             # Lese Output wenn Benchmark läuft
             if manager.is_running():
                 output = await manager.read_output()
                 if output:
-                    await websocket.send_json({
-                        "type": "output",
-                        "line": output,
-                        "status": manager.status
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "output",
+                            "line": output,
+                            "status": manager.status
+                        })
+                        heartbeat_count = 0  # Reset heartbeat counter
+                    except Exception as e:
+                        logger.error(f"❌ WebSocket Send Error: {e}")
+                        break
             else:
-                # Kurze Pause wenn nichts läuft
-                await asyncio.sleep(0.1)
-                
-                # Sende Status-Update
-                await websocket.send_json({
-                    "type": "status",
-                    "status": manager.status,
-                    "running": manager.is_running()
-                })
+                # Keep-Alive Heartbeat: Sende Status periodisch
+                heartbeat_count += 1
+                if heartbeat_count % 2 == 0:  # Alle 1 Sekunde (0.5s * 2)
+                    try:
+                        await websocket.send_json({
+                            "type": "status",
+                            "status": manager.status,
+                            "running": manager.is_running()
+                        })
+                    except Exception as e:
+                        logger.error(f"❌ WebSocket Heartbeat Error: {e}")
+                        break
                 
                 # Beende Streaming wenn Benchmark komplett
                 if manager.status == "completed":
-                    await websocket.send_json({
-                        "type": "completed",
-                        "message": "✅ Benchmark abgeschlossen"
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "completed",
+                            "message": "✅ Benchmark abgeschlossen"
+                        })
+                    except Exception as e:
+                        logger.warning(f"⚠️ Konnte Completion-Message nicht senden: {e}")
                     break
+                
+                await asyncio.sleep(0.5)
     
+    except WebSocketDisconnect:
+        logger.info("ℹ️ WebSocket normaler Disconnect")
     except Exception as e:
         logger.error(f"❌ WebSocket Error: {e}")
     finally:
