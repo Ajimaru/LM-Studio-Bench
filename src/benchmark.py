@@ -3070,7 +3070,7 @@ Beispiele:
     parser.add_argument(
         '--retest',
         action='store_true',
-        help='Ignoriere Cache und teste alle Modelle neu'
+        help='Ignoriere Cache und teste alle Modelle neu (überschreibt alte Ergebnisse in der Datenbank)'
     )
     
     parser.add_argument(
@@ -3082,7 +3082,7 @@ Beispiele:
     parser.add_argument(
         '--list-cache',
         action='store_true',
-        help='Zeige alle gecachten Modelle und beende'
+        help='Zeige alle gecachten Modelle und beendet'
     )
     
     parser.add_argument(
@@ -3090,7 +3090,7 @@ Beispiele:
         type=str,
         default=None,
         metavar='FILE',
-        help='Exportiere Cache-Inhalte als JSON (z.B. "cache_export.json") und beende'
+        help='Exportiere Cache-Inhalte als JSON (z.B. "cache_export.json") und beendet'
     )
     
     # Hardware-Profiling
