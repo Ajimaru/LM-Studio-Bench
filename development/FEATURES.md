@@ -137,24 +137,44 @@ Alle Core Features (Phase 1-13) sind vollständig implementiert! 🎉
   - Report Content Filtering
 
 ### 🚀 Optionale Zukünftige Erweiterungen
-    - Vision-Modelle (Multimodal) mit Top 3
-    - Tool-Calling Modelle mit Top 3
-    - Gruppierung nach Architektur (Top 5 pro Architektur)
-    - Farbcodierte Tabellen für verschiedene Kategorien
-  - **Plotly-Charts im PDF** (optional mit kaleido):
-    - Bar-Chart: Top 10 schnellste Modelle
-    - Scatter-Plot: Modellgröße vs Performance
-    - Effizienz-Analyse Chart
 
-- Phase 8: **HTML-Report-Erweiterungen** (2026-01-04)
-  - **Best-Practice-Empfehlungen** (identisch zu PDF)
-  - **Vision-Modelle-Sektion** mit dedizierter Tabelle und Top 3
-  - **Tool-Calling-Modelle-Sektion** mit dedizierter Tabelle und Top 3
-  - **Architektur-Gruppierung** mit Top 5 pro Architektur
-  - Farbcodierte Tabellen (Blau=Vision, Orange=Tools, Lila=Architektur)
-  - Responsive Design mit Dark Mode Support
+- Web-Dashboard - Erweiterte Features:
+  - Home/Dashboard-View mit Quick Stats
+  - Live Hardware-Monitoring Charts (GPU Temp/Power während Run)
+  - Historical Comparison + Line-Charts für Performance-Trends
+  - Advanced Filtering (Multi-Select, Date-Range Picker)
+  - Keyboard-Shortcuts (S=Start, Q=Stop)
+  - Toast-Notifications für Events
+  - Export Results Browser zu JSON/CSV/PDF
+- Multi-Prompt Benchmarks (mehrere Test-Prompts parallel)
+- Slack/Email Notifications bei Abschluss
+- Model-Warmup-Optimierung (Adaptive Warmup-Runs)
+- A/B Testing Framework (Vergleich verschiedener Inference-Parameter)
 
-- Phase 9: **Hardware-Profiling & Report-Parität** (2026-01-04)
+---
+
+## 📝 Detaillierte Phase-Dokumentation
+
+Die folgenden Phasen wurden bereits vollständig implementiert:
+
+### Phase 7: PDF-Report-Erweiterungen
+
+- **Separate PDF-Seiten** für bessere Organisation:
+  - Bar-Chart: Top 10 schnellste Modelle
+  - Scatter-Plot: Modellgröße vs Performance
+  - Effizienz-Analyse Chart
+
+### Phase 8: HTML-Report-Erweiterungen
+
+- **Best-Practice-Empfehlungen** (identisch zu PDF)
+- **Vision-Modelle-Sektion** mit dedizierter Tabelle und Top 3
+- **Tool-Calling-Modelle-Sektion** mit dedizierter Tabelle und Top 3
+- **Architektur-Gruppierung** mit Top 5 pro Architektur
+- Farbcodierte Tabellen (Blau=Vision, Orange=Tools, Lila=Architektur)
+- Responsive Design mit Dark Mode Support
+
+### Phase 9: Hardware-Profiling & Report-Parität
+
   - **HardwareMonitor-Klasse** mit Background-Threading:
     - GPU-Temperatur-Monitoring (nvidia-smi, rocm-smi, intel_gpu_top)
     - Power-Draw-Monitoring (Stromverbrauch in Watt)
@@ -327,7 +347,7 @@ Alle Core Features (Phase 1-13) sind vollständig implementiert! 🎉
       - Mobile/Tablet/Desktop-optimiert
       - Flexbox/Grid-Layout
     - **Auto-Browser-Open**: ✅
-      - Öffnet automatisch http://localhost:8080 beim Start
+      - Öffnet automatisch <http://localhost:8080> beim Start
       - Wartet auf Server-Bereitschaft (max 5s)
   
   - **Phase 13.6: Report Content Filtering** ✅ (2026-01-05 Completed):
@@ -420,7 +440,7 @@ Alle Core Features (Phase 1-13) sind vollständig implementiert! 🎉
     - Toast-Notifications für Events
     - Export Results Browser zu JSON/CSV/PDF
 
-### 🚀 Weitere Features
+### 🚀 Zukünftige Erweiterungen
 
 - [ ] Web-Dashboard - Erweiterte Features:
   - [ ] Home/Dashboard-View mit Quick Stats
