@@ -2081,12 +2081,98 @@
     <div class="toast-container" id="toast-container"></div>
 
     <script>
+        const DEFAULT_CONFIG = {{ config | tojson }};
+
         // ===== Globale Variablen =====
         let websocket = null;
         let statusCheckInterval = null;
         let lmstudioHealthInterval = null;
         let uptimeInterval = null;
         let startTime = null;
+
+        function applyConfigDefaults() {
+            const cfg = DEFAULT_CONFIG || {};
+            const loadCfg = cfg.load || {};
+            const infCfg = cfg.inference || {};
+
+            const setValue = (id, value) => {
+                if (value === null || value === undefined) return;
+                const el = document.getElementById(id);
+                if (el) el.value = value;
+            };
+
+            const setChecked = (id, value) => {
+                if (value === null || value === undefined) return;
+                const el = document.getElementById(id);
+                if (el) el.checked = Boolean(value);
+            };
+
+            // Benchmark Start defaults
+            setValue('paramRuns', cfg.num_runs);
+            setValue('paramContext', cfg.context_length);
+            setValue('paramPrompt', cfg.prompt);
+
+            setValue('paramNGpuLayers', loadCfg.n_gpu_layers);
+            setValue('paramNBatch', loadCfg.n_batch);
+            setValue('paramNThreads', loadCfg.n_threads);
+            setChecked('paramFlashAttention', loadCfg.flash_attention);
+            setValue('paramRopeFreqBase', loadCfg.rope_freq_base);
+            setValue('paramRopeFreqScale', loadCfg.rope_freq_scale);
+            setChecked('paramUseMmap', loadCfg.use_mmap);
+            setChecked('paramUseMlock', loadCfg.use_mlock);
+
+            if (loadCfg.kv_cache_quant) {
+                const kv = document.getElementById('paramKvCacheQuant');
+                if (kv) kv.value = loadCfg.kv_cache_quant;
+            }
+
+            setValue('paramTemperature', infCfg.temperature);
+            setValue('paramTopK', infCfg.top_k_sampling);
+            setValue('paramTopP', infCfg.top_p_sampling);
+            setValue('paramMinP', infCfg.min_p_sampling);
+            setValue('paramRepeatPenalty', infCfg.repeat_penalty);
+            setValue('paramMaxTokens', infCfg.max_tokens);
+
+            // A/B Baseline defaults
+            setValue('ab-baseline-temp', infCfg.temperature);
+            setValue('ab-baseline-topk', infCfg.top_k_sampling);
+            setValue('ab-baseline-topp', infCfg.top_p_sampling);
+            setValue('ab-baseline-minp', infCfg.min_p_sampling);
+            setValue('ab-baseline-penalty', infCfg.repeat_penalty);
+            setValue('ab-baseline-maxtokens', infCfg.max_tokens);
+            setValue('ab-baseline-gpu-layers', loadCfg.n_gpu_layers);
+            setValue('ab-baseline-batch', loadCfg.n_batch);
+            setChecked('ab-baseline-flash', loadCfg.flash_attention);
+            setValue('ab-baseline-threads', loadCfg.n_threads);
+            setValue('ab-baseline-rope-base', loadCfg.rope_freq_base);
+            setValue('ab-baseline-rope-scale', loadCfg.rope_freq_scale);
+            setChecked('ab-baseline-mmap', loadCfg.use_mmap);
+            setChecked('ab-baseline-mlock', loadCfg.use_mlock);
+            if (loadCfg.kv_cache_quant) {
+                const kvBaseline = document.getElementById('ab-baseline-kv-quant');
+                if (kvBaseline) kvBaseline.value = loadCfg.kv_cache_quant;
+            }
+
+            // A/B Test defaults
+            setValue('ab-test-temp', infCfg.temperature);
+            setValue('ab-test-topk', infCfg.top_k_sampling);
+            setValue('ab-test-topp', infCfg.top_p_sampling);
+            setValue('ab-test-minp', infCfg.min_p_sampling);
+            setValue('ab-test-penalty', infCfg.repeat_penalty);
+            setValue('ab-test-maxtokens', infCfg.max_tokens);
+            setValue('ab-test-gpu-layers', loadCfg.n_gpu_layers);
+            setValue('ab-test-batch', loadCfg.n_batch);
+            setChecked('ab-test-flash', loadCfg.flash_attention);
+            setValue('ab-test-threads', loadCfg.n_threads);
+            setValue('ab-test-rope-base', loadCfg.rope_freq_base);
+            setValue('ab-test-rope-scale', loadCfg.rope_freq_scale);
+            setChecked('ab-test-mmap', loadCfg.use_mmap);
+            setChecked('ab-test-mlock', loadCfg.use_mlock);
+            if (loadCfg.kv_cache_quant) {
+                const kvTest = document.getElementById('ab-test-kv-quant');
+                if (kvTest) kvTest.value = loadCfg.kv_cache_quant;
+            }
+        }
 
         // ===== Theme Switching =====
         function switchTheme(themeName) {
@@ -2112,7 +2198,11 @@
         }
 
         function restoreTheme() {
-            const savedTheme = localStorage.getItem('theme') || 'light';
+            let savedTheme = localStorage.getItem('theme');
+            if (!savedTheme) {
+                savedTheme = 'dark';
+                localStorage.setItem('theme', savedTheme);
+            }
             const selector = document.getElementById('theme-selector');
             if (selector) selector.value = savedTheme;
             switchTheme(savedTheme);
@@ -2155,6 +2245,7 @@
         // Results beim Laden initialisieren
         // WebSocket & Timers starten
         window.addEventListener('DOMContentLoaded', () => {
+            applyConfigDefaults();
             // Stelle Theme aus localStorage wieder her
             restoreTheme();
             

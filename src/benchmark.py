@@ -31,6 +31,8 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+
+from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
@@ -101,11 +103,15 @@ logging.getLogger("websockets").setLevel(logging.WARNING)
 
 
 # Konstanten
-STANDARD_PROMPT = "Erkläre maschinelles Lernen in 3 Sätzen"
-CONTEXT_LENGTH = 2048
+BASE_STANDARD_PROMPT = "Erkläre maschinelles Lernen in 3 Sätzen"
+BASE_CONTEXT_LENGTH = 2048
+BASE_NUM_MEASUREMENT_RUNS = 3
 GPU_OFFLOAD_LEVELS = [1.0, 0.7, 0.5, 0.3]  # Fallback falls keine intelligente Berechnung möglich
 NUM_WARMUP_RUNS = 1
-NUM_MEASUREMENT_RUNS = 3
+
+STANDARD_PROMPT = DEFAULT_CONFIG.get("prompt", BASE_STANDARD_PROMPT)
+CONTEXT_LENGTH = int(DEFAULT_CONFIG.get("context_length", BASE_CONTEXT_LENGTH))
+NUM_MEASUREMENT_RUNS = int(DEFAULT_CONFIG.get("num_runs", BASE_NUM_MEASUREMENT_RUNS))
 
 # GPU-Offload Optimierung
 VRAM_SAFETY_HEADROOM_GB = 1.0  # Reserve für System
@@ -116,13 +122,25 @@ METADATA_DATABASE_FILE = RESULTS_DIR / "model_metadata.db"
 
 # Optimierte Inference-Parameter für standardisierte Benchmarks
 # (Für konsistente, reproduzierbare Messungen)
-OPTIMIZED_INFERENCE_PARAMS = {
+BASE_OPTIMIZED_INFERENCE_PARAMS = {
     'temperature': 0.1,        # Niedrig für konsistente Ergebnisse (statt default 0.8)
     'top_k_sampling': 40,      # Sampling aus top 40 Tokens
     'top_p_sampling': 0.9,     # Nucleus sampling bei 90%
     'min_p_sampling': 0.05,    # Minimum probability threshold
     'repeat_penalty': 1.2,     # Leichte Strafe gegen Wiederholungen (default 1.1)
     'max_tokens': 256,         # Begrenzte Output-Länge für schnellere Messungen
+}
+
+BASE_LOAD_PARAMS = dict(BASE_DEFAULT_CONFIG.get('load', {}))
+
+OPTIMIZED_INFERENCE_PARAMS = {
+    **BASE_OPTIMIZED_INFERENCE_PARAMS,
+    **(DEFAULT_CONFIG.get('inference') or {})
+}
+
+DEFAULT_LOAD_PARAMS = {
+    **BASE_LOAD_PARAMS,
+    **(DEFAULT_CONFIG.get('load') or {})
 }
 
 
@@ -1595,7 +1613,7 @@ class LMStudioBenchmark:
             logger.debug("Python-Version nicht verfügbar")
         return None
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True, inference_overrides: Optional[Dict] = None, load_params: Optional[Dict] = None):
+    def __init__(self, num_runs: int = NUM_MEASUREMENT_RUNS, context_length: int = CONTEXT_LENGTH, prompt: str = STANDARD_PROMPT, model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True, inference_overrides: Optional[Dict] = None, load_params: Optional[Dict] = None):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
@@ -1614,19 +1632,11 @@ class LMStudioBenchmark:
         self._gtt_info = {}  # Speichert GTT-Informationen von AMD GPU
         
         # Load-Parameter mit Defaults (Performance-Tuning)
-        self.load_params = {
-            'n_gpu_layers': -1,        # -1 = auto (alle Layer auf GPU)
-            'n_batch': 512,            # Batch-Größe für Prompt-Verarbeitung
-            'n_threads': -1,           # -1 = auto (nutzt alle CPU-Kerne)
-            'flash_attention': True,   # Flash Attention aktivieren wenn verfügbar
-            'rope_freq_base': None,    # RoPE Frequenz-Basis (None = Model-Default)
-            'rope_freq_scale': None,   # RoPE Frequenz-Skalierung (None = Model-Default)
-            'use_mmap': True,          # Memory-Mapping aktivieren (schneller Load)
-            'use_mlock': False,        # Memory-Locking (verhindert Swap)
-            'kv_cache_quant': None,    # KV-Cache Quantisierung (None, 'q4_0', 'q8_0')
-        }
+        self.load_params = dict(DEFAULT_LOAD_PARAMS)
         if load_params:
-            self.load_params.update(load_params)
+            for key, value in load_params.items():
+                if value is not None:
+                    self.load_params[key] = value
         
         # Cache wird IMMER initialisiert (zum Speichern von Ergebnissen)
         # use_cache kontrolliert nur das LADEN von Cache-Hits
@@ -4197,26 +4207,26 @@ Beispiele:
     parser.add_argument(
         '--n-gpu-layers',
         type=int,
-        default=-1,
-        help='Anzahl GPU-Layers (-1=auto/alle, 0=nur CPU, >0=spezifische Anzahl, Standard: -1)'
+        default=DEFAULT_LOAD_PARAMS.get('n_gpu_layers', -1),
+        help=f"Anzahl GPU-Layers (-1=auto/alle, 0=nur CPU, >0=spezifische Anzahl, Standard: {DEFAULT_LOAD_PARAMS.get('n_gpu_layers', -1)})"
     )
     parser.add_argument(
         '--n-batch',
         type=int,
-        default=512,
-        help='Batch-Größe für Prompt-Verarbeitung (Standard: 512)'
+        default=DEFAULT_LOAD_PARAMS.get('n_batch', 512),
+        help=f"Batch-Größe für Prompt-Verarbeitung (Standard: {DEFAULT_LOAD_PARAMS.get('n_batch', 512)})"
     )
     parser.add_argument(
         '--n-threads',
         type=int,
-        default=-1,
-        help='Anzahl CPU-Threads (-1=auto/alle, Standard: -1)'
+        default=DEFAULT_LOAD_PARAMS.get('n_threads', -1),
+        help=f"Anzahl CPU-Threads (-1=auto/alle, Standard: {DEFAULT_LOAD_PARAMS.get('n_threads', -1)})"
     )
     parser.add_argument(
         '--flash-attention',
         action='store_true',
-        default=True,
-        help='Flash Attention aktivieren (schnellere Attention-Berechnung, Standard: aktiviert)'
+        default=DEFAULT_LOAD_PARAMS.get('flash_attention', True),
+        help=f"Flash Attention aktivieren (schnellere Attention-Berechnung, Standard: {'aktiviert' if DEFAULT_LOAD_PARAMS.get('flash_attention', True) else 'deaktiviert'})"
     )
     parser.add_argument(
         '--no-flash-attention',
@@ -4227,20 +4237,20 @@ Beispiele:
     parser.add_argument(
         '--rope-freq-base',
         type=float,
-        default=None,
+        default=DEFAULT_LOAD_PARAMS.get('rope_freq_base'),
         help='RoPE Frequenz-Basis (None=Model-Default, z.B. 10000.0)'
     )
     parser.add_argument(
         '--rope-freq-scale',
         type=float,
-        default=None,
+        default=DEFAULT_LOAD_PARAMS.get('rope_freq_scale'),
         help='RoPE Frequenz-Skalierung (None=Model-Default, z.B. 1.0)'
     )
     parser.add_argument(
         '--use-mmap',
         action='store_true',
-        default=True,
-        help='Memory-Mapping aktivieren (schnellerer Model-Load, Standard: aktiviert)'
+        default=DEFAULT_LOAD_PARAMS.get('use_mmap', True),
+        help=f"Memory-Mapping aktivieren (schnellerer Model-Load, Standard: {'aktiviert' if DEFAULT_LOAD_PARAMS.get('use_mmap', True) else 'deaktiviert'})"
     )
     parser.add_argument(
         '--no-mmap',
@@ -4251,14 +4261,14 @@ Beispiele:
     parser.add_argument(
         '--use-mlock',
         action='store_true',
-        default=False,
-        help='Memory-Locking aktivieren (verhindert Swapping, Standard: deaktiviert)'
+        default=DEFAULT_LOAD_PARAMS.get('use_mlock', False),
+        help=f"Memory-Locking aktivieren (verhindert Swapping, Standard: {'aktiviert' if DEFAULT_LOAD_PARAMS.get('use_mlock', False) else 'deaktiviert'})"
     )
     parser.add_argument(
         '--kv-cache-quant',
         type=str,
         choices=['f32', 'f16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1'],
-        default=None,
+        default=DEFAULT_LOAD_PARAMS.get('kv_cache_quant'),
         help='KV-Cache Quantisierung (reduziert VRAM, kann Performance beeinflussen, None=Model-Default)'
     )
     

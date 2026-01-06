@@ -91,12 +91,17 @@ SCRAPER_SCRIPT = PROJECT_ROOT / "tools" / "scrape_metadata.py"
 # Importiere BenchmarkCache aus benchmark.py
 import sys
 sys.path.insert(0, str(SRC_DIR))
+from config_loader import DEFAULT_CONFIG
 try:
     from benchmark import BenchmarkCache, BenchmarkResult  # type: ignore
 except ImportError as e:
     logger.error(f"❌ Konnte benchmark.py nicht importieren: {e}")
     BenchmarkCache = None  # type: ignore
     BenchmarkResult = None  # type: ignore
+
+CONFIG_DEFAULTS = DEFAULT_CONFIG
+LMSTUDIO_HOST = CONFIG_DEFAULTS.get("lmstudio", {}).get("host", "localhost")
+LMSTUDIO_PORTS = CONFIG_DEFAULTS.get("lmstudio", {}).get("ports", [1234, 1235])
 
 # Jinja2 Template Environment
 template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
@@ -479,6 +484,14 @@ class BenchmarkParams(BaseModel):
     # Hardware-Limits
     max_temp: Optional[float] = None
     max_power: Optional[float] = None
+
+    # Inference-Parameter (Sonderparameter)
+    temperature: Optional[float] = None
+    top_k_sampling: Optional[int] = None
+    top_p_sampling: Optional[float] = None
+    min_p_sampling: Optional[float] = None
+    repeat_penalty: Optional[float] = None
+    max_tokens: Optional[int] = None
     
     # Load-Config Parameter (Performance Tuning)
     n_gpu_layers: Optional[int] = -1
@@ -668,7 +681,7 @@ def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]
 async def root() -> HTMLResponse:
     """Hauptseite - Dashboard"""
     template = template_env.get_template("dashboard.html.jinja")
-    html = template.render()
+    html = template.render(config=CONFIG_DEFAULTS)
     return HTMLResponse(content=html)
 
 
@@ -691,15 +704,15 @@ async def get_status() -> dict:
 async def get_lmstudio_health() -> dict:
     """LM Studio Healthcheck - Live Status ohne Cache"""
     lmstudio_health = {"ok": False, "status": "offline"}
-    lmstudio_ports = [1234, 1235]
+    lmstudio_ports = LMSTUDIO_PORTS
     
     # 1. HTTP API Check
     for port in lmstudio_ports:
         try:
             with httpx.Client(timeout=1.5) as client:
-                resp = client.get(f"http://localhost:{port}/v1/models")
+                resp = client.get(f"http://{LMSTUDIO_HOST}:{port}/v1/models")
                 if resp.status_code == 200:
-                    return {"ok": True, "status": f"online (port {port})", "version": None}
+                    return {"ok": True, "status": f"online ({LMSTUDIO_HOST}:{port})", "version": None}
         except Exception:
             continue
     
@@ -776,6 +789,20 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
         args.extend(["--max-temp", str(params.max_temp)])
     if params.max_power:
         args.extend(["--max-power", str(params.max_power)])
+
+    # Inference-Parameter Overrides
+    if params.temperature is not None:
+        args.extend(["--temperature", str(params.temperature)])
+    if params.top_k_sampling is not None:
+        args.extend(["--top-k", str(params.top_k_sampling)])
+    if params.top_p_sampling is not None:
+        args.extend(["--top-p", str(params.top_p_sampling)])
+    if params.min_p_sampling is not None:
+        args.extend(["--min-p", str(params.min_p_sampling)])
+    if params.repeat_penalty is not None:
+        args.extend(["--repeat-penalty", str(params.repeat_penalty)])
+    if params.max_tokens is not None:
+        args.extend(["--max-tokens", str(params.max_tokens)])
     
     # Load-Config Parameter (Performance Tuning)
     if params.n_gpu_layers is not None:
@@ -2670,15 +2697,15 @@ async def get_dashboard_stats() -> dict:
         # Primär: HTTP GET auf LM Studio API (Port 1234 default)
         # Fallback: CLI `lms status` mit "Server: OFF" Erkennung
         lmstudio_health = {"ok": False, "status": "offline"}
-        lmstudio_ports = [1234, 1235]  # LM Studio Standard-Ports (NICHT 8080 - oft andere Services)
+        lmstudio_ports = LMSTUDIO_PORTS  # LM Studio Standard-Ports (NICHT 8080 - oft andere Services)
         
         # 1. HTTP API Check (schnellster und zuverlässigster Weg)
         for port in lmstudio_ports:
             try:
                 with httpx.Client(timeout=1.5) as client:
-                    resp = client.get(f"http://localhost:{port}/v1/models")
+                    resp = client.get(f"http://{LMSTUDIO_HOST}:{port}/v1/models")
                     if resp.status_code == 200:
-                        lmstudio_health = {"ok": True, "status": f"online (port {port})", "version": None}
+                        lmstudio_health = {"ok": True, "status": f"online ({LMSTUDIO_HOST}:{port})", "version": None}
                         break
             except Exception:
                 continue

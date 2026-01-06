@@ -1,0 +1,28 @@
+{
+  "prompt": "Is the sky blue?",
+  "context_length": 2048,
+  "num_runs": 3,
+  "lmstudio": {
+    "host": "localhost",
+    "ports": [1234, 1235]
+  },
+  "inference": {
+    "temperature": 0.1,
+    "top_k_sampling": 40,
+    "top_p_sampling": 0.9,
+    "min_p_sampling": 0.05,
+    "repeat_penalty": 1.2,
+    "max_tokens": 256
+  },
+  "load": {
+    "n_gpu_layers": -1,
+    "n_batch": 512,
+    "n_threads": -1,
+    "flash_attention": true,
+    "rope_freq_base": null,
+    "rope_freq_scale": null,
+    "use_mmap": true,
+    "use_mlock": false,
+    "kv_cache_quant": null
+  }
+}
