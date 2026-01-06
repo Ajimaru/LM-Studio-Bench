@@ -6,7 +6,10 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 
 - 🌐 **Web Dashboard**: Moderne FastAPI-basierte Web-UI mit Live-Streaming, Dark Mode und interaktivem Ergebnisse-Browser
 - ✅ **Automatische Modell-Discovery**: Findet alle lokal installierten Modelle und Quantisierungen
-- ✅ **GPU-Detection**: Erkennt NVIDIA, AMD und Intel GPUs automatisch
+- ✅ **GPU-Detection**: Detaillierte GPU-Erkennung für NVIDIA, AMD und Intel GPUs
+  - NVIDIA: GPU-Modell via `nvidia-smi --query-gpu=name`
+  - AMD: GPU-Serie via `lspci` Device-ID-Mapping, rocm-smi, oder gfx-Code
+  - iGPU-Extraktion aus CPU-String (z.B. "Radeon 890M")
 - ✅ **6 Live Hardware-Charts**: GPU Temp, Power, VRAM, GTT (AMD) + System CPU & RAM
 - ✅ **VRAM-Monitoring**: Misst VRAM-Nutzung während des Benchmarks
 - ✅ **GTT Support (AMD)**: Nutzt Shared System RAM zusätzlich zu VRAM (z.B. 2GB VRAM + 46GB GTT = 48GB)
@@ -14,6 +17,7 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **Hardware-Profiling**: Optionales Monitoring von GPU-Temperatur und Power-Draw (NVIDIA/AMD/Intel)
 - ✅ **Progressive GPU-Offload**: Versucht automatisch verschiedene GPU-Offload-Levels (1.0 → 0.7 → 0.5 → 0.3)
 - ✅ **Server-Management**: Startet LM Studio Server automatisch falls nötig
+- ✅ **Live Healthcheck**: Echtzeit-Überwachung des LM Studio Status (HTTP API + CLI Fallback, 5s Polling)
 - ✅ **Standardisierte Tests**: Verwendet denselben Prompt für alle Modelle
 - ✅ **Statistische Auswertung**: Warmup + mehrere Messungen für genaue Ergebnisse
 - ✅ **SQLite-Cache**: Automatisches Caching von Benchmark-Ergebnissen (überspringt bereits getestete Modelle)
@@ -29,7 +33,18 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **🎨 27 Themen**: Light, Dark, Ocean Blue, Deep Slate, Mint Green, Speed Red, Neon Purple, Solarized Dark/Light, Gruvbox, Dracula, Nord, Monokai, Paper, Terminal Green, OLED, Forest, Sunset, Cyberpunk, Pastel, Sepia, 80er, 90er, Hacker/Matrix, Hardware
 - ✅ **📊 Live Hardware Monitoring**: 6 interaktive Charts (GPU Temp, Power, VRAM, GTT, CPU, System-RAM) mit Statistiken
 - ✅ **📥 Export-Buttons**: Schneller Zugriff zu neuesten HTML/PDF/JSON/CSV Benchmark-Ergebnissen
-- ✅ **🏠 Dashboard Home**: System-Info, Top 5 schnellste Modelle, letzte 10 Benchmark-Läufe
+- ✅ **🏠 Dashboard Home**: 
+  - System-Info (OS, Kernel, CPU, GPU mit detaillierten Modellnamen)
+  - LM Studio Healthcheck Status
+  - Top 5 schnellste Modelle
+  - Letzte 10 Benchmark-Läufe
+- ✅ **📋 Erweiterte Benchmark-Konfiguration im Web-UI**:
+  - Alle CLI-Argumente verfügbar
+  - Tooltip-Erklärungen für alle Optionen
+  - Filter nach Quantisierung, Architektur, Parametergröße, Context-Length
+  - Rangieren nach Speed, Effizienz, TTFT oder VRAM
+  - Hardware-Limits (Max. GPU-Temp, Max. Power)
+  - GTT-Optionen (AMD GPU)
 
 ## Systemanforderungen
 
@@ -94,21 +109,18 @@ source .venv/bin/activate  # Linux/macOS
 - 📁 **Ergebnisse-Browser**: Durchsuche alle gecachten Benchmark-Ergebnisse mit sortierbare Tabelle
 - 📥 **Export-Buttons**: Schnellzugriff zu neuesten HTML/PDF/JSON/CSV Ergebnissen
 - 💻 **Hardware-Monitoring**: 6 Live-Charts (GPU Temp, Power, VRAM, GTT, CPU, RAM) mit Min/Ø/Max Statistiken
-- 🏠 **Home-Statistiken**: System-Info, Top 5 Modelle, letzte 10 Benchmark-Läufe
-- 🔧 **Flexible Konfiguration**: Alle CLI-Parameter als Web-Formular
+- 🏠 **Home-Statistiken**: 
+  - System-Info (OS, Kernel, CPU, GPU mit Modellnamen)
+  - LM Studio Healthcheck Status
+  - Top 5 schnellste Modelle
+  - Letzte 10 Benchmark-Läufe
+- 🔧 **Flexible Konfiguration**: 
+  - Alle CLI-Parameter als Web-Formular mit Tooltip-Erklärungen
+  - Filter nach Quantisierung, Architektur, Parametergröße
+  - Rangieren nach Geschwindigkeit, Effizienz, TTFT oder VRAM
+  - Hardware-Limits (Max. GPU-Temp, Max. Power)
 - 📱 **Responsive Design**: Funktioniert auf Desktop und Tablet
-- 🌐 **Netzwerk-Zugriff**: Öffne Dashboard auf anderen Geräten (<http://your-ip:8080>)
-- 📝 **Separate Logs**: `logs/webapp_*.log` (Dashboard) und `logs/benchmark_*.log` (Benchmark-Läufe)
-
-### 💻 Kommandozeile (CLI)
-
-Alternativ kannst du Benchmarks direkt über die Kommandozeile starten:
-
-```bash
-./run.py
-```
-
-Das Script wird:
+- 🌐 **Netzwerk-Zugriff**: Öffne Dashboard auf anderen Geräten (`http://your-ip:8080`)
 
 1. LM Studio Server prüfen/starten
 2. Alle installierten Modelle finden
