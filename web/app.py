@@ -854,35 +854,99 @@ async def get_dashboard_stats() -> dict:
         except:
             pass
         
-        # GPU-Info aus erstem Result (wenn verfügbar)
+        # GPU-Info - Verbesserte Erkennung mit nvidia-smi/rocm-smi
         gpu_info = None
-        if results:
+        try:
+            import subprocess
+            import glob
+            import re
+            
+            gpu_type = "Unknown"
+            vram_total_gb = None
+            gtt_total_gb = None
+            
+            # GPU-Typ aus Results ermitteln (falls vorhanden)
+            if results:
+                gpu_type = results[0].gpu_type
+            
+            # NVIDIA GPU Erkennung
             try:
-                import subprocess
-                vram_info = {"vram_gb": None, "gtt_gb": None, "total_gb": None}
+                output = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'], timeout=5)
+                vram_total_mb = int(output.decode().strip().split('\n')[0])
+                vram_total_gb = round(vram_total_mb / 1024, 2)
+                gpu_type = "NVIDIA"
+            except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+                pass
+            
+            # AMD GPU Erkennung mit rocm-smi
+            if not vram_total_gb:
+                try:
+                    # Suche rocm-smi in verschiedenen Pfaden
+                    rocm_tool = None
+                    for path in ['/usr/bin/rocm-smi', '/usr/local/bin/rocm-smi'] + glob.glob('/opt/rocm-*/bin/rocm-smi'):
+                        if Path(path).exists():
+                            rocm_tool = path
+                            break
+                    
+                    if not rocm_tool:
+                        rocm_tool = 'rocm-smi'  # Fallback auf PATH
+                    
+                    # Hole VRAM-Größe
+                    result = subprocess.run(
+                        [rocm_tool, '--showmeminfo', 'vram'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    
+                    if result.returncode == 0:
+                        # Parse "GPU[0] : VRAM Total Memory (B): 33550180352"
+                        for line in result.stdout.split('\n'):
+                            if 'VRAM Total Memory' in line:
+                                match = re.search(r':\s*(\d+)\s*$', line.strip())
+                                if match:
+                                    vram_bytes = int(match.group(1))
+                                    vram_total_gb = round(vram_bytes / (1024**3), 2)
+                                    gpu_type = "AMD"
+                                    break
+                    
+                    # Hole GTT-Größe (AMD spezifisch)
+                    if gpu_type == "AMD":
+                        result = subprocess.run(
+                            [rocm_tool, '--showmeminfo', 'gtt'],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        
+                        if result.returncode == 0:
+                            # Parse "GPU[0] : GTT Total Memory (B): 98618482688"
+                            for line in result.stdout.split('\n'):
+                                if 'GTT Total Memory' in line:
+                                    match = re.search(r':\s*(\d+)\s*$', line.strip())
+                                    if match:
+                                        gtt_bytes = int(match.group(1))
+                                        gtt_total_gb = round(gtt_bytes / (1024**3), 2)
+                                        break
                 
-                # Versuche NVIDIA GPU Info zu ermitteln
-                if results[0].gpu_type == "NVIDIA":
-                    try:
-                        output = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'], timeout=5)
-                        vram_total_mb = int(output.decode().strip().split('\n')[0])
-                        vram_info["vram_gb"] = round(vram_total_mb / 1024, 2)
-                    except:
-                        vram_info["vram_gb"] = None
-                
-                gpu_info = {
-                    "type": results[0].gpu_type,
-                    "vram_gb": vram_info["vram_gb"],
-                    "gtt_gb": system_info["ram_gb"],  # System RAM als GTT
-                    "total_gb": vram_info["vram_gb"] + system_info["ram_gb"] if vram_info["vram_gb"] else system_info["ram_gb"]
-                }
-            except:
-                gpu_info = {
-                    "type": results[0].gpu_type,
-                    "vram_gb": None,
-                    "gtt_gb": system_info["ram_gb"],
-                    "total_gb": None
-                }
+                except (subprocess.TimeoutExpired, FileNotFoundError):
+                    pass
+            
+            # Zusammenstellen GPU-Info
+            gpu_info = {
+                "type": gpu_type,
+                "vram_gb": vram_total_gb,
+                "gtt_gb": gtt_total_gb if gtt_total_gb else system_info["ram_gb"],
+                "total_gb": (vram_total_gb + gtt_total_gb) if (vram_total_gb and gtt_total_gb) else (vram_total_gb or system_info["ram_gb"])
+            }
+        
+        except Exception:
+            gpu_info = {
+                "type": "Unknown",
+                "vram_gb": None,
+                "gtt_gb": system_info["ram_gb"],
+                "total_gb": system_info["ram_gb"]
+            }
         
         # Cache-Statistiken
         cache_stats = {
