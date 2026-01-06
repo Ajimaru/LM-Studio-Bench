@@ -185,6 +185,19 @@ class BenchmarkResult:
     rocm_driver_version: Optional[str] = None   # AMD ROCm/Driver Version
     intel_driver_version: Optional[str] = None  # Intel GPU Driver Version
     
+    # System- und Konfigurationsinformationen (für Reproduzierbarkeit)
+    context_length: Optional[int] = None        # Context-Length des Benchmarks (z.B. 2048)
+    prompt_hash: Optional[str] = None           # SHA256-Hash des verwendeten Prompts
+    model_key: Optional[str] = None             # Eindeutige Modell-ID (z.B. qwen/qwen2.5-7b@q3_k_l)
+    params_hash: Optional[str] = None           # Hash der Inference-Parameter
+    os_name: Optional[str] = None               # Betriebssystem (z.B. Linux, Windows, macOS)
+    os_version: Optional[str] = None            # Kernel/OS-Version (z.B. 6.8.0-45-generic)
+    cpu_model: Optional[str] = None             # CPU-Modell (z.B. AMD Ryzen 9 7950X)
+    python_version: Optional[str] = None        # Python-Version (z.B. 3.11.8)
+    benchmark_duration_seconds: Optional[float] = None  # Gesamtdauer des Benchmarks in Sekunden
+    error_count: Optional[int] = None           # Anzahl Fehler während des Benchmarks
+    inference_params_hash: Optional[str] = None # Hash aller Inference-Parameter kombiniert
+    
     # Historischer Vergleich (optional)
     speed_delta_pct: Optional[float] = None     # Performance-Veränderung (%) vs. vorheriger Benchmark
     prev_timestamp: Optional[str] = None         # Zeitstempel des vorherigen Benchmarks
@@ -553,7 +566,15 @@ class BenchmarkCache:
                 lmstudio_version TEXT,
                 nvidia_driver_version TEXT,
                 rocm_driver_version TEXT,
-                intel_driver_version TEXT
+                intel_driver_version TEXT,
+                prompt_hash TEXT,
+                params_hash TEXT,
+                os_name TEXT,
+                os_version TEXT,
+                cpu_model TEXT,
+                python_version TEXT,
+                benchmark_duration_seconds REAL,
+                error_count INTEGER
             )
         ''')
         
@@ -636,8 +657,9 @@ class BenchmarkCache:
                     prompt, context_length, temperature, top_k_sampling, top_p_sampling,
                     min_p_sampling, repeat_penalty, max_tokens, num_runs, runs_averaged_from,
                     warmup_runs, lmstudio_version, nvidia_driver_version, rocm_driver_version,
-                    intel_driver_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    intel_driver_version, prompt_hash, params_hash, os_name, os_version,
+                    cpu_model, python_version, benchmark_duration_seconds, error_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 model_key, result.model_name, result.quantization, params_hash,
                 result.gpu_type, result.gpu_offload, result.vram_mb, result.avg_tokens_per_sec,
@@ -650,7 +672,10 @@ class BenchmarkCache:
                 result.min_p_sampling, result.repeat_penalty, result.max_tokens,
                 result.num_runs, result.runs_averaged_from, result.warmup_runs,
                 result.lmstudio_version, result.nvidia_driver_version, result.rocm_driver_version,
-                result.intel_driver_version
+                result.intel_driver_version,
+                result.prompt_hash, result.params_hash, result.os_name, result.os_version,
+                result.cpu_model, result.python_version, result.benchmark_duration_seconds,
+                result.error_count
             ))
             
             conn.commit()
@@ -695,6 +720,11 @@ class BenchmarkCache:
             if 'lmstudio_version' in columns:
                 optional_cols.extend(['lmstudio_version', 'nvidia_driver_version', 
                                     'rocm_driver_version', 'intel_driver_version'])
+            if 'prompt_hash' in columns:
+                optional_cols.extend(['prompt_hash', 'params_hash', 'os_name', 'os_version',
+                                    'cpu_model', 'python_version', 'benchmark_duration_seconds', 'error_count'])
+            if 'inference_params_hash' in columns:
+                optional_cols.append('inference_params_hash')
             
             select_cols = base_cols + (", " + ", ".join(optional_cols) if optional_cols else "")
             
@@ -766,6 +796,23 @@ class BenchmarkCache:
                     result_dict['nvidia_driver_version'] = row[idx+1]
                     result_dict['rocm_driver_version'] = row[idx+2]
                     result_dict['intel_driver_version'] = row[idx+3]
+                    idx += 4
+                
+                # Neue Felder - System- und Konfigurationsinformationen
+                if 'prompt_hash' in columns:
+                    result_dict['prompt_hash'] = row[idx]
+                    result_dict['params_hash'] = row[idx+1]
+                    result_dict['os_name'] = row[idx+2]
+                    result_dict['os_version'] = row[idx+3]
+                    result_dict['cpu_model'] = row[idx+4]
+                    result_dict['python_version'] = row[idx+5]
+                    result_dict['benchmark_duration_seconds'] = row[idx+6]
+                    result_dict['error_count'] = row[idx+7]
+                    idx += 8
+                
+                # Neue Felder - Inference-Params-Hash
+                if 'inference_params_hash' in columns:
+                    result_dict['inference_params_hash'] = row[idx]
                 
                 result = BenchmarkResult(**result_dict)
                 results.append(result)
@@ -1260,6 +1307,40 @@ class LMStudioBenchmark:
             logger.debug("Intel GPU Driver nicht verfügbar")
         return None
     
+    @staticmethod
+    def get_os_info() -> Tuple[Optional[str], Optional[str]]:
+        """Ruft Betriebssystem und Kernel-Version ab"""
+        try:
+            import platform
+            os_name = platform.system()  # Linux, Windows, Darwin
+            os_version = platform.release()  # z.B. 6.8.0-45-generic
+            return os_name, os_version
+        except Exception:
+            logger.debug("OS-Info nicht verfügbar")
+        return None, None
+    
+    @staticmethod
+    def get_cpu_model() -> Optional[str]:
+        """Ruft CPU-Modell ab"""
+        try:
+            import cpuinfo
+            cpu = cpuinfo.get_cpu_info()
+            brand = cpu.get('brand_raw', '')
+            return brand if brand else None
+        except Exception:
+            logger.debug("CPU-Info nicht verfügbar")
+        return None
+    
+    @staticmethod
+    def get_python_version() -> Optional[str]:
+        """Ruft Python-Version ab"""
+        try:
+            import sys
+            return f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        except Exception:
+            logger.debug("Python-Version nicht verfügbar")
+        return None
+    
     def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
@@ -1326,8 +1407,25 @@ class LMStudioBenchmark:
         for key, value in self.system_versions.items():
             logger.info(f"   • {key}: {value if value else 'N/A'}")
         
+        # Erfasse System-Informationen einmalig
+        os_name, os_version = self.get_os_info()
+        self.system_info = {
+            'os_name': os_name,
+            'os_version': os_version,
+            'cpu_model': self.get_cpu_model(),
+            'python_version': self.get_python_version(),
+        }
+        logger.info(f"💻 System-Informationen:")
+        logger.info(f"   • OS: {self.system_info['os_name']} {self.system_info['os_version']}")
+        logger.info(f"   • CPU: {self.system_info['cpu_model'] or 'N/A'}")
+        logger.info(f"   • Python: {self.system_info['python_version']}")
+        
         # Speichere Inference-Parameter
         self.inference_params = OPTIMIZED_INFERENCE_PARAMS.copy()
+        
+        # Speichere Hashes für Reproduzierbarkeit
+        self.prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        self.params_hash = BenchmarkCache.compute_params_hash(prompt, context_length, OPTIMIZED_INFERENCE_PARAMS)
         
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
@@ -1643,6 +1741,10 @@ class LMStudioBenchmark:
         """Führt Benchmark für ein spezifisches Modell durch"""
         logger.info(f"🎯 Starte Benchmark für {model_key}")
         
+        # Starte Timing
+        benchmark_start_time = time.time()
+        error_count = 0
+        
         # Entlade alle anderen Modelle zuerst
         try:
             subprocess.run(
@@ -1733,12 +1835,26 @@ class LMStudioBenchmark:
                     if self.max_power and result.power_watts_max and result.power_watts_max > self.max_power:
                         logger.warning(f"⚠️ Max. Power überschritten: {result.power_watts_max:.1f}W > {self.max_power}W")
                 
+                # Berechne Benchmark-Dauer und populiere neue Felder
+                benchmark_end_time = time.time()
+                result.benchmark_duration_seconds = round(benchmark_end_time - benchmark_start_time, 2)
+                result.error_count = error_count
+                result.model_key = model_key
+                result.prompt_hash = self.prompt_hash
+                result.params_hash = self.params_hash
+                result.context_length = self.context_length
+                result.os_name = self.system_info.get('os_name')
+                result.os_version = self.system_info.get('os_version')
+                result.cpu_model = self.system_info.get('cpu_model')
+                result.python_version = self.system_info.get('python_version')
+                result.inference_params_hash = hashlib.md5(json.dumps(self.inference_params, sort_keys=True).encode()).hexdigest()[:8]
+                
                 # Speichere in Cache
                 if self.cache:
                     self.cache.save_result(result, model_key, self.params_hash, 
                                           self.prompt, self.context_length)
                 
-                logger.info(f"✓ {model_key}: {result.avg_tokens_per_sec:.2f} tokens/s")
+                logger.info(f"✓ {model_key}: {result.avg_tokens_per_sec:.2f} tokens/s (Duration: {result.benchmark_duration_seconds}s)")
                 return result
             else:
                 logger.error(f"❌ Keine erfolgreichen Messungen für {model_key}")
@@ -1746,6 +1862,7 @@ class LMStudioBenchmark:
                 
         except Exception as e:
             logger.error(f"❌ Fehler beim Benchmarking von {model_key}: {e}")
+            error_count += 1
             return None
     
     def _load_model(self, model_key: str, gpu_offload: float) -> bool:
