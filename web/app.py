@@ -2301,7 +2301,8 @@ async def run_experiment(request: Request) -> dict:
         else:
             winner = "test" if test_mean > baseline_mean else ("baseline" if baseline_mean > test_mean else "tie")
 
-        return {
+        # Prepare results data
+        results_data = {
             "success": True,
             "mode": "active",
             "model_name": model_name,
@@ -2313,8 +2314,200 @@ async def run_experiment(request: Request) -> dict:
                 "delta_pct": (round(delta_pct, 2) if isinstance(delta_pct, (int, float)) else None),
                 "winner": winner,
                 "significant": test_result.get("significant", False)
+            },
+            "experiment_info": {
+                "baseline_params": baseline_params,
+                "test_params": test_params,
+                "runs": runs,
+                "context": context,
+                "prompt": prompt,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
         }
+        
+        # Export results to files
+        try:
+            from pathlib import Path
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            results_dir = PROJECT_ROOT / "results"
+            results_dir.mkdir(exist_ok=True)
+            
+            # JSON Export
+            json_file = results_dir / f"ab_test_results_{timestamp}.json"
+            with open(json_file, 'w', encoding='utf-8') as f:
+                json.dump(results_data, f, indent=2, ensure_ascii=False)
+            logger.info(f"📄 A/B Test JSON gespeichert: {json_file}")
+            
+            # CSV Export
+            csv_file = results_dir / f"ab_test_results_{timestamp}.csv"
+            with open(csv_file, 'w', encoding='utf-8') as f:
+                f.write("Metric,Baseline,Test,Delta\n")
+                f.write(f"Model,{model_name},{model_name},-\n")
+                f.write(f"Mean Speed (tok/s),{baseline_stats['mean']},{test_stats['mean']},{results_data['comparison']['delta_pct']}%\n")
+                f.write(f"Min Speed (tok/s),{baseline_stats['min']},{test_stats['min']},-\n")
+                f.write(f"Max Speed (tok/s),{baseline_stats['max']},{test_stats['max']},-\n")
+                f.write(f"Std Dev,{baseline_stats['std_dev']},{test_stats['std_dev']},-\n")
+                f.write(f"Count,{baseline_stats['count']},{test_stats['count']},-\n")
+                f.write(f"Temperature,{baseline_params.get('temperature', 'N/A')},{test_params.get('temperature', 'N/A')},-\n")
+                f.write(f"Top-K,{baseline_params.get('top_k', 'N/A')},{test_params.get('top_k', 'N/A')},-\n")
+                f.write(f"Top-P,{baseline_params.get('top_p', 'N/A')},{test_params.get('top_p', 'N/A')},-\n")
+                f.write(f"Winner,-,-,{winner}\n")
+                f.write(f"Significant,-,-,{test_result.get('significant', False)}\n")
+            logger.info(f"📊 A/B Test CSV gespeichert: {csv_file}")
+            
+            # HTML Export (simple)
+            html_file = results_dir / f"ab_test_results_{timestamp}.html"
+            html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>A/B Test Results - {model_name}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }}
+        h2 {{ color: #34495e; margin-top: 30px; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+        th {{ background-color: #3498db; color: white; }}
+        tr:hover {{ background-color: #f5f5f5; }}
+        .winner {{ font-weight: bold; color: #27ae60; font-size: 1.2em; }}
+        .metric {{ font-weight: 600; }}
+        .params {{ background: #ecf0f1; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 A/B Test Results</h1>
+        <p><strong>Model:</strong> {model_name}</p>
+        <p><strong>Timestamp:</strong> {results_data['experiment_info']['timestamp']}</p>
+        
+        <h2>📊 Performance Comparison</h2>
+        <table>
+            <tr>
+                <th>Metric</th>
+                <th>Baseline</th>
+                <th>Test</th>
+                <th>Delta</th>
+            </tr>
+            <tr>
+                <td class="metric">Mean Speed</td>
+                <td>{baseline_stats['mean']} tok/s</td>
+                <td>{test_stats['mean']} tok/s</td>
+                <td>{results_data['comparison']['delta_pct']}%</td>
+            </tr>
+            <tr>
+                <td class="metric">Min Speed</td>
+                <td>{baseline_stats['min']} tok/s</td>
+                <td>{test_stats['min']} tok/s</td>
+                <td>-</td>
+            </tr>
+            <tr>
+                <td class="metric">Max Speed</td>
+                <td>{baseline_stats['max']} tok/s</td>
+                <td>{test_stats['max']} tok/s</td>
+                <td>-</td>
+            </tr>
+            <tr>
+                <td class="metric">Std Dev</td>
+                <td>±{baseline_stats['std_dev']}</td>
+                <td>±{test_stats['std_dev']}</td>
+                <td>-</td>
+            </tr>
+            <tr>
+                <td class="metric">Sample Count</td>
+                <td>{baseline_stats['count']}</td>
+                <td>{test_stats['count']}</td>
+                <td>-</td>
+            </tr>
+        </table>
+        
+        <h2>⚙️ Parameters</h2>
+        <div class="params">
+            <h3>Baseline</h3>
+            <p>Temperature: {baseline_params.get('temperature', 'N/A')}, Top-K: {baseline_params.get('top_k', 'N/A')}, Top-P: {baseline_params.get('top_p', 'N/A')}</p>
+        </div>
+        <div class="params">
+            <h3>Test</h3>
+            <p>Temperature: {test_params.get('temperature', 'N/A')}, Top-K: {test_params.get('top_k', 'N/A')}, Top-P: {test_params.get('top_p', 'N/A')}</p>
+        </div>
+        
+        <h2>📈 Statistical Analysis</h2>
+        <p><strong>Winner:</strong> <span class="winner">{winner.upper()}</span></p>
+        <p><strong>Statistically Significant:</strong> {test_result.get('significant', False)}</p>
+        <p><strong>p-value:</strong> {test_result.get('p_value', 'N/A')}</p>
+        <p><strong>Effect Size (Cohen's d):</strong> {effect_size.get('cohens_d', 'N/A')} ({effect_size.get('effect_magnitude', 'N/A')})</p>
+    </div>
+</body>
+</html>"""
+            with open(html_file, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            logger.info(f"🌐 A/B Test HTML gespeichert: {html_file}")
+            
+            # PDF Export (if reportlab available)
+            try:
+                from reportlab.lib.pagesizes import A4, landscape
+                from reportlab.lib import colors
+                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+                from reportlab.lib.styles import getSampleStyleSheet
+                
+                pdf_file = results_dir / f"ab_test_results_{timestamp}.pdf"
+                doc = SimpleDocTemplate(str(pdf_file), pagesize=landscape(A4))
+                elements = []
+                styles = getSampleStyleSheet()
+                
+                # Title
+                elements.append(Paragraph(f"<b>A/B Test Results: {model_name}</b>", styles['Title']))
+                elements.append(Spacer(1, 12))
+                elements.append(Paragraph(f"Timestamp: {results_data['experiment_info']['timestamp']}", styles['Normal']))
+                elements.append(Spacer(1, 20))
+                
+                # Performance Table
+                data = [
+                    ['Metric', 'Baseline', 'Test', 'Delta'],
+                    ['Mean Speed (tok/s)', f"{baseline_stats['mean']}", f"{test_stats['mean']}", f"{results_data['comparison']['delta_pct']}%"],
+                    ['Min Speed', f"{baseline_stats['min']}", f"{test_stats['min']}", '-'],
+                    ['Max Speed', f"{baseline_stats['max']}", f"{test_stats['max']}", '-'],
+                    ['Std Dev', f"±{baseline_stats['std_dev']}", f"±{test_stats['std_dev']}", '-'],
+                    ['Count', str(baseline_stats['count']), str(test_stats['count']), '-'],
+                ]
+                
+                table = Table(data)
+                table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ]))
+                elements.append(table)
+                elements.append(Spacer(1, 20))
+                
+                # Winner
+                elements.append(Paragraph(f"<b>Winner:</b> {winner.upper()}", styles['Heading2']))
+                elements.append(Paragraph(f"<b>Significant:</b> {test_result.get('significant', False)}", styles['Normal']))
+                
+                doc.build(elements)
+                logger.info(f"📑 A/B Test PDF gespeichert: {pdf_file}")
+            except ImportError:
+                logger.warning("⚠️ reportlab nicht installiert - PDF Export übersprungen")
+            except Exception as pdf_error:
+                logger.error(f"❌ PDF Export Fehler: {pdf_error}")
+            
+            results_data['exports'] = {
+                'json': str(json_file),
+                'csv': str(csv_file),
+                'html': str(html_file)
+            }
+        except Exception as export_error:
+            logger.error(f"❌ Export Fehler: {export_error}")
+            # Continue anyway - don't fail the entire request
+        
+        return results_data
+        
     except Exception as e:
         import traceback
         logger.error(f"❌ Experiment Run Fehler: {e}")
