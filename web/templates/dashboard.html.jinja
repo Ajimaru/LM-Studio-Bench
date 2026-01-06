@@ -3334,15 +3334,15 @@
 
         async function loadABModels() {
             try {
-                const response = await fetch('/api/comparison/models');
+                const response = await fetch('/api/lmstudio/models');
                 const data = await response.json();
                 if (data.success && data.models.length > 0) {
                     const select = document.getElementById('ab-model-select');
                     select.innerHTML = '<option value="">Modell auswählen...</option>';
                     data.models.forEach(model => {
                         const option = document.createElement('option');
-                        option.value = model.model_name;
-                        option.textContent = `${model.model_name} (${model.entry_count} Einträge)`;
+                        option.value = model.name;  // voller Name inkl. Quantisierung (z.B. qwen/qwen2.5-vl-7b@q3_k_l)
+                        option.textContent = `${model.name} (${model.params}, ${model.size})`;
                         select.appendChild(option);
                     });
                 }

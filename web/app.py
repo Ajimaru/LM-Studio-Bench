@@ -974,6 +974,85 @@ async def clear_cache() -> dict:
         return {"success": False, "error": str(e)}
 
 
+@app.get("/api/lmstudio/models")
+async def get_lmstudio_models() -> dict:
+    """Holt alle lokal installierten Modelle direkt von LM Studio (inkl. Quantisierungen)"""
+    try:
+        import subprocess
+        
+        # Hole Liste aller Modelle mit `lms ls`
+        result = subprocess.run(
+            ["lms", "ls"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode != 0:
+            return {
+                "success": False,
+                "error": f"LM Studio CLI Fehler: {result.stderr}",
+                "models": []
+            }
+        
+        # Parse Ausgabe: Zeilen mit model/name (N variants)
+        models = []
+        lines = result.stdout.strip().split("\n")
+        
+        for line in lines:
+            # Skip Header und leere Zeilen
+            if not line.strip() or "LLM" in line or "PARAMS" in line or "You have" in line:
+                continue
+            
+            # Parse: "qwen/qwen2.5-vl-7b (4 variants)"
+            import re
+            match = re.match(r'^([^\s]+(?:/[^\s]+)?)\s+\((\d+)\s+variants?\)', line)
+            if match:
+                base_model = match.group(1)
+                variant_count = int(match.group(2))
+                
+                # Hole alle Varianten für dieses Modell
+                variants_result = subprocess.run(
+                    ["lms", "ls", base_model],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if variants_result.returncode == 0:
+                    variant_lines = variants_result.stdout.strip().split("\n")
+                    for vline in variant_lines:
+                        # Parse: "qwen/qwen2.5-vl-7b@q3_k_l    7B    qwen2vl    5.44 GB"
+                        vmatch = re.match(r'^([^\s]+)\s+(\d+(?:\.\d+)?[BMK])\s+(\S+)\s+([\d.]+\s+[GMK]B)', vline.strip())
+                        if vmatch:
+                            full_name = vmatch.group(1)
+                            params = vmatch.group(2)
+                            arch = vmatch.group(3)
+                            size = vmatch.group(4)
+                            
+                            models.append({
+                                "name": full_name,
+                                "base_name": base_model,
+                                "params": params,
+                                "architecture": arch,
+                                "size": size
+                            })
+        
+        return {
+            "success": True,
+            "models": models,
+            "count": len(models)
+        }
+    
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "LM Studio CLI Timeout", "models": []}
+    except Exception as e:
+        logger.error(f"❌ Fehler beim Holen der LM Studio Modelle: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "models": []}
+
+
 @app.get("/api/comparison/models")
 async def get_comparison_models() -> dict:
     """Gibt alle Modelle mit historischen Daten zurück"""
