@@ -1,4 +1,4 @@
-# LM Studio CLI - Verfügbare LLM-Metadaten
+# LM Studio CLI - Verfügbare LLM-Metadaten mit GPU-Analyse
 
 ## 📋 Schnelle Referenz
 
@@ -10,6 +10,27 @@ lms ps --json           # Aktuell geladene Modelle
 lms status              # Server-Status + Modell-Größe
 lms version             # LM Studio Version
 ```
+
+## 🎯 GPU-Unterstützung und Hardware-Anforderungen
+
+### Automatische GPU-Erkennung im Benchmark
+
+Das Benchmark-System erkennt automatisch all Ihre GPUs und deren Spezifikationen:
+
+**NVIDIA GPUs:**
+- Automatische Erkennung via `nvidia-smi`
+- VRAM-Größe erfasst für Offload-Optimierung
+- Temperatur und Leistung werden monitort
+
+**AMD GPUs (rocm-smi):**
+- Detaillierte Device-ID-Mapping für GPU-Modell-Namen
+- VRAM- und GTT-Speicher werden separat erfasst
+- rocm-smi Suchpfade: `/usr/bin`, `/usr/local/bin`, `/opt/rocm-*/bin/`
+
+**iGPU-Erkennung:**
+- Radeon iGPUs werden aus CPU-String extrahiert
+- Regex-Muster: `Radeon\s+(\d+[A-Za-z]*)`
+- Zeigt z.B. "Radeon 890M (Ryzen 9 7950X3D)" separat an
 
 ## 📊 Vollständige Metadaten-Felder (15 Felder pro Modell)
 

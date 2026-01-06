@@ -1,10 +1,34 @@
 # Hardware-Monitoring Live-Charts - Anleitung
 
-## ✅ Status: Vollständig Implementiert
+## ✅ Status: Vollständig Implementiert mit GPU-Detection
 
-Das Hardware-Monitoring ist jetzt vollständig funktionsfähig mit stabilen Live-Charts für alle Metriken.
+Das Hardware-Monitoring ist jetzt vollständig funktionsfähig mit stabilen Live-Charts für alle Metriken sowie verbesserter GPU-Modell-Erkennung.
 
 ## 📊 Implementierte Metriken
+
+### GPU-Erkennung & Modell-Informationen
+
+Das System erkennt automatisch alle installierten GPUs:
+
+1. **NVIDIA-GPUs**
+   - Erkennung: `nvidia-smi --query-gpu=name`
+   - VRAM: `nvidia-smi --query-gpu=memory.total`
+   - Temperatur: `nvidia-smi --query-gpu=temperature.gpu`
+   - Leistung: `nvidia-smi --query-gpu=power.draw`
+
+2. **AMD-GPUs**
+   - rocm-smi Erkennung: `rocm-smi --showproductname`
+   - Device ID-Mapping: `lspci -d 1002:{device_id}`
+   - Beispiel: `1002:150e` → "Radeon Graphics (Ryzen 9 7950X3D)"
+   - rocm-smi-Suchpfad: `/usr/bin`, `/usr/local/bin`, `/opt/rocm-*/bin/`
+   - VRAM: `rocm-smi --showmeminfo vram`
+   - GTT: `rocm-smi --showmeminfo gtt`
+   - Temperatur: `rocm-smi --showtemp`
+
+3. **iGPU-Erkennung**
+   - Extraktion aus CPU-String: Regex `r'Radeon\s+(\d+[A-Za-z]*)'`
+   - Zeigt integrierte Radeon-Grafik separat an
+   - Verhindert Redundanz mit dedizierten GPUs
 
 ### GPU-Metriken
 
