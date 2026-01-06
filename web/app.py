@@ -746,7 +746,7 @@ async def get_dashboard_stats() -> dict:
         # Primär: HTTP GET auf LM Studio API (Port 1234 default)
         # Fallback: CLI `lms status` mit "Server: OFF" Erkennung
         lmstudio_health = {"ok": False, "status": "offline"}
-        lmstudio_ports = [1234, 1235, 8080]  # Typische LM Studio Ports
+        lmstudio_ports = [1234, 1235]  # LM Studio Standard-Ports (NICHT 8080 - oft andere Services)
         
         # 1. HTTP API Check (schnellster und zuverlässigster Weg)
         for port in lmstudio_ports:
