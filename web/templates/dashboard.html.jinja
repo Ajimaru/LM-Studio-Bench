@@ -1065,6 +1065,7 @@
                 <button class="nav-btn active" data-view="home" onclick="showView('home')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">🏠 Home</button>
                 <button class="nav-btn" data-view="benchmark" onclick="showView('benchmark')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">⚡ Benchmark</button>
                 <button class="nav-btn" data-view="results" onclick="showView('results')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📊 Results</button>
+                <button class="nav-btn" data-view="comparison" onclick="showView('comparison')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📈 Comparison</button>
             </nav>
             <select id="theme-selector" onchange="switchTheme(this.value)" style="padding: 0.5rem; border: 1px solid rgba(255,255,255,0.3); border-radius: 0.5rem; background: rgba(255,255,255,0.1); color: white; font-weight: 600; cursor: pointer;">
                 <option value="light">☀️ Light</option>
@@ -1565,6 +1566,88 @@
             </div>
         </div>
         <!-- END RESULTS VIEW -->
+        
+        <!-- COMPARISON VIEW -->
+        <div id="view-comparison" class="view-container hidden" style="min-height: 500px;">
+            <div style="display: grid; grid-template-columns: 1fr 3fr; gap: 2rem;">
+                <!-- LEFT: FILTERS -->
+                <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <h3 style="color: var(--text); margin-bottom: 1rem;">🔍 Filter</h3>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <label style="color: var(--text); font-weight: 500; display: block; margin-bottom: 0.5rem;">Modell:</label>
+                        <select id="comparison-model-select" onchange="loadModelHistory(this.value)" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                            <option value="">Modell auswählen...</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <label style="color: var(--text); font-weight: 500; display: block; margin-bottom: 0.5rem;">Quantisierungen:</label>
+                        <div id="comparison-quantization-filters" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
+                    </div>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <button onclick="loadComparisonData()" style="width: 100%; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">🔄 Aktualisieren</button>
+                    </div>
+                </div>
+                
+                <!-- RIGHT: CHARTS & DATA -->
+                <div>
+                    <div id="comparison-charts-container" style="display: none;">
+                        <!-- Speed Chart -->
+                        <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="color: var(--text); margin-bottom: 1rem;">📊 Performance-Trend (tokens/sec)</h3>
+                            <div id="comparison-speed-chart" style="height: 300px;"></div>
+                        </div>
+                        
+                        <!-- TTFT Chart -->
+                        <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="color: var(--text); margin-bottom: 1rem;">⏱️ Time-to-First-Token Trend</h3>
+                            <div id="comparison-ttft-chart" style="height: 300px;"></div>
+                        </div>
+                        
+                        <!-- Gen-Time Chart -->
+                        <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="color: var(--text); margin-bottom: 1rem;">⚡ Generation-Time Trend</h3>
+                            <div id="comparison-gentime-chart" style="height: 300px;"></div>
+                        </div>
+                        
+                        <!-- Statistics -->
+                        <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="color: var(--text); margin-bottom: 1rem;">📈 Statistiken</h3>
+                            <div id="comparison-stats" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;"></div>
+                        </div>
+                        
+                        <!-- Detailed History Table -->
+                        <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="color: var(--text); margin-bottom: 1rem;">📋 Detaillierte Verlauf</h3>
+                            <div style="overflow-x: auto;">
+                                <table id="comparison-history-table" style="width: 100%; border-collapse: collapse;">
+                                    <thead style="background: var(--primary); color: white;">
+                                        <tr>
+                                            <th style="padding: 0.75rem; text-align: left;">Datum</th>
+                                            <th style="padding: 0.75rem; text-align: right;">Speed (tok/s)</th>
+                                            <th style="padding: 0.75rem; text-align: right;">TTFT (ms)</th>
+                                            <th style="padding: 0.75rem; text-align: right;">Gen-Time (ms)</th>
+                                            <th style="padding: 0.75rem; text-align: right;">Quantisierung</th>
+                                            <th style="padding: 0.75rem; text-align: right;">GPU-Offload</th>
+                                            <th style="padding: 0.75rem; text-align: right;">VRAM (MB)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="comparison-table-body" style="font-size: 0.9rem;">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="comparison-placeholder" style="background: var(--card); padding: 2rem; border-radius: 0.75rem; text-align: center; color: var(--text-light);">
+                        <p style="font-size: 1.1rem;">📈 Modell auswählen um Vergleichsdaten anzuzeigen...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- END COMPARISON VIEW -->
     </div>
     <!-- END CONTAINER -->
 
@@ -2642,6 +2725,242 @@
             if (statusCheckInterval) clearInterval(statusCheckInterval);
             if (uptimeInterval) clearInterval(uptimeInterval);
             if (websocket) websocket.close();
+        });
+
+        // ===== PHASE 14.6b: COMPARISON VIEW FUNCTIONS =====
+        
+        async function loadComparisonData() {
+            """Laden aller Vergleichs-Daten"""
+            try {
+                const response = await fetch('/api/comparison/models');
+                const data = await response.json();
+                
+                if (data.success && data.models.length > 0) {
+                    // Populate Model Select
+                    const select = document.getElementById('comparison-model-select');
+                    select.innerHTML = '<option value="">Modell auswählen...</option>';
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.model_name;
+                        option.textContent = `${model.model_name} (${model.entry_count} Läufe)`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Fehler beim Laden der Vergleichsdaten:', error);
+            }
+        }
+        
+        async function loadModelHistory(modelName) {
+            """Lädt Historie für ausgewähltes Modell"""
+            if (!modelName) {
+                document.getElementById('comparison-charts-container').style.display = 'none';
+                document.getElementById('comparison-placeholder').style.display = 'block';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/comparison/${modelName}`);
+                const data = await response.json();
+                
+                if (data.success && data.history.length > 0) {
+                    // Zeige Charts
+                    document.getElementById('comparison-charts-container').style.display = 'block';
+                    document.getElementById('comparison-placeholder').style.display = 'none';
+                    
+                    // Erstelle Plotly Charts
+                    createComparisonCharts(data.history, data.stats);
+                    
+                    // Populate Quantization Filters
+                    populateQuantizationFilters(data.history);
+                    
+                    // Populate History Table
+                    populateHistoryTable(data.history);
+                    
+                    // Zeige Statistiken
+                    displayStatistics(data.stats);
+                } else {
+                    document.getElementById('comparison-charts-container').style.display = 'none';
+                    document.getElementById('comparison-placeholder').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Fehler beim Laden der Modell-Historie:', error);
+                document.getElementById('comparison-charts-container').style.display = 'none';
+                document.getElementById('comparison-placeholder').style.display = 'block';
+            }
+        }
+        
+        function createComparisonCharts(history, stats) {
+            """Erstellt Plotly Line-Charts für Vergleich"""
+            const timestamps = history.map(h => new Date(h.timestamp));
+            const speeds = history.map(h => h.speed_tokens_sec);
+            const ttfts = history.map(h => h.ttft);
+            const gentimes = history.map(h => h.gen_time);
+            
+            // Speed Chart
+            const speedTrace = {
+                x: timestamps,
+                y: speeds,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Speed (tokens/sec)',
+                line: { color: '#10b981', width: 2 },
+                marker: { size: 6 }
+            };
+            
+            const speedLayout = {
+                title: 'Performance Trend (tokens/sec)',
+                xaxis: { title: 'Zeitstempel' },
+                yaxis: { title: 'tokens/sec' },
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                hovermode: 'x unified',
+                margin: { t: 40, b: 40, l: 60, r: 40 }
+            };
+            
+            Plotly.newPlot('comparison-speed-chart', [speedTrace], speedLayout, { responsive: true });
+            
+            // TTFT Chart
+            const ttftTrace = {
+                x: timestamps,
+                y: ttfts,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'TTFT (ms)',
+                line: { color: '#f59e0b', width: 2 },
+                marker: { size: 6 }
+            };
+            
+            const ttftLayout = {
+                title: 'Time-to-First-Token Trend',
+                xaxis: { title: 'Zeitstempel' },
+                yaxis: { title: 'TTFT (ms)' },
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                hovermode: 'x unified',
+                margin: { t: 40, b: 40, l: 60, r: 40 }
+            };
+            
+            Plotly.newPlot('comparison-ttft-chart', [ttftTrace], ttftLayout, { responsive: true });
+            
+            // Gen-Time Chart
+            const gentimeTrace = {
+                x: timestamps,
+                y: gentimes,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Gen-Time (ms)',
+                line: { color: '#3b82f6', width: 2 },
+                marker: { size: 6 }
+            };
+            
+            const gentimeLayout = {
+                title: 'Generation-Time Trend',
+                xaxis: { title: 'Zeitstempel' },
+                yaxis: { title: 'Gen-Time (ms)' },
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                hovermode: 'x unified',
+                margin: { t: 40, b: 40, l: 60, r: 40 }
+            };
+            
+            Plotly.newPlot('comparison-gentime-chart', [gentimeTrace], gentimeLayout, { responsive: true });
+        }
+        
+        function populateQuantizationFilters(history) {
+            """Erstellt Quantisierungs-Filter"""
+            const container = document.getElementById('comparison-quantization-filters');
+            container.innerHTML = '';
+            
+            const quantizations = [...new Set(history.map(h => h.quantization))];
+            quantizations.forEach(q => {
+                const label = document.createElement('label');
+                label.style.display = 'flex';
+                label.style.alignItems = 'center';
+                label.style.gap = '0.5rem';
+                label.style.color = 'var(--text)';
+                label.style.cursor = 'pointer';
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = q;
+                checkbox.checked = true;
+                checkbox.style.cursor = 'pointer';
+                
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(q || 'Keine Quantisierung'));
+                container.appendChild(label);
+            });
+        }
+        
+        function populateHistoryTable(history) {
+            """Füllt Verlauf-Tabelle"""
+            const tbody = document.getElementById('comparison-table-body');
+            tbody.innerHTML = '';
+            
+            history.forEach((entry, idx) => {
+                const row = tbody.insertRow();
+                row.style.backgroundColor = idx % 2 === 0 ? 'var(--bg)' : 'var(--card)';
+                row.style.borderBottom = '1px solid var(--border)';
+                
+                const cells = [
+                    entry.timestamp,
+                    entry.speed_tokens_sec.toFixed(2),
+                    entry.ttft.toFixed(2),
+                    entry.gen_time.toFixed(2),
+                    entry.quantization || '-',
+                    `${(entry.gpu_offload * 100).toFixed(0)}%`,
+                    entry.vram_mb || '-'
+                ];
+                
+                cells.forEach(cell => {
+                    const td = row.insertCell();
+                    td.textContent = cell;
+                    td.style.padding = '0.75rem';
+                    td.style.color = 'var(--text)';
+                });
+            });
+        }
+        
+        function displayStatistics(stats) {
+            """Zeigt Statistiken"""
+            const container = document.getElementById('comparison-stats');
+            container.innerHTML = '';
+            
+            const statItems = [
+                { label: '📊 Min Speed', value: `${stats.min_speed} tok/s` },
+                { label: '📈 Max Speed', value: `${stats.max_speed} tok/s` },
+                { label: '📉 Avg Speed', value: `${stats.avg_speed} tok/s` },
+                { label: '🔄 Total Runs', value: stats.total_runs },
+                { label: '⬆️ Trend', value: stats.trend === 'up' ? '🟢 Steigend' : stats.trend === 'down' ? '🔴 Fallend' : '⚪ Stabil' },
+                { label: '📅 Erste Messung', value: stats.first_run.substring(0, 10) },
+            ];
+            
+            statItems.forEach(item => {
+                const div = document.createElement('div');
+                div.style.padding = '1rem';
+                div.style.background = 'var(--bg)';
+                div.style.borderRadius = '0.5rem';
+                div.style.border = '1px solid var(--border)';
+                
+                const label = document.createElement('div');
+                label.textContent = item.label;
+                label.style.color = 'var(--text-light)';
+                label.style.fontSize = '0.9rem';
+                label.style.marginBottom = '0.5rem';
+                
+                const value = document.createElement('div');
+                value.textContent = item.value;
+                value.style.color = 'var(--text)';
+                value.style.fontWeight = '600';
+                value.style.fontSize = '1.1rem';
+                
+                div.appendChild(label);
+                div.appendChild(value);
+                container.appendChild(div);
+            });
+        }
+        
+        // Lade Vergleichsdaten beim Laden der Seite
+        window.addEventListener('load', () => {
+            loadComparisonData();
         });
     </script>
 </body>
