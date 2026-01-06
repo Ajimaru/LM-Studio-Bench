@@ -1743,6 +1743,10 @@
                             <option value="">Modell auswählen...</option>
                         </select>
                     </div>
+                    <div class="form-group" style="display:flex; align-items:center; gap:0.5rem;">
+                        <input type="checkbox" id="ab-active-run-toggle" />
+                        <label for="ab-active-run-toggle" style="margin:0;">Aktiv ausführen (2 Benchmarks starten)</label>
+                    </div>
                     
                     <div style="border-top: 1px solid var(--border); margin: 1rem 0; padding-top: 1rem;">
                         <h4 style="color: var(--success); margin-bottom: 0.75rem; font-size: 0.95rem;">📊 Baseline Params</h4>
@@ -3354,59 +3358,82 @@
                 top_k: parseInt(document.getElementById('ab-test-topk').value) || null,
                 top_p: parseFloat(document.getElementById('ab-test-topp').value) || null
             };
+            const activeRun = document.getElementById('ab-active-run-toggle').checked;
 
             try {
-                // 1. Create Experiment
-                const createResponse = await fetch('/api/experiments/create', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                let comparisonData;
+                if (activeRun) {
+                    const runResponse = await fetch('/api/experiments/run', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model_name: modelName,
+                            baseline_params: baselineParams,
+                            test_params: testParams,
+                            runs: 3,
+                            context: 2048
+                        })
+                    });
+                    comparisonData = await runResponse.json();
+                    if (!comparisonData.success) {
+                        alert(`Fehler beim aktiven A/B Lauf: ${comparisonData.error}`);
+                        return;
+                    }
+                    abExperimentData = {
+                        id: 'active',
                         name: expName,
                         model_name: modelName,
                         baseline_params: baselineParams,
-                        test_params: testParams
-                    })
-                });
-
-                const createData = await createResponse.json();
-                if (!createData.success) {
-                    alert(`Fehler: ${createData.error}`);
-                    return;
-                }
-
-                const expId = createData.experiment_id;
-
-                // 2. Get Comparison Results (POST, send params for reliable matching)
-                const comparisonResponse = await fetch(`/api/experiments/${expId}/comparison`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                        test_params: testParams,
+                        ...comparisonData
+                    };
+                    showToast(`✅ Aktiv ausgeführt: "${expName}"`, 'success', 'A/B Lauf');
+                } else {
+                    // 1. Create Experiment
+                    const createResponse = await fetch('/api/experiments/create', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: expName,
+                            model_name: modelName,
+                            baseline_params: baselineParams,
+                            test_params: testParams
+                        })
+                    });
+                    const createData = await createResponse.json();
+                    if (!createData.success) {
+                        alert(`Fehler: ${createData.error}`);
+                        return;
+                    }
+                    const expId = createData.experiment_id;
+                    // 2. Get Comparison Results (POST, send params for reliable matching)
+                    const comparisonResponse = await fetch(`/api/experiments/${expId}/comparison`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model_name: modelName,
+                            baseline_params: baselineParams,
+                            test_params: testParams
+                        })
+                    });
+                    comparisonData = await comparisonResponse.json();
+                    if (!comparisonData.success) {
+                        alert(`Fehler beim Abrufen von Daten: ${comparisonData.error}`);
+                        return;
+                    }
+                    abExperimentData = {
+                        id: expId,
+                        name: expName,
                         model_name: modelName,
                         baseline_params: baselineParams,
-                        test_params: testParams
-                    })
-                });
-                const comparisonData = await comparisonResponse.json();
-
-                if (!comparisonData.success) {
-                    alert(`Fehler beim Abrufen von Daten: ${comparisonData.error}`);
-                    return;
+                        test_params: testParams,
+                        ...comparisonData
+                    };
+                    showToast(`✅ Experiment "${expName}" erstellt und verglichen`, 'success', 'Erfolg');
                 }
 
-                // Speichere Daten für Export
-                abExperimentData = {
-                    id: expId,
-                    name: expName,
-                    model_name: modelName,
-                    baseline_params: baselineParams,
-                    test_params: testParams,
-                    ...comparisonData
-                };
-
-                // 3. Rendere Ergebnisse
+                // Rendere Ergebnisse
                 renderABResults(comparisonData);
-                
-                showToast(`✅ Experiment "${expName}" erstellt und verglichen`, 'success', 'Erfolg');
             } catch (error) {
                 console.error('A/B Experiment Fehler:', error);
                 alert('Fehler beim A/B Experiment');

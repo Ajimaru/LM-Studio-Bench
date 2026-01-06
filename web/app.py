@@ -1968,6 +1968,158 @@ async def export_experiment(
         return {"success": False, "error": str(e)}
 
 
+@app.post("/api/experiments/run")
+async def run_experiment(request: Request) -> dict:
+    """Führt A/B Experiment aktiv aus: zwei Benchmarks mit angegebenen Parametern"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+
+    try:
+        payload = await request.json()
+        model_name = payload.get("model_name")
+        baseline_params = payload.get("baseline_params", {})
+        test_params = payload.get("test_params", {})
+        runs = payload.get("runs", 3)
+        context = payload.get("context", 2048)
+        prompt = payload.get("prompt", "Erkläre maschinelles Lernen in 3 Sätzen")
+
+        if not model_name:
+            return {"success": False, "error": "model_name fehlt"}
+
+        def build_args(param_set: Dict[str, Any]) -> List[str]:
+            args: List[str] = []
+            # Basis-Parameter
+            args.extend(["--runs", str(runs)])
+            args.extend(["--context", str(context)])
+            args.extend(["--limit", "1"])  # nur dieses Modell
+            args.extend(["--prompt", prompt])
+            args.extend(["--include-models", model_name])
+            # Inference-Params (best guess mapping)
+            if param_set.get("temperature") is not None:
+                args.extend(["--temperature", str(param_set["temperature"])])
+            if param_set.get("top_k") is not None:
+                args.extend(["--top-k", str(param_set["top_k"])])
+            if param_set.get("top_p") is not None:
+                args.extend(["--top-p", str(param_set["top_p"])])
+            if param_set.get("min_p") is not None:
+                args.extend(["--min-p", str(param_set["min_p"])])
+            if param_set.get("repeat_penalty") is not None:
+                args.extend(["--repeat-penalty", str(param_set["repeat_penalty"])])
+            if param_set.get("max_tokens") is not None:
+                args.extend(["--max-tokens", str(param_set["max_tokens"])])
+            # Profiling aktiv lassen
+            args.append("--enable-profiling")
+            return args
+
+        async def run_once(args: List[str]) -> bool:
+            return await manager.start_benchmark(args)
+
+        # Baseline ausführen
+        baseline_args = build_args(baseline_params)
+        baseline_start = datetime.now().isoformat(timespec='seconds')
+        baseline_ok = await run_once(baseline_args)
+        if not baseline_ok:
+            return {"success": False, "error": "Konnte Baseline Benchmark nicht starten"}
+
+        # Warte bis Benchmark fertig ist
+        while manager.is_running():
+            await asyncio.sleep(1.0)
+
+        # Test ausführen
+        test_args = build_args(test_params)
+        test_start = datetime.now().isoformat(timespec='seconds')
+        test_ok = await run_once(test_args)
+        if not test_ok:
+            return {"success": False, "error": "Konnte Test Benchmark nicht starten"}
+
+        while manager.is_running():
+            await asyncio.sleep(1.0)
+
+        # Ergebnisse aus DB lesen (nur neue Einträge)
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time
+            FROM benchmark_results
+            WHERE model_name = ? AND timestamp >= ?
+            ORDER BY timestamp ASC
+        ''', (model_name, baseline_start))
+        baseline_rows = cursor.fetchall()
+
+        cursor.execute('''
+            SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time
+            FROM benchmark_results
+            WHERE model_name = ? AND timestamp >= ?
+            ORDER BY timestamp ASC
+        ''', (model_name, test_start))
+        test_rows = cursor.fetchall()
+
+        conn.close()
+
+        baseline_data = [
+            {"timestamp": r[0], "speed": r[1], "ttft": r[2], "gen_time": r[3]}
+            for r in baseline_rows
+        ]
+        test_data = [
+            {"timestamp": r[0], "speed": r[1], "ttft": r[2], "gen_time": r[3]}
+            for r in test_rows
+        ]
+
+        baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
+        test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
+
+        if not baseline_speeds or not test_speeds:
+            return {
+                "success": False,
+                "error": f"Unzureichend Daten nach Ausführung: Baseline={len(baseline_speeds)}, Test={len(test_speeds)}",
+                "baseline": {"count": len(baseline_speeds)},
+                "test": {"count": len(test_speeds)}
+            }
+
+        baseline_stats = {
+            "count": len(baseline_speeds),
+            "mean": round(statistics.mean(baseline_speeds), 2),
+            "std_dev": round(statistics.stdev(baseline_speeds), 2) if len(baseline_speeds) > 1 else 0,
+            "min": round(min(baseline_speeds), 2),
+            "max": round(max(baseline_speeds), 2),
+            "data": baseline_data
+        }
+
+        test_stats = {
+            "count": len(test_speeds),
+            "mean": round(statistics.mean(test_speeds), 2),
+            "std_dev": round(statistics.stdev(test_speeds), 2) if len(test_speeds) > 1 else 0,
+            "min": round(min(test_speeds), 2),
+            "max": round(max(test_speeds), 2),
+            "data": test_data
+        }
+
+        test_result = perform_ttest(baseline_speeds, test_speeds)
+        effect_size = calculate_effect_size(baseline_speeds, test_speeds)
+        delta_pct = ((test_stats["mean"] - baseline_stats["mean"]) / baseline_stats["mean"] * 100)
+        winner = "tie"
+        if test_result.get("significant"):
+            winner = "test" if test_stats["mean"] > baseline_stats["mean"] else "baseline"
+
+        return {
+            "success": True,
+            "mode": "active",
+            "model_name": model_name,
+            "baseline": baseline_stats,
+            "test": test_stats,
+            "statistical_test": test_result,
+            "effect_size": effect_size,
+            "comparison": {
+                "delta_pct": round(delta_pct, 2),
+                "winner": winner,
+                "significant": test_result.get("significant", False)
+            }
+        }
+    except Exception as e:
+        logger.error(f"❌ Experiment Run Fehler: {e}")
+        return {"success": False, "error": str(e)}
+
 @app.get("/api/dashboard/stats")
 async def get_dashboard_stats() -> dict:
     """Dashboard-Statistiken für Home-View"""
