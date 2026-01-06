@@ -1994,6 +1994,7 @@ async def run_experiment(request: Request) -> dict:
             args.extend(["--limit", "1"])  # nur dieses Modell
             args.extend(["--prompt", prompt])
             args.extend(["--include-models", model_name])
+            args.append("--retest")  # erzwinge neue Läufe statt Cache
             # Inference-Params (best guess mapping)
             if param_set.get("temperature") is not None:
                 args.extend(["--temperature", str(param_set["temperature"])])

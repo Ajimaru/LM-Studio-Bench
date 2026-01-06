@@ -1341,7 +1341,7 @@ class LMStudioBenchmark:
             logger.debug("Python-Version nicht verfügbar")
         return None
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True, inference_overrides: Optional[Dict] = None):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
@@ -1420,12 +1420,17 @@ class LMStudioBenchmark:
         logger.info(f"   • CPU: {self.system_info['cpu_model'] or 'N/A'}")
         logger.info(f"   • Python: {self.system_info['python_version']}")
         
-        # Speichere Inference-Parameter
+        # Speichere Inference-Parameter, ggf. Overrides anwenden
         self.inference_params = OPTIMIZED_INFERENCE_PARAMS.copy()
+        self.inference_overrides = inference_overrides or {}
+        for k, v in (self.inference_overrides or {}).items():
+            if v is not None and k in self.inference_params:
+                self.inference_params[k] = v
         
         # Speichere Hashes für Reproduzierbarkeit
         self.prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-        self.params_hash = BenchmarkCache.compute_params_hash(prompt, context_length, OPTIMIZED_INFERENCE_PARAMS)
+        # Hash mit tatsächlichen Inference-Parametern (inkl. Overrides)
+        self.params_hash = BenchmarkCache.compute_params_hash(prompt, context_length, self.inference_params)
         
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
@@ -1911,14 +1916,14 @@ class LMStudioBenchmark:
                 )
             )
             
-            # Erstelle optimierte Prediction-Konfiguration
+            # Erstelle Prediction-Konfiguration (mit Overrides, falls vorhanden)
             prediction_config = lms.LlmPredictionConfig(
-                temperature=OPTIMIZED_INFERENCE_PARAMS['temperature'],
-                top_k_sampling=OPTIMIZED_INFERENCE_PARAMS['top_k_sampling'],
-                top_p_sampling=OPTIMIZED_INFERENCE_PARAMS['top_p_sampling'],
-                min_p_sampling=OPTIMIZED_INFERENCE_PARAMS['min_p_sampling'],
-                repeat_penalty=OPTIMIZED_INFERENCE_PARAMS['repeat_penalty'],
-                max_tokens=OPTIMIZED_INFERENCE_PARAMS['max_tokens']
+                temperature=self.inference_params['temperature'],
+                top_k_sampling=self.inference_params['top_k_sampling'],
+                top_p_sampling=self.inference_params['top_p_sampling'],
+                min_p_sampling=self.inference_params['min_p_sampling'],
+                repeat_penalty=self.inference_params['repeat_penalty'],
+                max_tokens=self.inference_params['max_tokens']
             )
             
             # DEBUG: Logging der konfigurierten Parameter
@@ -3775,6 +3780,47 @@ Beispiele:
         action='store_true',
         help='Generiere Reports (JSON/CSV/PDF/HTML) aus allen Ergebnissen in der Datenbank ohne neue Tests durchzuführen'
     )
+
+    # Inference-Parameter Overrides (optional)
+    parser.add_argument(
+        '--temperature',
+        type=float,
+        default=None,
+        help='Override: Sampling-Temperatur (z.B. 0.7)'
+    )
+    parser.add_argument(
+        '--top-k', '--top-k-sampling',
+        dest='top_k_sampling',
+        type=int,
+        default=None,
+        help='Override: Top-K Sampling (z.B. 50)'
+    )
+    parser.add_argument(
+        '--top-p', '--top-p-sampling',
+        dest='top_p_sampling',
+        type=float,
+        default=None,
+        help='Override: Top-P (Nucleus Sampling, z.B. 0.95)'
+    )
+    parser.add_argument(
+        '--min-p', '--min-p-sampling',
+        dest='min_p_sampling',
+        type=float,
+        default=None,
+        help='Override: Min-P (Minimum probability threshold, z.B. 0.05)'
+    )
+    parser.add_argument(
+        '--repeat-penalty',
+        type=float,
+        default=None,
+        help='Override: Repeat-Penalty (z.B. 1.2)'
+    )
+    parser.add_argument(
+        '--max-tokens',
+        type=int,
+        default=None,
+        help='Override: Max Output-Tokens (z.B. 256)'
+    )
     
     args = parser.parse_args()
     
@@ -3926,6 +3972,16 @@ Beispiele:
     logger.info(f"⏱️ Geschätzte Gesamtzeit: ~{int(args.runs * 45 * (args.limit or 9) / 9)} Minuten")
     logger.info("")
     
+    # Sammle optionale Inference-Overrides
+    inference_overrides = {
+        'temperature': args.temperature,
+        'top_k_sampling': args.top_k_sampling,
+        'top_p_sampling': args.top_p_sampling,
+        'min_p_sampling': args.min_p_sampling,
+        'repeat_penalty': args.repeat_penalty,
+        'max_tokens': args.max_tokens,
+    }
+
     benchmark = LMStudioBenchmark(
         num_runs=args.runs,
         context_length=args.context,
@@ -3938,7 +3994,8 @@ Beispiele:
         enable_profiling=args.enable_profiling,
         max_temp=args.max_temp,
         max_power=args.max_power,
-        use_gtt=not args.disable_gtt
+        use_gtt=not args.disable_gtt,
+        inference_overrides=inference_overrides
     )
     benchmark.run_all_benchmarks()
     
