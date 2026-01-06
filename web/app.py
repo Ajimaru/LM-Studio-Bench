@@ -3010,7 +3010,9 @@ async def websocket_benchmark(websocket: WebSocket):
                         })
                     except Exception as e:
                         logger.warning(f"⚠️ Konnte Completion-Message nicht senden: {e}")
-                    break
+                    finally:
+                        # Halte die Verbindung für nachfolgende Benchmarks offen
+                        manager.status = "idle"
                 
                 await asyncio.sleep(0.5)
     

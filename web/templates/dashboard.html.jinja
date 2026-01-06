@@ -3601,7 +3601,14 @@
             confDiv.style.marginTop = '0.5rem';
             confDiv.style.fontSize = '0.9rem';
             confDiv.style.color = 'var(--text-light)';
-            confDiv.textContent = `Konfidenz: ${comparison.confidence}`;
+            const confidenceRaw = comparison && comparison.confidence !== undefined && comparison.confidence !== null
+                ? String(comparison.confidence)
+                : 'n/a';
+            const confidenceLabel = confidenceRaw === 'High' ? 'Hoch'
+                : confidenceRaw === 'Medium' ? 'Mittel'
+                : confidenceRaw === 'Low' ? 'Niedrig'
+                : confidenceRaw;
+            confDiv.textContent = `Konfidenz: ${confidenceLabel}`;
             badgeDiv.parentElement.appendChild(confDiv);
         }
 

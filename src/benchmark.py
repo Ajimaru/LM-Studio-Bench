@@ -677,8 +677,10 @@ class BenchmarkCache:
             )
             
             logger.debug(f"📊 INSERT: {len(values)} Werte für 47 Spalten")
-            
-            cursor.execute('''
+
+            placeholders = ", ".join("?" for _ in values)
+
+            cursor.execute(f'''
                 INSERT INTO benchmark_results (
                     model_key, model_name, quantization, inference_params_hash,
                     gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec,
@@ -691,7 +693,7 @@ class BenchmarkCache:
                     warmup_runs, run_index, lmstudio_version, nvidia_driver_version, rocm_driver_version,
                     intel_driver_version, prompt_hash, params_hash, os_name, os_version,
                     cpu_model, python_version, benchmark_duration_seconds, error_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES ({placeholders})
             ''', values)
             
             conn.commit()
