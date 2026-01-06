@@ -901,7 +901,80 @@ async def get_dashboard_stats() -> dict:
                     if not rocm_tool:
                         rocm_tool = 'rocm-smi'  # Fallback auf PATH
                     
-                    # Hole GPU-Modell mit --showproductname (gfx-Code)
+                    # AMD GPU-Kartenserie Mapping basierend auf Device ID
+                    amd_device_mapping = {
+                        '150e': 'Radeon Graphics (Ryzen 9 7950X3D)',  # iGPU aus CPU
+                        '7340': 'Radeon RX 5700 XT',
+                        '731f': 'Radeon RX 5700',
+                        '7360': 'Radeon RX 6700 XT',
+                        '73bf': 'Radeon RX 6600 XT',
+                        '73df': 'Radeon RX 6600',
+                        '15c8': 'Radeon RX 7600 XT',
+                        '5450': 'Radeon RX 6800 XT',
+                        '5498': 'Radeon RX 6900 XT',
+                        '5780': 'Radeon Pro W6800X',
+                        'gfx906': 'Radeon RX 5700 XT (Navi)',
+                        'gfx908': 'MI100',
+                        'gfx90a': 'MI250',
+                    }
+                    
+                    # Hole GPU Device ID aus lspci oder sysfs
+                    gpu_series = None
+                    device_id = None
+                    
+                    try:
+                        # Versuche Device ID aus lspci zu holen (für dedizierte GPUs)
+                        lspci_output = subprocess.run(
+                            ['lspci', '-d', '1002::0300,1002::0380'],  # VGA/Display Controller
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if lspci_output.returncode == 0 and lspci_output.stdout:
+                            # Parse "c7:00.0 0380: 1002:150e (rev c1)"
+                            for line in lspci_output.stdout.strip().split('\n'):
+                                if '1002:' in line:
+                                    # Extrahiere Device ID nach ':'
+                                    parts = line.split('1002:')
+                                    if len(parts) > 1:
+                                        dev_part = parts[1].split()[0]  # "150e" aus "150e (rev c1)"
+                                        device_id = dev_part.lower()
+                                        # Versuche mit lspci -vv die echte Kartenserie zu holen
+                                        lspci_slot = line.split()[0]  # "c7:00.0"
+                                        try:
+                                            detail_output = subprocess.run(
+                                                ['lspci', '-s', lspci_slot, '-v'],
+                                                capture_output=True,
+                                                text=True,
+                                                timeout=5
+                                            )
+                                            if detail_output.returncode == 0:
+                                                detail_text = detail_output.stdout
+                                                # Versuche Kartennamen zu extrahieren (z.B. aus Device Type Strings)
+                                                if 'Radeon' in detail_text:
+                                                    # Extrahiere Kartennamen wenn vorhanden
+                                                    for detail_line in detail_text.split('\n'):
+                                                        if 'Radeon' in detail_line:
+                                                            gpu_series = detail_line.strip()
+                                                            break
+                                        except:
+                                            pass
+                                        break
+                    except (FileNotFoundError, subprocess.TimeoutExpired):
+                        pass
+                    
+                    # Fallback: Hole Device ID aus /sys
+                    if not device_id:
+                        try:
+                            for gpu_path in Path('/sys/devices').glob('**/pci*/*/0000:c7:00.0/device'):
+                                with open(gpu_path, 'r') as f:
+                                    dev_id_hex = f.read().strip()  # "0x150e"
+                                    device_id = dev_id_hex.replace('0x', '')
+                                    break
+                        except:
+                            pass
+                    
+                    # Hole gfx-Code von rocm-smi als Fallback
                     gfx_code = None
                     try:
                         result = subprocess.run(
@@ -911,7 +984,6 @@ async def get_dashboard_stats() -> dict:
                             timeout=5
                         )
                         if result.returncode == 0:
-                            # Parse "GPU[0] : gfx906"
                             for line in result.stdout.split('\n'):
                                 if 'GPU[0]' in line:
                                     parts = line.split(':')
@@ -921,53 +993,15 @@ async def get_dashboard_stats() -> dict:
                     except Exception:
                         pass
                     
-                    # Hole GPU Device ID mit rocm-smi --showid (bessere Kartenerkennung)
-                    device_id = None
-                    try:
-                        result = subprocess.run(
-                            [rocm_tool, '--showid'],
-                            capture_output=True,
-                            text=True,
-                            timeout=5
-                        )
-                        if result.returncode == 0:
-                            # Parse "GPU[0] : {vendor_id}:{device_id}"
-                            for line in result.stdout.split('\n'):
-                                if 'GPU[0]' in line:
-                                    # Extrahiere Device ID
-                                    parts = line.split(':')
-                                    if len(parts) >= 3:
-                                        device_id = parts[-1].strip()
-                                    break
-                    except Exception:
-                        pass
-                    
-                    # Versuche lspci zu nutzen um Kartenserie zu ermitteln
-                    gpu_series = None
-                    if device_id:
-                        try:
-                            lspci_output = subprocess.run(
-                                ['lspci', '-nn', '-d', f'1002:{device_id}'],
-                                capture_output=True,
-                                text=True,
-                                timeout=5
-                            )
-                            if lspci_output.returncode == 0 and lspci_output.stdout:
-                                # Parse "0b:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Radeon RX 5700 XT [1002:7340]"
-                                lspci_line = lspci_output.stdout.strip()
-                                # Extrahiere Kartennamen (nach "AMD/ATI]" bis "[")
-                                if '[AMD/ATI]' in lspci_line:
-                                    parts = lspci_line.split('[AMD/ATI]')
-                                    if len(parts) > 1:
-                                        card_name = parts[1].split('[')[0].strip()
-                                        if card_name and card_name.lower() != 'unknown':
-                                            gpu_series = card_name
-                        except (FileNotFoundError, subprocess.TimeoutExpired):
-                            pass
-                    
-                    # Zusammenstellen GPU-Modell (mit Fallback auf gfx-Code)
-                    if gpu_series:
-                        gpu_model = f"AMD {gpu_series}"
+                    # Zusammenstellen GPU-Modellname mit Fallback-Kette
+                    if gpu_series and 'Radeon' in gpu_series:
+                        gpu_model = gpu_series
+                    elif device_id and device_id in amd_device_mapping:
+                        gpu_model = f"AMD {amd_device_mapping[device_id]}"
+                    elif gfx_code and gfx_code in amd_device_mapping:
+                        gpu_model = f"AMD {amd_device_mapping[gfx_code]}"
+                    elif device_id:
+                        gpu_model = f"AMD GPU (Device: 1002:{device_id})"
                     elif gfx_code:
                         gpu_model = f"AMD {gfx_code}"
                     else:
