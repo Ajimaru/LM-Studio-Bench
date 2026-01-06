@@ -1639,6 +1639,64 @@
                                 </table>
                             </div>
                         </div>
+                        
+                        <!-- Advanced Statistics Section (Phase 14.6d) -->
+                        <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="color: var(--text); margin-bottom: 1rem;">🔬 Erweiterte Statistik & Vorhersage</h3>
+                            <div id="advanced-stats-container" style="display: none;">
+                                <!-- Performance Alert -->
+                                <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem; border-left: 4px solid var(--primary); margin-bottom: 1rem;">
+                                    <div id="performance-alert" style="color: var(--text); font-weight: 600; font-size: 1.1rem;"></div>
+                                </div>
+                                
+                                <!-- Statistics Grid -->
+                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1rem;">
+                                    <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem;">
+                                        <div style="color: var(--text-light); font-size: 0.9rem;">Standard Deviation</div>
+                                        <div id="stat-std-dev" style="color: var(--text); font-weight: 600; font-size: 1.2rem;">--</div>
+                                    </div>
+                                    <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem;">
+                                        <div style="color: var(--text-light); font-size: 0.9rem;">Volatilität</div>
+                                        <div id="stat-volatility" style="color: var(--text); font-weight: 600; font-size: 1.2rem;">--</div>
+                                    </div>
+                                    <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem;">
+                                        <div style="color: var(--text-light); font-size: 0.9rem;">Trend Direction</div>
+                                        <div id="stat-trend" style="color: var(--text); font-weight: 600; font-size: 1.2rem;">--</div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Trend Forecast -->
+                                <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
+                                    <div style="color: var(--text); font-weight: 600; margin-bottom: 0.5rem;">📊 Vorhersage nächste 3 Runs:</div>
+                                    <div id="forecast-values" style="display: flex; gap: 1rem; color: var(--text);">
+                                        <div>Run+1: <span id="forecast-1">--</span> tok/s</div>
+                                        <div>Run+2: <span id="forecast-2">--</span> tok/s</div>
+                                        <div>Run+3: <span id="forecast-3">--</span> tok/s</div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Anomalies -->
+                                <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem;">
+                                    <div style="color: var(--text); font-weight: 600; margin-bottom: 0.5rem;">🔍 Anomalien:</div>
+                                    <div id="anomalies-list" style="color: var(--text); font-size: 0.9rem;">
+                                        <div>Keine Anomalien erkannt</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="advanced-stats-placeholder" style="color: var(--text-light); text-align: center;">
+                                Laden von erweiterten Statistiken...
+                            </div>
+                        </div>
+                        
+                        <!-- Export & Actions -->
+                        <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="color: var(--text); margin-bottom: 1rem;">💾 Export & Aktionen</h3>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                                <button onclick="exportAsCSV()" style="padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📥 CSV Export</button>
+                                <button onclick="downloadChartsPNG()" style="padding: 0.75rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📸 Charts als PNG</button>
+                                <button onclick="printReport()" style="padding: 0.75rem; background: var(--warning); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📄 PDF Report</button>
+                            </div>
+                        </div>
                     </div>
                     
                     <div id="comparison-placeholder" style="background: var(--card); padding: 2rem; border-radius: 0.75rem; text-align: center; color: var(--text-light);">
@@ -2957,6 +3015,167 @@
                 container.appendChild(div);
             });
         }
+        
+        // ===== PHASE 14.6c/d: EXPORT & ADVANCED STATISTICS =====
+        
+        async function loadAdvancedStatistics(modelName) {
+            """Lädt erweiterte Statistiken vom Backend"""
+            try {
+                const response = await fetch(`/api/comparison/statistics/${modelName}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayAdvancedStatistics(data);
+                } else {
+                    document.getElementById('advanced-stats-placeholder').textContent = 'Fehler beim Laden der Statistiken';
+                }
+            } catch (error) {
+                console.error('Fehler beim Abrufen erweit. Statistiken:', error);
+            }
+        }
+        
+        function displayAdvancedStatistics(data) {
+            """Zeigt erweiterte Statistiken an"""
+            document.getElementById('advanced-stats-placeholder').style.display = 'none';
+            document.getElementById('advanced-stats-container').style.display = 'block';
+            
+            // Performance Alert
+            const alertDiv = document.getElementById('performance-alert');
+            alertDiv.textContent = `${data.alert.status} | Recent Avg: ${data.alert.recent_avg} tok/s | Delta: ${data.alert.delta_pct > 0 ? '+' : ''}${data.alert.delta_pct}%`;
+            
+            // Standard Deviation
+            document.getElementById('stat-std-dev').textContent = `${data.advanced.std_dev} tok/s`;
+            
+            // Volatilität
+            document.getElementById('stat-volatility').textContent = `${data.advanced.volatility_pct.toFixed(2)}%`;
+            
+            // Trend
+            document.getElementById('stat-trend').textContent = data.trend.direction;
+            
+            // Vorhersage
+            document.getElementById('forecast-1').textContent = data.forecast.next_3_runs[0];
+            document.getElementById('forecast-2').textContent = data.forecast.next_3_runs[1];
+            document.getElementById('forecast-3').textContent = data.forecast.next_3_runs[2];
+            
+            // Anomalien
+            const anomalyList = document.getElementById('anomalies-list');
+            if (data.anomalies.count > 0) {
+                anomalyList.innerHTML = '';
+                data.anomalies.items.forEach(anomaly => {
+                    const div = document.createElement('div');
+                    div.style.padding = '0.5rem';
+                    div.style.marginBottom = '0.5rem';
+                    div.style.background = 'rgba(255,0,0,0.1)';
+                    div.style.borderRadius = '0.3rem';
+                    div.textContent = `${anomaly.alert} ${anomaly.timestamp}: ${anomaly.speed} tok/s (Z-Score: ${anomaly.z_score})`;
+                    anomalyList.appendChild(div);
+                });
+            }
+        }
+        
+        async function exportAsCSV() {
+            """Exportiert Daten als CSV"""
+            const modelName = document.getElementById('comparison-model-select').value;
+            if (!modelName) {
+                alert('Bitte zuerst ein Modell auswählen');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/comparison/export/csv?model_name=${modelName}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`✅ CSV exportiert: ${data.file}\n${data.rows} Einträge`);
+                } else {
+                    alert(`❌ Export Fehler: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('CSV Export Fehler:', error);
+                alert('Fehler beim CSV Export');
+            }
+        }
+        
+        function downloadChartsPNG() {
+            """Exportiert Charts als PNG mit Plotly"""
+            const modelName = document.getElementById('comparison-model-select').value;
+            if (!modelName) {
+                alert('Bitte zuerst ein Modell auswählen');
+                return;
+            }
+            
+            // Plotly native Export
+            Plotly.downloadImage('comparison-speed-chart', { format: 'png', width: 1000, height: 600, filename: 'comparison_speed.png' });
+            setTimeout(() => {
+                Plotly.downloadImage('comparison-ttft-chart', { format: 'png', width: 1000, height: 600, filename: 'comparison_ttft.png' });
+            }, 1000);
+            setTimeout(() => {
+                Plotly.downloadImage('comparison-gentime-chart', { format: 'png', width: 1000, height: 600, filename: 'comparison_gentime.png' });
+            }, 2000);
+        }
+        
+        function printReport() {
+            """Öffnet Print-Dialog für PDF"""
+            const modelName = document.getElementById('comparison-model-select').value;
+            if (!modelName) {
+                alert('Bitte zuerst ein Modell auswählen');
+                return;
+            }
+            
+            // Sammle Daten für PDF
+            const stats = document.getElementById('comparison-stats').innerHTML;
+            const table = document.getElementById('comparison-history-table').innerHTML;
+            const advStats = document.getElementById('advanced-stats-container').innerHTML;
+            
+            // Öffne Print-Dialog (Browser druckt zu PDF)
+            const printWindow = window.open('', '', 'width=1200,height=800');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Comparison Report - ${modelName}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 2rem; background: white; color: #333; }
+                        h2 { border-bottom: 2px solid #3b82f6; padding-bottom: 0.5rem; }
+                        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+                        th { background: #3b82f6; color: white; padding: 0.75rem; text-align: left; }
+                        td { padding: 0.75rem; border-bottom: 1px solid #e5e7eb; }
+                        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin: 1rem 0; }
+                        .stat-box { background: #f3f4f6; padding: 1rem; border-radius: 0.5rem; }
+                        .page-break { page-break-after: always; }
+                    </style>
+                </head>
+                <body>
+                    <h1>📊 Comparison Report: ${modelName}</h1>
+                    <p>Generated: ${new Date().toLocaleString()}</p>
+                    
+                    <h2>📈 Statistics</h2>
+                    <div class="stats-grid">${stats}</div>
+                    
+                    <h2>🔬 Advanced Analysis</h2>
+                    <div class="stats-grid">${advStats}</div>
+                    
+                    <div class="page-break"></div>
+                    <h2>📋 History</h2>
+                    ${table}
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+        }
+        
+        // Override loadModelHistory to include advanced statistics
+        const originalLoadModelHistory = loadModelHistory;
+        loadModelHistory = async function(modelName) {
+            await originalLoadModelHistory.call(this, modelName);
+            if (modelName) {
+                await loadAdvancedStatistics(modelName);
+            }
+        };
         
         // Lade Vergleichsdaten beim Laden der Seite
         window.addEventListener('load', () => {

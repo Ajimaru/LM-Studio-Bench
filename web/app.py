@@ -924,6 +924,221 @@ async def get_model_history(model_name: str) -> dict:
         return {"success": False, "error": str(e), "history": []}
 
 
+@app.post("/api/comparison/export/csv")
+async def export_comparison_csv(model_name: str = None) -> dict:
+    """Exportiert Vergleichsdaten als CSV"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+    
+    try:
+        import sqlite3
+        import csv
+        from io import StringIO
+        
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        
+        # Hole Daten (mit optionalem Filter nach Modell)
+        if model_name:
+            cursor.execute('''
+                SELECT timestamp, model_name, quantization, avg_tokens_per_sec, avg_ttft, 
+                       avg_gen_time, gpu_offload, vram_mb, temperature, top_k_sampling,
+                       top_p_sampling, min_p_sampling, repeat_penalty, max_tokens,
+                       num_runs, benchmark_duration_seconds, error_count
+                FROM benchmark_results
+                WHERE model_name = ?
+                ORDER BY timestamp ASC
+            ''', (model_name,))
+        else:
+            cursor.execute('''
+                SELECT timestamp, model_name, quantization, avg_tokens_per_sec, avg_ttft, 
+                       avg_gen_time, gpu_offload, vram_mb, temperature, top_k_sampling,
+                       top_p_sampling, min_p_sampling, repeat_penalty, max_tokens,
+                       num_runs, benchmark_duration_seconds, error_count
+                FROM benchmark_results
+                ORDER BY timestamp ASC
+            ''')
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        if not rows:
+            return {"success": False, "error": "Keine Daten gefunden"}
+        
+        # Erstelle CSV
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Header
+        headers = [
+            'Timestamp', 'Model', 'Quantization', 'Speed (tok/s)', 'TTFT (ms)',
+            'Gen-Time (ms)', 'GPU-Offload', 'VRAM (MB)', 'Temperature', 'Top-K',
+            'Top-P', 'Min-P', 'Repeat-Penalty', 'Max-Tokens', 'Num-Runs',
+            'Duration (s)', 'Error-Count'
+        ]
+        writer.writerow(headers)
+        
+        # Daten
+        for row in rows:
+            writer.writerow([
+                row[0], row[1], row[2], round(row[3], 2), round(row[4], 3),
+                round(row[5], 3), round(row[6], 2), row[7], row[8], row[9],
+                row[10], row[11], row[12], row[13], row[14],
+                round(row[15], 2), row[16]
+            ])
+        
+        csv_content = output.getvalue()
+        
+        # Speichere als Datei
+        export_file = RESULTS_DIR / f"comparison_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        with open(export_file, 'w') as f:
+            f.write(csv_content)
+        
+        logger.info(f"📊 CSV Export: {export_file}")
+        
+        return {
+            "success": True,
+            "message": f"CSV exportiert: {len(rows)} Einträge",
+            "file": str(export_file),
+            "rows": len(rows),
+            "csv_preview": csv_content.split('\n')[:5]  # Erste 5 Zeilen
+        }
+    except Exception as e:
+        logger.error(f"❌ CSV Export Fehler: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/comparison/statistics/{model_name}")
+async def get_advanced_statistics(model_name: str) -> dict:
+    """Berechnet erweiterte Statistiken (Volatility, Regression, Alerts)"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+    
+    try:
+        import sqlite3
+        import statistics
+        import math
+        
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        
+        # Hole historische Daten
+        cursor.execute('''
+            SELECT timestamp, avg_tokens_per_sec FROM benchmark_results
+            WHERE model_name = ?
+            ORDER BY timestamp ASC
+        ''', (model_name,))
+        
+        data = cursor.fetchall()
+        conn.close()
+        
+        if not data or len(data) < 2:
+            return {"success": False, "error": "Unzureichend Daten für statistische Analyse"}
+        
+        # Extrahiere Speed-Werte
+        speeds = [row[1] for row in data]
+        timestamps = [row[0] for row in data]
+        
+        # Berechne Statistiken
+        mean = statistics.mean(speeds)
+        variance = statistics.variance(speeds) if len(speeds) > 1 else 0
+        std_dev = math.sqrt(variance)
+        
+        # Volatilität (Coefficient of Variation)
+        volatility = (std_dev / mean * 100) if mean > 0 else 0
+        
+        # Linear Regression (y = mx + b)
+        n = len(speeds)
+        x_values = list(range(n))
+        x_mean = statistics.mean(x_values)
+        y_mean = mean
+        
+        numerator = sum((x_values[i] - x_mean) * (speeds[i] - y_mean) for i in range(n))
+        denominator = sum((x_values[i] - x_mean) ** 2 for i in range(n))
+        
+        slope = numerator / denominator if denominator != 0 else 0
+        intercept = y_mean - slope * x_mean
+        
+        # Prognose für nächste 3 Runs
+        forecast = []
+        for i in range(n, n + 3):
+            predicted_speed = slope * i + intercept
+            forecast.append(round(max(0, predicted_speed), 2))
+        
+        # Z-Score für Anomaly Detection
+        z_scores = []
+        if std_dev > 0:
+            for speed in speeds:
+                z = (speed - mean) / std_dev
+                z_scores.append(round(z, 2))
+        
+        # Finde Anomalien (Z-Score > 2 oder < -2)
+        anomalies = []
+        for i, z in enumerate(z_scores):
+            if abs(z) > 2:
+                anomalies.append({
+                    "index": i,
+                    "timestamp": timestamps[i],
+                    "speed": speeds[i],
+                    "z_score": z,
+                    "alert": "🔴 ANOMALY" if abs(z) > 2.5 else "🟠 WARNING"
+                })
+        
+        # Performance Alert (Trend-basiert)
+        recent_avg = statistics.mean(speeds[-3:]) if len(speeds) >= 3 else speeds[-1]
+        overall_avg = mean
+        performance_delta = ((recent_avg - overall_avg) / overall_avg * 100) if overall_avg > 0 else 0
+        
+        alert = ""
+        if performance_delta < -10:
+            alert = "🔴 PERFORMANCE REGRESSION"
+        elif performance_delta > 10:
+            alert = "🟢 PERFORMANCE IMPROVEMENT"
+        else:
+            alert = "⚪ STABLE"
+        
+        logger.info(f"📈 Advanced Stats für {model_name}: σ={std_dev:.2f}, slope={slope:.4f}")
+        
+        return {
+            "success": True,
+            "model_name": model_name,
+            "basic": {
+                "mean": round(mean, 2),
+                "median": round(statistics.median(speeds), 2),
+                "min": round(min(speeds), 2),
+                "max": round(max(speeds), 2)
+            },
+            "advanced": {
+                "std_dev": round(std_dev, 2),
+                "variance": round(variance, 2),
+                "volatility_pct": round(volatility, 2),
+                "coefficient_of_variation": round(std_dev / mean * 100, 2) if mean > 0 else 0
+            },
+            "trend": {
+                "slope": round(slope, 4),
+                "intercept": round(intercept, 2),
+                "direction": "📈 UPWARD" if slope > 0.01 else "📉 DOWNWARD" if slope < -0.01 else "➡️ FLAT"
+            },
+            "forecast": {
+                "next_3_runs": forecast,
+                "confidence": "Medium" if len(speeds) >= 10 else "Low"
+            },
+            "anomalies": {
+                "count": len(anomalies),
+                "items": anomalies
+            },
+            "alert": {
+                "status": alert,
+                "recent_avg": round(recent_avg, 2),
+                "overall_avg": round(overall_avg, 2),
+                "delta_pct": round(performance_delta, 2)
+            }
+        }
+    except Exception as e:
+        logger.error(f"❌ Advanced Statistics Fehler: {e}")
+        return {"success": False, "error": str(e)}
+
+
 @app.get("/api/output")
 async def get_output() -> dict:
     """Gibt aktuellen Output"""
