@@ -2010,28 +2010,27 @@ async def run_experiment(request: Request) -> dict:
             return {"success": False, "error": "model_name fehlt"}
 
         def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) -> bool:
-    """
-    Prüft ob die Parameter eines DB-Eintrags den Ziel-Parametern entsprechen.
-    Ignoriert None-Werte in target_params (Parameter wurden nicht überschrieben).
-    """
-    for key, target_value in target_params.items():
-        if target_value is None:
-            continue  # Parameter wurde nicht überschrieben, also nicht filtern
-        
-        row_value = row_params.get(key)
-        
-        # Zahlenlänge/Typen vergleichen (floats mit Toleranz)
-        if isinstance(target_value, float) and isinstance(row_value, (int, float)):
-            if abs(row_value - target_value) > 0.001:
-                return False
-        else:
-            if row_value != target_value:
-                return False
-    
-    return True
+            """
+            Prüft ob die Parameter eines DB-Eintrags den Ziel-Parametern entsprechen.
+            Ignoriert None-Werte in target_params (Parameter wurden nicht überschrieben).
+            """
+            for key, target_value in target_params.items():
+                if target_value is None:
+                    continue  # Parameter wurde nicht überschrieben, also nicht filtern
+                
+                row_value = row_params.get(key)
+                
+                # Zahlenlänge/Typen vergleichen (floats mit Toleranz)
+                if isinstance(target_value, float) and isinstance(row_value, (int, float)):
+                    if abs(row_value - target_value) > 0.001:
+                        return False
+                else:
+                    if row_value != target_value:
+                        return False
+            
+            return True
 
-
-def build_args(param_set: Dict[str, Any]) -> List[str]:
+        def build_args(param_set: Dict[str, Any]) -> List[str]:
             args: List[str] = []
             # Basis-Parameter
             args.extend(["--runs", str(runs)])
