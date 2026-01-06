@@ -2258,10 +2258,11 @@
                         const caps = Array.isArray(model.capabilities) ? model.capabilities : [];
                         const capsHtml = caps.map(c => `<span class="cap-badge">${c}</span>`).join('');
                         const capsAttr = caps.join(',');
+                        const modelLink = model.source_url ? `<a href="${model.source_url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">${model.model_name}</a>` : model.model_name;
                         return `
                         <tr style="border-bottom: 1px solid var(--border);" data-caps="${capsAttr}">
                             <td style="padding: 0.75rem;">
-                                <div>${model.model_name}</div>
+                                <div>${modelLink}</div>
                                 ${capsHtml ? `<div style=\"margin-top:0.25rem;\">${capsHtml}</div>` : ''}
                             </td>
                             <td style="padding: 0.75rem;">${model.quantization}</td>
@@ -2280,10 +2281,11 @@
                         const caps = Array.isArray(run.capabilities) ? run.capabilities : [];
                         const capsHtml = caps.map(c => `<span class="cap-badge">${c}</span>`).join('');
                         const capsAttr = caps.join(',');
+                        const modelLink = run.source_url ? `<a href="${run.source_url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">${run.model_name}</a>` : run.model_name;
                         return `
                         <tr style="border-bottom: 1px solid var(--border);" data-caps="${capsAttr}">
                             <td style="padding: 0.75rem;">
-                                <div>${run.model_name}</div>
+                                <div>${modelLink}</div>
                                 ${capsHtml ? `<div style=\"margin-top:0.25rem;\">${capsHtml}</div>` : ''}
                             </td>
                             <td style="padding: 0.75rem;">${run.quantization}</td>
@@ -2660,9 +2662,12 @@
                     const quant = row.quantization || 'n/a';
                     const gpu = row.gpu_type || 'n/a';
                     const key = row.model_key || `${model}@${quant}`;
+                    const baseKey = model.split('@')[0];
+                    const modelUrl = `https://lmstudio.ai/models/${baseKey}`;
+                    const modelLink = `<a href="${modelUrl}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;">${model}</a>`;
                     return `
                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.08);">
-                    <td style="padding: 0.75rem;">${model}</td>
+                    <td style="padding: 0.75rem;">${modelLink}</td>
                     <td style="padding: 0.75rem;">${quant}</td>
                     <td style="padding: 0.75rem; text-align: right; font-weight: 600;">${tok.toFixed(2)}</td>
                     <td style="padding: 0.75rem; text-align: right;">${vram.toFixed(0)}</td>

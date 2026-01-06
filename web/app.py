@@ -2910,13 +2910,15 @@ async def get_dashboard_stats() -> dict:
         if results:
             sorted_results = sorted(results, key=lambda r: r.avg_tokens_per_sec, reverse=True)
             for i, r in enumerate(sorted_results[:5]):
+                base_key = r.model_name.split('@')[0]
                 top_models.append({
                     "model_name": r.model_name,
                     "quantization": r.quantization,
                     "speed": round(r.avg_tokens_per_sec, 2),
                     "vram_mb": r.vram_mb,
                     "params_size": r.params_size,
-                    "capabilities": capabilities_by_model.get(r.model_name, [])
+                    "capabilities": capabilities_by_model.get(r.model_name, []),
+                    "source_url": f"https://lmstudio.ai/models/{base_key}"
                 })
                 # Speichere schnellstes Modell
                 if i == 0:
@@ -2932,13 +2934,15 @@ async def get_dashboard_stats() -> dict:
         if results:
             sorted_by_time = sorted(results, key=lambda r: r.timestamp, reverse=True)
             for i, r in enumerate(sorted_by_time[:10]):
+                base_key = r.model_name.split('@')[0]
                 recent_runs.append({
                     "model_name": r.model_name,
                     "quantization": r.quantization,
                     "speed": round(r.avg_tokens_per_sec, 2),
                     "timestamp": r.timestamp,
                     "gpu_offload": r.gpu_offload,
-                    "capabilities": capabilities_by_model.get(r.model_name, [])
+                    "capabilities": capabilities_by_model.get(r.model_name, []),
+                    "source_url": f"https://lmstudio.ai/models/{base_key}"
                 })
                 # Speichere letzten Run Timestamp
                 if i == 0:
