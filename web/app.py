@@ -744,9 +744,8 @@ async def get_dashboard_stats() -> dict:
 
         # LM Studio Healthcheck - ROBUST via HTTP API Ping
         # Primär: HTTP GET auf LM Studio API (Port 1234 default)
-        # Fallback 1: CLI `lms status`
-        # Fallback 2: Prozess-Check
-        lmstudio_health = {"ok": False, "status": "unknown"}
+        # Fallback: CLI `lms status` mit "Server: OFF" Erkennung
+        lmstudio_health = {"ok": False, "status": "offline"}
         lmstudio_ports = [1234, 1235, 8080]  # Typische LM Studio Ports
         
         # 1. HTTP API Check (schnellster und zuverlässigster Weg)
@@ -765,24 +764,18 @@ async def get_dashboard_stats() -> dict:
             try:
                 result = subprocess.run(["lms", "status"], capture_output=True, text=True, timeout=2)
                 text = (result.stdout + result.stderr).lower()
-                offline_keywords = ["not running", "stopped", "offline", "no server", "not loaded", "error", "failed"]
+                # Explizite Offline-Marker (inkl. "server:  off" und "server: off")
+                offline_keywords = ["server:  off", "server: off", "off", "not running", "stopped", "offline", "no server", "not loaded", "error", "failed"]
                 is_offline = any(kw in text for kw in offline_keywords) or result.returncode != 0
-                if not is_offline and text.strip():
+                # Explizite Online-Marker
+                online_keywords = ["server:  on", "server: on", "running", "listening", "ready"]
+                is_online = any(kw in text for kw in online_keywords) and not is_offline
+                if is_online:
                     lmstudio_health = {"ok": True, "status": "online (cli)", "version": None}
             except Exception:
                 pass
         
-        # 3. Letzter Fallback: Prozess-Check
-        if not lmstudio_health["ok"]:
-            try:
-                for proc in psutil.process_iter(['name', 'cmdline']):
-                    name = (proc.info.get('name') or '').lower()
-                    cmdline = ' '.join(proc.info.get('cmdline') or []).lower()
-                    if 'lmstudio' in name or 'lm studio' in name or 'lmstudio' in cmdline:
-                        lmstudio_health = {"ok": True, "status": "online (process)", "version": None}
-                        break
-            except Exception:
-                pass
+        # Kein Prozess-Check mehr - zu unzuverlässig (Autostart-Scripte geben false positives)
         
         # System-Info (erweitert)
         system_info = {
