@@ -1081,10 +1081,6 @@
                             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); color: var(--text-light); line-height: 1.8;">
                                 <div><span style="color: var(--text); font-weight: 500;">LM Studio:</span> <span id="home-lmstudio-version">--</span></div>
                             </div>
-                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 0.75rem;">
-                                <button onclick="showView('benchmark')" style="padding: 0.5rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">⚡ Benchmark starten</button>
-                                <button onclick="showView('results')" style="padding: 0.5rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">📊 Ergebnisse</button>
-                            </div>
                         </div>
 
                         <!-- RIGHT COLUMN: BENCHMARK (mit zusätzlichen Details) -->
@@ -1102,6 +1098,10 @@
                                     <div><span style="color: var(--text); font-weight: 500;">Name:</span> <span id="home-fastest-model">--</span></div>
                                     <div><span style="color: var(--text); font-weight: 500;">Geschwindigkeit:</span> <span id="home-fastest-speed">--</span></div>
                                 </div>
+                            </div>
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 0.75rem;">
+                                <button onclick="showView('benchmark')" style="padding: 0.5rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">⚡ Benchmark starten</button>
+                                <button onclick="showView('results')" style="padding: 0.5rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">📊 Ergebnisse</button>
                             </div>
                         </div>
                     </div>
