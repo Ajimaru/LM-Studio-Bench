@@ -2040,6 +2040,7 @@ async def run_experiment(request: Request) -> dict:
 
         # Baseline ausführen
         baseline_args = build_args(baseline_params)
+        logger.info(f"🎯 Baseline Args: {baseline_args}")
         baseline_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         baseline_ok = await run_once(baseline_args)
         if not baseline_ok:
@@ -2053,6 +2054,7 @@ async def run_experiment(request: Request) -> dict:
 
         # Test ausführen
         test_args = build_args(test_params)
+        logger.info(f"🎯 Test Args: {test_args}")
         test_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         test_ok = await run_once(test_args)
         if not test_ok:
