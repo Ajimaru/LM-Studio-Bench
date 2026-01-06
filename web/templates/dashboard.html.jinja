@@ -1129,9 +1129,6 @@
                                     <div><span style="color: var(--text); font-weight: 500;">Geschwindigkeit:</span> <span id="home-fastest-speed">--</span></div>
                                 </div>
                             </div>
-                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); color: var(--text-light); line-height: 1.8;">
-                                <div><span style="color: var(--text); font-weight: 500;">Server Status:</span> <span id="home-server-status" style="font-weight: 600;">--</span></div>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -1798,10 +1795,6 @@
                     document.getElementById('home-fastest-speed').textContent = '--';
                 }
                 
-                // Server Status
-                document.getElementById('home-server-status').textContent = '✅ Online';
-                document.getElementById('home-server-status').style.color = '#27ae60';
-                
                 // Top Models Table
                 const topModelsBody = document.getElementById('home-top-models');
                 if (data.top_models && data.top_models.length > 0) {
@@ -1835,9 +1828,6 @@
             } catch (error) {
                 console.error('Error loading dashboard stats:', error);
                 showToast('Fehler beim Laden der Dashboard-Statistiken', 'error');
-                // Set all fields to offline state
-                document.getElementById('home-server-status').textContent = '❌ Offline';
-                document.getElementById('home-server-status').style.color = '#e74c3c';
             }
         }
 
