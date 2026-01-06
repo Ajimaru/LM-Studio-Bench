@@ -733,24 +733,50 @@ async def get_dashboard_stats() -> dict:
     try:
         import platform
         import sqlite3
+        import psutil
+        from datetime import datetime
         
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
         
-        # System-Info
+        # System-Info (erweitert)
         system_info = {
             "os": platform.system(),
             "python_version": platform.python_version(),
-            "cpu": platform.processor() or platform.machine()
+            "cpu": platform.processor() or platform.machine(),
+            "cpu_cores": psutil.cpu_count(logical=False),  # Physical cores
+            "ram_gb": round(psutil.virtual_memory().total / (1024**3), 2)
         }
         
         # GPU-Info aus erstem Result (wenn verfügbar)
         gpu_info = None
         if results:
-            gpu_info = {
-                "type": results[0].gpu_type,
-                "vram_total_gb": None  # Kann später aus GPU-Query ermittelt werden
-            }
+            try:
+                import subprocess
+                vram_info = {"vram_gb": None, "gtt_gb": None, "total_gb": None}
+                
+                # Versuche NVIDIA GPU Info zu ermitteln
+                if results[0].gpu_type == "NVIDIA":
+                    try:
+                        output = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'], timeout=5)
+                        vram_total_mb = int(output.decode().strip().split('\n')[0])
+                        vram_info["vram_gb"] = round(vram_total_mb / 1024, 2)
+                    except:
+                        vram_info["vram_gb"] = None
+                
+                gpu_info = {
+                    "type": results[0].gpu_type,
+                    "vram_gb": vram_info["vram_gb"],
+                    "gtt_gb": system_info["ram_gb"],  # System RAM als GTT
+                    "total_gb": vram_info["vram_gb"] + system_info["ram_gb"] if vram_info["vram_gb"] else system_info["ram_gb"]
+                }
+            except:
+                gpu_info = {
+                    "type": results[0].gpu_type,
+                    "vram_gb": None,
+                    "gtt_gb": system_info["ram_gb"],
+                    "total_gb": None
+                }
         
         # Cache-Statistiken
         cache_stats = {
@@ -771,9 +797,10 @@ async def get_dashboard_stats() -> dict:
         
         # Top 5 Schnellste Modelle
         top_models = []
+        fastest_model = None
         if results:
-            sorted_results = sorted(results, key=lambda r: r.avg_tokens_per_sec, reverse=True)[:5]
-            for r in sorted_results:
+            sorted_results = sorted(results, key=lambda r: r.avg_tokens_per_sec, reverse=True)
+            for i, r in enumerate(sorted_results[:5]):
                 top_models.append({
                     "model_name": r.model_name,
                     "quantization": r.quantization,
@@ -781,12 +808,19 @@ async def get_dashboard_stats() -> dict:
                     "vram_mb": r.vram_mb,
                     "params_size": r.params_size
                 })
+                # Speichere schnellstes Modell
+                if i == 0:
+                    fastest_model = {
+                        "name": r.model_name,
+                        "speed": round(r.avg_tokens_per_sec, 2)
+                    }
         
         # Letzte 10 Benchmark-Runs (mit Timestamp)
         recent_runs = []
+        last_run_timestamp = None
         if results:
-            sorted_by_time = sorted(results, key=lambda r: r.timestamp, reverse=True)[:10]
-            for r in sorted_by_time:
+            sorted_by_time = sorted(results, key=lambda r: r.timestamp, reverse=True)
+            for i, r in enumerate(sorted_by_time[:10]):
                 recent_runs.append({
                     "model_name": r.model_name,
                     "quantization": r.quantization,
@@ -794,6 +828,9 @@ async def get_dashboard_stats() -> dict:
                     "timestamp": r.timestamp,
                     "gpu_offload": r.gpu_offload
                 })
+                # Speichere letzten Run Timestamp
+                if i == 0:
+                    last_run_timestamp = r.timestamp
         
         return {
             "success": True,
@@ -802,7 +839,9 @@ async def get_dashboard_stats() -> dict:
             "cache_stats": cache_stats,
             "perf_stats": perf_stats,
             "top_models": top_models,
-            "recent_runs": recent_runs
+            "recent_runs": recent_runs,
+            "fastest_model": fastest_model,
+            "last_run": last_run_timestamp
         }
     except Exception as e:
         logger.error(f"❌ Fehler beim Laden der Dashboard-Stats: {e}")

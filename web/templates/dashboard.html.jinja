@@ -1098,10 +1098,48 @@
 
                 <div class="card">
                     <h2>💻 System</h2>
-                    <div style="font-size: 0.9rem; color: var(--text-light); line-height: 1.6;">
-                        <div><strong>OS:</strong> <span id="home-os">--</span></div>
-                        <div><strong>Python:</strong> <span id="home-python">--</span></div>
-                        <div><strong>GPU:</strong> <span id="home-gpu">--</span></div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; font-size: 0.9rem;">
+                        <!-- LEFT COLUMN: HARDWARE -->
+                        <div>
+                            <div style="color: var(--primary); font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--primary);">🖥️ HARDWARE</div>
+                            <div style="color: var(--text-light); line-height: 1.8;">
+                                <div><span style="color: var(--text); font-weight: 500;">OS:</span> <span id="home-os">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">CPU:</span> <span id="home-cpu">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Kerne:</span> <span id="home-cores">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">RAM:</span> <span id="home-ram">--</span></div>
+                            </div>
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); color: var(--text-light); line-height: 1.8;">
+                                <div><span style="color: var(--text); font-weight: 500;">GPU Modell:</span> <span id="home-gpu-model">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">GPU VRAM:</span> <span id="home-gpu-vram">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">System RAM (GTT):</span> <span id="home-gpu-gtt">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Verfügbar:</span> <span id="home-gpu-total">--</span></div>
+                            </div>
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); color: var(--text-light); line-height: 1.8;">
+                                <div><span style="color: var(--text); font-weight: 500;">LM Studio:</span> <span id="home-lmstudio-version">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Port:</span> <span id="home-lmstudio-port">--</span></div>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN: BENCHMARK -->
+                        <div>
+                            <div style="color: #e74c3c; font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e74c3c;">📊 BENCHMARK</div>
+                            <div style="color: var(--text-light); line-height: 1.8;">
+                                <div><span style="color: var(--text); font-weight: 500;">Gecachte Modelle:</span> <span id="home-cached-models">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Ø Geschwindigkeit:</span> <span id="home-avg-speed">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Cache Größe:</span> <span id="home-cache-size">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Letzter Durchlauf:</span> <span id="home-last-run">--</span></div>
+                            </div>
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); color: var(--text-light); line-height: 1.8;">
+                                <div><span style="color: var(--text); font-weight: 500;">🏆 Schnellstes Modell:</span></div>
+                                <div style="margin-left: 1rem; margin-top: 0.5rem;">
+                                    <div><span style="color: var(--text); font-weight: 500;">Name:</span> <span id="home-fastest-model">--</span></div>
+                                    <div><span style="color: var(--text); font-weight: 500;">Geschwindigkeit:</span> <span id="home-fastest-speed">--</span></div>
+                                </div>
+                            </div>
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); color: var(--text-light); line-height: 1.8;">
+                                <div><span style="color: var(--text); font-weight: 500;">Server Status:</span> <span id="home-server-status" style="font-weight: 600;">--</span></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1688,23 +1726,78 @@
                     return;
                 }
                 
+                // === LEFT COLUMN: HARDWARE ===
+                // System Info
+                document.getElementById('home-os').textContent = data.system_info.os || '--';
+                document.getElementById('home-cpu').textContent = data.system_info.cpu || '--';
+                document.getElementById('home-cores').textContent = data.system_info.cpu_cores || '--';
+                document.getElementById('home-ram').textContent = `${data.system_info.ram_gb} GB` || '--';
+                
+                // GPU Info
+                if (data.gpu_info) {
+                    document.getElementById('home-gpu-model').textContent = data.gpu_info.type || '--';
+                    document.getElementById('home-gpu-vram').textContent = data.gpu_info.vram_gb ? `${data.gpu_info.vram_gb} GB` : 'Nicht erkannt';
+                    document.getElementById('home-gpu-gtt').textContent = data.gpu_info.gtt_gb ? `${data.gpu_info.gtt_gb} GB` : '--';
+                    document.getElementById('home-gpu-total').textContent = data.gpu_info.total_gb ? `${data.gpu_info.total_gb} GB` : '--';
+                } else {
+                    document.getElementById('home-gpu-model').textContent = 'Nicht erkannt';
+                    document.getElementById('home-gpu-vram').textContent = '--';
+                    document.getElementById('home-gpu-gtt').textContent = '--';
+                    document.getElementById('home-gpu-total').textContent = '--';
+                }
+                
+                // LM Studio Info (aus process info)
+                document.getElementById('home-lmstudio-version').textContent = 'Running';
+                document.getElementById('home-lmstudio-port').textContent = window.location.port || '53381';
+                
+                // === RIGHT COLUMN: BENCHMARK ===
                 // Cache Stats
-                document.getElementById('home-cache-count').textContent = data.cache_stats.total_models || 0;
-                document.getElementById('home-db-size').textContent = `${data.cache_stats.db_size_mb} MB`;
+                document.getElementById('home-cached-models').textContent = data.cache_stats.total_models || 0;
+                document.getElementById('home-cache-size').textContent = `${data.cache_stats.db_size_mb} MB`;
                 
                 // Performance Stats
                 if (data.perf_stats.avg_speed) {
                     document.getElementById('home-avg-speed').textContent = `${data.perf_stats.avg_speed} tok/s`;
-                    document.getElementById('home-max-speed').textContent = `${data.perf_stats.max_speed} tok/s`;
                 } else {
                     document.getElementById('home-avg-speed').textContent = 'Keine Daten';
-                    document.getElementById('home-max-speed').textContent = 'Keine Daten';
                 }
                 
-                // System Info
-                document.getElementById('home-os').textContent = data.system_info.os || '--';
-                document.getElementById('home-python').textContent = data.system_info.python_version || '--';
-                document.getElementById('home-gpu').textContent = data.gpu_info ? data.gpu_info.type : 'Nicht erkannt';
+                // Last Run
+                if (data.last_run) {
+                    const lastRunDate = new Date(data.last_run);
+                    const now = new Date();
+                    const diffMs = now - lastRunDate;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    const diffHours = Math.floor(diffMins / 60);
+                    const diffDays = Math.floor(diffHours / 24);
+                    
+                    let timeStr = '';
+                    if (diffDays > 0) {
+                        timeStr = `vor ${diffDays} Tag${diffDays > 1 ? 'en' : ''}`;
+                    } else if (diffHours > 0) {
+                        timeStr = `vor ${diffHours}h`;
+                    } else if (diffMins > 0) {
+                        timeStr = `vor ${diffMins}m`;
+                    } else {
+                        timeStr = 'gerade eben';
+                    }
+                    document.getElementById('home-last-run').textContent = timeStr;
+                } else {
+                    document.getElementById('home-last-run').textContent = 'Nie';
+                }
+                
+                // Fastest Model
+                if (data.fastest_model) {
+                    document.getElementById('home-fastest-model').textContent = data.fastest_model.name || '--';
+                    document.getElementById('home-fastest-speed').textContent = `${data.fastest_model.speed} tok/s` || '--';
+                } else {
+                    document.getElementById('home-fastest-model').textContent = '--';
+                    document.getElementById('home-fastest-speed').textContent = '--';
+                }
+                
+                // Server Status
+                document.getElementById('home-server-status').textContent = '✅ Online';
+                document.getElementById('home-server-status').style.color = '#27ae60';
                 
                 // Top Models Table
                 const topModelsBody = document.getElementById('home-top-models');
@@ -1739,6 +1832,9 @@
             } catch (error) {
                 console.error('Error loading dashboard stats:', error);
                 showToast('Fehler beim Laden der Dashboard-Statistiken', 'error');
+                // Set all fields to offline state
+                document.getElementById('home-server-status').textContent = '❌ Offline';
+                document.getElementById('home-server-status').style.color = '#e74c3c';
             }
         }
 
