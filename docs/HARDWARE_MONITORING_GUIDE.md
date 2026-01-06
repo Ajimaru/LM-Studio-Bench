@@ -100,7 +100,7 @@ Diese Ausgaben werden:
 
 ## 🎯 Datenfluss
 
-```
+```text
 Backend (benchmark.py)
   ↓
 HardwareMonitor._monitor_loop()

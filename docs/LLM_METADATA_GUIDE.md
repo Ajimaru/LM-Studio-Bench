@@ -18,16 +18,19 @@ lms version             # LM Studio Version
 Das Benchmark-System erkennt automatisch all Ihre GPUs und deren Spezifikationen:
 
 **NVIDIA GPUs:**
+
 - Automatische Erkennung via `nvidia-smi`
 - VRAM-Größe erfasst für Offload-Optimierung
 - Temperatur und Leistung werden monitort
 
 **AMD GPUs (rocm-smi):**
+
 - Detaillierte Device-ID-Mapping für GPU-Modell-Namen
 - VRAM- und GTT-Speicher werden separat erfasst
 - rocm-smi Suchpfade: `/usr/bin`, `/usr/local/bin`, `/opt/rocm-*/bin/`
 
 **iGPU-Erkennung:**
+
 - Radeon iGPUs werden aus CPU-String extrahiert
 - Regex-Muster: `Radeon\s+(\d+[A-Za-z]*)`
 - Zeigt z.B. "Radeon 890M (Ryzen 9 7950X3D)" separat an
@@ -37,7 +40,7 @@ Das Benchmark-System erkennt automatisch all Ihre GPUs und deren Spezifikationen
 ### Kategorie 1: Modell-Identifikation (5 Felder)
 
 | Feld | Typ | Beispiel | Beschreibung |
-|------|-----|---------|-------------|
+| --- | --- | --- | --- |
 | `type` | string | "llm" | Modelltyp (llm, embedding) |
 | `modelKey` | string | "mistralai/ministral-3-3b" | Eindeutige Modell-ID |
 | `displayName` | string | "Ministral 3 3B" | Anzeigename |
@@ -47,7 +50,7 @@ Das Benchmark-System erkennt automatisch all Ihre GPUs und deren Spezifikationen
 ### Kategorie 2: Technische Spezifikationen (4 Felder)
 
 | Feld | Typ | Beispiel | Beschreibung |
-|------|-----|---------|-------------|
+| --- | --- | --- | --- |
 | `architecture` | string | "mistral3", "gemma3", "llama" | Modell-Architektur |
 | `format` | string | "gguf" | Dateiformat (GGUF, etc.) |
 | `paramsString` | string | "3B", "7B", "13B" | Parameter-Größe |
@@ -56,15 +59,15 @@ Das Benchmark-System erkennt automatisch all Ihre GPUs und deren Spezifikationen
 ### Kategorie 3: Modell-Fähigkeiten (3 Felder)
 
 | Feld | Typ | Beispiel | Beschreibung |
-|------|-----|---------|-------------|
+| --- | --- | --- | --- |
 | `vision` | boolean | true / false | Kann Bilder verarbeiten? |
 | `trainedForToolUse` | boolean | true / false | Unterstützt Tool-Calling/Funktions-Aufrufe? |
 | `maxContextLength` | number | 131072, 262144 | Max. Context-Länge in Tokens |
 
-### Kategorie 4: Quantisierung & Varianten (3 Felder)
+### Kategorie 4: Quantisierung & Varianten (4 Felder)
 
 | Feld | Typ | Beispiel | Beschreibung |
-|------|-----|---------|-------------|
+| --- | --- | --- | --- |
 | `quantization.name` | string | "Q4_K_M", "Q8_0", "F16" | Quantisierungs-Methode |
 | `quantization.bits` | number | 4, 8, 16 | Bits pro Gewicht |
 | `variants` | array | ["@q4_k_m", "@q8_0"] | Alle verfügbaren Quantisierungen |
@@ -79,7 +82,8 @@ lms ls --json | jq '.[] | select(.vision == true) | {displayName, paramsString, 
 ```
 
 **Ausgabe:**
-```
+
+```text
   • Gemma 3 4B (4B) - 131072 Tokens
   • Ministral 3 3B (3B) - 262144 Tokens
   • Qwen3 Vl 8B (8B) - 262144 Tokens
@@ -146,6 +150,7 @@ for model in large_models:
 ### Use Case 1: Schnelle Performance-Tests
 
 Filter nur kleine Modelle < 1GB für schnelle Benchmarks:
+
 ```bash
 lms ls --json | jq '.[] | select(.sizeBytes < 1000000000) | .modelKey'
 ```
@@ -153,6 +158,7 @@ lms ls --json | jq '.[] | select(.sizeBytes < 1000000000) | .modelKey'
 ### Use Case 2: Langtext-Verarbeitung
 
 Modelle mit großem Context für Dokumentanalyse:
+
 ```bash
 lms ls --json | jq '.[] | select(.maxContextLength >= 100000) | .displayName'
 ```
@@ -160,6 +166,7 @@ lms ls --json | jq '.[] | select(.maxContextLength >= 100000) | .displayName'
 ### Use Case 3: Bildverarbeitung
 
 Multi-Modal Modelle für Vision-Tasks:
+
 ```bash
 lms ls --json | jq '.[] | select(.vision == true) | .modelKey'
 ```
@@ -167,6 +174,7 @@ lms ls --json | jq '.[] | select(.vision == true) | .modelKey'
 ### Use Case 4: Tool-Integration
 
 Modelle mit Function-Calling für Agent-Systeme:
+
 ```bash
 lms ls --json | jq '.[] | select(.trainedForToolUse == true) | .displayName'
 ```
@@ -174,6 +182,7 @@ lms ls --json | jq '.[] | select(.trainedForToolUse == true) | .displayName'
 ### Use Case 5: Quantisierungs-Vergleich
 
 Alle verfügbaren Quantisierungen eines Modells:
+
 ```bash
 lms ls "google/gemma-3-1b" --json | jq '.variants[]'
 ```
@@ -239,14 +248,14 @@ lms load <model>        # Modell laden
 lms unload --all        # Alle Modelle entladen
 ```
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 **Problem: Keine Ausgabe bei `lms ls --json`**
 
 - Sicherstellen dass LM Studio Server läuft: `lms server start`
 - Port-Konflikt prüfen
 
-**Problem: `jq` nicht installiert**
+**Problem: jq nicht installiert**
 
 - Installation: `sudo apt install jq` (Linux) oder `brew install jq` (macOS)
 - Alternative: Python Parsing verwenden
