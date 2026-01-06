@@ -3382,22 +3382,29 @@
         }
 
         function updateABButton(state) {
+            console.log('🔄 updateABButton called with state:', state);
             const btn = document.getElementById('ab-experiment-btn');
-            if (!btn) return;
+            if (!btn) {
+                console.error('❌ Button not found!');
+                return;
+            }
             
             switch(state) {
                 case 'running':
+                    console.log('▶️ Setting button to RUNNING state');
                     btn.innerHTML = '⏹️ Experiment stoppen';
                     btn.style.background = '#dc3545';
                     btn.disabled = false;
                     break;
                 case 'calculating':
+                    console.log('⏳ Setting button to CALCULATING state');
                     btn.innerHTML = '⏳ Berechne...';
                     btn.style.background = '#6c757d';
                     btn.disabled = true;
                     break;
                 case 'start':
                 default:
+                    console.log('🚀 Setting button to START state');
                     btn.innerHTML = '🚀 Experiment starten';
                     btn.style.background = 'var(--primary)';
                     btn.disabled = false;
@@ -3406,6 +3413,7 @@
         }
 
         async function startABExperiment() {
+            console.log('🚀 startABExperiment called');
             const modelName = document.getElementById('ab-model-select').value;
             if (!modelName) {
                 alert('Bitte ein Modell auswählen');
@@ -3415,6 +3423,7 @@
             const expName = document.getElementById('ab-experiment-name').value || `Experiment ${new Date().toLocaleTimeString()}`;
             
             // Set button to running state
+            console.log('📊 Setting experiment running flag to true');
             abExperimentRunning = true;
             updateABButton('running');
 
@@ -3444,6 +3453,7 @@
             try {
                 let comparisonData;
                 if (activeRun) {
+                    console.log('📡 Sending POST to /api/experiments/run');
                     const runResponse = await fetch('/api/experiments/run', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -3457,9 +3467,11 @@
                     });
                     
                     // Benchmarks finished, now calculating
+                    console.log('⏳ Benchmarks finished, calculating results...');
                     updateABButton('calculating');
                     
                     comparisonData = await runResponse.json();
+                    console.log('✅ Results received:', comparisonData);
                     if (!comparisonData.success) {
                         alert(`Fehler beim aktiven A/B Lauf: ${comparisonData.error}`);
                         updateABButton('start');
@@ -3520,14 +3532,16 @@
                 }
 
                 // Rendere Ergebnisse
+                console.log('📊 Rendering results...');
                 renderABResults(comparisonData);
                 
                 // Reset button state
+                console.log('🔄 Resetting button to start state');
                 updateABButton('start');
                 abExperimentRunning = false;
                 
             } catch (error) {
-                console.error('A/B Experiment Fehler:', error);
+                console.error('❌ A/B Experiment Fehler:', error);
                 alert('Fehler beim A/B Experiment');
                 updateABButton('start');
                 abExperimentRunning = false;
@@ -3535,6 +3549,7 @@
         }
 
         function renderABResults(data) {
+            console.log('📈 renderABResults called with data:', data);
             // Zeige Results Container
             document.getElementById('ab-results-container').style.display = 'block';
             document.getElementById('ab-placeholder').style.display = 'none';
