@@ -901,7 +901,8 @@ async def get_dashboard_stats() -> dict:
                     if not rocm_tool:
                         rocm_tool = 'rocm-smi'  # Fallback auf PATH
                     
-                    # Hole GPU-Modell mit --showproductname
+                    # Hole GPU-Modell mit --showproductname (gfx-Code)
+                    gfx_code = None
                     try:
                         result = subprocess.run(
                             [rocm_tool, '--showproductname'],
@@ -913,14 +914,63 @@ async def get_dashboard_stats() -> dict:
                             # Parse "GPU[0] : gfx906"
                             for line in result.stdout.split('\n'):
                                 if 'GPU[0]' in line:
-                                    # Extrahiere das GPU-Modell nach ':'
                                     parts = line.split(':')
                                     if len(parts) > 1:
-                                        product = parts[1].strip()
-                                        if product:
-                                            gpu_model = f"AMD {product}"
+                                        gfx_code = parts[1].strip()
                                     break
                     except Exception:
+                        pass
+                    
+                    # Hole GPU Device ID mit rocm-smi --showid (bessere Kartenerkennung)
+                    device_id = None
+                    try:
+                        result = subprocess.run(
+                            [rocm_tool, '--showid'],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if result.returncode == 0:
+                            # Parse "GPU[0] : {vendor_id}:{device_id}"
+                            for line in result.stdout.split('\n'):
+                                if 'GPU[0]' in line:
+                                    # Extrahiere Device ID
+                                    parts = line.split(':')
+                                    if len(parts) >= 3:
+                                        device_id = parts[-1].strip()
+                                    break
+                    except Exception:
+                        pass
+                    
+                    # Versuche lspci zu nutzen um Kartenserie zu ermitteln
+                    gpu_series = None
+                    if device_id:
+                        try:
+                            lspci_output = subprocess.run(
+                                ['lspci', '-nn', '-d', f'1002:{device_id}'],
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            if lspci_output.returncode == 0 and lspci_output.stdout:
+                                # Parse "0b:00.0 VGA compatible controller: Advanced Micro Devices, Inc. [AMD/ATI] Radeon RX 5700 XT [1002:7340]"
+                                lspci_line = lspci_output.stdout.strip()
+                                # Extrahiere Kartennamen (nach "AMD/ATI]" bis "[")
+                                if '[AMD/ATI]' in lspci_line:
+                                    parts = lspci_line.split('[AMD/ATI]')
+                                    if len(parts) > 1:
+                                        card_name = parts[1].split('[')[0].strip()
+                                        if card_name and card_name.lower() != 'unknown':
+                                            gpu_series = card_name
+                        except (FileNotFoundError, subprocess.TimeoutExpired):
+                            pass
+                    
+                    # Zusammenstellen GPU-Modell (mit Fallback auf gfx-Code)
+                    if gpu_series:
+                        gpu_model = f"AMD {gpu_series}"
+                    elif gfx_code:
+                        gpu_model = f"AMD {gfx_code}"
+                    else:
                         gpu_model = "AMD GPU"
                     
                     # Hole VRAM-Größe
