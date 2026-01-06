@@ -734,10 +734,30 @@ async def get_dashboard_stats() -> dict:
         import platform
         import sqlite3
         import psutil
+        import json
+        import subprocess
         from datetime import datetime
         
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
+
+        # LM Studio Healthcheck (leichtgewichtiger CLI-Call)
+        lmstudio_health = {"ok": False, "status": "unknown"}
+        try:
+            output = subprocess.check_output([
+                "lms", "status", "--json"
+            ], timeout=3)
+            status_json = json.loads(output.decode()) if output else None
+            lmstudio_health = {
+                "ok": True,
+                "status": status_json.get("status", "online") if isinstance(status_json, dict) else "online",
+                "version": status_json.get("version") if isinstance(status_json, dict) else None
+            }
+        except Exception as health_err:
+            lmstudio_health = {
+                "ok": False,
+                "status": str(health_err)
+            }
         
         # System-Info (erweitert)
         system_info = {
@@ -841,7 +861,8 @@ async def get_dashboard_stats() -> dict:
             "top_models": top_models,
             "recent_runs": recent_runs,
             "fastest_model": fastest_model,
-            "last_run": last_run_timestamp
+            "last_run": last_run_timestamp,
+            "lmstudio": lmstudio_health
         }
     except Exception as e:
         logger.error(f"❌ Fehler beim Laden der Dashboard-Stats: {e}")

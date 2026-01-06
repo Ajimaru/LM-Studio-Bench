@@ -1736,8 +1736,15 @@
                     document.getElementById('home-gpu-total').textContent = '--';
                 }
                 
-                // LM Studio Info (aus process info)
-                document.getElementById('home-lmstudio-version').textContent = 'Running';
+                // LM Studio Health
+                if (data.lmstudio && data.lmstudio.ok) {
+                    const version = data.lmstudio.version ? `Online (v${data.lmstudio.version})` : 'Online';
+                    document.getElementById('home-lmstudio-version').textContent = version;
+                    document.getElementById('home-lmstudio-version').style.color = 'var(--success)';
+                } else {
+                    document.getElementById('home-lmstudio-version').textContent = 'Offline';
+                    document.getElementById('home-lmstudio-version').style.color = '#e74c3c';
+                }
                 
                 // === BENCHMARK ===
                 // Cache Stats (rechts) + Cache-Kachel (links)
