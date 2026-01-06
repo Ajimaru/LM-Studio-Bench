@@ -178,6 +178,7 @@ class BenchmarkResult:
     num_runs: Optional[int] = None              # Anzahl durchgeführter Messungen
     runs_averaged_from: Optional[int] = None    # Anzahl erfolgreicher Runs im Durchschnitt
     warmup_runs: Optional[int] = None           # Anzahl Warmup-Durchläufe
+    run_index: Optional[int] = None             # Index des einzelnen Runs (0, 1, 2) für statistische Analyse
     
     # Versions-Informationen
     lmstudio_version: Optional[str] = None      # LM Studio Version beim Test
@@ -548,8 +549,8 @@ class BenchmarkCache:
                 model_size_gb REAL NOT NULL,
                 has_vision INTEGER NOT NULL,
                 has_tools INTEGER NOT NULL,
-                tokens_per_sec_per_gb REAL NOT NULL,
-                tokens_per_sec_per_billion_params REAL NOT NULL,
+                tokens_per_sec_per_gb REAL,
+                tokens_per_sec_per_billion_params REAL,
                 speed_delta_pct REAL,
                 prev_timestamp TEXT,
                 prompt TEXT NOT NULL,
@@ -563,6 +564,7 @@ class BenchmarkCache:
                 num_runs INTEGER,
                 runs_averaged_from INTEGER,
                 warmup_runs INTEGER,
+                run_index INTEGER,
                 lmstudio_version TEXT,
                 nvidia_driver_version TEXT,
                 rocm_driver_version TEXT,
@@ -583,6 +585,15 @@ class BenchmarkCache:
             CREATE INDEX IF NOT EXISTS idx_model_key_hash 
             ON benchmark_results(model_key, inference_params_hash)
         ''')
+        
+        # Migration: Füge run_index Spalte hinzu falls sie fehlt
+        try:
+            cursor.execute("SELECT run_index FROM benchmark_results LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("📦 Migration: Füge run_index Spalte hinzu...")
+            cursor.execute("ALTER TABLE benchmark_results ADD COLUMN run_index INTEGER")
+            conn.commit()
+            logger.info("✅ Migration erfolgreich")
         
         conn.commit()
         conn.close()
@@ -646,6 +657,27 @@ class BenchmarkCache:
         cursor = conn.cursor()
         
         try:
+            # Vorbereite alle Werte
+            values = (
+                model_key, result.model_name, result.quantization, result.inference_params_hash,
+                result.gpu_type, result.gpu_offload, result.vram_mb, result.avg_tokens_per_sec,
+                result.avg_ttft, result.avg_gen_time, result.prompt_tokens, result.completion_tokens,
+                result.timestamp, result.params_size, result.architecture, result.max_context_length,
+                result.model_size_gb, int(result.has_vision), int(result.has_tools),
+                result.tokens_per_sec_per_gb, result.tokens_per_sec_per_billion_params,
+                result.speed_delta_pct, result.prev_timestamp, prompt, context_length,
+                result.temperature, result.top_k_sampling, result.top_p_sampling,
+                result.min_p_sampling, result.repeat_penalty, result.max_tokens,
+                result.num_runs, result.runs_averaged_from, result.warmup_runs,
+                result.run_index, result.lmstudio_version, result.nvidia_driver_version, result.rocm_driver_version,
+                result.intel_driver_version,
+                result.prompt_hash, params_hash, result.os_name, result.os_version,
+                result.cpu_model, result.python_version, result.benchmark_duration_seconds,
+                result.error_count
+            )
+            
+            logger.debug(f"📊 INSERT: {len(values)} Werte für 47 Spalten")
+            
             cursor.execute('''
                 INSERT INTO benchmark_results (
                     model_key, model_name, quantization, inference_params_hash,
@@ -656,27 +688,11 @@ class BenchmarkCache:
                     tokens_per_sec_per_billion_params, speed_delta_pct, prev_timestamp,
                     prompt, context_length, temperature, top_k_sampling, top_p_sampling,
                     min_p_sampling, repeat_penalty, max_tokens, num_runs, runs_averaged_from,
-                    warmup_runs, lmstudio_version, nvidia_driver_version, rocm_driver_version,
+                    warmup_runs, run_index, lmstudio_version, nvidia_driver_version, rocm_driver_version,
                     intel_driver_version, prompt_hash, params_hash, os_name, os_version,
                     cpu_model, python_version, benchmark_duration_seconds, error_count
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                model_key, result.model_name, result.quantization, params_hash,
-                result.gpu_type, result.gpu_offload, result.vram_mb, result.avg_tokens_per_sec,
-                result.avg_ttft, result.avg_gen_time, result.prompt_tokens, result.completion_tokens,
-                result.timestamp, result.params_size, result.architecture, result.max_context_length,
-                result.model_size_gb, int(result.has_vision), int(result.has_tools),
-                result.tokens_per_sec_per_gb, result.tokens_per_sec_per_billion_params,
-                result.speed_delta_pct, result.prev_timestamp, prompt, context_length,
-                result.temperature, result.top_k_sampling, result.top_p_sampling,
-                result.min_p_sampling, result.repeat_penalty, result.max_tokens,
-                result.num_runs, result.runs_averaged_from, result.warmup_runs,
-                result.lmstudio_version, result.nvidia_driver_version, result.rocm_driver_version,
-                result.intel_driver_version,
-                result.prompt_hash, result.params_hash, result.os_name, result.os_version,
-                result.cpu_model, result.python_version, result.benchmark_duration_seconds,
-                result.error_count
-            ))
+            ''', values)
             
             conn.commit()
         except Exception as e:
@@ -1813,7 +1829,7 @@ class LMStudioBenchmark:
             # Stoppe Hardware-Profiling und hole Statistiken
             profiling_stats = self.hardware_monitor.stop()
             
-            # Berechne Durchschnitte
+            # Berechne Durchschnitte (für Reports/Logs)
             if measurements:
                 result = self._calculate_averages(
                     model_name,
@@ -1854,10 +1870,65 @@ class LMStudioBenchmark:
                 result.python_version = self.system_info.get('python_version')
                 result.inference_params_hash = hashlib.md5(json.dumps(self.inference_params, sort_keys=True).encode()).hexdigest()[:8]
                 
-                # Speichere in Cache
+                # Speichere JEDEN einzelnen Run in Cache (für statistische Analyse)
                 if self.cache:
-                    self.cache.save_result(result, model_key, self.params_hash, 
-                                          self.prompt, self.context_length)
+                    for run_idx, measurement in enumerate(measurements):
+                        # Berechne Effizienzmetriken für diesen Run
+                        tps_per_gb = measurement['tokens_per_second'] / result.model_size_gb if result.model_size_gb > 0 else 0.0
+                        params_billions = float(result.params_size.replace('B', '')) if result.params_size.endswith('B') and result.params_size[:-1].replace('.', '', 1).isdigit() else 0.0
+                        tps_per_billion = measurement['tokens_per_second'] / params_billions if params_billions > 0 else 0.0
+                        
+                        # Erstelle ein Result-Objekt pro Run
+                        run_result = BenchmarkResult(
+                            model_name=model_name,
+                            quantization=quantization,
+                            gpu_type=result.gpu_type,
+                            gpu_offload=used_offload,
+                            vram_mb=vram_after,
+                            avg_tokens_per_sec=measurement['tokens_per_second'],  # Dieser Run, nicht Durchschnitt
+                            avg_ttft=measurement['time_to_first_token'],
+                            avg_gen_time=measurement['generation_time'],
+                            prompt_tokens=measurement['prompt_tokens'],
+                            completion_tokens=measurement['completion_tokens'],
+                            timestamp=result.timestamp,
+                            params_size=result.params_size,
+                            architecture=result.architecture,
+                            max_context_length=result.max_context_length,
+                            model_size_gb=result.model_size_gb,
+                            has_vision=result.has_vision,
+                            has_tools=result.has_tools,
+                            tokens_per_sec_per_gb=tps_per_gb,
+                            tokens_per_sec_per_billion_params=tps_per_billion,
+                            lmstudio_version=result.lmstudio_version,
+                            nvidia_driver_version=result.nvidia_driver_version,
+                            rocm_driver_version=result.rocm_driver_version,
+                            intel_driver_version=result.intel_driver_version,
+                            temperature=result.temperature,
+                            top_k_sampling=result.top_k_sampling,
+                            top_p_sampling=result.top_p_sampling,
+                            min_p_sampling=result.min_p_sampling,
+                            repeat_penalty=result.repeat_penalty,
+                            max_tokens=result.max_tokens,
+                            num_runs=1,  # Dieser ist 1 Run
+                            runs_averaged_from=len(measurements),  # Aus N Runs
+                            warmup_runs=NUM_WARMUP_RUNS,
+                            run_index=run_idx,  # Index: 0, 1, 2
+                            model_key=model_key,
+                            prompt_hash=self.prompt_hash,
+                            params_hash=self.params_hash,
+                            context_length=self.context_length,
+                            os_name=result.os_name,
+                            os_version=result.os_version,
+                            cpu_model=result.cpu_model,
+                            python_version=result.python_version,
+                            benchmark_duration_seconds=result.benchmark_duration_seconds / len(measurements),  # Anteilige Zeit
+                            error_count=error_count,
+                            inference_params_hash=result.inference_params_hash
+                        )
+                        
+                        # Speichere einzelnen Run
+                        self.cache.save_result(run_result, model_key, self.params_hash, 
+                                              self.prompt, self.context_length)
                 
                 logger.info(f"✓ {model_key}: {result.avg_tokens_per_sec:.2f} tokens/s (Duration: {result.benchmark_duration_seconds}s)")
                 return result

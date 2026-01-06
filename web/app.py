@@ -2167,8 +2167,11 @@ async def run_experiment(request: Request) -> dict:
         while manager.is_running():
             await asyncio.sleep(1.0)
         # kurze Pufferzeit, damit Ergebnisse geschrieben sind
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(2.0)
 
+        # Hole Baseline-Timestamp nach dem Lauf
+        baseline_end_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         # Test ausführen
         test_args = build_args(test_params)
         logger.info(f"🎯 Test Args: {test_args}")
@@ -2179,43 +2182,36 @@ async def run_experiment(request: Request) -> dict:
 
         while manager.is_running():
             await asyncio.sleep(1.0)
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(2.0)
 
-        # Ergebnisse aus DB lesen (nach Zeitfenster OHNE Parameter-Filter, dann Parameter-Match in Python)
+        # Ergebnisse aus DB lesen - NEUE STRATEGIE: Hole die neuesten Einträge
+        # Da jetzt 3 Einträge pro Benchmark existieren (run_index 0,1,2), 
+        # holen wir die letzten 20 Einträge und filtern dann nach Parametern
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
 
+        # Hole die neuesten 20 Einträge für dieses Modell (sollte 6 sein: 3 baseline + 3 test)
         cursor.execute('''
             SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
                    temperature, top_k_sampling, top_p_sampling, min_p_sampling, 
-                   repeat_penalty, max_tokens
-            FROM benchmark_results
-            WHERE model_name = ? AND timestamp >= ? AND timestamp < ?
-            ORDER BY timestamp ASC
-        ''', (model_name, baseline_start_str, test_start_str))
-        all_baseline_rows = cursor.fetchall()
-
-        cursor.execute('''
-            SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
-                   temperature, top_k_sampling, top_p_sampling, min_p_sampling,
-                   repeat_penalty, max_tokens
+                   repeat_penalty, max_tokens, run_index
             FROM benchmark_results
             WHERE model_name = ? AND timestamp >= ?
-            ORDER BY timestamp ASC
-        ''', (model_name, test_start_str))
-        all_test_rows = cursor.fetchall()
+            ORDER BY timestamp DESC, run_index DESC
+            LIMIT 20
+        ''', (model_name, baseline_start_str))
+        all_rows = cursor.fetchall()
 
         conn.close()
 
-        # Filter by parameters (Baseline und Test können unterschiedliche Parameter haben)
+        # Filter by parameters - beide Listen aus all_rows extrahieren
         baseline_data: List[Dict[str, Any]] = []
         test_data: List[Dict[str, Any]] = []
 
-        logger.info(f"🔍 Gefundene Baseline-Zeiteinträge: {len(all_baseline_rows)}")
-        logger.info(f"🔍 Gefundene Test-Zeiteinträge: {len(all_test_rows)}")
+        logger.info(f"🔍 Gefundene Gesamt-Einträge: {len(all_rows)}")
 
-        for row in all_baseline_rows:
-            ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts = row
+        for row in all_rows:
+            ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts, run_idx = row
             row_params = {
                 "temperature": temp,
                 "top_k": topk,
@@ -2224,39 +2220,29 @@ async def run_experiment(request: Request) -> dict:
                 "repeat_penalty": penalty,
                 "max_tokens": maxts
             }
+            
             # Match against baseline params
             if match_parameters(row_params, baseline_params):
                 baseline_data.append({
                     "timestamp": ts,
                     "speed": speed,
                     "ttft": ttft,
-                    "gen_time": gen_time
+                    "gen_time": gen_time,
+                    "run_index": run_idx
                 })
-                logger.debug(f"✅ Baseline: {row_params} matched target {baseline_params}")
-            else:
-                logger.debug(f"❌ Baseline: {row_params} != {baseline_params}")
-
-        for row in all_test_rows:
-            ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts = row
-            row_params = {
-                "temperature": temp,
-                "top_k": topk,
-                "top_p": topp,
-                "min_p": minp,
-                "repeat_penalty": penalty,
-                "max_tokens": maxts
-            }
+                logger.debug(f"✅ Baseline: {row_params} matched (run_index={run_idx})")
             # Match against test params
-            if match_parameters(row_params, test_params):
+            elif match_parameters(row_params, test_params):
                 test_data.append({
                     "timestamp": ts,
                     "speed": speed,
                     "ttft": ttft,
-                    "gen_time": gen_time
+                    "gen_time": gen_time,
+                    "run_index": run_idx
                 })
-                logger.debug(f"✅ Test: {row_params} matched target {test_params}")
-            else:
-                logger.debug(f"❌ Test: {row_params} != {test_params}")
+                logger.debug(f"✅ Test: {row_params} matched (run_index={run_idx})")
+
+        logger.info(f"🔍 Nach Filterung: Baseline={len(baseline_data)}, Test={len(test_data)}")
 
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
         test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
@@ -2343,6 +2329,7 @@ async def run_experiment(request: Request) -> dict:
             # CSV Export
             csv_file = results_dir / f"ab_test_results_{timestamp}.csv"
             with open(csv_file, 'w', encoding='utf-8') as f:
+                f.write(f"Experiment Name: {experiment_name}\n")
                 f.write("Metric,Baseline,Test,Delta\n")
                 f.write(f"Model,{model_name},{model_name},-\n")
                 f.write(f"Mean Speed (tok/s),{baseline_stats['mean']},{test_stats['mean']},{results_data['comparison']['delta_pct']}%\n")
@@ -2459,7 +2446,8 @@ async def run_experiment(request: Request) -> dict:
                 styles = getSampleStyleSheet()
                 
                 # Title
-                elements.append(Paragraph(f"<b>A/B Test Results: {model_name}</b>", styles['Title']))
+                elements.append(Paragraph(f"<b>{experiment_name}</b>", styles['Title']))
+                elements.append(Paragraph(f"Model: {model_name}", styles['Heading2']))
                 elements.append(Spacer(1, 12))
                 elements.append(Paragraph(f"Timestamp: {results_data['experiment_info']['timestamp']}", styles['Normal']))
                 elements.append(Spacer(1, 20))
@@ -3065,16 +3053,23 @@ async def health_check() -> dict:
 
 
 # ============================================================================
-# Startup/Shutdown
+# Startup/Shutdown mit Lifespan
 # ============================================================================
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup beim Shutdown"""
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan handler für Startup und Shutdown"""
+    # Startup
+    yield
+    # Shutdown
     if manager.is_running():
         logger.info("🛑 Benchmark bei Shutdown beenden...")
         manager.stop_benchmark()
         await asyncio.sleep(1)
+
+app.router.lifespan = lifespan
 
 
 # ============================================================================
