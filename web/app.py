@@ -2009,7 +2009,29 @@ async def run_experiment(request: Request) -> dict:
         if not model_name:
             return {"success": False, "error": "model_name fehlt"}
 
-        def build_args(param_set: Dict[str, Any]) -> List[str]:
+        def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) -> bool:
+    """
+    Prüft ob die Parameter eines DB-Eintrags den Ziel-Parametern entsprechen.
+    Ignoriert None-Werte in target_params (Parameter wurden nicht überschrieben).
+    """
+    for key, target_value in target_params.items():
+        if target_value is None:
+            continue  # Parameter wurde nicht überschrieben, also nicht filtern
+        
+        row_value = row_params.get(key)
+        
+        # Zahlenlänge/Typen vergleichen (floats mit Toleranz)
+        if isinstance(target_value, float) and isinstance(row_value, (int, float)):
+            if abs(row_value - target_value) > 0.001:
+                return False
+        else:
+            if row_value != target_value:
+                return False
+    
+    return True
+
+
+def build_args(param_set: Dict[str, Any]) -> List[str]:
             args: List[str] = []
             # Basis-Parameter
             args.extend(["--runs", str(runs)])
@@ -2064,36 +2086,82 @@ async def run_experiment(request: Request) -> dict:
             await asyncio.sleep(1.0)
         await asyncio.sleep(1.0)
 
-        # Ergebnisse aus DB lesen (nur neue Einträge)
+        # Ergebnisse aus DB lesen (nach Zeitfenster OHNE Parameter-Filter, dann Parameter-Match in Python)
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
 
         cursor.execute('''
-            SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time
+            SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
+                   temperature, top_k_sampling, top_p_sampling, min_p_sampling, 
+                   repeat_penalty, max_tokens
             FROM benchmark_results
             WHERE model_name = ? AND timestamp >= ? AND timestamp < ?
             ORDER BY timestamp ASC
         ''', (model_name, baseline_start_str, test_start_str))
-        baseline_rows = cursor.fetchall()
+        all_baseline_rows = cursor.fetchall()
 
         cursor.execute('''
-            SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time
+            SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
+                   temperature, top_k_sampling, top_p_sampling, min_p_sampling,
+                   repeat_penalty, max_tokens
             FROM benchmark_results
             WHERE model_name = ? AND timestamp >= ?
             ORDER BY timestamp ASC
         ''', (model_name, test_start_str))
-        test_rows = cursor.fetchall()
+        all_test_rows = cursor.fetchall()
 
         conn.close()
 
-        baseline_data = [
-            {"timestamp": r[0], "speed": r[1], "ttft": r[2], "gen_time": r[3]}
-            for r in baseline_rows
-        ]
-        test_data = [
-            {"timestamp": r[0], "speed": r[1], "ttft": r[2], "gen_time": r[3]}
-            for r in test_rows
-        ]
+        # Filter by parameters (Baseline und Test können unterschiedliche Parameter haben)
+        baseline_data: List[Dict[str, Any]] = []
+        test_data: List[Dict[str, Any]] = []
+
+        logger.info(f"🔍 Gefundene Baseline-Zeiteinträge: {len(all_baseline_rows)}")
+        logger.info(f"🔍 Gefundene Test-Zeiteinträge: {len(all_test_rows)}")
+
+        for row in all_baseline_rows:
+            ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts = row
+            row_params = {
+                "temperature": temp,
+                "top_k": topk,
+                "top_p": topp,
+                "min_p": minp,
+                "repeat_penalty": penalty,
+                "max_tokens": maxts
+            }
+            # Match against baseline params
+            if match_parameters(row_params, baseline_params):
+                baseline_data.append({
+                    "timestamp": ts,
+                    "speed": speed,
+                    "ttft": ttft,
+                    "gen_time": gen_time
+                })
+                logger.debug(f"✅ Baseline: {row_params} matched target {baseline_params}")
+            else:
+                logger.debug(f"❌ Baseline: {row_params} != {baseline_params}")
+
+        for row in all_test_rows:
+            ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts = row
+            row_params = {
+                "temperature": temp,
+                "top_k": topk,
+                "top_p": topp,
+                "min_p": minp,
+                "repeat_penalty": penalty,
+                "max_tokens": maxts
+            }
+            # Match against test params
+            if match_parameters(row_params, test_params):
+                test_data.append({
+                    "timestamp": ts,
+                    "speed": speed,
+                    "ttft": ttft,
+                    "gen_time": gen_time
+                })
+                logger.debug(f"✅ Test: {row_params} matched target {test_params}")
+            else:
+                logger.debug(f"❌ Test: {row_params} != {test_params}")
 
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
         test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
