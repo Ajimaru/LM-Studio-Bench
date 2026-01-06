@@ -26,6 +26,10 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
   - HTML (interaktive Plotly-Charts, Best-Practices, Vision/Tool/Architektur-Tabellen, Dark Mode)
 - ✅ **Instant Report Regeneration**: `--export-only` generiert Reports in <1s aus gecachten Daten
 - ✅ **Umfangreiche Metadaten**: Parametergröße, Architektur, Context-Länge, Dateigröße, Vision- und Tool-Support
+- ✅ **🎨 27 Themen**: Light, Dark, Ocean Blue, Deep Slate, Mint Green, Speed Red, Neon Purple, Solarized Dark/Light, Gruvbox, Dracula, Nord, Monokai, Paper, Terminal Green, OLED, Forest, Sunset, Cyberpunk, Pastel, Sepia, 80er, 90er, Hacker/Matrix, Hardware
+- ✅ **📊 Live Hardware Monitoring**: 6 interaktive Charts (GPU Temp, Power, VRAM, GTT, CPU, System-RAM) mit Statistiken
+- ✅ **📥 Export-Buttons**: Schneller Zugriff zu neuesten HTML/PDF/JSON/CSV Benchmark-Ergebnissen
+- ✅ **🏠 Dashboard Home**: System-Info, Top 5 schnellste Modelle, letzte 10 Benchmark-Läufe
 
 ## Systemanforderungen
 
@@ -86,8 +90,11 @@ source .venv/bin/activate  # Linux/macOS
 **Dashboard-Features:**
 
 - 📊 **Live-Streaming**: Benchmark-Output in Echtzeit via WebSocket
-- 🎨 **Dark Mode**: Modernes dunkles Design (per Default)
-- 📁 **Ergebnisse-Browser**: Durchsuche alle gecachten Benchmark-Ergebnisse
+- 🎨 **27 Themes**: Light, Dark, Ocean Blue, Deep Slate, Mint Green, Speed Red, Neon Purple, Solarized, Gruvbox, Dracula, Nord, Monokai, Paper, Terminal, OLED, Forest, Sunset, Cyberpunk, Pastel, Sepia, 80er, 90er, Hacker, Hardware + High Contrast
+- 📁 **Ergebnisse-Browser**: Durchsuche alle gecachten Benchmark-Ergebnisse mit sortierbare Tabelle
+- 📥 **Export-Buttons**: Schnellzugriff zu neuesten HTML/PDF/JSON/CSV Ergebnissen
+- 💻 **Hardware-Monitoring**: 6 Live-Charts (GPU Temp, Power, VRAM, GTT, CPU, RAM) mit Min/Ø/Max Statistiken
+- 🏠 **Home-Statistiken**: System-Info, Top 5 Modelle, letzte 10 Benchmark-Läufe
 - 🔧 **Flexible Konfiguration**: Alle CLI-Parameter als Web-Formular
 - 📱 **Responsive Design**: Funktioniert auf Desktop und Tablet
 - 🌐 **Netzwerk-Zugriff**: Öffne Dashboard auf anderen Geräten (<http://your-ip:8080>)
