@@ -502,10 +502,98 @@ Die folgenden Phasen wurden bereits vollständig implementiert:
     - WebApp parst und streamt via WebSocket zu Frontend
     - Regex-Patterns auf neue Emoji-Formate aktualisiert
 
-- [ ] Web-Dashboard - Phase 14.6: Historical Comparison UI
+- **Phase 15: Extended Cache Storage mit Audit-Trail** ✅ (2026-01-06 - ABGESCHLOSSEN)
+  - **Priorität 1: Kritisch für Reproduzierbarkeit** ✅:
+    - `context_length` - Context-Länge des Benchmarks (z.B. 2048)
+    - `prompt_hash` - SHA256-Hash des Prompts (16 Zeichen)
+    - `model_key` - Eindeutige Modell-ID (z.B. qwen/qwen2.5-7b@q3_k_l)
+    - `params_hash` - Hash der Inference-Parameter (8 Zeichen)
+  - **Priorität 2: Wichtig für Systemvergleich** ✅:
+    - `os_name` - Betriebssystem (z.B. Linux, Windows, Darwin)
+    - `os_version` - Kernel/OS-Version (z.B. 6.17.4-76061704-generic)
+    - `cpu_model` - CPU-Modell (z.B. AMD Ryzen AI 9 HX 370 w/ Radeon 890M)
+    - `python_version` - Python-Version (z.B. 3.10.12)
+    - `benchmark_duration_seconds` - Gesamtdauer des Benchmarks (62.18s)
+  - **Priorität 3: Qualitätskontrolle** ✅:
+    - `error_count` - Anzahl Fehler während des Benchmarks
+    - `inference_params_hash` - Hash aller Inference-Parameter kombiniert
+  - **Frühere Implementierung (Priorität 1-2)** ✅:
+    - 13 Felder aus vorherigen Sessions:
+      - Inference-Parameter (6): temperature, top_k_sampling, top_p_sampling, min_p_sampling, repeat_penalty, max_tokens
+      - Run-Info (3): num_runs, runs_averaged_from, warmup_runs
+      - Versions-Info (4): lmstudio_version, nvidia_driver_version, rocm_driver_version, intel_driver_version
+  - **Datenbank-Schema** ✅:
+    - 47 Spalten insgesamt (26 Original + 13 Priorität 1-2 + 10 Neue)
+    - Alle neuen Felder optional zur Rückwärtskompatibilität
+    - Schema-Auto-Erkennung in get_all_results() via PRAGMA table_info()
+  - **System-Erfassungsfunktionen** ✅:
+    - `get_os_info()` - Erfasst OS und Kernel-Version via platform.system()/release()
+    - `get_cpu_model()` - Erfasst CPU-Modell via cpuinfo.get_cpu_info()
+    - `get_python_version()` - Erfasst Python-Version via sys.version_info
+    - Alle Funktionen mit Fehlerbehandlung und Debug-Logging
+  - **Benchmark-Tracking** ✅:
+    - `benchmark_start_time`/`benchmark_end_time` für Durationsberechnung
+    - `error_count` wird während Messungen verfolgt
+    - Alle Hashes werden beim `__init__` berechnet und gespeichert
+    - System-Informationen einmalig pro Benchmark-Session erfasst
+  - **INSERT-Strategie** ✅:
+    - Entfernt UNIQUE-Constraint auf (model_key, inference_params_hash)
+    - Ermöglicht Versionsverfolgung - mehrere Einträge pro Modell+Parameterkombination
+    - INSERT statt INSERT OR REPLACE für historische Bewahrung
+  - **Resultat** ✅:
+    - Vollständige Reproduzierbarkeit: Alle Parameter, Versionen, Systeminfo gespeichert
+    - Audit-Trail: Jeder Benchmark-Lauf hat komplette Dokumentation
+    - Systemübergreifende Vergleiche möglich (OS, CPU, Python-Version)
+    - Debug-Informationen: Benchmark-Dauer und Fehlercount für Qualitätskontrolle
+    - 2 Commits: 845809a (13 Felder) + d42f740 (10 Felder)
+
+- **Phase 14.6: Web-Dashboard - Historical Comparison UI** ✅ (2026-01-06 - Phase 14.6a COMPLETE):
+  - **Backend-Endpoints**: ✅ (implementiert in web/app.py, Lines 803-890)
+    - GET /api/comparison/models - Liste aller Modelle mit Statistiken
+      - Returns: model_name, entry_count, latest_speed, latest_timestamp, oldest_timestamp, speed_delta_pct
+      - Trend-Berechnung: Δ% vs. ältester Run
+      - Sortiert nach entry_count DESC, model_name ASC
+      - Status: ✅ Arbeitet mit Test-Daten (2 Einträge 'qwen/qwen2.5-vl-7b' in DB)
+    - GET /api/comparison/{model_name} - Historische Daten für Modell
+      - Returns: history array mit allen Runs, sorted by timestamp ASC
+      - Fields per Run: timestamp, quantization, speed_tokens_sec, ttft, gen_time, gpu_offload, vram_mb, temperature, inference_params (top_k, top_p, min_p, repeat_penalty, max_tokens), num_runs, duration_seconds, error_count
+      - Calculated stats: min_speed, max_speed, avg_speed, total_runs, first_run, last_run, trend (up/down/stable)
+      - Status: ✅ Ready, returning all historical data with statistics
+  
+  - **Vergleichs-View**: ⏳ (Phase 14.6b - geplant)
+    - Neue Navigation mit 📈 Comparison-Icon in dashboard.html.jinja
+    - Model Selector Dropdown (populated von /api/comparison/models)
+    - Quantization Filter Checkboxen
+    - Date-Range Picker (optional für Phase 14.6c)
+  
+  - **Trend-Visualisierung**: ⏳ (Phase 14.6b - geplant)
+    - Plotly.js Line-Charts (3 Charts: Speed, TTFT, Gen-Time)
+    - X-Axis: Timestamp, Y-Axis: Metric values
+    - Multi-Serie für verschiedene Quantisierungen
+    - Dark-Mode CSS Variables Integration
+  
+  - **Delta-Display**: ⏳ (Phase 14.6b - geplant)
+    - Δ% Änderung vs. ältesten Run (bereits im Backend berechnet)
+    - Farbcodierung: 🔴 (schlechter), 🟢 (besser), ⚪ (gleich)
+    - Tabelle mit allen Metriken und Änderungen
+  
+  - **Export-Funktionen**: ⏳ (Phase 14.6c - geplant)
+    - CSV Export der Historischen Daten
+    - PNG/SVG Export der Charts
+    - PDF Report mit Trend-Analyse
+  
+  - **Statistische Analyse**: ✅ (teilweise)
+    - Backend: Min/Max/Avg bereits berechnet in /api/comparison/{model_name} → stats
+    - Backend: Trend-Richtung (up/down/stable) bereits implementiert
+    - Frontend: Volatilität (Standardabweichung) noch zu implementieren
+    - Frontend: Performance-Prognose (Linear Regression) noch zu implementieren
+  
+  - **Implementierungs-Status**:
+    - Phase 14.6a: ✅ Backend Endpoints (GET /api/comparison/*) - COMPLETE
+    - Phase 14.6b: ⏳ Frontend View + Charts (HTML/CSS + Plotly.js)
+    - Phase 14.6c: ⏳ Export Funktionen (CSV/PDF) + Advanced Filtering
+    - Phase 14.6d: ⏳ Erweiterte Statistik (Volatility, Regression)
+
 - [ ] Web-Dashboard - Phase 14.7: Advanced Filtering
 - [ ] Web-Dashboard - Phase 14.4: Export Results Browser
-- [ ] Multi-Prompt Benchmarks (mehrere Test-Prompts parallel)
-- [ ] Slack/Email Notifications bei Abschluss
-- [ ] Model-Warmup-Optimierung (Adaptive Warmup-Runs)
 - [ ] A/B Testing Framework (Vergleich verschiedener Inference-Parameter)

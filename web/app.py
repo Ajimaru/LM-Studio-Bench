@@ -795,6 +795,135 @@ async def clear_cache() -> dict:
         return {"success": False, "error": str(e)}
 
 
+@app.get("/api/comparison/models")
+async def get_comparison_models() -> dict:
+    """Gibt alle Modelle mit historischen Daten zurück"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar", "models": []}
+    
+    try:
+        import sqlite3
+        
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        
+        # Hole Modelle mit Count der Einträge
+        cursor.execute('''
+            SELECT DISTINCT model_name, COUNT(*) as entry_count
+            FROM benchmark_results
+            GROUP BY model_name
+            ORDER BY entry_count DESC, model_name ASC
+        ''')
+        
+        models = []
+        for model_name, count in cursor.fetchall():
+            # Hole neueste und älteste Einträge
+            cursor.execute('''
+                SELECT timestamp, avg_tokens_per_sec FROM benchmark_results
+                WHERE model_name = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+            ''', (model_name,))
+            latest = cursor.fetchone()
+            
+            cursor.execute('''
+                SELECT timestamp, avg_tokens_per_sec FROM benchmark_results
+                WHERE model_name = ?
+                ORDER BY timestamp ASC
+                LIMIT 1
+            ''', (model_name,))
+            oldest = cursor.fetchone()
+            
+            if latest and oldest:
+                delta = ((latest[1] - oldest[1]) / oldest[1] * 100) if oldest[1] > 0 else 0
+                models.append({
+                    "model_name": model_name,
+                    "entry_count": count,
+                    "latest_speed": round(latest[1], 2),
+                    "latest_timestamp": latest[0],
+                    "oldest_timestamp": oldest[0],
+                    "speed_delta_pct": round(delta, 2)
+                })
+        
+        conn.close()
+        return {"success": True, "models": models}
+    except Exception as e:
+        logger.error(f"❌ Fehler beim Abrufen von Vergleichs-Modellen: {e}")
+        return {"success": False, "error": str(e), "models": []}
+
+
+@app.get("/api/comparison/{model_name}")
+async def get_model_history(model_name: str) -> dict:
+    """Gibt Verlauf für ein bestimmtes Modell zurück"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar", "history": []}
+    
+    try:
+        import sqlite3
+        
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        
+        # Hole alle Einträge für das Modell, sortiert nach Timestamp
+        cursor.execute('''
+            SELECT 
+                timestamp, quantization, avg_tokens_per_sec, avg_ttft, 
+                avg_gen_time, gpu_offload, vram_mb, temperature,
+                top_k_sampling, top_p_sampling, min_p_sampling, repeat_penalty, max_tokens,
+                num_runs, benchmark_duration_seconds, error_count
+            FROM benchmark_results
+            WHERE model_name = ?
+            ORDER BY timestamp ASC
+        ''', (model_name,))
+        
+        history = []
+        for row in cursor.fetchall():
+            history.append({
+                "timestamp": row[0],
+                "quantization": row[1],
+                "speed_tokens_sec": round(row[2], 2),
+                "ttft": round(row[3], 3),
+                "gen_time": round(row[4], 3),
+                "gpu_offload": row[5],
+                "vram_mb": row[6],
+                "temperature": row[7],
+                "top_k_sampling": row[8],
+                "top_p_sampling": row[9],
+                "min_p_sampling": row[10],
+                "repeat_penalty": row[11],
+                "max_tokens": row[12],
+                "num_runs": row[13],
+                "benchmark_duration_seconds": row[14],
+                "error_count": row[15]
+            })
+        
+        # Berechne Statistiken
+        if history:
+            speeds = [h["speed_tokens_sec"] for h in history]
+            stats = {
+                "min_speed": round(min(speeds), 2),
+                "max_speed": round(max(speeds), 2),
+                "avg_speed": round(sum(speeds) / len(speeds), 2),
+                "total_runs": len(history),
+                "first_run": history[0]["timestamp"],
+                "last_run": history[-1]["timestamp"],
+                "trend": "up" if speeds[-1] > speeds[0] else "down" if speeds[-1] < speeds[0] else "stable"
+            }
+        else:
+            stats = {}
+        
+        conn.close()
+        return {
+            "success": True,
+            "model_name": model_name,
+            "history": history,
+            "stats": stats
+        }
+    except Exception as e:
+        logger.error(f"❌ Fehler beim Abrufen des Modell-Verlaufs: {e}")
+        return {"success": False, "error": str(e), "history": []}
+
+
 @app.get("/api/output")
 async def get_output() -> dict:
     """Gibt aktuellen Output"""
