@@ -547,8 +547,8 @@ Die folgenden Phasen wurden bereits vollständig implementiert:
     - Debug-Informationen: Benchmark-Dauer und Fehlercount für Qualitätskontrolle
     - 2 Commits: 845809a (13 Felder) + d42f740 (10 Felder)
 
-- **Phase 14.6: Web-Dashboard - Historical Comparison UI** ✅ (2026-01-06 - Phase 14.6a COMPLETE):
-  - **Backend-Endpoints**: ✅ (implementiert in web/app.py, Lines 803-890)
+- **Phase 14.6: Web-Dashboard - Historical Comparison UI** ✅ (2026-01-06 - Phase 14.6a/b COMPLETE):
+  - **Backend-Endpoints**: ✅ (implementiert in web/app.py, Lines 803-890, Commit d667bf6)
     - GET /api/comparison/models - Liste aller Modelle mit Statistiken
       - Returns: model_name, entry_count, latest_speed, latest_timestamp, oldest_timestamp, speed_delta_pct
       - Trend-Berechnung: Δ% vs. ältester Run
@@ -560,39 +560,50 @@ Die folgenden Phasen wurden bereits vollständig implementiert:
       - Calculated stats: min_speed, max_speed, avg_speed, total_runs, first_run, last_run, trend (up/down/stable)
       - Status: ✅ Ready, returning all historical data with statistics
   
-  - **Vergleichs-View**: ⏳ (Phase 14.6b - geplant)
-    - Neue Navigation mit 📈 Comparison-Icon in dashboard.html.jinja
+  - **Vergleichs-View**: ✅ (Phase 14.6b - COMPLETE, Commit 3269023)
+    - Neue Navigation mit 📈 Comparison-Icon in dashboard.html.jinja (neben Home, Benchmark, Results)
     - Model Selector Dropdown (populated von /api/comparison/models)
-    - Quantization Filter Checkboxen
-    - Date-Range Picker (optional für Phase 14.6c)
+    - Quantization Filter Checkboxes (auto-generated aus Daten)
+    - 2-Spalten Layout: Linke Spalte Filter, Rechte Spalte Charts & Daten
   
-  - **Trend-Visualisierung**: ⏳ (Phase 14.6b - geplant)
-    - Plotly.js Line-Charts (3 Charts: Speed, TTFT, Gen-Time)
-    - X-Axis: Timestamp, Y-Axis: Metric values
-    - Multi-Serie für verschiedene Quantisierungen
-    - Dark-Mode CSS Variables Integration
+  - **Trend-Visualisierung**: ✅ (Phase 14.6b - COMPLETE)
+    - Plotly.js Line-Charts (3 separate Charts mit responsive Design):
+      - 📊 Speed Chart: tokens/sec über Zeit (grüne Linie)
+      - ⏱️ TTFT Chart: Time-to-First-Token über Zeit (orange Linie)
+      - ⚡ Gen-Time Chart: Generation-Time über Zeit (blaue Linie)
+    - X-Axis: Zeitstempel (ISO-Format), Y-Axis: Metrik-Werte
+    - Interaktive Plotly-Features: Hover-Info, Zoom, Pan, Download
+    - Dark-Mode CSS Variables vollständig integriert
+    - Responsive: Höhe 300px pro Chart, anpassbar auf alle Screen-Größen
   
-  - **Delta-Display**: ⏳ (Phase 14.6b - geplant)
-    - Δ% Änderung vs. ältesten Run (bereits im Backend berechnet)
-    - Farbcodierung: 🔴 (schlechter), 🟢 (besser), ⚪ (gleich)
-    - Tabelle mit allen Metriken und Änderungen
+  - **Delta-Display**: ✅ (Phase 14.6b - COMPLETE)
+    - Δ% Änderung vs. ältesten Run (bereits im Backend berechnet, in speed_delta_pct)
+    - Trend-Richtung: 🟢 Steigend / 🔴 Fallend / ⚪ Stabil (in Statistiken angezeigt)
+    - Detaillierte Verlauf-Tabelle mit allen Metriken pro Run
+  
+  - **Statistische Analyse**: ✅ (Phase 14.6b - COMPLETE)
+    - Backend: Min/Max/Avg bereits berechnet in /api/comparison/{model_name} → stats
+    - Backend: Trend-Richtung (up/down/stable) bereits implementiert
+    - Frontend: Statistiken Box mit 6 Metriken angezeigt
+      - 📊 Min Speed, 📈 Max Speed, 📉 Avg Speed
+      - 🔄 Total Runs, ⬆️ Trend, 📅 Erste Messung
+    - Frontend: Volatilität (Standardabweichung) noch zu implementieren (Phase 14.6c)
+    - Frontend: Performance-Prognose (Linear Regression) noch zu implementieren (Phase 14.6d)
   
   - **Export-Funktionen**: ⏳ (Phase 14.6c - geplant)
     - CSV Export der Historischen Daten
     - PNG/SVG Export der Charts
     - PDF Report mit Trend-Analyse
   
-  - **Statistische Analyse**: ✅ (teilweise)
-    - Backend: Min/Max/Avg bereits berechnet in /api/comparison/{model_name} → stats
-    - Backend: Trend-Richtung (up/down/stable) bereits implementiert
-    - Frontend: Volatilität (Standardabweichung) noch zu implementieren
-    - Frontend: Performance-Prognose (Linear Regression) noch zu implementieren
-  
   - **Implementierungs-Status**:
-    - Phase 14.6a: ✅ Backend Endpoints (GET /api/comparison/*) - COMPLETE
-    - Phase 14.6b: ⏳ Frontend View + Charts (HTML/CSS + Plotly.js)
+    - Phase 14.6a: ✅ Backend Endpoints (GET /api/comparison/*) - COMPLETE (Commit d667bf6)
+    - Phase 14.6b: ✅ Frontend View + Charts (HTML/CSS + Plotly.js) - COMPLETE (Commit 3269023)
     - Phase 14.6c: ⏳ Export Funktionen (CSV/PDF) + Advanced Filtering
     - Phase 14.6d: ⏳ Erweiterte Statistik (Volatility, Regression)
+  
+  - **Testing**: ✅ Beide Backend-Endpoints mit test_comparison_endpoints.py validiert
+    - GET /api/comparison/models: 1 Modell, Δ -10.4% Speed
+    - GET /api/comparison/{model_name}: 2 Historische Einträge mit Statistiken (Min: 11.37, Max: 12.69, Avg: 12.03, Trend: down)
 
 - [ ] Web-Dashboard - Phase 14.7: Advanced Filtering
 - [ ] Web-Dashboard - Phase 14.4: Export Results Browser
