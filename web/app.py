@@ -757,15 +757,24 @@ async def get_dashboard_stats() -> dict:
                 else:
                     lmstudio_health = {"ok": True, "status": "online"}
             except Exception:
-                # Fallback: parse plain text output
-                output = subprocess.check_output(["lms", "status"], timeout=3, text=True)
-                text = output.lower() if output else ""
-                is_online = "online" in text or "running" in text or "server" in text
-                lmstudio_health = {
-                    "ok": is_online,
-                    "status": output.strip() if output else "unknown",
-                    "version": None
-                }
+                # Fallback: parse plain text output; non-zero exit -> offline
+                try:
+                    output = subprocess.check_output(["lms", "status"], timeout=3, text=True)
+                    text = output.lower() if output else ""
+                    offline_tokens = ["not running", "stopped", "offline", "no server"]
+                    online_tokens = ["running", "online", "server listening", "server running"]
+                    is_offline = any(tok in text for tok in offline_tokens)
+                    is_online = not is_offline and any(tok in text for tok in online_tokens)
+                    lmstudio_health = {
+                        "ok": is_online,
+                        "status": output.strip() if output else "unknown",
+                        "version": None
+                    }
+                except subprocess.CalledProcessError as cpe:
+                    lmstudio_health = {
+                        "ok": False,
+                        "status": f"exit {cpe.returncode}"
+                    }
         except Exception as health_err:
             lmstudio_health = {
                 "ok": False,
