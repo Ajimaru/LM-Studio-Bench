@@ -33,7 +33,7 @@ Automatisches Benchmark-Tool für alle lokal installierten LM Studio Modelle. Te
 - ✅ **🎨 27 Themen**: Light, Dark, Ocean Blue, Deep Slate, Mint Green, Speed Red, Neon Purple, Solarized Dark/Light, Gruvbox, Dracula, Nord, Monokai, Paper, Terminal Green, OLED, Forest, Sunset, Cyberpunk, Pastel, Sepia, 80er, 90er, Hacker/Matrix, Hardware
 - ✅ **📊 Live Hardware Monitoring**: 6 interaktive Charts (GPU Temp, Power, VRAM, GTT, CPU, System-RAM) mit Statistiken
 - ✅ **📥 Export-Buttons**: Schneller Zugriff zu neuesten HTML/PDF/JSON/CSV Benchmark-Ergebnissen
-- ✅ **🏠 Dashboard Home**: 
+- ✅ **🏠 Dashboard Home**:
   - System-Info (OS, Kernel, CPU, GPU mit detaillierten Modellnamen)
   - LM Studio Healthcheck Status
   - Top 5 schnellste Modelle
@@ -109,12 +109,12 @@ source .venv/bin/activate  # Linux/macOS
 - 📁 **Ergebnisse-Browser**: Durchsuche alle gecachten Benchmark-Ergebnisse mit sortierbare Tabelle
 - 📥 **Export-Buttons**: Schnellzugriff zu neuesten HTML/PDF/JSON/CSV Ergebnissen
 - 💻 **Hardware-Monitoring**: 6 Live-Charts (GPU Temp, Power, VRAM, GTT, CPU, RAM) mit Min/Ø/Max Statistiken
-- 🏠 **Home-Statistiken**: 
+- 🏠 **Home-Statistiken**:
   - System-Info (OS, Kernel, CPU, GPU mit Modellnamen)
   - LM Studio Healthcheck Status
   - Top 5 schnellste Modelle
   - Letzte 10 Benchmark-Läufe
-- 🔧 **Flexible Konfiguration**: 
+- 🔧 **Flexible Konfiguration**:
   - Alle CLI-Parameter als Web-Formular mit Tooltip-Erklärungen
   - Filter nach Quantisierung, Architektur, Parametergröße
   - Rangieren nach Geschwindigkeit, Effizienz, TTFT oder VRAM
