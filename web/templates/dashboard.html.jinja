@@ -1070,29 +1070,29 @@
                 </div>
             </div>
 
-            <!-- Stats Cards -->
+            <!-- Cache & Performance Stats -->
             <div class="grid">
                 <div class="card">
-                    <h2>📦 Cache-Statistiken</h2>
-                    <div class="info-item" style="padding: 0; background: none;">
-                        <div class="info-label">Gecachte Modelle</div>
-                        <div class="info-value" id="home-cache-count">--</div>
-                    </div>
-                    <div class="info-item" style="padding: 0; background: none; margin-top: 1rem;">
-                        <div class="info-label">Datenbank-Größe</div>
-                        <div class="info-value" id="home-db-size">-- MB</div>
-                    </div>
-                </div>
+                    <h2>📦 Cache & ⚡ Performance</h2>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; font-size: 0.9rem;">
+                        <!-- LEFT COLUMN: CACHE -->
+                        <div>
+                            <div style="color: var(--primary); font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--primary);">📦 CACHE</div>
+                            <div style="color: var(--text-light); line-height: 1.8;">
+                                <div><span style="color: var(--text); font-weight: 500;">Gecachte Modelle:</span> <span id="home-cache-count">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">DB-Größe:</span> <span id="home-db-size">--</span></div>
+                            </div>
+                        </div>
 
-                <div class="card">
-                    <h2>⚡ Performance</h2>
-                    <div class="info-item" style="padding: 0; background: none;">
-                        <div class="info-label">Durchschnitt</div>
-                        <div class="info-value" id="home-avg-speed">-- tok/s</div>
-                    </div>
-                    <div class="info-item" style="padding: 0; background: none; margin-top: 1rem;">
-                        <div class="info-label">Maximum</div>
-                        <div class="info-value" id="home-max-speed">-- tok/s</div>
+                        <!-- RIGHT COLUMN: PERFORMANCE -->
+                        <div>
+                            <div style="color: #f39c12; font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #f39c12;">⚡ PERFORMANCE</div>
+                            <div style="color: var(--text-light); line-height: 1.8;">
+                                <div><span style="color: var(--text); font-weight: 500;">Ø Geschwindigkeit:</span> <span id="home-avg-speed">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Max Speed:</span> <span id="home-max-speed">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Total Runs:</span> <span id="home-total-runs">--</span></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -1755,11 +1755,15 @@
                 document.getElementById('home-cached-models').textContent = data.cache_stats.total_models || 0;
                 document.getElementById('home-cache-size').textContent = `${data.cache_stats.db_size_mb} MB`;
                 
-                // Performance Stats
+                // Performance Stats (auch in Cache & Performance Kachel)
                 if (data.perf_stats.avg_speed) {
                     document.getElementById('home-avg-speed').textContent = `${data.perf_stats.avg_speed} tok/s`;
+                    document.getElementById('home-max-speed').textContent = `${data.perf_stats.max_speed} tok/s`;
+                    document.getElementById('home-total-runs').textContent = data.cache_stats.total_runs || 0;
                 } else {
                     document.getElementById('home-avg-speed').textContent = 'Keine Daten';
+                    document.getElementById('home-max-speed').textContent = 'Keine Daten';
+                    document.getElementById('home-total-runs').textContent = 0;
                 }
                 
                 // Last Run
