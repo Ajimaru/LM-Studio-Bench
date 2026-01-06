@@ -810,14 +810,49 @@ async def get_dashboard_stats() -> dict:
         
         # Kein Prozess-Check mehr - zu unzuverlässig (Autostart-Scripte geben false positives)
         
-        # System-Info (erweitert)
+        # System-Info (erweitert mit besseren Details)
         system_info = {
             "os": platform.system(),
+            "os_version": platform.release(),  # Kernel-Version
             "python_version": platform.python_version(),
             "cpu": platform.processor() or platform.machine(),
             "cpu_cores": psutil.cpu_count(logical=False),  # Physical cores
             "ram_gb": round(psutil.virtual_memory().total / (1024**3), 2)
         }
+        
+        # Versuche Linux-Distribution zu erkennen
+        if system_info["os"] == "Linux":
+            try:
+                import distro
+                distro_name = distro.name()
+                distro_version = distro.version()
+                if distro_name:
+                    system_info["os"] = f"{distro_name} {distro_version}".strip()
+            except:
+                # Fallback: Versuche /etc/os-release zu lesen
+                try:
+                    with open('/etc/os-release', 'r') as f:
+                        os_release = {}
+                        for line in f:
+                            if '=' in line:
+                                key, val = line.strip().split('=', 1)
+                                os_release[key] = val.strip('"')
+                        if 'PRETTY_NAME' in os_release:
+                            system_info["os"] = os_release['PRETTY_NAME']
+                        elif 'NAME' in os_release:
+                            version = os_release.get('VERSION', '')
+                            system_info["os"] = f"{os_release['NAME']} {version}".strip()
+                except:
+                    pass
+        
+        # Besserer CPU-Namen via cpuinfo wenn verfügbar
+        try:
+            import cpuinfo
+            cpu_data = cpuinfo.get_cpu_info()
+            if 'brand_raw' in cpu_data and cpu_data['brand_raw']:
+                system_info["cpu"] = cpu_data['brand_raw'].replace('®', '').replace('™', '').strip()
+        except:
+            pass
         
         # GPU-Info aus erstem Result (wenn verfügbar)
         gpu_info = None

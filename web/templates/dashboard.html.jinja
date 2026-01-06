@@ -1068,6 +1068,7 @@
                             <div style="color: var(--primary); font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--primary);">🖥️ HARDWARE</div>
                             <div style="color: var(--text-light); line-height: 1.8;">
                                 <div><span style="color: var(--text); font-weight: 500;">OS:</span> <span id="home-os">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Kernel:</span> <span id="home-kernel">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">CPU:</span> <span id="home-cpu">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">Kerne:</span> <span id="home-cores">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">RAM:</span> <span id="home-ram">--</span></div>
@@ -1720,6 +1721,7 @@
                 // === LEFT COLUMN: HARDWARE ===
                 // System Info
                 document.getElementById('home-os').textContent = data.system_info.os || '--';
+                document.getElementById('home-kernel').textContent = data.system_info.os_version || '--';
                 document.getElementById('home-cpu').textContent = data.system_info.cpu || '--';
                 document.getElementById('home-cores').textContent = data.system_info.cpu_cores || '--';
                 document.getElementById('home-ram').textContent = `${data.system_info.ram_gb} GB` || '--';
