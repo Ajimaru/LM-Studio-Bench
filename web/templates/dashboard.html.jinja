@@ -1069,6 +1069,7 @@
                 <button class="nav-btn" data-view="benchmark" onclick="showView('benchmark')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">⚡ Benchmark</button>
                 <button class="nav-btn" data-view="results" onclick="showView('results')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📊 Results</button>
                 <button class="nav-btn" data-view="comparison" onclick="showView('comparison')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📈 Comparison</button>
+                <button class="nav-btn" data-view="ab-testing" onclick="showView('ab-testing')" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">🧪 A/B Testing</button>
             </nav>
             <select id="theme-selector" onchange="switchTheme(this.value)" style="padding: 0.5rem; border: 1px solid rgba(255,255,255,0.3); border-radius: 0.5rem; background: rgba(255,255,255,0.1); color: white; font-weight: 600; cursor: pointer;">
                 <option value="light">☀️ Light</option>
@@ -1723,6 +1724,140 @@
             </div>
         </div>
         <!-- END COMPARISON VIEW -->
+
+        <!-- A/B TESTING VIEW -->
+        <div id="view-ab-testing" class="view-container hidden" style="min-height: 500px;">
+            <div style="display: grid; grid-template-columns: 250px 1fr; gap: 2rem; margin-bottom: 2rem;">
+                <!-- Filter Panel -->
+                <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border); height: fit-content;">
+                    <h3 style="color: var(--primary); margin-bottom: 1rem;">🧪 Experiment Builder</h3>
+                    
+                    <div class="form-group">
+                        <label style="color: var(--text); font-weight: 500;">Experiment Name:</label>
+                        <input type="text" id="ab-experiment-name" placeholder="z.B. Temperature Test" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label style="color: var(--text); font-weight: 500;">Modell:</label>
+                        <select id="ab-model-select" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                            <option value="">Modell auswählen...</option>
+                        </select>
+                    </div>
+                    
+                    <div style="border-top: 1px solid var(--border); margin: 1rem 0; padding-top: 1rem;">
+                        <h4 style="color: var(--success); margin-bottom: 0.75rem; font-size: 0.95rem;">📊 Baseline Params</h4>
+                        
+                        <div class="form-group">
+                            <label>Temperature:</label>
+                            <input type="number" id="ab-baseline-temp" placeholder="0.1" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                        </div>
+                        <div class="form-group">
+                            <label>Top-K:</label>
+                            <input type="number" id="ab-baseline-topk" placeholder="40" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                        </div>
+                        <div class="form-group">
+                            <label>Top-P:</label>
+                            <input type="number" id="ab-baseline-topp" placeholder="0.9" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                        </div>
+                    </div>
+                    
+                    <div style="border-top: 1px solid var(--border); margin: 1rem 0; padding-top: 1rem;">
+                        <h4 style="color: var(--warning); margin-bottom: 0.75rem; font-size: 0.95rem;">⚡ Test Params</h4>
+                        
+                        <div class="form-group">
+                            <label>Temperature:</label>
+                            <input type="number" id="ab-test-temp" placeholder="0.7" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                        </div>
+                        <div class="form-group">
+                            <label>Top-K:</label>
+                            <input type="number" id="ab-test-topk" placeholder="50" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                        </div>
+                        <div class="form-group">
+                            <label>Top-P:</label>
+                            <input type="number" id="ab-test-topp" placeholder="0.95" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                        </div>
+                    </div>
+                    
+                    <button onclick="startABExperiment()" style="width: 100%; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600; margin-top: 1rem;">🚀 Experiment starten</button>
+                </div>
+                
+                <!-- Results Panel -->
+                <div>
+                    <div id="ab-results-container" style="display: none;">
+                        <!-- Speed Trend Comparison Chart -->
+                        <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border); margin-bottom: 2rem;">
+                            <h3 style="color: var(--primary); margin-bottom: 1rem;">📊 Speed Trend Vergleich</h3>
+                            <div id="ab-speed-chart" style="width: 100%; height: 300px;"></div>
+                        </div>
+                        
+                        <!-- Statistics Display -->
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 2rem;">
+                            <div style="background: var(--card); padding: 1rem; border-radius: 0.75rem; border-left: 3px solid var(--success);">
+                                <div style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.5rem;">📊 BASELINE</div>
+                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--success); margin-bottom: 0.5rem;" id="ab-baseline-mean">--</div>
+                                <div style="font-size: 0.8rem; color: var(--text-light);">
+                                    <div>Min: <span id="ab-baseline-min">--</span></div>
+                                    <div>Max: <span id="ab-baseline-max">--</span></div>
+                                    <div>StdDev: <span id="ab-baseline-stddev">--</span></div>
+                                    <div>Runs: <span id="ab-baseline-count">--</span></div>
+                                </div>
+                            </div>
+                            
+                            <div style="background: var(--card); padding: 1rem; border-radius: 0.75rem; border-left: 3px solid var(--warning);">
+                                <div style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.5rem;">⚡ TEST</div>
+                                <div style="font-size: 1.5rem; font-weight: bold; color: var(--warning); margin-bottom: 0.5rem;" id="ab-test-mean">--</div>
+                                <div style="font-size: 0.8rem; color: var(--text-light);">
+                                    <div>Min: <span id="ab-test-min">--</span></div>
+                                    <div>Max: <span id="ab-test-max">--</span></div>
+                                    <div>StdDev: <span id="ab-test-stddev">--</span></div>
+                                    <div>Runs: <span id="ab-test-count">--</span></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Statistical Significance -->
+                        <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border); margin-bottom: 2rem;">
+                            <h3 style="color: var(--primary); margin-bottom: 1rem;">📈 Statistische Analyse</h3>
+                            
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+                                <div>
+                                    <div style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.3rem;">p-value:</div>
+                                    <div style="font-size: 1.2rem; font-weight: bold;" id="ab-pvalue">--</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.3rem;">t-statistic:</div>
+                                    <div style="font-size: 1.2rem; font-weight: bold;" id="ab-tstat">--</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.3rem;">Effect Size (Cohen's d):</div>
+                                    <div style="font-size: 1.2rem; font-weight: bold;" id="ab-cohens-d">--</div>
+                                </div>
+                                <div>
+                                    <div style="font-size: 0.85rem; color: var(--text-light); margin-bottom: 0.3rem;">Performance Delta:</div>
+                                    <div style="font-size: 1.2rem; font-weight: bold;" id="ab-delta">--</div>
+                                </div>
+                            </div>
+                            
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+                                <div style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">Ergebnis:</div>
+                                <div style="font-size: 1.3rem; font-weight: bold;" id="ab-winner-badge">--</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Export Buttons -->
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+                            <button onclick="exportABResults('csv')" style="padding: 0.75rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📥 CSV Export</button>
+                            <button onclick="exportABResults('pdf')" style="padding: 0.75rem; background: var(--warning); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">🧾 PDF Report</button>
+                        </div>
+                    </div>
+                    
+                    <div id="ab-placeholder" style="background: var(--card); padding: 2rem; border-radius: 0.75rem; text-align: center; color: var(--text-light);">
+                        <p style="font-size: 1.1rem;">🧪 Experiment Builder nutzen um einen A/B Test zu starten...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- END A/B TESTING VIEW -->
     </div>
     <!-- END CONTAINER -->
 
@@ -3173,9 +3308,232 @@
             setTimeout(() => Plotly.downloadImage('comparison-gentime-chart', { format: 'png', width: 1000, height: 600, filename: `${modelName}_gentime` }), 1200);
         }
 
+        // ===== PHASE 15: A/B TESTING FUNCTIONS =====
+        let abExperimentData = null;
+
+        async function loadABModels() {
+            try {
+                const response = await fetch('/api/comparison/models');
+                const data = await response.json();
+                if (data.success && data.models.length > 0) {
+                    const select = document.getElementById('ab-model-select');
+                    select.innerHTML = '<option value="">Modell auswählen...</option>';
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.model_name;
+                        option.textContent = `${model.model_name} (${model.entry_count} Einträge)`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Fehler beim Laden von A/B Modellen:', error);
+            }
+        }
+
+        async function startABExperiment() {
+            const modelName = document.getElementById('ab-model-select').value;
+            if (!modelName) {
+                alert('Bitte ein Modell auswählen');
+                return;
+            }
+
+            const expName = document.getElementById('ab-experiment-name').value || `Experiment ${new Date().toLocaleTimeString()}`;
+
+            // Baseline Params
+            const baselineParams = {
+                name: 'Baseline',
+                temperature: parseFloat(document.getElementById('ab-baseline-temp').value) || null,
+                top_k: parseInt(document.getElementById('ab-baseline-topk').value) || null,
+                top_p: parseFloat(document.getElementById('ab-baseline-topp').value) || null
+            };
+
+            // Test Params
+            const testParams = {
+                name: 'Test',
+                temperature: parseFloat(document.getElementById('ab-test-temp').value) || null,
+                top_k: parseInt(document.getElementById('ab-test-topk').value) || null,
+                top_p: parseFloat(document.getElementById('ab-test-topp').value) || null
+            };
+
+            try {
+                // 1. Create Experiment
+                const createResponse = await fetch('/api/experiments/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: expName,
+                        model_name: modelName,
+                        baseline_params: baselineParams,
+                        test_params: testParams
+                    })
+                });
+
+                const createData = await createResponse.json();
+                if (!createData.success) {
+                    alert(`Fehler: ${createData.error}`);
+                    return;
+                }
+
+                const expId = createData.experiment_id;
+                const baselineHash = createData.baseline_hash;
+                const testHash = createData.test_hash;
+
+                // 2. Get Comparison Results
+                const comparisonUrl = `/api/experiments/${expId}/comparison?baseline_hash=${baselineHash}&test_hash=${testHash}&model_name=${encodeURIComponent(modelName)}`;
+                const comparisonResponse = await fetch(comparisonUrl);
+                const comparisonData = await comparisonResponse.json();
+
+                if (!comparisonData.success) {
+                    alert(`Fehler beim Abrufen von Daten: ${comparisonData.error}`);
+                    return;
+                }
+
+                // Speichere Daten für Export
+                abExperimentData = {
+                    id: expId,
+                    name: expName,
+                    model_name: modelName,
+                    baseline_params: baselineParams,
+                    test_params: testParams,
+                    ...comparisonData
+                };
+
+                // 3. Rendere Ergebnisse
+                renderABResults(comparisonData);
+                
+                showToast(`✅ Experiment "${expName}" erstellt und verglichen`, 'success', 'Erfolg');
+            } catch (error) {
+                console.error('A/B Experiment Fehler:', error);
+                alert('Fehler beim A/B Experiment');
+            }
+        }
+
+        function renderABResults(data) {
+            // Zeige Results Container
+            document.getElementById('ab-results-container').style.display = 'block';
+            document.getElementById('ab-placeholder').style.display = 'none';
+
+            const baseline = data.baseline;
+            const test = data.test;
+            const testResult = data.statistical_test;
+            const effectSize = data.effect_size;
+            const comparison = data.comparison;
+
+            // Update Speed Chart
+            createABSpeedChart(baseline.data || [], test.data || []);
+
+            // Update Statistics
+            document.getElementById('ab-baseline-mean').textContent = `${baseline.mean} tok/s`;
+            document.getElementById('ab-baseline-min').textContent = `${baseline.min}`;
+            document.getElementById('ab-baseline-max').textContent = `${baseline.max}`;
+            document.getElementById('ab-baseline-stddev').textContent = `±${baseline.std_dev}`;
+            document.getElementById('ab-baseline-count').textContent = `${baseline.count}`;
+
+            document.getElementById('ab-test-mean').textContent = `${test.mean} tok/s`;
+            document.getElementById('ab-test-min').textContent = `${test.min}`;
+            document.getElementById('ab-test-max').textContent = `${test.max}`;
+            document.getElementById('ab-test-stddev').textContent = `±${test.std_dev}`;
+            document.getElementById('ab-test-count').textContent = `${test.count}`;
+
+            // Statistical Test
+            document.getElementById('ab-pvalue').textContent = testResult.p_value !== null ? `${testResult.p_value}` : 'N/A';
+            document.getElementById('ab-tstat').textContent = testResult.t_statistic !== null ? `${testResult.t_statistic}` : 'N/A';
+            document.getElementById('ab-cohens-d').textContent = `${effectSize.cohens_d} (${effectSize.effect_magnitude})`;
+            document.getElementById('ab-delta').textContent = `${comparison.delta_pct > 0 ? '+' : ''}${comparison.delta_pct}%`;
+
+            // Winner Badge
+            const badgeDiv = document.getElementById('ab-winner-badge');
+            if (!testResult.significant) {
+                badgeDiv.innerHTML = '🟡 TIE (Statistisch insignifikant)';
+                badgeDiv.style.color = 'var(--warning)';
+            } else if (comparison.winner === 'test') {
+                badgeDiv.innerHTML = '🟢 TEST GEWINNT ✅';
+                badgeDiv.style.color = 'var(--success)';
+            } else {
+                badgeDiv.innerHTML = '🔵 BASELINE GEWINNT ✅';
+                badgeDiv.style.color = 'var(--primary)';
+            }
+
+            // Confidence
+            const confDiv = document.createElement('div');
+            confDiv.style.marginTop = '0.5rem';
+            confDiv.style.fontSize = '0.9rem';
+            confDiv.style.color = 'var(--text-light)';
+            confDiv.textContent = `Konfidenz: ${comparison.confidence}`;
+            badgeDiv.parentElement.appendChild(confDiv);
+        }
+
+        function createABSpeedChart(baselineData, testData) {
+            const baselineTrace = {
+                x: baselineData.map(d => d.timestamp),
+                y: baselineData.map(d => d.speed),
+                name: 'Baseline',
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { color: '#10b981', width: 3 },
+                marker: { size: 6 }
+            };
+
+            const testTrace = {
+                x: testData.map(d => d.timestamp),
+                y: testData.map(d => d.speed),
+                name: 'Test',
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { color: '#f59e0b', width: 3 },
+                marker: { size: 6 }
+            };
+
+            const layout = {
+                title: 'Speed Trend Vergleich (Baseline vs. Test)',
+                xaxis: { title: 'Zeitstempel' },
+                yaxis: { title: 'tokens/sec' },
+                hovermode: 'x unified',
+                margin: { t: 40, b: 40, l: 60, r: 40 },
+                plot_bgcolor: 'rgba(0,0,0,0.02)'
+            };
+
+            Plotly.newPlot('ab-speed-chart', [baselineTrace, testTrace], layout, { responsive: true });
+        }
+
+        async function exportABResults(format) {
+            if (!abExperimentData) {
+                alert('Bitte zuerst ein Experiment ausführen');
+                return;
+            }
+
+            try {
+                const endpoint = '/api/experiments/' + abExperimentData.id + '/export';
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        format: format,
+                        baseline: abExperimentData.baseline,
+                        test: abExperimentData.test,
+                        comparison: abExperimentData.comparison,
+                        statistical_test: abExperimentData.statistical_test,
+                        effect_size: abExperimentData.effect_size
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success && data.url) {
+                    window.open(data.url, '_blank');
+                    showToast(`✅ ${format.toUpperCase()} exportiert`, 'success');
+                } else {
+                    alert(`Fehler: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('Export Fehler:', error);
+                alert('Fehler beim Export');
+            }
+        }
+
         // Lade Vergleichsdaten beim Laden der Seite
         window.addEventListener('load', () => {
             loadComparisonData();
+            loadABModels();
         });
     </script>
 </body>

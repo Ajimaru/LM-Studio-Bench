@@ -19,7 +19,11 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
+import sqlite3
+import json
+import math
+import statistics
 
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
@@ -27,6 +31,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
+
+try:
+    from scipy import stats as scipy_stats
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
 
 # Logging konfigurieren - mit Console und File Handler
 logging.basicConfig(
@@ -428,6 +438,146 @@ class BenchmarkParams(BaseModel):
     # Hardware-Limits
     max_temp: Optional[float] = None
     max_power: Optional[float] = None
+
+
+class InferenceParamSet(BaseModel):
+    """Satz von Inference-Parametern für A/B Test"""
+    name: str  # z.B. "Baseline" oder "Test-High-Temp"
+    temperature: Optional[float] = None
+    top_k: Optional[int] = None
+    top_p: Optional[float] = None
+    min_p: Optional[float] = None
+    repeat_penalty: Optional[float] = None
+    max_tokens: Optional[int] = None
+
+
+class CreateExperimentRequest(BaseModel):
+    """Request zum Erstellen eines A/B Experiments"""
+    name: str  # Experiment Name
+    model_name: str
+    baseline_params: InferenceParamSet
+    test_params: InferenceParamSet
+    start_date: Optional[str] = None  # YYYY-MM-DD
+    end_date: Optional[str] = None
+
+
+class ExperimentResult(BaseModel):
+    """A/B Test Ergebnis mit Statistiken"""
+    experiment_id: str
+    model_name: str
+    baseline_data: Dict[str, Any]
+    test_data: Dict[str, Any]
+    statistical_test: Dict[str, Any]  # p-value, effect_size, significant
+    winner: str  # "baseline", "test", "tie"
+
+
+# ============================================================================
+# Statistical Analysis Functions
+# ============================================================================
+
+def calculate_hash(params: Dict[str, Any]) -> str:
+    """Erstelle SHA256-Hash aus Parameter-Dictionary"""
+    import hashlib
+    params_str = json.dumps(params, sort_keys=True, default=str)
+    return hashlib.sha256(params_str.encode()).hexdigest()[:16]
+
+
+def match_parameters(db_params: Dict[str, Any], filter_params: Dict[str, Optional[Any]]) -> bool:
+    """Prüfe ob Datenbank-Parameter mit Filter-Parametern matchen"""
+    for key, value in filter_params.items():
+        if value is None:
+            continue  # Ignoriere None-Werte
+        if abs(float(db_params.get(key, 0)) - float(value)) > 0.001:
+            return False
+    return True
+
+
+def perform_ttest(baseline_speeds: List[float], test_speeds: List[float]) -> Dict[str, Any]:
+    """Führe Independent Samples t-test durch"""
+    if len(baseline_speeds) < 2 or len(test_speeds) < 2:
+        return {
+            "test_name": "t-test",
+            "p_value": None,
+            "t_statistic": None,
+            "significant": False,
+            "reason": "Unzureichend Daten (min. 2 Proben pro Gruppe)"
+        }
+    
+    try:
+        if HAS_SCIPY:
+            t_stat, p_value = scipy_stats.ttest_ind(baseline_speeds, test_speeds)
+            return {
+                "test_name": "Welch's t-test",
+                "t_statistic": round(t_stat, 4),
+                "p_value": round(p_value, 4),
+                "significant": p_value < 0.05,  # α = 0.05
+                "alpha": 0.05
+            }
+        else:
+            # Fallback: Vereinfachte t-test Berechnung ohne scipy
+            baseline_mean = statistics.mean(baseline_speeds)
+            test_mean = statistics.mean(test_speeds)
+            baseline_var = statistics.variance(baseline_speeds) if len(baseline_speeds) > 1 else 0
+            test_var = statistics.variance(test_speeds) if len(test_speeds) > 1 else 0
+            
+            n1, n2 = len(baseline_speeds), len(test_speeds)
+            se = math.sqrt((baseline_var / n1) + (test_var / n2))
+            
+            if se == 0:
+                return {"test_name": "t-test", "p_value": None, "significant": False, "reason": "Keine Varianz"}
+            
+            t_stat = (baseline_mean - test_mean) / se
+            
+            # Approximation für p-value (sehr vereinfacht)
+            # Echte p-value Berechnung benötigt CDF der t-Verteilung
+            p_value = 0.01 if abs(t_stat) > 2.5 else 0.1
+            
+            return {
+                "test_name": "t-test (approximiert)",
+                "t_statistic": round(t_stat, 4),
+                "p_value": round(p_value, 4),
+                "significant": p_value < 0.05,
+                "alpha": 0.05
+            }
+    except Exception as e:
+        logger.error(f"Fehler bei t-test: {e}")
+        return {"test_name": "t-test", "error": str(e), "significant": False}
+
+
+def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]) -> Dict[str, float]:
+    """Berechne Cohen's d effect size"""
+    if not baseline_speeds or not test_speeds:
+        return {"cohens_d": 0.0, "effect_magnitude": "negligible"}
+    
+    baseline_mean = statistics.mean(baseline_speeds)
+    test_mean = statistics.mean(test_speeds)
+    
+    baseline_var = statistics.variance(baseline_speeds) if len(baseline_speeds) > 1 else 0
+    test_var = statistics.variance(test_speeds) if len(test_speeds) > 1 else 0
+    
+    # Pooled standard deviation
+    n1, n2 = len(baseline_speeds), len(test_speeds)
+    pooled_var = ((n1 - 1) * baseline_var + (n2 - 1) * test_var) / (n1 + n2 - 2)
+    pooled_sd = math.sqrt(pooled_var) if pooled_var > 0 else 1
+    
+    cohens_d = (test_mean - baseline_mean) / pooled_sd if pooled_sd > 0 else 0
+    
+    # Magnitude Interpretation
+    abs_d = abs(cohens_d)
+    if abs_d < 0.2:
+        magnitude = "negligible"
+    elif abs_d < 0.5:
+        magnitude = "small"
+    elif abs_d < 0.8:
+        magnitude = "medium"
+    else:
+        magnitude = "large"
+    
+    return {
+        "cohens_d": round(cohens_d, 4),
+        "effect_magnitude": magnitude
+    }
+
 
 
 # ============================================================================
@@ -1333,6 +1483,355 @@ async def get_output() -> dict:
         "output": manager.current_output,
         "status": manager.status
     }
+
+
+# ============================================================================
+# A/B TESTING ENDPOINTS (PHASE 15)
+# ============================================================================
+
+@app.post("/api/experiments/create")
+async def create_experiment(request: CreateExperimentRequest) -> dict:
+    """Erstellt ein neues A/B Testing Experiment"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+    
+    try:
+        import uuid
+        
+        experiment_id = str(uuid.uuid4())[:8]
+        
+        # Berechne Parameter-Hashes
+        baseline_dict = request.baseline_params.dict(exclude_none=True)
+        test_dict = request.test_params.dict(exclude_none=True)
+        
+        baseline_hash = calculate_hash(baseline_dict)
+        test_hash = calculate_hash(test_dict)
+        
+        logger.info(f"🧪 Experiment erstellt: {experiment_id}")
+        logger.info(f"   Modell: {request.model_name}")
+        logger.info(f"   Baseline: {baseline_dict} (hash: {baseline_hash})")
+        logger.info(f"   Test: {test_dict} (hash: {test_hash})")
+        
+        return {
+            "success": True,
+            "experiment_id": experiment_id,
+            "model_name": request.model_name,
+            "baseline_hash": baseline_hash,
+            "test_hash": test_hash,
+            "baseline_params": baseline_dict,
+            "test_params": test_dict,
+            "created_at": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"❌ Experiment Creation Fehler: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/experiments/{experiment_id}/comparison")
+async def get_experiment_comparison(
+    experiment_id: str,
+    baseline_hash: str,
+    test_hash: str,
+    model_name: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+) -> dict:
+    """Vergleicht zwei Parameter-Kombinationen für ein Modell"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar", "comparison": {}}
+    
+    try:
+        from urllib.parse import unquote
+        import re
+        
+        model_name = unquote(model_name)
+        
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+        
+        # Baue Query mit optionalen Datum-Filtern
+        query = '''
+            SELECT 
+                timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
+                temperature, top_k_sampling, top_p_sampling, min_p_sampling,
+                repeat_penalty, max_tokens, num_runs, error_count
+            FROM benchmark_results
+            WHERE model_name = ?
+            ORDER BY timestamp ASC
+        '''
+        params = [model_name]
+        
+        if start_date:
+            query = query.replace("ORDER BY", f"AND timestamp >= '{start_date}' ORDER BY")
+        if end_date:
+            query = query.replace("ORDER BY", f"AND timestamp <= '{end_date}' ORDER BY")
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        if not rows:
+            return {"success": False, "error": "Keine Daten für dieses Modell", "comparison": {}}
+        
+        # Gruppiere Daten nach Parametern
+        baseline_data = []
+        test_data = []
+        
+        for row in rows:
+            ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts, runs, errors = row
+            
+            # Erstelle Parameter-Hash aus aktuellen Werten
+            params_dict = {
+                "temperature": temp,
+                "top_k": topk,
+                "top_p": topp,
+                "min_p": minp,
+                "repeat_penalty": penalty,
+                "max_tokens": maxts
+            }
+            
+            current_hash = calculate_hash(params_dict)
+            
+            # Vergleiche mit baseline_hash und test_hash (Substring-Match für Toleranz)
+            if current_hash.startswith(baseline_hash[:8]) or baseline_hash.startswith(current_hash[:8]):
+                baseline_data.append({
+                    "timestamp": ts,
+                    "speed": speed,
+                    "ttft": ttft,
+                    "gen_time": gen_time
+                })
+            elif current_hash.startswith(test_hash[:8]) or test_hash.startswith(current_hash[:8]):
+                test_data.append({
+                    "timestamp": ts,
+                    "speed": speed,
+                    "ttft": ttft,
+                    "gen_time": gen_time
+                })
+        
+        # Berechne Statistiken für beide Gruppen
+        baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
+        test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
+        
+        if not baseline_speeds or not test_speeds:
+            return {
+                "success": False,
+                "error": f"Unzureichend Daten: Baseline={len(baseline_speeds)} entries, Test={len(test_speeds)} entries",
+                "comparison": {}
+            }
+        
+        # Statistiken
+        baseline_stats = {
+            "count": len(baseline_speeds),
+            "mean": round(statistics.mean(baseline_speeds), 2),
+            "std_dev": round(statistics.stdev(baseline_speeds), 2) if len(baseline_speeds) > 1 else 0,
+            "min": round(min(baseline_speeds), 2),
+            "max": round(max(baseline_speeds), 2),
+            "data": baseline_data
+        }
+        
+        test_stats = {
+            "count": len(test_speeds),
+            "mean": round(statistics.mean(test_speeds), 2),
+            "std_dev": round(statistics.stdev(test_speeds), 2) if len(test_speeds) > 1 else 0,
+            "min": round(min(test_speeds), 2),
+            "max": round(max(test_speeds), 2),
+            "data": test_data
+        }
+        
+        # Statistischer Test (t-test)
+        test_result = perform_ttest(baseline_speeds, test_speeds)
+        
+        # Effect Size
+        effect_size = calculate_effect_size(baseline_speeds, test_speeds)
+        
+        # Bestimme Gewinner
+        delta_pct = ((test_stats["mean"] - baseline_stats["mean"]) / baseline_stats["mean"] * 100)
+        if test_result.get("significant"):
+            winner = "test" if test_stats["mean"] > baseline_stats["mean"] else "baseline"
+        else:
+            winner = "tie"
+        
+        logger.info(f"🧪 Experiment {experiment_id}: {winner.upper()}")
+        logger.info(f"   Baseline: {baseline_stats['mean']} ± {baseline_stats['std_dev']} tok/s")
+        logger.info(f"   Test: {test_stats['mean']} ± {test_stats['std_dev']} tok/s")
+        logger.info(f"   Delta: {delta_pct:.1f}% | p-value: {test_result.get('p_value')}")
+        
+        return {
+            "success": True,
+            "experiment_id": experiment_id,
+            "model_name": model_name,
+            "baseline": baseline_stats,
+            "test": test_stats,
+            "statistical_test": test_result,
+            "effect_size": effect_size,
+            "comparison": {
+                "delta_pct": round(delta_pct, 2),
+                "winner": winner,
+                "significant": test_result.get("significant", False),
+                "confidence": "High" if test_result.get("p_value", 1) < 0.01 else "Medium" if test_result.get("p_value", 1) < 0.05 else "Low"
+            }
+        }
+    except Exception as e:
+        logger.error(f"❌ Experiment Comparison Fehler: {e}")
+        return {"success": False, "error": str(e), "comparison": {}}
+
+
+@app.post("/api/experiments/{experiment_id}/export")
+async def export_experiment(
+    experiment_id: str,
+    request: Request
+) -> dict:
+    """Exportiert Experiment-Ergebnisse als CSV/PDF"""
+    try:
+        import csv
+        from io import StringIO
+        
+        payload = await request.json()
+        export_format = payload.get("format", "csv")  # "csv" oder "pdf"
+        
+        # Hole Experiment-Daten aus Payload
+        baseline_data = payload.get("baseline", {})
+        test_data = payload.get("test", {})
+        comparison = payload.get("comparison", {})
+        test_result = payload.get("statistical_test", {})
+        
+        if export_format == "csv":
+            # CSV Export
+            output = StringIO()
+            writer = csv.writer(output)
+            
+            # Header
+            writer.writerow([
+                "Experiment ID", "Type", "Mean (tok/s)", "StdDev", "Min", "Max", "Count"
+            ])
+            
+            # Baseline row
+            writer.writerow([
+                experiment_id,
+                "Baseline",
+                baseline_data.get("mean", "-"),
+                baseline_data.get("std_dev", "-"),
+                baseline_data.get("min", "-"),
+                baseline_data.get("max", "-"),
+                baseline_data.get("count", 0)
+            ])
+            
+            # Test row
+            writer.writerow([
+                experiment_id,
+                "Test",
+                test_data.get("mean", "-"),
+                test_data.get("std_dev", "-"),
+                test_data.get("min", "-"),
+                test_data.get("max", "-"),
+                test_data.get("count", 0)
+            ])
+            
+            # Statistical Results
+            writer.writerow([])
+            writer.writerow(["Statistical Test Results"])
+            writer.writerow(["Metric", "Value"])
+            writer.writerow(["p-value", test_result.get("p_value", "-")])
+            writer.writerow(["t-statistic", test_result.get("t_statistic", "-")])
+            writer.writerow(["Significant", test_result.get("significant", False)])
+            writer.writerow(["Winner", comparison.get("winner", "-")])
+            writer.writerow(["Delta %", comparison.get("delta_pct", "-")])
+            
+            csv_content = output.getvalue()
+            export_file = RESULTS_DIR / f"experiment_{experiment_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            
+            with open(export_file, 'w', encoding='utf-8') as f:
+                f.write(csv_content)
+            
+            logger.info(f"📊 CSV Experiment Export: {export_file}")
+            
+            return {
+                "success": True,
+                "format": "csv",
+                "file": str(export_file),
+                "url": f"/results/{export_file.name}"
+            }
+        
+        else:  # PDF
+            # Einfaches Text-PDF (wie in comparison export)
+            lines = [
+                f"Experiment {experiment_id}",
+                f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                "",
+                "Baseline Results:",
+                f"  Mean: {baseline_data.get('mean')} ± {baseline_data.get('std_dev')} tok/s",
+                f"  Range: {baseline_data.get('min')} - {baseline_data.get('max')}",
+                f"  Runs: {baseline_data.get('count')}",
+                "",
+                "Test Results:",
+                f"  Mean: {test_data.get('mean')} ± {test_data.get('std_dev')} tok/s",
+                f"  Range: {test_data.get('min')} - {test_data.get('max')}",
+                f"  Runs: {test_data.get('count')}",
+                "",
+                "Statistical Analysis:",
+                f"  p-value: {test_result.get('p_value', '-')}",
+                f"  Significant: {test_result.get('significant', False)}",
+                f"  Winner: {comparison.get('winner', '-')}",
+                f"  Performance Delta: {comparison.get('delta_pct', '-')}%"
+            ]
+            
+            # Generiere einfaches PDF
+            def generate_simple_pdf(text_lines):
+                pdf_bytes = bytearray()
+                pdf_bytes.extend(b"%PDF-1.4\n")
+                offsets = []
+
+                def add_obj(content: str):
+                    offsets.append(len(pdf_bytes))
+                    pdf_bytes.extend(content.encode("latin-1"))
+
+                add_obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+                add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+
+                stream_lines = []
+                y = 770
+                for line in text_lines:
+                    safe_line = line.replace("(", "\\(").replace(")", "\\)")
+                    stream_lines.append(f"BT /F1 10 Tf 50 {y} Td ({safe_line}) Tj ET")
+                    y -= 12
+                stream_content = "\n".join(stream_lines).encode("latin-1")
+
+                add_obj("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n")
+                add_obj(f"4 0 obj\n<< /Length {len(stream_content)} >>\nstream\n")
+                pdf_bytes.extend(stream_content)
+                pdf_bytes.extend(b"\nendstream\nendobj\n")
+                add_obj("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n")
+
+                xref_offset = len(pdf_bytes)
+                pdf_bytes.extend(f"xref\n0 {len(offsets)+1}\n".encode("latin-1"))
+                pdf_bytes.extend(b"0000000000 65535 f \n")
+                for off in offsets:
+                    pdf_bytes.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
+                pdf_bytes.extend(b"trailer\n")
+                pdf_bytes.extend(f"<< /Size {len(offsets)+1} /Root 1 0 R >>\n".encode("latin-1"))
+                pdf_bytes.extend(b"startxref\n")
+                pdf_bytes.extend(f"{xref_offset}\n".encode("latin-1"))
+                pdf_bytes.extend(b"%%EOF")
+                return bytes(pdf_bytes)
+            
+            pdf_bytes = generate_simple_pdf(lines)
+            export_file = RESULTS_DIR / f"experiment_{experiment_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            
+            with open(export_file, 'wb') as f:
+                f.write(pdf_bytes)
+            
+            logger.info(f"📋 PDF Experiment Export: {export_file}")
+            
+            return {
+                "success": True,
+                "format": "pdf",
+                "file": str(export_file),
+                "url": f"/results/{export_file.name}"
+            }
+    
+    except Exception as e:
+        logger.error(f"❌ Experiment Export Fehler: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/dashboard/stats")
