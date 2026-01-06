@@ -2104,6 +2104,7 @@ async def run_experiment(request: Request) -> dict:
 
     try:
         payload = await request.json()
+        experiment_name = payload.get("experiment_name", "A/B Test")
         model_name = payload.get("model_name")
         baseline_params = payload.get("baseline_params", {})
         test_params = payload.get("test_params", {})
@@ -2316,6 +2317,7 @@ async def run_experiment(request: Request) -> dict:
                 "significant": test_result.get("significant", False)
             },
             "experiment_info": {
+                "name": experiment_name,
                 "baseline_params": baseline_params,
                 "test_params": test_params,
                 "runs": runs,
@@ -2361,7 +2363,7 @@ async def run_experiment(request: Request) -> dict:
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>A/B Test Results - {model_name}</title>
+    <title>{experiment_name} - {model_name}</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
         .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
@@ -2378,7 +2380,7 @@ async def run_experiment(request: Request) -> dict:
 </head>
 <body>
     <div class="container">
-        <h1>🧪 A/B Test Results</h1>
+        <h1>🧪 {experiment_name}</h1>
         <p><strong>Model:</strong> {model_name}</p>
         <p><strong>Timestamp:</strong> {results_data['experiment_info']['timestamp']}</p>
         

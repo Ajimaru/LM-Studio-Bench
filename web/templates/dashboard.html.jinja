@@ -3458,6 +3458,7 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
+                            experiment_name: expName,
                             model_name: modelName,
                             baseline_params: baselineParams,
                             test_params: testParams,
