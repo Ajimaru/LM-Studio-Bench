@@ -1761,22 +1761,14 @@
                 const totalModels = data.cache_stats.total_models || 0;
                 document.getElementById('home-cached-models').textContent = totalModels;
                 document.getElementById('home-cache-count').textContent = totalModels;
+                document.getElementById('home-db-size').textContent = `${data.cache_stats.db_size_mb} MB`;
                 document.getElementById('home-cache-size').textContent = `${data.cache_stats.db_size_mb} MB`;
 
                 // Performance Stats (links) + Benchmark Ø (rechts)
-                if (data.perf_stats.avg_speed) {
+                if (data.perf_stats && data.perf_stats.avg_speed) {
                     const avg = `${data.perf_stats.avg_speed} tok/s`;
                     const max = `${data.perf_stats.max_speed} tok/s`;
-                    document.getElementById('home-avg-speed').textContent = avg;
                     document.getElementById('home-benchmark-avg-speed').textContent = avg;
-                    document.getElementById('home-max-speed').textContent = max;
-                    document.getElementById('home-total-runs').textContent = data.cache_stats.total_runs || 0;
-                } else {
-                    document.getElementById('home-avg-speed').textContent = 'Keine Daten';
-                    document.getElementById('home-benchmark-avg-speed').textContent = 'Keine Daten';
-                    document.getElementById('home-max-speed').textContent = 'Keine Daten';
-                    document.getElementById('home-total-runs').textContent = 0;
-                }
                 
                 // Last Run
                 if (data.last_run) {
