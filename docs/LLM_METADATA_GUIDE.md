@@ -250,17 +250,17 @@ lms unload --all        # Alle Modelle entladen
 
 ## Troubleshooting
 
-**Problem: Keine Ausgabe bei `lms ls --json`**
+### Keine Ausgabe bei `lms ls --json`
 
 - Sicherstellen dass LM Studio Server läuft: `lms server start`
 - Port-Konflikt prüfen
 
-**Problem: jq nicht installiert**
+### jq nicht installiert
 
 - Installation: `sudo apt install jq` (Linux) oder `brew install jq` (macOS)
 - Alternative: Python Parsing verwenden
 
-**Problem: Unbegrenzte Ausgabe**
+### Unbegrenzte Ausgabe
 
 - Nutze `| head -n 5` zum Begrenzen
 - Oder pipe zu `less` für paging: `| less`
