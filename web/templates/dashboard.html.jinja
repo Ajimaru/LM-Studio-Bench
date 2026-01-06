@@ -1753,15 +1753,15 @@
                         
                         <div class="form-group">
                             <label>Temperature:</label>
-                            <input type="number" id="ab-baseline-temp" placeholder="0.1" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                            <input type="number" id="ab-baseline-temp" placeholder="0.1" value="0.1" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
                             <label>Top-K:</label>
-                            <input type="number" id="ab-baseline-topk" placeholder="40" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                            <input type="number" id="ab-baseline-topk" placeholder="40" value="40" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
                             <label>Top-P:</label>
-                            <input type="number" id="ab-baseline-topp" placeholder="0.9" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                            <input type="number" id="ab-baseline-topp" placeholder="0.9" value="0.9" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                     </div>
                     
@@ -1770,15 +1770,15 @@
                         
                         <div class="form-group">
                             <label>Temperature:</label>
-                            <input type="number" id="ab-test-temp" placeholder="0.7" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                            <input type="number" id="ab-test-temp" placeholder="0.7" value="0.7" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
                             <label>Top-K:</label>
-                            <input type="number" id="ab-test-topk" placeholder="50" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                            <input type="number" id="ab-test-topk" placeholder="50" value="50" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
                             <label>Top-P:</label>
-                            <input type="number" id="ab-test-topp" placeholder="0.95" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                            <input type="number" id="ab-test-topp" placeholder="0.95" value="0.95" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                     </div>
                     
@@ -3363,17 +3363,17 @@
             // Baseline Params
             const baselineParams = {
                 name: 'Baseline',
-                temperature: parseFloat(document.getElementById('ab-baseline-temp').value) || null,
-                top_k: parseInt(document.getElementById('ab-baseline-topk').value) || null,
-                top_p: parseFloat(document.getElementById('ab-baseline-topp').value) || null
+                temperature: parseFloat(document.getElementById('ab-baseline-temp').value),
+                top_k: parseInt(document.getElementById('ab-baseline-topk').value),
+                top_p: parseFloat(document.getElementById('ab-baseline-topp').value)
             };
 
             // Test Params
             const testParams = {
                 name: 'Test',
-                temperature: parseFloat(document.getElementById('ab-test-temp').value) || null,
-                top_k: parseInt(document.getElementById('ab-test-topk').value) || null,
-                top_p: parseFloat(document.getElementById('ab-test-topp').value) || null
+                temperature: parseFloat(document.getElementById('ab-test-temp').value),
+                top_k: parseInt(document.getElementById('ab-test-topk').value),
+                top_p: parseFloat(document.getElementById('ab-test-topp').value)
             };
             const activeRun = document.getElementById('ab-active-run-toggle').checked;
 

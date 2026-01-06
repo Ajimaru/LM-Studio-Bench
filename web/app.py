@@ -557,7 +557,14 @@ def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]
     
     # Pooled standard deviation
     n1, n2 = len(baseline_speeds), len(test_speeds)
-    pooled_var = ((n1 - 1) * baseline_var + (n2 - 1) * test_var) / (n1 + n2 - 2)
+    denom = n1 + n2 - 2
+    
+    # Guard gegen Division durch 0 (wenn n1 + n2 <= 2)
+    if denom <= 0:
+        # Fallback: Nutze unpooled standard deviation oder 0
+        return {"cohens_d": 0.0, "effect_magnitude": "negligible", "reason": "Unzureichend Daten für Effektgröße"}
+    
+    pooled_var = ((n1 - 1) * baseline_var + (n2 - 1) * test_var) / denom
     pooled_sd = math.sqrt(pooled_var) if pooled_var > 0 else 1
     
     cohens_d = (test_mean - baseline_mean) / pooled_sd if pooled_sd > 0 else 0
@@ -1663,7 +1670,8 @@ async def get_experiment_comparison(
         logger.info(f"🧪 Experiment {experiment_id}: {winner.upper()}")
         logger.info(f"   Baseline: {baseline_stats['mean']} ± {baseline_stats['std_dev']} tok/s")
         logger.info(f"   Test: {test_stats['mean']} ± {test_stats['std_dev']} tok/s")
-        logger.info(f"   Delta: {delta_pct:.1f}% | p-value: {test_result.get('p_value')}")
+        delta_str = f"{delta_pct:.1f}%" if isinstance(delta_pct, (int, float)) else "n/a"
+        logger.info(f"   Delta: {delta_str} | p-value: {test_result.get('p_value')}")
         
         return {
             "success": True,
@@ -1793,11 +1801,17 @@ async def post_experiment_comparison(
         test_result = perform_ttest(baseline_speeds, test_speeds)
         effect_size = calculate_effect_size(baseline_speeds, test_speeds)
 
-        delta_pct = ((test_stats["mean"] - baseline_stats["mean"]) / baseline_stats["mean"] * 100)
-        if test_result.get("significant"):
-            winner = "test" if test_stats["mean"] > baseline_stats["mean"] else "baseline"
+        baseline_mean = baseline_stats["mean"]
+        test_mean = test_stats["mean"]
+        delta_pct = None
+        if baseline_mean and baseline_mean != 0:
+            delta_pct = ((test_mean - baseline_mean) / baseline_mean * 100)
         else:
-            winner = "tie"
+            logger.warning("⚠️ Baseline-Mean ist 0 – Delta% wird nicht berechnet")
+        if test_result.get("significant"):
+            winner = "test" if test_mean > baseline_mean else "baseline"
+        else:
+            winner = "test" if test_mean > baseline_mean else ("baseline" if baseline_mean > test_mean else "tie")
 
         return {
             "success": True,
@@ -1808,7 +1822,7 @@ async def post_experiment_comparison(
             "statistical_test": test_result,
             "effect_size": effect_size,
             "comparison": {
-                "delta_pct": round(delta_pct, 2),
+                "delta_pct": (round(delta_pct, 2) if isinstance(delta_pct, (int, float)) else None),
                 "winner": winner,
                 "significant": test_result.get("significant", False),
                 "confidence": "High" if test_result.get("p_value", 1) < 0.01 else "Medium" if test_result.get("p_value", 1) < 0.05 else "Low"
@@ -2138,7 +2152,9 @@ async def run_experiment(request: Request) -> dict:
             }
         }
     except Exception as e:
+        import traceback
         logger.error(f"❌ Experiment Run Fehler: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return {"success": False, "error": str(e)}
 
 @app.get("/api/dashboard/stats")
