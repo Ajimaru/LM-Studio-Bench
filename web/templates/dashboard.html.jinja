@@ -1769,6 +1769,9 @@
                     const avg = `${data.perf_stats.avg_speed} tok/s`;
                     const max = `${data.perf_stats.max_speed} tok/s`;
                     document.getElementById('home-benchmark-avg-speed').textContent = avg;
+                } else {
+                    document.getElementById('home-benchmark-avg-speed').textContent = 'Keine Daten';
+                }
                 
                 // Last Run
                 if (data.last_run) {
