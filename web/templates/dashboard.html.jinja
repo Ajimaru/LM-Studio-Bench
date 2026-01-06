@@ -3375,12 +3375,17 @@
                 }
 
                 const expId = createData.experiment_id;
-                const baselineHash = createData.baseline_hash;
-                const testHash = createData.test_hash;
 
-                // 2. Get Comparison Results
-                const comparisonUrl = `/api/experiments/${expId}/comparison?baseline_hash=${baselineHash}&test_hash=${testHash}&model_name=${encodeURIComponent(modelName)}`;
-                const comparisonResponse = await fetch(comparisonUrl);
+                // 2. Get Comparison Results (POST, send params for reliable matching)
+                const comparisonResponse = await fetch(`/api/experiments/${expId}/comparison`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model_name: modelName,
+                        baseline_params: baselineParams,
+                        test_params: testParams
+                    })
+                });
                 const comparisonData = await comparisonResponse.json();
 
                 if (!comparisonData.success) {

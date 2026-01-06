@@ -1676,6 +1676,140 @@ async def get_experiment_comparison(
         return {"success": False, "error": str(e), "comparison": {}}
 
 
+@app.post("/api/experiments/{experiment_id}/comparison")
+async def post_experiment_comparison(
+    experiment_id: str,
+    request: Request
+) -> dict:
+    """Vergleicht zwei Parameter-Sets für ein Modell (Payload enthält Params)"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar", "comparison": {}}
+
+    try:
+        payload = await request.json()
+        model_name = payload.get("model_name")
+        baseline_params = payload.get("baseline_params", {})
+        test_params = payload.get("test_params", {})
+        start_date = payload.get("start_date")
+        end_date = payload.get("end_date")
+
+        if not model_name:
+            return {"success": False, "error": "model_name fehlt", "comparison": {}}
+
+        # DB Query mit optionalen Datum-Filtern
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+
+        query = '''
+            SELECT 
+                timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
+                temperature, top_k_sampling, top_p_sampling, min_p_sampling,
+                repeat_penalty, max_tokens, num_runs, error_count
+            FROM benchmark_results
+            WHERE model_name = ?
+        '''
+        params: list = [model_name]
+        if start_date:
+            query += " AND timestamp >= ?"
+            params.append(start_date)
+        if end_date:
+            query += " AND timestamp <= ?"
+            params.append(end_date)
+        query += " ORDER BY timestamp ASC"
+
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return {"success": False, "error": "Keine Daten für dieses Modell", "comparison": {}}
+
+        baseline_data: List[Dict[str, Any]] = []
+        test_data: List[Dict[str, Any]] = []
+
+        for row in rows:
+            ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts, runs, errors = row
+            params_dict = {
+                "temperature": temp,
+                "top_k": topk,
+                "top_p": topp,
+                "min_p": minp,
+                "repeat_penalty": penalty,
+                "max_tokens": maxts
+            }
+
+            if match_parameters(params_dict, baseline_params):
+                baseline_data.append({
+                    "timestamp": ts,
+                    "speed": speed,
+                    "ttft": ttft,
+                    "gen_time": gen_time
+                })
+            if match_parameters(params_dict, test_params):
+                test_data.append({
+                    "timestamp": ts,
+                    "speed": speed,
+                    "ttft": ttft,
+                    "gen_time": gen_time
+                })
+
+        baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
+        test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
+
+        if not baseline_speeds or not test_speeds:
+            return {
+                "success": False,
+                "error": f"Unzureichend Daten: Baseline={len(baseline_speeds)} entries, Test={len(test_speeds)} entries",
+                "comparison": {}
+            }
+
+        baseline_stats = {
+            "count": len(baseline_speeds),
+            "mean": round(statistics.mean(baseline_speeds), 2),
+            "std_dev": round(statistics.stdev(baseline_speeds), 2) if len(baseline_speeds) > 1 else 0,
+            "min": round(min(baseline_speeds), 2),
+            "max": round(max(baseline_speeds), 2),
+            "data": baseline_data
+        }
+
+        test_stats = {
+            "count": len(test_speeds),
+            "mean": round(statistics.mean(test_speeds), 2),
+            "std_dev": round(statistics.stdev(test_speeds), 2) if len(test_speeds) > 1 else 0,
+            "min": round(min(test_speeds), 2),
+            "max": round(max(test_speeds), 2),
+            "data": test_data
+        }
+
+        test_result = perform_ttest(baseline_speeds, test_speeds)
+        effect_size = calculate_effect_size(baseline_speeds, test_speeds)
+
+        delta_pct = ((test_stats["mean"] - baseline_stats["mean"]) / baseline_stats["mean"] * 100)
+        if test_result.get("significant"):
+            winner = "test" if test_stats["mean"] > baseline_stats["mean"] else "baseline"
+        else:
+            winner = "tie"
+
+        return {
+            "success": True,
+            "experiment_id": experiment_id,
+            "model_name": model_name,
+            "baseline": baseline_stats,
+            "test": test_stats,
+            "statistical_test": test_result,
+            "effect_size": effect_size,
+            "comparison": {
+                "delta_pct": round(delta_pct, 2),
+                "winner": winner,
+                "significant": test_result.get("significant", False),
+                "confidence": "High" if test_result.get("p_value", 1) < 0.01 else "Medium" if test_result.get("p_value", 1) < 0.05 else "Low"
+            }
+        }
+    except Exception as e:
+        logger.error(f"❌ Experiment Comparison Fehler: {e}")
+        return {"success": False, "error": str(e), "comparison": {}}
+
+
 @app.post("/api/experiments/{experiment_id}/export")
 async def export_experiment(
     experiment_id: str,
