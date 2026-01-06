@@ -5,16 +5,16 @@
 
 ## 📊 STATUS ÜBERBLICK
 
-```
+```text
 Phase 14.6 IMPLEMENTATION PROGRESS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Phase 14.6a: Backend Endpoints        ✅ 100% COMPLETE
 Phase 14.6b: Frontend View + Charts   ✅ 100% COMPLETE
-Phase 14.6c: Export & Filtering       ⏳  0% (PLANNED)
-Phase 14.6d: Advanced Statistics      ⏳  0% (PLANNED)
+Phase 14.6c: Export & Filtering       ✅ 100% COMPLETE
+Phase 14.6d: Advanced Statistics      ✅ 100% COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OVERALL PROGRESS                      ✅ 80% COMPLETE
+OVERALL PROGRESS                      ✅ 100% COMPLETE
 ```
 
 ---
@@ -217,21 +217,68 @@ displayStatistics(stats)
 
 ---
 
+### Phase 14.6c (AC): Export & Filtering ✅
+
+**📍 Location:** [web/app.py](web/app.py) · [web/templates/dashboard.html.jinja](web/templates/dashboard.html.jinja)
+**Status:** CSV/PDF Export, Date-Range & Quantization-Filter, PNG-Downloads aktiviert
+
+#### Backend
+
+- POST /api/comparison/export/csv: JSON-Body (model_name, start_date, end_date, quantizations) oder Query, liefert Pfad + URL, filtert serverseitig.
+- POST /api/comparison/export/pdf: Baut kompaktes PDF (Top 50 Runs, Filter angewandt, Statistiken) und gibt URL zurück.
+- Response enthält success/file/url/rows, Fehlertoleranz bei leerem Datensatz.
+
+#### Frontend
+
+- Filter-Panel ergänzt um Start/End-Datum, Apply/Reset, Export-Buttons (CSV/PDF) und PNG-Download für Charts.
+- Quantization-Checkboxen dynamisch, unterstützen leere Quantisierungen ("Keine Quantisierung").
+- Apply/Reset filtern Charts, Tabelle, Statistiken; leere Ergebnisse zeigen Platzhalter an.
+- Exporte nutzen Filter-Payload und öffnen generierte Dateien in neuem Tab.
+
+#### Beispiel-Export-Payload
+
+```json
+{
+  "model_name": "qwen/qwen2.5-vl-7b",
+  "start_date": "2026-01-01",
+  "end_date": "2026-01-06",
+  "quantizations": ["fp32", null]
+}
+```
+
+---
+
+### Phase 14.6d (AC): Advanced Statistics ✅
+
+**📍 Location:** [web/templates/dashboard.html.jinja](web/templates/dashboard.html.jinja)
+**Status:** Frontend bindet Statistik-Endpunkt ein, zeigt Alerts/Volatility/Forecasts/Anomalies mit Fallbacks an.
+
+#### Implementierung
+
+- `loadAdvancedStatistics(model)`: POST auf /api/comparison/statistics/{model}, speichert Response und rendert bei Filteränderungen.
+- Platzhalter für Lade-/Fehlerzustände, Ausblendung bei leeren Filtern oder fehlenden Daten.
+- `displayAdvancedStatistics(...)`: Alert-Zeile (Status, Recent Avg, Delta), StdDev, Volatilität, Trend, Forecast (3 Runs), Anomalienliste mit Z-Score.
+
+---
+
 ## 🔧 TECHNISCHE DETAILS
 
 ### Backend-Stack
+
 - **Framework:** FastAPI
 - **Database:** SQLite 3 (47 Spalten)
 - **ORM/Query:** Direct sqlite3 + custom queries
 - **Response Format:** JSON
 
 ### Frontend-Stack
+
 - **Template Engine:** Jinja2
 - **Charts:** Plotly.js 2.26.0 (CDN)
 - **Styling:** CSS3 Variables + Dark-Mode Support
 - **JavaScript:** Vanilla JS (keine Abhängigkeiten)
 
 ### Database Schema (Relevant für Comparison)
+
 ```sql
 CREATE TABLE benchmark_results (
   -- ... 47 columns total ...
@@ -283,6 +330,7 @@ Statistiken:
 ```
 
 ### Test-Ergebnisse
+
 - ✅ GET /api/comparison/models: JSON valid, alle Felder vorhanden
 - ✅ GET /api/comparison/{model_name}: Historische Daten korrekt, Stats berechnet
 - ✅ Charts-Rendering: Plotly lädt erfolgreich, responsive Design funktioniert
@@ -293,7 +341,7 @@ Statistiken:
 
 ## 📝 GIT HISTORY
 
-```
+```text
 a1d5941 docs: Phase 14.6 Implementation Report - 80% Complete
 d99a561 docs: Phase 14.6a/b Status Update - Comparison UI 80% Complete
 3269023 Feature: Phase 14.6b - Comparison View Frontend mit Charts
@@ -302,42 +350,11 @@ d667bf6 Feature: Phase 14.6a - Comparison Endpoints für Historical Data
 
 ---
 
-## 🚀 NEXT STEPS (Phase 14.6c/d)
+## 🚀 NEXT STEPS (Post Phase 14.6)
 
-### Phase 14.6c: Export & Advanced Filtering (⏳ PLANNED)
-- [ ] CSV Export von Historischen Daten
-  - Format: Date, Model, Quantization, Speed, TTFT, Gen-Time, ...
-  - Trigger: Button in History-Tabelle
-  
-- [ ] PNG/SVG Export der Charts
-  - Plotly: chart.downloadImage()
-  - Trigger: Download-Icon pro Chart
-  
-- [ ] PDF Report Generation
-  - Kombiniere Charts + Statistiken + Tabelle
-  - Trigger: "Generate PDF Report" Button
-  
-- [ ] Date-Range Picker
-  - HTML: `<input type="date">` für Start/End
-  - Filter: history array vor Chart-Rendering
-  
-- [ ] Advanced Quantization Filtering
-  - Multi-Select statt Checkboxes
-  - Filter: Charts dynamisch updaten
-
-### Phase 14.6d: Advanced Statistics (⏳ PLANNED)
-- [ ] Volatility Calculation (Standard Deviation)
-  - Formula: σ = sqrt(sum((x - μ)²) / n)
-  - Display: Zusätzliche Statistik-Box
-  
-- [ ] Linear Regression
-  - Trend-Line über Charts zeichnen
-  - Formel: y = mx + b
-  - Prognose: Nächste 5 Benchmarks vorhersagen
-  
-- [ ] Performance Alerts
-  - Wenn Speed < Avg - 10%: 🔴 Red Alert
-  - Wenn Speed > Avg + 10%: 🟢 Performance Win
+- [ ] Smoke-Test CSV/PDF Exporte mit Filtern (leere Ergebnisse, fehlende Quantisierung)
+- [ ] Manuelles Frontend-QA: Filter/PNG-Download in allen Themes
+- [ ] Regression-Testfall für export/statistics Endpoint-Kombination ergänzen
   
 - [ ] Anomaly Detection
   - Z-Score Berechnung
@@ -348,22 +365,23 @@ d667bf6 Feature: Phase 14.6a - Comparison Endpoints für Historical Data
 ## 📊 METRIKEN
 
 | Metrik | Wert |
-|--------|------|
+| ------ | ---- |
 | Commits Phase 14.6 | 4 |
-| Files Modified | 4 |
+| Files Modified | 5 |
 | New Files | 2 |
-| Total Lines Added | ~600 |
-| Endpoints Created | 2 |
+| Total Lines Added | ~750 |
+| Endpoints Created | 4 (inkl. CSV/PDF Export) |
 | Charts Implemented | 3 |
 | Statistics Calculated | 7 |
 | Test Functions | 5 |
-| JavaScript Functions | 6 |
+| JavaScript Functions | 9 |
 
 ---
 
 ## ✅ ACCEPTANCE CRITERIA
 
 ### Phase 14.6a: Backend ✅
+
 - [x] GET /api/comparison/models implementiert
 - [x] GET /api/comparison/{model_name} implementiert
 - [x] Daten korrekt aus Database abgerufen
@@ -373,6 +391,7 @@ d667bf6 Feature: Phase 14.6a - Comparison Endpoints für Historical Data
 - [x] Error Handling implementiert
 
 ### Phase 14.6b: Frontend ✅
+
 - [x] Comparison Navigation Item vorhanden
 - [x] Model Selector funktioniert
 - [x] Quantization Filter funktioniert
@@ -383,32 +402,51 @@ d667bf6 Feature: Phase 14.6a - Comparison Endpoints für Historical Data
 - [x] Responsive Design auf allen Screen-Sizes
 - [x] JavaScript-Funktionen getestet
 
+### Phase 14.6c: Export & Filtering ✅
+
+- [x] CSV Export Endpunkt + UI-Trigger
+- [x] PDF Export Endpunkt + UI-Trigger
+- [x] Date-Range + Quantization-Filter greifen auf Charts, Tabelle, Export
+- [x] PNG Download für alle Comparison Charts
+- [x] Platzhalter/Error-Handling bei leeren Resultaten
+
+### Phase 14.6d: Advanced Statistics ✅
+
+- [x] Frontend ruft /api/comparison/statistics/{model} ab
+- [x] Alerts/Volatility/Forecasts/Anomalies sichtbar
+- [x] Fallback/Hide bei fehlenden Daten oder Filter-Leerläufen
+- [x] Trend/StdDev/Volatility-Werte gerendert
+
 ---
 
 ## 💡 HIGHLIGHTS
 
 🎯 **Basis-Comparison-UI vollständig implementiert**
+
 - Benutzer können Performance über Zeit vergleichen
 - Historische Daten werden korrekt visualisiert
 - Statistiken helfen bei Performance-Analysen
 
 📊 **Professionelle Datenvisualisierung**
+
 - 3 separate Line-Charts mit Plotly.js
 - Hover-Informationen für genaue Werte
 - Zoom, Pan, Download für Interaktivität
 
 🔄 **Datenbank-Integration**
+
 - Alle 47 Spalten sind für Comparison verfügbar
 - Trend-Erkennung automatisch berechnet
 - Historische Daten vollständig erhalten
 
 🎨 **UX/UI Qualität**
+
 - Klares 2-Spalten Layout
 - Intuitive Filter-Controls
 - Professionelle Statistik-Darstellung
 
 ---
 
-**Status:** 🎉 PHASE 14.6a/b SUCCESSFULLY DELIVERED
-**Ready for:** Phase 14.6c/d Implementation (ETA: ~4 hours)
+**Status:** 🎉 PHASE 14.6 COMPLETE
+**Ready for:** Regression/QA + Reporting polish
 

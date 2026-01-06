@@ -609,15 +609,18 @@
             color: white;
             border: none;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            width: 52px;
+            height: 52px;
             cursor: pointer;
             display: none;
             align-items: center;
             justify-content: center;
-            font-size: 24px;
+            font-size: 28px;
+            line-height: 1;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             transition: all 0.3s ease;
+            padding: 0;
+            font-family: 'Inter', 'Segoe UI', sans-serif;
         }
         .back-to-top:hover {
             transform: translateY(-5px);
@@ -1585,9 +1588,23 @@
                         <label style="color: var(--text); font-weight: 500; display: block; margin-bottom: 0.5rem;">Quantisierungen:</label>
                         <div id="comparison-quantization-filters" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
                     </div>
-                    
+
                     <div style="margin-bottom: 1rem;">
-                        <button onclick="loadComparisonData()" style="width: 100%; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">🔄 Aktualisieren</button>
+                        <label style="color: var(--text); font-weight: 500; display: block; margin-bottom: 0.5rem;">Zeitraum:</label>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <input type="date" id="comparison-start-date" style="flex: 1; padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                            <input type="date" id="comparison-end-date" style="flex: 1; padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                        <button onclick="applyComparisonFilters()" style="flex: 1; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">🎛️ Filter anwenden</button>
+                        <button onclick="resetComparisonFilters()" style="padding: 0.75rem; background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 0.5rem; cursor: pointer; font-weight: 600;">♻️ Reset</button>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem;">
+                        <button onclick="exportComparison('csv')" style="padding: 0.75rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📥 Export CSV</button>
+                        <button onclick="exportComparison('pdf')" style="padding: 0.75rem; background: var(--warning); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">🧾 Export PDF</button>
                     </div>
                 </div>
                 
@@ -1692,9 +1709,9 @@
                         <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <h3 style="color: var(--text); margin-bottom: 1rem;">💾 Export & Aktionen</h3>
                             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
-                                <button onclick="exportAsCSV()" style="padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📥 CSV Export</button>
-                                <button onclick="downloadChartsPNG()" style="padding: 0.75rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📸 Charts als PNG</button>
-                                <button onclick="printReport()" style="padding: 0.75rem; background: var(--warning); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📄 PDF Report</button>
+                                <button onclick="exportComparison('csv')" style="padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📥 CSV Export</button>
+                                <button onclick="downloadComparisonChartsPNG()" style="padding: 0.75rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📸 Charts als PNG</button>
+                                <button onclick="exportComparison('pdf')" style="padding: 0.75rem; background: var(--warning); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📄 PDF Report</button>
                             </div>
                         </div>
                     </div>
@@ -1710,7 +1727,7 @@
     <!-- END CONTAINER -->
 
     <!-- Back to Top Button -->
-    <button class="back-to-top" title="Nach oben scrollen" onclick="scrollToTop()">⬆️</button>
+    <button class="back-to-top" title="Nach oben scrollen" onclick="scrollToTop()">↑</button>
 
     <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
@@ -2785,16 +2802,22 @@
             if (websocket) websocket.close();
         });
 
-        // ===== PHASE 14.6b: COMPARISON VIEW FUNCTIONS =====
-        
+        // ===== PHASE 14.6b-d: COMPARISON VIEW FUNCTIONS =====
+        let comparisonHistory = [];
+        let comparisonStats = {};
+        let comparisonAdvancedStats = null;
+
+        function parseComparisonDate(ts) {
+            // Normalize "YYYY-MM-DD HH:MM:SS" into a Date
+            return new Date(ts.replace(' ', 'T'));
+        }
+
         async function loadComparisonData() {
-            """Laden aller Vergleichs-Daten"""
+            // Lädt alle Modelle mit Historie
             try {
                 const response = await fetch('/api/comparison/models');
                 const data = await response.json();
-                
                 if (data.success && data.models.length > 0) {
-                    // Populate Model Select
                     const select = document.getElementById('comparison-model-select');
                     select.innerHTML = '<option value="">Modell auswählen...</option>';
                     data.models.forEach(model => {
@@ -2808,156 +2831,190 @@
                 console.error('Fehler beim Laden der Vergleichsdaten:', error);
             }
         }
-        
+
         async function loadModelHistory(modelName) {
-            """Lädt Historie für ausgewähltes Modell"""
+            // Lädt Historie + Advanced Stats und rendert
             if (!modelName) {
                 document.getElementById('comparison-charts-container').style.display = 'none';
                 document.getElementById('comparison-placeholder').style.display = 'block';
+                comparisonAdvancedStats = null;
+                document.getElementById('advanced-stats-container').style.display = 'none';
+                const placeholder = document.getElementById('advanced-stats-placeholder');
+                placeholder.style.display = 'block';
+                placeholder.textContent = 'Bitte Modell auswählen';
                 return;
             }
-            
+
             try {
-                const response = await fetch(`/api/comparison/${modelName}`);
+                const response = await fetch(`/api/comparison/${encodeURIComponent(modelName)}`);
                 const data = await response.json();
-                
+
                 if (data.success && data.history.length > 0) {
-                    // Zeige Charts
-                    document.getElementById('comparison-charts-container').style.display = 'block';
-                    document.getElementById('comparison-placeholder').style.display = 'none';
-                    
-                    // Erstelle Plotly Charts
-                    createComparisonCharts(data.history, data.stats);
-                    
-                    // Populate Quantization Filters
-                    populateQuantizationFilters(data.history);
-                    
-                    // Populate History Table
-                    populateHistoryTable(data.history);
-                    
-                    // Zeige Statistiken
-                    displayStatistics(data.stats);
+                    comparisonHistory = data.history;
+                    comparisonStats = data.stats;
+                    populateQuantizationFilters(comparisonHistory);
+                    await loadAdvancedStatistics(modelName);
+                    // Rendering direkt hier statt applyComparisonFilters aufzurufen
+                    renderComparisonData();
                 } else {
                     document.getElementById('comparison-charts-container').style.display = 'none';
                     document.getElementById('comparison-placeholder').style.display = 'block';
+                    comparisonAdvancedStats = null;
+                    document.getElementById('advanced-stats-container').style.display = 'none';
+                    const placeholder = document.getElementById('advanced-stats-placeholder');
+                    placeholder.style.display = 'block';
+                    placeholder.textContent = 'Keine Daten gefunden';
                 }
             } catch (error) {
                 console.error('Fehler beim Laden der Modell-Historie:', error);
                 document.getElementById('comparison-charts-container').style.display = 'none';
                 document.getElementById('comparison-placeholder').style.display = 'block';
+                comparisonAdvancedStats = null;
+                document.getElementById('advanced-stats-container').style.display = 'none';
+                const placeholder = document.getElementById('advanced-stats-placeholder');
+                placeholder.style.display = 'block';
+                placeholder.textContent = 'Fehler beim Laden der Daten';
             }
         }
-        
-        function createComparisonCharts(history, stats) {
-            """Erstellt Plotly Line-Charts für Vergleich"""
-            const timestamps = history.map(h => new Date(h.timestamp));
+
+        function getSelectedQuantizations() {
+            const boxes = document.querySelectorAll('#comparison-quantization-filters input[type="checkbox"]');
+            return Array.from(boxes).filter(cb => cb.checked).map(cb => cb.value);
+        }
+
+        function computeStats(history) {
+            if (!history || history.length === 0) return null;
+            const sorted = [...history].sort((a, b) => parseComparisonDate(a.timestamp) - parseComparisonDate(b.timestamp));
+            const speeds = sorted.map(h => h.speed_tokens_sec);
+            return {
+                min_speed: Math.min(...speeds).toFixed(2),
+                max_speed: Math.max(...speeds).toFixed(2),
+                avg_speed: (speeds.reduce((a,b)=>a+b,0)/speeds.length).toFixed(2),
+                total_runs: history.length,
+                first_run: sorted[0].timestamp,
+                last_run: sorted[sorted.length - 1].timestamp,
+                trend: speeds[speeds.length - 1] > speeds[0] ? 'up' : speeds[speeds.length - 1] < speeds[0] ? 'down' : 'stable'
+            };
+        }
+
+        async function applyComparisonFilters() {
+            const selectedModel = document.getElementById('comparison-model-select').value;
+            if (!selectedModel) {
+                alert('Bitte zuerst ein Modell auswählen');
+                return;
+            }
+            if (!comparisonHistory || comparisonHistory.length === 0) {
+                // Falls Historie noch nicht geladen wurde, lade sie jetzt
+                await loadModelHistory(selectedModel);
+                return; // loadModelHistory ruft renderComparisonData auf
+            }
+            // Sonst nur Rendering mit aktuellen Filtern
+            renderComparisonData();
+        }
+
+        function renderComparisonData() {
+            if (!comparisonHistory || comparisonHistory.length === 0) return;
+
+            const selectedQuant = getSelectedQuantizations();
+            const startDate = document.getElementById('comparison-start-date').value;
+            const endDate = document.getElementById('comparison-end-date').value;
+
+            const filtered = comparisonHistory.filter(entry => {
+                const quant = entry.quantization || '__none__';
+                const entryDate = parseComparisonDate(entry.timestamp);
+                const dateOk = (!startDate || entryDate >= new Date(startDate)) &&
+                               (!endDate || entryDate <= new Date(endDate + 'T23:59:59'));
+                const quantOk = selectedQuant.length === 0 || selectedQuant.includes(quant);
+                return dateOk && quantOk;
+            });
+
+            console.log('Filter applied:', { selectedQuant, startDate, endDate, filteredCount: filtered.length });
+
+            if (filtered.length === 0) {
+                document.getElementById('comparison-charts-container').style.display = 'none';
+                document.getElementById('comparison-placeholder').style.display = 'block';
+                document.getElementById('comparison-placeholder').querySelector('p').textContent = '📈 Keine Daten für diesen Filter...';
+                document.getElementById('advanced-stats-container').style.display = 'none';
+                const placeholder = document.getElementById('advanced-stats-placeholder');
+                placeholder.style.display = 'block';
+                placeholder.textContent = 'Keine Daten für diesen Filter';
+                return;
+            }
+
+            document.getElementById('comparison-charts-container').style.display = 'block';
+            document.getElementById('comparison-placeholder').style.display = 'none';
+
+            const sorted = [...filtered].sort((a, b) => parseComparisonDate(a.timestamp) - parseComparisonDate(b.timestamp));
+            const stats = computeStats(sorted);
+            createComparisonCharts(sorted);
+            populateHistoryTable(sorted);
+            displayStatistics(stats);
+            if (comparisonAdvancedStats) {
+                displayAdvancedStatistics(comparisonAdvancedStats);
+            }
+        }
+
+        function resetComparisonFilters() {
+            document.getElementById('comparison-start-date').value = '';
+            document.getElementById('comparison-end-date').value = '';
+            document.querySelectorAll('#comparison-quantization-filters input[type="checkbox"]').forEach(cb => cb.checked = true);
+            renderComparisonData();
+        }
+
+        function createComparisonCharts(history) {
+            const timestamps = history.map(h => parseComparisonDate(h.timestamp));
             const speeds = history.map(h => h.speed_tokens_sec);
             const ttfts = history.map(h => h.ttft);
             const gentimes = history.map(h => h.gen_time);
-            
-            // Speed Chart
-            const speedTrace = {
-                x: timestamps,
-                y: speeds,
-                type: 'scatter',
-                mode: 'lines+markers',
-                name: 'Speed (tokens/sec)',
-                line: { color: '#10b981', width: 2 },
-                marker: { size: 6 }
-            };
-            
-            const speedLayout = {
-                title: 'Performance Trend (tokens/sec)',
-                xaxis: { title: 'Zeitstempel' },
-                yaxis: { title: 'tokens/sec' },
-                plot_bgcolor: 'rgba(0,0,0,0.02)',
-                hovermode: 'x unified',
-                margin: { t: 40, b: 40, l: 60, r: 40 }
-            };
-            
-            Plotly.newPlot('comparison-speed-chart', [speedTrace], speedLayout, { responsive: true });
-            
-            // TTFT Chart
-            const ttftTrace = {
-                x: timestamps,
-                y: ttfts,
-                type: 'scatter',
-                mode: 'lines+markers',
-                name: 'TTFT (ms)',
-                line: { color: '#f59e0b', width: 2 },
-                marker: { size: 6 }
-            };
-            
-            const ttftLayout = {
-                title: 'Time-to-First-Token Trend',
-                xaxis: { title: 'Zeitstempel' },
-                yaxis: { title: 'TTFT (ms)' },
-                plot_bgcolor: 'rgba(0,0,0,0.02)',
-                hovermode: 'x unified',
-                margin: { t: 40, b: 40, l: 60, r: 40 }
-            };
-            
-            Plotly.newPlot('comparison-ttft-chart', [ttftTrace], ttftLayout, { responsive: true });
-            
-            // Gen-Time Chart
-            const gentimeTrace = {
-                x: timestamps,
-                y: gentimes,
-                type: 'scatter',
-                mode: 'lines+markers',
-                name: 'Gen-Time (ms)',
-                line: { color: '#3b82f6', width: 2 },
-                marker: { size: 6 }
-            };
-            
-            const gentimeLayout = {
-                title: 'Generation-Time Trend',
-                xaxis: { title: 'Zeitstempel' },
-                yaxis: { title: 'Gen-Time (ms)' },
-                plot_bgcolor: 'rgba(0,0,0,0.02)',
-                hovermode: 'x unified',
-                margin: { t: 40, b: 40, l: 60, r: 40 }
-            };
-            
-            Plotly.newPlot('comparison-gentime-chart', [gentimeTrace], gentimeLayout, { responsive: true });
+
+            const speedTrace = { x: timestamps, y: speeds, type: 'scatter', mode: 'lines+markers', name: 'Speed (tokens/sec)', line: { color: '#10b981', width: 2 }, marker: { size: 6 } };
+            const ttftTrace = { x: timestamps, y: ttfts, type: 'scatter', mode: 'lines+markers', name: 'TTFT (ms)', line: { color: '#f59e0b', width: 2 }, marker: { size: 6 } };
+            const gentimeTrace = { x: timestamps, y: gentimes, type: 'scatter', mode: 'lines+markers', name: 'Gen-Time (ms)', line: { color: '#3b82f6', width: 2 }, marker: { size: 6 } };
+
+            const baseLayout = { plot_bgcolor: 'rgba(0,0,0,0.02)', hovermode: 'x unified', margin: { t: 40, b: 40, l: 60, r: 40 } };
+
+            Plotly.newPlot('comparison-speed-chart', [speedTrace], { ...baseLayout, title: 'Performance Trend (tokens/sec)', xaxis: { title: 'Zeitstempel' }, yaxis: { title: 'tokens/sec' } }, { responsive: true });
+            Plotly.newPlot('comparison-ttft-chart', [ttftTrace], { ...baseLayout, title: 'Time-to-First-Token Trend', xaxis: { title: 'Zeitstempel' }, yaxis: { title: 'TTFT (ms)' } }, { responsive: true });
+            Plotly.newPlot('comparison-gentime-chart', [gentimeTrace], { ...baseLayout, title: 'Generation-Time Trend', xaxis: { title: 'Zeitstempel' }, yaxis: { title: 'Gen-Time (ms)' } }, { responsive: true });
         }
-        
+
         function populateQuantizationFilters(history) {
-            """Erstellt Quantisierungs-Filter"""
             const container = document.getElementById('comparison-quantization-filters');
             container.innerHTML = '';
-            
-            const quantizations = [...new Set(history.map(h => h.quantization))];
+            const quantizations = [...new Set(history.map(h => h.quantization || '__none__'))];
             quantizations.forEach(q => {
                 const label = document.createElement('label');
-                label.style.display = 'flex';
+                label.style.display = 'grid';
+                label.style.gridTemplateColumns = '24px 1fr';
                 label.style.alignItems = 'center';
-                label.style.gap = '0.5rem';
+                label.style.columnGap = '0.5rem';
                 label.style.color = 'var(--text)';
                 label.style.cursor = 'pointer';
-                
+
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
                 checkbox.value = q;
                 checkbox.checked = true;
                 checkbox.style.cursor = 'pointer';
-                
+                checkbox.addEventListener('change', renderComparisonData);
+
+                const text = document.createElement('span');
+                text.textContent = q === '__none__' ? 'Keine Quantisierung' : q;
+
                 label.appendChild(checkbox);
-                label.appendChild(document.createTextNode(q || 'Keine Quantisierung'));
+                label.appendChild(text);
                 container.appendChild(label);
             });
         }
-        
+
         function populateHistoryTable(history) {
-            """Füllt Verlauf-Tabelle"""
             const tbody = document.getElementById('comparison-table-body');
             tbody.innerHTML = '';
-            
             history.forEach((entry, idx) => {
                 const row = tbody.insertRow();
                 row.style.backgroundColor = idx % 2 === 0 ? 'var(--bg)' : 'var(--card)';
                 row.style.borderBottom = '1px solid var(--border)';
-                
+
                 const cells = [
                     entry.timestamp,
                     entry.speed_tokens_sec.toFixed(2),
@@ -2967,7 +3024,7 @@
                     `${(entry.gpu_offload * 100).toFixed(0)}%`,
                     entry.vram_mb || '-'
                 ];
-                
+
                 cells.forEach(cell => {
                     const td = row.insertCell();
                     td.textContent = cell;
@@ -2976,90 +3033,83 @@
                 });
             });
         }
-        
+
         function displayStatistics(stats) {
-            """Zeigt Statistiken"""
             const container = document.getElementById('comparison-stats');
             container.innerHTML = '';
-            
+            if (!stats) return;
+
             const statItems = [
                 { label: '📊 Min Speed', value: `${stats.min_speed} tok/s` },
                 { label: '📈 Max Speed', value: `${stats.max_speed} tok/s` },
                 { label: '📉 Avg Speed', value: `${stats.avg_speed} tok/s` },
                 { label: '🔄 Total Runs', value: stats.total_runs },
                 { label: '⬆️ Trend', value: stats.trend === 'up' ? '🟢 Steigend' : stats.trend === 'down' ? '🔴 Fallend' : '⚪ Stabil' },
-                { label: '📅 Erste Messung', value: stats.first_run.substring(0, 10) },
+                { label: '📅 Erste Messung', value: stats.first_run.substring(0, 10) }
             ];
-            
+
             statItems.forEach(item => {
                 const div = document.createElement('div');
                 div.style.padding = '1rem';
                 div.style.background = 'var(--bg)';
                 div.style.borderRadius = '0.5rem';
                 div.style.border = '1px solid var(--border)';
-                
+
                 const label = document.createElement('div');
                 label.textContent = item.label;
                 label.style.color = 'var(--text-light)';
                 label.style.fontSize = '0.9rem';
                 label.style.marginBottom = '0.5rem';
-                
+
                 const value = document.createElement('div');
                 value.textContent = item.value;
                 value.style.color = 'var(--text)';
                 value.style.fontWeight = '600';
                 value.style.fontSize = '1.1rem';
-                
+
                 div.appendChild(label);
                 div.appendChild(value);
                 container.appendChild(div);
             });
         }
-        
+
         // ===== PHASE 14.6c/d: EXPORT & ADVANCED STATISTICS =====
-        
+
         async function loadAdvancedStatistics(modelName) {
-            """Lädt erweiterte Statistiken vom Backend"""
             try {
-                const response = await fetch(`/api/comparison/statistics/${modelName}`, {
-                    method: 'POST'
-                });
+                const response = await fetch(`/api/comparison/statistics/${encodeURIComponent(modelName)}`, { method: 'POST' });
                 const data = await response.json();
-                
                 if (data.success) {
+                    comparisonAdvancedStats = data;
                     displayAdvancedStatistics(data);
                 } else {
                     document.getElementById('advanced-stats-placeholder').textContent = 'Fehler beim Laden der Statistiken';
+                    document.getElementById('advanced-stats-container').style.display = 'none';
                 }
             } catch (error) {
                 console.error('Fehler beim Abrufen erweit. Statistiken:', error);
+                const placeholder = document.getElementById('advanced-stats-placeholder');
+                placeholder.style.display = 'block';
+                placeholder.textContent = 'Fehler beim Laden der Statistiken';
+                document.getElementById('advanced-stats-container').style.display = 'none';
             }
         }
-        
+
         function displayAdvancedStatistics(data) {
-            """Zeigt erweiterte Statistiken an"""
             document.getElementById('advanced-stats-placeholder').style.display = 'none';
             document.getElementById('advanced-stats-container').style.display = 'block';
-            
-            // Performance Alert
+
             const alertDiv = document.getElementById('performance-alert');
             alertDiv.textContent = `${data.alert.status} | Recent Avg: ${data.alert.recent_avg} tok/s | Delta: ${data.alert.delta_pct > 0 ? '+' : ''}${data.alert.delta_pct}%`;
-            
-            // Standard Deviation
+
             document.getElementById('stat-std-dev').textContent = `${data.advanced.std_dev} tok/s`;
-            
-            // Volatilität
             document.getElementById('stat-volatility').textContent = `${data.advanced.volatility_pct.toFixed(2)}%`;
-            
-            // Trend
             document.getElementById('stat-trend').textContent = data.trend.direction;
-            
-            // Vorhersage
+
             document.getElementById('forecast-1').textContent = data.forecast.next_3_runs[0];
             document.getElementById('forecast-2').textContent = data.forecast.next_3_runs[1];
             document.getElementById('forecast-3').textContent = data.forecast.next_3_runs[2];
-            
-            // Anomalien
+
             const anomalyList = document.getElementById('anomalies-list');
             if (data.anomalies.count > 0) {
                 anomalyList.innerHTML = '';
@@ -3072,111 +3122,57 @@
                     div.textContent = `${anomaly.alert} ${anomaly.timestamp}: ${anomaly.speed} tok/s (Z-Score: ${anomaly.z_score})`;
                     anomalyList.appendChild(div);
                 });
+            } else {
+                anomalyList.innerHTML = '<div>Keine Anomalien erkannt</div>';
             }
         }
-        
-        async function exportAsCSV() {
-            """Exportiert Daten als CSV"""
+
+        async function exportComparison(format) {
             const modelName = document.getElementById('comparison-model-select').value;
             if (!modelName) {
                 alert('Bitte zuerst ein Modell auswählen');
                 return;
             }
-            
+
+            const payload = {
+                model_name: modelName,
+                start_date: document.getElementById('comparison-start-date').value || null,
+                end_date: document.getElementById('comparison-end-date').value || null,
+                quantizations: getSelectedQuantizations().map(q => q === '__none__' ? null : q)
+            };
+
+            const endpoint = format === 'pdf' ? '/api/comparison/export/pdf' : '/api/comparison/export/csv';
+
             try {
-                const response = await fetch(`/api/comparison/export/csv?model_name=${modelName}`, {
-                    method: 'POST'
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
                 });
                 const data = await response.json();
-                
-                if (data.success) {
-                    alert(`✅ CSV exportiert: ${data.file}\n${data.rows} Einträge`);
+
+                if (data.success && data.url) {
+                    window.open(data.url, '_blank');
                 } else {
-                    alert(`❌ Export Fehler: ${data.error}`);
+                    alert(`❌ Export Fehler: ${data.error || 'Unbekannter Fehler'}`);
                 }
             } catch (error) {
-                console.error('CSV Export Fehler:', error);
-                alert('Fehler beim CSV Export');
+                console.error('Export Fehler:', error);
+                alert('Fehler beim Export');
             }
         }
-        
-        function downloadChartsPNG() {
-            """Exportiert Charts als PNG mit Plotly"""
+
+        function downloadComparisonChartsPNG() {
             const modelName = document.getElementById('comparison-model-select').value;
             if (!modelName) {
                 alert('Bitte zuerst ein Modell auswählen');
                 return;
             }
-            
-            // Plotly native Export
-            Plotly.downloadImage('comparison-speed-chart', { format: 'png', width: 1000, height: 600, filename: 'comparison_speed.png' });
-            setTimeout(() => {
-                Plotly.downloadImage('comparison-ttft-chart', { format: 'png', width: 1000, height: 600, filename: 'comparison_ttft.png' });
-            }, 1000);
-            setTimeout(() => {
-                Plotly.downloadImage('comparison-gentime-chart', { format: 'png', width: 1000, height: 600, filename: 'comparison_gentime.png' });
-            }, 2000);
+            Plotly.downloadImage('comparison-speed-chart', { format: 'png', width: 1000, height: 600, filename: `${modelName}_speed` });
+            setTimeout(() => Plotly.downloadImage('comparison-ttft-chart', { format: 'png', width: 1000, height: 600, filename: `${modelName}_ttft` }), 600);
+            setTimeout(() => Plotly.downloadImage('comparison-gentime-chart', { format: 'png', width: 1000, height: 600, filename: `${modelName}_gentime` }), 1200);
         }
-        
-        function printReport() {
-            """Öffnet Print-Dialog für PDF"""
-            const modelName = document.getElementById('comparison-model-select').value;
-            if (!modelName) {
-                alert('Bitte zuerst ein Modell auswählen');
-                return;
-            }
-            
-            // Sammle Daten für PDF
-            const stats = document.getElementById('comparison-stats').innerHTML;
-            const table = document.getElementById('comparison-history-table').innerHTML;
-            const advStats = document.getElementById('advanced-stats-container').innerHTML;
-            
-            // Öffne Print-Dialog (Browser druckt zu PDF)
-            const printWindow = window.open('', '', 'width=1200,height=800');
-            printWindow.document.write(`
-                <html>
-                <head>
-                    <title>Comparison Report - ${modelName}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; padding: 2rem; background: white; color: #333; }
-                        h2 { border-bottom: 2px solid #3b82f6; padding-bottom: 0.5rem; }
-                        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-                        th { background: #3b82f6; color: white; padding: 0.75rem; text-align: left; }
-                        td { padding: 0.75rem; border-bottom: 1px solid #e5e7eb; }
-                        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin: 1rem 0; }
-                        .stat-box { background: #f3f4f6; padding: 1rem; border-radius: 0.5rem; }
-                        .page-break { page-break-after: always; }
-                    </style>
-                </head>
-                <body>
-                    <h1>📊 Comparison Report: ${modelName}</h1>
-                    <p>Generated: ${new Date().toLocaleString()}</p>
-                    
-                    <h2>📈 Statistics</h2>
-                    <div class="stats-grid">${stats}</div>
-                    
-                    <h2>🔬 Advanced Analysis</h2>
-                    <div class="stats-grid">${advStats}</div>
-                    
-                    <div class="page-break"></div>
-                    <h2>📋 History</h2>
-                    ${table}
-                </body>
-                </html>
-            `);
-            printWindow.document.close();
-            printWindow.print();
-        }
-        
-        // Override loadModelHistory to include advanced statistics
-        const originalLoadModelHistory = loadModelHistory;
-        loadModelHistory = async function(modelName) {
-            await originalLoadModelHistory.call(this, modelName);
-            if (modelName) {
-                await loadAdvancedStatistics(modelName);
-            }
-        };
-        
+
         // Lade Vergleichsdaten beim Laden der Seite
         window.addEventListener('load', () => {
             loadComparisonData();

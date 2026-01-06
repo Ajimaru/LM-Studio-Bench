@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional, List
 
 import httpx
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader
@@ -852,9 +852,13 @@ async def get_comparison_models() -> dict:
         return {"success": False, "error": str(e), "models": []}
 
 
-@app.get("/api/comparison/{model_name}")
+@app.get("/api/comparison/{model_name:path}")
 async def get_model_history(model_name: str) -> dict:
     """Gibt Verlauf für ein bestimmtes Modell zurück"""
+    # URL-decode den model_name falls nötig
+    from urllib.parse import unquote
+    model_name = unquote(model_name)
+    
     if not BenchmarkCache:
         return {"success": False, "error": "BenchmarkCache nicht verfügbar", "history": []}
     
@@ -925,8 +929,8 @@ async def get_model_history(model_name: str) -> dict:
 
 
 @app.post("/api/comparison/export/csv")
-async def export_comparison_csv(model_name: str = None) -> dict:
-    """Exportiert Vergleichsdaten als CSV"""
+async def export_comparison_csv(request: Request, model_name: str = None, start_date: str = None, end_date: str = None) -> dict:
+    """Exportiert Vergleichsdaten als CSV mit optionalen Filtern"""
     if not BenchmarkCache:
         return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
     
@@ -935,41 +939,65 @@ async def export_comparison_csv(model_name: str = None) -> dict:
         import csv
         from io import StringIO
         
+        payload = {}
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+
+        # Fallback auf Query-Parameter für Abwärtskompatibilität
+        model_filter = payload.get("model_name", model_name)
+        start_filter = payload.get("start_date", start_date)
+        end_filter = payload.get("end_date", end_date)
+        quant_filters = payload.get("quantizations", []) or []
+        if isinstance(quant_filters, str):
+            quant_filters = [quant_filters]
+
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         
-        # Hole Daten (mit optionalem Filter nach Modell)
-        if model_name:
-            cursor.execute('''
-                SELECT timestamp, model_name, quantization, avg_tokens_per_sec, avg_ttft, 
-                       avg_gen_time, gpu_offload, vram_mb, temperature, top_k_sampling,
-                       top_p_sampling, min_p_sampling, repeat_penalty, max_tokens,
-                       num_runs, benchmark_duration_seconds, error_count
-                FROM benchmark_results
-                WHERE model_name = ?
-                ORDER BY timestamp ASC
-            ''', (model_name,))
-        else:
-            cursor.execute('''
-                SELECT timestamp, model_name, quantization, avg_tokens_per_sec, avg_ttft, 
-                       avg_gen_time, gpu_offload, vram_mb, temperature, top_k_sampling,
-                       top_p_sampling, min_p_sampling, repeat_penalty, max_tokens,
-                       num_runs, benchmark_duration_seconds, error_count
-                FROM benchmark_results
-                ORDER BY timestamp ASC
-            ''')
+        # Dynamische Filter-Query
+        query = '''
+            SELECT timestamp, model_name, quantization, avg_tokens_per_sec, avg_ttft, 
+                   avg_gen_time, gpu_offload, vram_mb, temperature, top_k_sampling,
+                   top_p_sampling, min_p_sampling, repeat_penalty, max_tokens,
+                   num_runs, benchmark_duration_seconds, error_count
+            FROM benchmark_results
+            WHERE 1=1
+        '''
+        params: list = []
         
+        if model_filter:
+            query += " AND model_name = ?"
+            params.append(model_filter)
+        if start_filter:
+            query += " AND timestamp >= ?"
+            params.append(start_filter)
+        if end_filter:
+            query += " AND timestamp <= ?"
+            params.append(end_filter)
+        if quant_filters:
+            placeholders = ",".join(["?"] * len(quant_filters))
+            query += f" AND quantization IN ({placeholders})"
+            params.extend(quant_filters)
+        
+        query += " ORDER BY timestamp ASC"
+        cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
         conn.close()
         
         if not rows:
             return {"success": False, "error": "Keine Daten gefunden"}
+
+        def safe_round(value, digits):
+            try:
+                return round(value, digits)
+            except Exception:
+                return value if value is not None else ""
         
-        # Erstelle CSV
         output = StringIO()
         writer = csv.writer(output)
         
-        # Header
         headers = [
             'Timestamp', 'Model', 'Quantization', 'Speed (tok/s)', 'TTFT (ms)',
             'Gen-Time (ms)', 'GPU-Offload', 'VRAM (MB)', 'Temperature', 'Top-K',
@@ -978,20 +1006,17 @@ async def export_comparison_csv(model_name: str = None) -> dict:
         ]
         writer.writerow(headers)
         
-        # Daten
         for row in rows:
             writer.writerow([
-                row[0], row[1], row[2], round(row[3], 2), round(row[4], 3),
-                round(row[5], 3), round(row[6], 2), row[7], row[8], row[9],
+                row[0], row[1], row[2], safe_round(row[3], 2), safe_round(row[4], 3),
+                safe_round(row[5], 3), safe_round(row[6], 2), row[7], row[8], row[9],
                 row[10], row[11], row[12], row[13], row[14],
-                round(row[15], 2), row[16]
+                safe_round(row[15], 2), row[16]
             ])
         
         csv_content = output.getvalue()
-        
-        # Speichere als Datei
         export_file = RESULTS_DIR / f"comparison_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        with open(export_file, 'w') as f:
+        with open(export_file, 'w', encoding='utf-8') as f:
             f.write(csv_content)
         
         logger.info(f"📊 CSV Export: {export_file}")
@@ -1000,17 +1025,179 @@ async def export_comparison_csv(model_name: str = None) -> dict:
             "success": True,
             "message": f"CSV exportiert: {len(rows)} Einträge",
             "file": str(export_file),
+            "url": f"/results/{export_file.name}",
             "rows": len(rows),
-            "csv_preview": csv_content.split('\n')[:5]  # Erste 5 Zeilen
+            "filters": {
+                "model": model_filter,
+                "start": start_filter,
+                "end": end_filter,
+                "quantizations": quant_filters
+            },
+            "csv_preview": csv_content.split('\n')[:5]
         }
     except Exception as e:
         logger.error(f"❌ CSV Export Fehler: {e}")
         return {"success": False, "error": str(e)}
 
 
-@app.post("/api/comparison/statistics/{model_name}")
+@app.post("/api/comparison/export/pdf")
+async def export_comparison_pdf(request: Request) -> dict:
+    """Exportiert Vergleichsdaten als einfache PDF-Zusammenfassung"""
+    if not BenchmarkCache:
+        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+
+    try:
+        import sqlite3
+        import statistics
+        
+        payload = {}
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+
+        model_filter = payload.get("model_name")
+        start_filter = payload.get("start_date")
+        end_filter = payload.get("end_date")
+        quant_filters = payload.get("quantizations", []) or []
+        if isinstance(quant_filters, str):
+            quant_filters = [quant_filters]
+
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+
+        query = '''
+            SELECT timestamp, model_name, quantization, avg_tokens_per_sec, avg_ttft,
+                   avg_gen_time, gpu_offload, vram_mb, temperature
+            FROM benchmark_results
+            WHERE 1=1
+        '''
+        params: list = []
+
+        if model_filter:
+            query += " AND model_name = ?"
+            params.append(model_filter)
+        if start_filter:
+            query += " AND timestamp >= ?"
+            params.append(start_filter)
+        if end_filter:
+            query += " AND timestamp <= ?"
+            params.append(end_filter)
+        if quant_filters:
+            placeholders = ",".join(["?"] * len(quant_filters))
+            query += f" AND quantization IN ({placeholders})"
+            params.extend(quant_filters)
+
+        query += " ORDER BY timestamp ASC"
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        conn.close()
+
+        if not rows:
+            return {"success": False, "error": "Keine Daten gefunden"}
+
+        speeds = [row[3] for row in rows if row[3] is not None]
+        stats = {
+            "min_speed": round(min(speeds), 2) if speeds else None,
+            "max_speed": round(max(speeds), 2) if speeds else None,
+            "avg_speed": round(statistics.mean(speeds), 2) if speeds else None,
+            "entries": len(rows)
+        }
+
+        def generate_pdf_bytes(lines):
+            pdf_bytes = bytearray()
+            pdf_bytes.extend(b"%PDF-1.4\n")
+            offsets = []
+
+            def add_obj(content: str):
+                offsets.append(len(pdf_bytes))
+                pdf_bytes.extend(content.encode("latin-1"))
+
+            add_obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+
+            stream_lines = []
+            y = 770
+            for line in lines:
+                safe_line = line.replace("(", "\\(").replace(")", "\\)")
+                stream_lines.append(f"BT /F1 11 Tf 50 {y} Td ({safe_line}) Tj ET")
+                y -= 14
+                if y < 60:
+                    break
+            stream_content = "\n".join(stream_lines).encode("latin-1")
+
+            add_obj("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n")
+            add_obj(f"4 0 obj\n<< /Length {len(stream_content)} >>\nstream\n")
+            pdf_bytes.extend(stream_content)
+            pdf_bytes.extend(b"\nendstream\nendobj\n")
+            add_obj("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n")
+
+            xref_offset = len(pdf_bytes)
+            pdf_bytes.extend(f"xref\n0 {len(offsets)+1}\n".encode("latin-1"))
+            pdf_bytes.extend(b"0000000000 65535 f \n")
+            for off in offsets:
+                pdf_bytes.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
+            pdf_bytes.extend(b"trailer\n")
+            pdf_bytes.extend(f"<< /Size {len(offsets)+1} /Root 1 0 R >>\n".encode("latin-1"))
+            pdf_bytes.extend(b"startxref\n")
+            pdf_bytes.extend(f"{xref_offset}\n".encode("latin-1"))
+            pdf_bytes.extend(b"%%EOF")
+            return bytes(pdf_bytes)
+
+        header_lines = [
+            "Historical Comparison Export",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Model: {model_filter or 'Alle Modelle'}",
+            f"Zeitraum: {start_filter or '---'} bis {end_filter or '---'}",
+            f"Quantisierung: {', '.join(quant_filters) if quant_filters else 'Alle'}",
+            "",
+            "Statistiken:",
+            f"  Min Speed: {stats['min_speed'] if stats['min_speed'] is not None else '-'} tok/s",
+            f"  Max Speed: {stats['max_speed'] if stats['max_speed'] is not None else '-'} tok/s",
+            f"  Avg Speed: {stats['avg_speed'] if stats['avg_speed'] is not None else '-'} tok/s",
+            f"  Läufe: {stats['entries']}",
+            "",
+            "Top 50 Runs:"
+        ]
+
+        for row in rows[:50]:
+            header_lines.append(
+                f"{row[0]} | {row[1]} | {row[2]} | {round(row[3],2) if row[3] is not None else '-'} tok/s | TTFT {round(row[4],3) if row[4] is not None else '-'} | Gen {round(row[5],3) if row[5] is not None else '-'}"
+            )
+
+        pdf_bytes = generate_pdf_bytes(header_lines)
+        export_file = RESULTS_DIR / f"comparison_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        with open(export_file, 'wb') as f:
+            f.write(pdf_bytes)
+
+        logger.info(f"🧾 PDF Export: {export_file}")
+
+        return {
+            "success": True,
+            "message": f"PDF exportiert: {len(rows)} Einträge",
+            "file": str(export_file),
+            "url": f"/results/{export_file.name}",
+            "rows": len(rows),
+            "stats": stats,
+            "filters": {
+                "model": model_filter,
+                "start": start_filter,
+                "end": end_filter,
+                "quantizations": quant_filters
+            }
+        }
+    except Exception as e:
+        logger.error(f"❌ PDF Export Fehler: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/comparison/statistics/{model_name:path}")
 async def get_advanced_statistics(model_name: str) -> dict:
     """Berechnet erweiterte Statistiken (Volatility, Regression, Alerts)"""
+    # URL-decode den model_name falls nötig
+    from urllib.parse import unquote
+    model_name = unquote(model_name)
+    
     if not BenchmarkCache:
         return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
     
