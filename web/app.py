@@ -13,17 +13,19 @@ import os
 import signal
 import socket
 import subprocess
+from subprocess import TimeoutExpired
 import sys
 import webbrowser
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 import sqlite3
 import json
 import math
 import statistics
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
@@ -33,10 +35,11 @@ from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
 
 try:
-    from scipy import stats as scipy_stats
-    HAS_SCIPY = True
-except ImportError:
-    HAS_SCIPY = False
+    from scipy import stats as scipy_stats  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    scipy_stats = None  # type: ignore
+
+SCIPY_AVAILABLE = scipy_stats is not None
 
 # Logging konfigurieren - mit Console und File Handler
 logging.basicConfig(
@@ -93,15 +96,6 @@ except ImportError as e:
     logger.error(f"❌ Konnte benchmark.py nicht importieren: {e}")
     BenchmarkCache = None  # type: ignore
     BenchmarkResult = None  # type: ignore
-
-# FastAPI App initialisieren
-app = FastAPI(
-    title="LM Studio Benchmark Dashboard",
-    description="Web-Dashboard zur Steuerung und Überwachung von LM Studio Benchmarks"
-)
-
-# Mount Results-Verzeichnis für statische Dateien (PDF, HTML, JSON, CSV)
-app.mount("/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
 
 # Jinja2 Template Environment
 template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
@@ -282,7 +276,7 @@ class BenchmarkManager:
             try:
                 self.process.wait(timeout=5)
                 logger.info("⏹️ Benchmark beendet (SIGTERM)")
-            except subprocess.TimeoutExpired:
+            except TimeoutExpired:
                 # Fallback zu SIGKILL
                 self.process.kill()
                 self.process.wait()
@@ -403,6 +397,29 @@ class BenchmarkManager:
 manager = BenchmarkManager()
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle FastAPI startup/shutdown for benchmark manager."""
+    try:
+        yield
+    finally:
+        if manager.is_running():
+            logger.info("🛑 Benchmark bei Shutdown beenden...")
+            manager.stop_benchmark()
+            await asyncio.sleep(1)
+
+
+# FastAPI App initialisieren (mit Lifespan-Handler)
+app = FastAPI(
+    title="LM Studio Benchmark Dashboard",
+    description="Web-Dashboard zur Steuerung und Überwachung von LM Studio Benchmarks",
+    lifespan=lifespan
+)
+
+# Mount Results-Verzeichnis für statische Dateien (PDF, HTML, JSON, CSV)
+app.mount("/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
+
+
 # ============================================================================
 # Pydantic Models
 # ============================================================================
@@ -482,16 +499,6 @@ def calculate_hash(params: Dict[str, Any]) -> str:
     return hashlib.sha256(params_str.encode()).hexdigest()[:16]
 
 
-def match_parameters(db_params: Dict[str, Any], filter_params: Dict[str, Optional[Any]]) -> bool:
-    """Prüfe ob Datenbank-Parameter mit Filter-Parametern matchen"""
-    for key, value in filter_params.items():
-        if value is None:
-            continue  # Ignoriere None-Werte
-        if abs(float(db_params.get(key, 0)) - float(value)) > 0.001:
-            return False
-    return True
-
-
 def perform_ttest(baseline_speeds: List[float], test_speeds: List[float]) -> Dict[str, Any]:
     """Führe Independent Samples t-test durch"""
     if len(baseline_speeds) < 2 or len(test_speeds) < 2:
@@ -504,8 +511,8 @@ def perform_ttest(baseline_speeds: List[float], test_speeds: List[float]) -> Dic
         }
     
     try:
-        if HAS_SCIPY:
-            t_stat, p_value = scipy_stats.ttest_ind(baseline_speeds, test_speeds)
+        if SCIPY_AVAILABLE and scipy_stats is not None:
+            t_stat, p_value = scipy_stats.ttest_ind(baseline_speeds, test_speeds)  # type: ignore[call-overload]
             return {
                 "test_name": "Welch's t-test",
                 "t_statistic": round(t_stat, 4),
@@ -544,7 +551,7 @@ def perform_ttest(baseline_speeds: List[float], test_speeds: List[float]) -> Dic
         return {"test_name": "t-test", "error": str(e), "significant": False}
 
 
-def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) -> bool:
+def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Optional[Any]]) -> bool:
     """
     Prüft ob die Parameter eines DB-Eintrags den Ziel-Parametern entsprechen.
     Ignoriert None-Werte in target_params (Parameter wurden nicht überschrieben).
@@ -554,10 +561,9 @@ def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) 
             continue  # Parameter wurde nicht überschrieben, also nicht filtern
         
         row_value = row_params.get(key)
-        
-        # Zahlenlänge/Typen vergleichen (floats mit Toleranz)
-        if isinstance(target_value, float) and isinstance(row_value, (int, float)):
-            if abs(row_value - target_value) > 0.001:
+
+        if isinstance(target_value, (int, float)) and isinstance(row_value, (int, float)):
+            if abs(float(row_value) - float(target_value)) > 0.001:
                 return False
         else:
             if row_value != target_value:
@@ -566,7 +572,7 @@ def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) 
     return True
 
 
-def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]) -> Dict[str, float]:
+def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]) -> Dict[str, Union[float, str]]:
     """Berechne Cohen's d effect size"""
     if not baseline_speeds or not test_speeds:
         return {"cohens_d": 0.0, "effect_magnitude": "negligible"}
@@ -1044,7 +1050,7 @@ async def get_lmstudio_models() -> dict:
             "count": len(models)
         }
     
-    except subprocess.TimeoutExpired:
+    except TimeoutExpired:
         return {"success": False, "error": "LM Studio CLI Timeout", "models": []}
     except Exception as e:
         logger.error(f"❌ Fehler beim Holen der LM Studio Modelle: {e}")
@@ -1187,7 +1193,12 @@ async def get_model_history(model_name: str) -> dict:
 
 
 @app.post("/api/comparison/export/csv")
-async def export_comparison_csv(request: Request, model_name: str = None, start_date: str = None, end_date: str = None) -> dict:
+async def export_comparison_csv(
+    request: Request,
+    model_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> dict:
     """Exportiert Vergleichsdaten als CSV mit optionalen Filtern"""
     if not BenchmarkCache:
         return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
@@ -2640,7 +2651,7 @@ async def get_dashboard_stats() -> dict:
                 except Exception:
                     gpu_model = "NVIDIA GPU"
                     
-            except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
+            except (TimeoutExpired, FileNotFoundError, ValueError):
                 pass
             
             # AMD GPU Erkennung mit rocm-smi
@@ -2715,7 +2726,7 @@ async def get_dashboard_stats() -> dict:
                                         except:
                                             pass
                                         break
-                    except (FileNotFoundError, subprocess.TimeoutExpired):
+                    except (FileNotFoundError, TimeoutExpired):
                         pass
                     
                     # Fallback: Hole Device ID aus /sys
@@ -2809,7 +2820,7 @@ async def get_dashboard_stats() -> dict:
                                         gtt_total_gb = round(gtt_bytes / (1024**3), 2)
                                         break
                 
-                except (subprocess.TimeoutExpired, FileNotFoundError):
+                except (TimeoutExpired, FileNotFoundError):
                     pass
             
             # Zusammenstellen GPU-Info
@@ -3050,26 +3061,6 @@ async def health_check() -> dict:
         "benchmark_running": manager.is_running(),
         "connected_clients": len(manager.connected_clients)
     }
-
-
-# ============================================================================
-# Startup/Shutdown mit Lifespan
-# ============================================================================
-
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Lifespan handler für Startup und Shutdown"""
-    # Startup
-    yield
-    # Shutdown
-    if manager.is_running():
-        logger.info("🛑 Benchmark bei Shutdown beenden...")
-        manager.stop_benchmark()
-        await asyncio.sleep(1)
-
-app.router.lifespan = lifespan
 
 
 # ============================================================================
