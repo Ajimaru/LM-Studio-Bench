@@ -1217,52 +1217,123 @@
         <div id="startModal" class="card hidden" style="margin-bottom: 2rem; border: 2px solid var(--primary);">
             <h2>Benchmark Starten</h2>
             
-            <div class="form-group">
-                <label>Runs (Messungen pro Modell)</label>
-                <input type="number" id="paramRuns" value="3" min="1" max="10">
-            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <!-- Linke Spalte: Basis-Parameter -->
+                <div>
+                    <h3 style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem; text-transform: uppercase;">📋 Basis-Parameter</h3>
+                    
+                    <div class="form-group">
+                        <label>Runs (Messungen pro Modell)</label>
+                        <input type="number" id="paramRuns" value="3" min="1" max="10">
+                    </div>
 
-            <div class="form-group">
-                <label>Context Length</label>
-                <input type="number" id="paramContext" value="2048" min="512" max="32768">
-            </div>
+                    <div class="form-group">
+                        <label>Context Length</label>
+                        <input type="number" id="paramContext" value="2048" min="512" max="32768">
+                    </div>
 
-            <div class="form-group">
-                <label>Modell-Limit</label>
-                <input type="number" id="paramLimit" placeholder="Leer = alle Modelle" min="1">
-            </div>
+                    <div class="form-group">
+                        <label>Modell-Limit</label>
+                        <input type="number" id="paramLimit" placeholder="Leer = alle Modelle" min="1">
+                    </div>
 
-            <div class="form-group">
-                <label>Custom Prompt (optional)</label>
-                <input type="text" id="paramPrompt" placeholder="Leer = Standard-Prompt">
-            </div>
+                    <div class="form-group">
+                        <label>Min. Context-Length</label>
+                        <input type="number" id="paramMinContext" placeholder="z.B. 32000" min="512">
+                    </div>
 
-            <div class="form-group">
-                <label>Include Pattern (Regex, optional)</label>
-                <input type="text" id="paramInclude" placeholder="z.B. mistral|llama">
-            </div>
+                    <div class="form-group">
+                        <label>Max. Modellgröße (GB)</label>
+                        <input type="number" id="paramMaxSize" placeholder="z.B. 10.0" min="0.1" step="0.1">
+                    </div>
 
-            <div class="form-group">
-                <label>Exclude Pattern (Regex, optional)</label>
-                <input type="text" id="paramExclude" placeholder="z.B. gpt|claude">
-            </div>
-
-            <div class="checkbox-group">
-                <div class="checkbox-item">
-                    <input type="checkbox" id="paramVisionOnly">
-                    <label for="paramVisionOnly">Nur Vision-Modelle</label>
+                    <div class="form-group">
+                        <label>Custom Prompt (optional)</label>
+                        <input type="text" id="paramPrompt" placeholder="Leer = Standard-Prompt">
+                    </div>
                 </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" id="paramToolsOnly">
-                    <label for="paramToolsOnly">Nur Tool-Modelle</label>
+
+                <!-- Rechte Spalte: Filter & Optionen -->
+                <div>
+                    <h3 style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem; text-transform: uppercase;">🔍 Filter & Optionen</h3>
+                    
+                    <div class="form-group">
+                        <label>Include Pattern (Regex, optional)</label>
+                        <input type="text" id="paramInclude" placeholder="z.B. mistral|llama">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Exclude Pattern (Regex, optional)</label>
+                        <input type="text" id="paramExclude" placeholder="z.B. gpt|claude">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Quantisierungen (optional)</label>
+                        <input type="text" id="paramQuants" placeholder="z.B. q4,q5,q6">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Architekturen (optional)</label>
+                        <input type="text" id="paramArch" placeholder="z.B. llama,mistral">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Parametergrößen (optional)</label>
+                        <input type="text" id="paramParams" placeholder="z.B. 3B,7B">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Rangieren nach</label>
+                        <select id="paramRankBy" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.25rem; font-size: 0.9rem;">
+                            <option value="">Standard (Namen)</option>
+                            <option value="speed">⚡ Geschwindigkeit (Tokens/s)</option>
+                            <option value="efficiency">📊 Effizienz (Tokens/GB)</option>
+                            <option value="ttft">⏱️ Time to First Token</option>
+                            <option value="vram">💾 VRAM-Nutzung</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" id="paramRetest">
-                    <label for="paramRetest">Cache ignorieren</label>
+            </div>
+
+            <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem;">
+                <h3 style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem; text-transform: uppercase;">✅ Flags & Profiling</h3>
+                
+                <div class="checkbox-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="paramVisionOnly">
+                        <label for="paramVisionOnly">Nur Vision-Modelle</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="paramToolsOnly">
+                        <label for="paramToolsOnly">Nur Tool-Modelle</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="paramRetest">
+                        <label for="paramRetest">Cache ignorieren</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="paramDevMode">
+                        <label for="paramDevMode">Dev-Mode (1 Modell, 1 Run)</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="paramEnableProfiling" checked>
+                        <label for="paramEnableProfiling">Hardware-Profiling (GPU Temp/Power)</label>
+                    </div>
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="paramDisableGTT">
+                        <label for="paramDisableGTT">GTT deaktivieren (nur VRAM)</label>
+                    </div>
                 </div>
-                <div class="checkbox-item">
-                    <input type="checkbox" id="paramDevMode">
-                    <label for="paramDevMode">Dev-Mode (1 Modell, 1 Run)</label>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                    <div class="form-group">
+                        <label>Max. GPU-Temperatur (°C)</label>
+                        <input type="number" id="paramMaxTemp" placeholder="z.B. 85.0" min="30" max="120" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>Max. GPU Power (Watts)</label>
+                        <input type="number" id="paramMaxPower" placeholder="z.B. 400.0" min="50" max="1000" step="0.1">
+                    </div>
                 </div>
             </div>
 
@@ -1981,17 +2052,35 @@
         // ===== Benchmark Kontrolle =====
         async function startBenchmark() {
             const params = {
+                // Basis-Parameter
                 runs: parseInt(document.getElementById('paramRuns').value) || null,
                 context: parseInt(document.getElementById('paramContext').value) || null,
                 limit: parseInt(document.getElementById('paramLimit').value) || null,
                 prompt: document.getElementById('paramPrompt').value || null,
+                
+                // Neue Filter-Parameter
+                min_context: parseInt(document.getElementById('paramMinContext').value) || null,
+                max_size: parseFloat(document.getElementById('paramMaxSize').value) || null,
+                quants: document.getElementById('paramQuants').value || null,
+                arch: document.getElementById('paramArch').value || null,
+                params: document.getElementById('paramParams').value || null,
+                rank_by: document.getElementById('paramRankBy').value || null,
+                
+                // Regex-Filter
                 include_models: document.getElementById('paramInclude').value || null,
                 exclude_models: document.getElementById('paramExclude').value || null,
+                
+                // Boolean Flags
                 only_vision: document.getElementById('paramVisionOnly').checked,
                 only_tools: document.getElementById('paramToolsOnly').checked,
                 retest: document.getElementById('paramRetest').checked,
                 dev_mode: document.getElementById('paramDevMode').checked,
-                enable_profiling: true  // 🆕 Hardware-Monitoring immer aktivieren
+                enable_profiling: document.getElementById('paramEnableProfiling').checked,
+                disable_gtt: document.getElementById('paramDisableGTT').checked,
+                
+                // Hardware-Limits
+                max_temp: parseFloat(document.getElementById('paramMaxTemp').value) || null,
+                max_power: parseFloat(document.getElementById('paramMaxPower').value) || null
             };
 
             try {

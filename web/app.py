@@ -399,17 +399,35 @@ manager = BenchmarkManager()
 
 class BenchmarkParams(BaseModel):
     """Parameter für Benchmark-Start"""
+    # Basis-Parameter
     runs: Optional[int] = None
     context: Optional[int] = None
     limit: Optional[int] = None
     prompt: Optional[str] = None
+    
+    # Neue Filter-Parameter
+    min_context: Optional[int] = None
+    max_size: Optional[float] = None
+    quants: Optional[str] = None
+    arch: Optional[str] = None
+    params: Optional[str] = None
+    rank_by: Optional[str] = None
+    
+    # Regex-Filter
     only_vision: bool = False
     only_tools: bool = False
     include_models: Optional[str] = None
     exclude_models: Optional[str] = None
+    
+    # Boolean Flags
     retest: bool = False
     dev_mode: bool = False
-    enable_profiling: bool = True  # Hardware-Monitoring aktivieren (Standard: ON)
+    enable_profiling: bool = True
+    disable_gtt: bool = False
+    
+    # Hardware-Limits
+    max_temp: Optional[float] = None
+    max_power: Optional[float] = None
 
 
 # ============================================================================
@@ -477,6 +495,7 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
     """Startet neuen Benchmark"""
     args = []
     
+    # Basis-Parameter
     if params.runs:
         args.extend(["--runs", str(params.runs)])
     if params.context:
@@ -485,25 +504,52 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
         args.extend(["--limit", str(params.limit)])
     if params.prompt:
         args.extend(["--prompt", params.prompt])
-    if params.only_vision:
-        args.append("--only-vision")
-    if params.only_tools:
-        args.append("--only-tools")
+    
+    # Neue Filter-Parameter
+    if params.min_context:
+        args.extend(["--min-context", str(params.min_context)])
+    if params.max_size:
+        args.extend(["--max-size", str(params.max_size)])
+    if params.quants:
+        args.extend(["--quants", params.quants])
+    if params.arch:
+        args.extend(["--arch", params.arch])
+    if params.params:
+        args.extend(["--params", params.params])
+    if params.rank_by:
+        args.extend(["--rank-by", params.rank_by])
+    
+    # Regex-Filter
     if params.include_models:
         args.extend(["--include-models", params.include_models])
     if params.exclude_models:
         args.extend(["--exclude-models", params.exclude_models])
+    
+    # Boolean Flags
+    if params.only_vision:
+        args.append("--only-vision")
+    if params.only_tools:
+        args.append("--only-tools")
     if params.retest:
         args.append("--retest")
     if params.dev_mode:
         args.append("--dev-mode")
-    # Hardware-Profiling aktivieren (für Live-Monitoring Charts)
+    
+    # Hardware-Profiling
     if params.enable_profiling:
         args.append("--enable-profiling")
+    if params.disable_gtt:
+        args.append("--disable-gtt")
+    
+    # Hardware-Limits
+    if params.max_temp:
+        args.extend(["--max-temp", str(params.max_temp)])
+    if params.max_power:
+        args.extend(["--max-power", str(params.max_power)])
     
     # Debug: Zeige übergebene Args
     logger.info(f"🔧 Benchmark-Args: {args}")
-    logger.info(f"📊 enable_profiling={params.enable_profiling}")
+    logger.info(f"📊 enable_profiling={params.enable_profiling}, disable_gtt={params.disable_gtt}")
     
     success = await manager.start_benchmark(args)
     return {
