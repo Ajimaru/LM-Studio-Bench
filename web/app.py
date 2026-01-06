@@ -2016,7 +2016,7 @@ async def run_experiment(request: Request) -> dict:
 
         # Baseline ausführen
         baseline_args = build_args(baseline_params)
-        baseline_start = datetime.now().isoformat(timespec='seconds')
+        baseline_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         baseline_ok = await run_once(baseline_args)
         if not baseline_ok:
             return {"success": False, "error": "Konnte Baseline Benchmark nicht starten"}
@@ -2024,16 +2024,19 @@ async def run_experiment(request: Request) -> dict:
         # Warte bis Benchmark fertig ist
         while manager.is_running():
             await asyncio.sleep(1.0)
+        # kurze Pufferzeit, damit Ergebnisse geschrieben sind
+        await asyncio.sleep(1.0)
 
         # Test ausführen
         test_args = build_args(test_params)
-        test_start = datetime.now().isoformat(timespec='seconds')
+        test_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         test_ok = await run_once(test_args)
         if not test_ok:
             return {"success": False, "error": "Konnte Test Benchmark nicht starten"}
 
         while manager.is_running():
             await asyncio.sleep(1.0)
+        await asyncio.sleep(1.0)
 
         # Ergebnisse aus DB lesen (nur neue Einträge)
         conn = sqlite3.connect(DATABASE_FILE)
@@ -2042,9 +2045,9 @@ async def run_experiment(request: Request) -> dict:
         cursor.execute('''
             SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time
             FROM benchmark_results
-            WHERE model_name = ? AND timestamp >= ?
+            WHERE model_name = ? AND timestamp >= ? AND timestamp < ?
             ORDER BY timestamp ASC
-        ''', (model_name, baseline_start))
+        ''', (model_name, baseline_start_str, test_start_str))
         baseline_rows = cursor.fetchall()
 
         cursor.execute('''
@@ -2052,7 +2055,7 @@ async def run_experiment(request: Request) -> dict:
             FROM benchmark_results
             WHERE model_name = ? AND timestamp >= ?
             ORDER BY timestamp ASC
-        ''', (model_name, test_start))
+        ''', (model_name, test_start_str))
         test_rows = cursor.fetchall()
 
         conn.close()
