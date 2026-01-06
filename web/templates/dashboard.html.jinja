@@ -1787,6 +1787,14 @@
                 
                 <!-- Results Panel -->
                 <div>
+                    <!-- Live Terminal Output for A/B Testing -->
+                    <div class="section" style="margin-bottom: 2rem;">
+                        <h3>📝 Live-Terminal</h3>
+                        <div class="card" style="padding: 0;">
+                            <div id="ab-terminal" class="terminal"></div>
+                        </div>
+                    </div>
+
                     <div id="ab-results-container" style="display: none;">
                         <!-- Speed Trend Comparison Chart -->
                         <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; border: 1px solid var(--border); margin-bottom: 2rem;">
@@ -2386,13 +2394,22 @@
 
         // ===== Terminal Ausgabe =====
         function appendTerminalLine(line) {
-            const terminal = document.getElementById('terminal');
-            terminal.textContent += line;
-            terminal.scrollTop = terminal.scrollHeight;
+            const terminals = [];
+            const termMain = document.getElementById('terminal');
+            const termAB = document.getElementById('ab-terminal');
+            if (termMain) terminals.push(termMain);
+            if (termAB) terminals.push(termAB);
+            terminals.forEach(t => {
+                t.textContent += line;
+                t.scrollTop = t.scrollHeight;
+            });
         }
 
         function clearTerminal() {
-            document.getElementById('terminal').textContent = '';
+            const termMain = document.getElementById('terminal');
+            const termAB = document.getElementById('ab-terminal');
+            if (termMain) termMain.textContent = '';
+            if (termAB) termAB.textContent = '';
         }
 
         // ===== Benchmark Kontrolle =====

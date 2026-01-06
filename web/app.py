@@ -1644,12 +1644,21 @@ async def get_experiment_comparison(
         # Effect Size
         effect_size = calculate_effect_size(baseline_speeds, test_speeds)
         
-        # Bestimme Gewinner
-        delta_pct = ((test_stats["mean"] - baseline_stats["mean"]) / baseline_stats["mean"] * 100)
-        if test_result.get("significant"):
-            winner = "test" if test_stats["mean"] > baseline_stats["mean"] else "baseline"
+        # Bestimme Gewinner (robust gegen Division durch 0)
+        baseline_mean = baseline_stats["mean"]
+        test_mean = test_stats["mean"]
+        if baseline_mean and baseline_mean != 0:
+            delta_pct = ((test_mean - baseline_mean) / baseline_mean * 100)
         else:
-            winner = "tie"
+            # Wenn baseline_mean == 0, definiere Delta als Unterschied relativ zu 0
+            # und markiere Gewinner rein nach größerem Mittelwert
+            delta_pct = None
+            logger.warning("⚠️ Baseline-Mean ist 0 – Delta% wird nicht berechnet")
+        if test_result.get("significant"):
+            winner = "test" if test_mean > baseline_mean else "baseline"
+        else:
+            # Ohne Signifikanz: Gewinner nur bei eindeutig besserem Mittelwert
+            winner = "test" if test_mean > baseline_mean else ("baseline" if baseline_mean > test_mean else "tie")
         
         logger.info(f"🧪 Experiment {experiment_id}: {winner.upper()}")
         logger.info(f"   Baseline: {baseline_stats['mean']} ± {baseline_stats['std_dev']} tok/s")
@@ -1665,7 +1674,7 @@ async def get_experiment_comparison(
             "statistical_test": test_result,
             "effect_size": effect_size,
             "comparison": {
-                "delta_pct": round(delta_pct, 2),
+                "delta_pct": (round(delta_pct, 2) if isinstance(delta_pct, (int, float)) else None),
                 "winner": winner,
                 "significant": test_result.get("significant", False),
                 "confidence": "High" if test_result.get("p_value", 1) < 0.01 else "Medium" if test_result.get("p_value", 1) < 0.05 else "Low"
@@ -2101,10 +2110,18 @@ async def run_experiment(request: Request) -> dict:
 
         test_result = perform_ttest(baseline_speeds, test_speeds)
         effect_size = calculate_effect_size(baseline_speeds, test_speeds)
-        delta_pct = ((test_stats["mean"] - baseline_stats["mean"]) / baseline_stats["mean"] * 100)
+        baseline_mean = baseline_stats["mean"]
+        test_mean = test_stats["mean"]
+        delta_pct = None
+        if baseline_mean and baseline_mean != 0:
+            delta_pct = ((test_mean - baseline_mean) / baseline_mean * 100)
+        else:
+            logger.warning("⚠️ Baseline-Mean ist 0 – Delta% wird nicht berechnet (active run)")
         winner = "tie"
         if test_result.get("significant"):
-            winner = "test" if test_stats["mean"] > baseline_stats["mean"] else "baseline"
+            winner = "test" if test_mean > baseline_mean else "baseline"
+        else:
+            winner = "test" if test_mean > baseline_mean else ("baseline" if baseline_mean > test_mean else "tie")
 
         return {
             "success": True,
@@ -2115,7 +2132,7 @@ async def run_experiment(request: Request) -> dict:
             "statistical_test": test_result,
             "effect_size": effect_size,
             "comparison": {
-                "delta_pct": round(delta_pct, 2),
+                "delta_pct": (round(delta_pct, 2) if isinstance(delta_pct, (int, float)) else None),
                 "winner": winner,
                 "significant": test_result.get("significant", False)
             }
