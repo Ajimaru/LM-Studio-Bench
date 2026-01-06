@@ -196,12 +196,12 @@
             --success: #06b6d4;
             --warning: #f97316;
             --danger: #dc2626;
-            --dark: #d4af37;
+            --dark: #e5d4b8;
             --darker: #1a1a1a;
             --light: #404040;
-            --border: #666666;
-            --text: #d4af37;
-            --text-light: #888888;
+            --border: #ccaa55;
+            --text: #e5d4b8;
+            --text-light: #a8975f;
             --bg: #1a1a1a;
             --card: #2d2d2d;
             font-family: 'Courier New', monospace;
@@ -209,22 +209,6 @@
                 linear-gradient(90deg, transparent 24%, rgba(255, 0, 0, .05) 25%, rgba(255, 0, 0, .05) 26%, transparent 27%, transparent 74%, rgba(255, 0, 0, .05) 75%, rgba(255, 0, 0, .05) 76%, transparent 77%, transparent),
                 linear-gradient(0deg, transparent 24%, rgba(255, 0, 0, .05) 25%, rgba(255, 0, 0, .05) 26%, transparent 27%, transparent 74%, rgba(255, 0, 0, .05) 75%, rgba(255, 0, 0, .05) 76%, transparent 77%, transparent);
             background-size: 50px 50px;
-        }
-
-        body.theme-fritzbox {
-            --primary: #cc0000;
-            --success: #0066cc;
-            --warning: #ff9900;
-            --danger: #cc0000;
-            --dark: #666666;
-            --darker: #333333;
-            --light: #eeeeee;
-            --border: #cccccc;
-            --text: #333333;
-            --text-light: #666666;
-            --bg: #f5f5f5;
-            --card: #ffffff;
-            font-family: Arial, Helvetica, sans-serif;
         }
 
         /* ===== Weitere Themes ===== */
@@ -1059,7 +1043,6 @@
                 <option value="theme-90s">📼 90er Jahre</option>
                 <option value="theme-hacker">💻 Hacker/Matrix</option>
                 <option value="theme-hardware">⚙️ Hardware</option>
-                <option value="theme-fritzbox">📶 FritzBox</option>
                 <option value="theme-contrast-dark">♿ High Contrast Dark</option>
                 <option value="theme-contrast-light">♿ High Contrast Light</option>
             </select>
@@ -1483,7 +1466,7 @@
                 'theme-ocean', 'theme-slate', 'theme-mint', 'theme-speed', 'theme-neon',
                 'theme-solarized-dark', 'theme-solarized-light', 'theme-gruvbox', 'theme-dracula', 'theme-nord', 'theme-monokai',
                 'theme-paper', 'theme-terminal-green', 'theme-oled', 'theme-forest', 'theme-sunset', 'theme-cyberpunk', 'theme-pastel', 'theme-sepia', 'theme-80s',
-                'theme-90s', 'theme-hacker', 'theme-hardware', 'theme-fritzbox', 'theme-contrast-dark', 'theme-contrast-light'
+                'theme-90s', 'theme-hacker', 'theme-hardware', 'theme-contrast-dark', 'theme-contrast-light'
             ];
             allThemes.forEach(theme => document.body.classList.remove(theme));
             
