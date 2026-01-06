@@ -1166,6 +1166,7 @@
             <!-- Top Models -->
             <div class="section">
                 <h3>🏆 Top 5 Schnellste Modelle</h3>
+                <div id="home-capability-filters" style="margin: 0.5rem 0 0.75rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
                 <div class="card">
                     <table style="width: 100%; border-collapse: collapse;" id="home-top-models-table">
                         <thead>
@@ -2214,18 +2215,60 @@
                     document.getElementById('home-fastest-model').textContent = '--';
                     document.getElementById('home-fastest-speed').textContent = '--';
                 }
+
+                // Capability Filter UI (Home)
+                const capFilterHost = document.getElementById('home-capability-filters');
+                capFilterHost.innerHTML = '';
+                const capsCatalog = Array.isArray(data.capability_catalog) ? data.capability_catalog : [];
+                if (capsCatalog.length) {
+                    const label = document.createElement('div');
+                    label.textContent = 'Filter (Capabilities):';
+                    label.style.cssText = 'font-weight:600; margin-right:0.5rem; align-self:center;';
+                    capFilterHost.appendChild(label);
+                    capsCatalog.forEach(c => {
+                        const id = `capf-${c}`;
+                        const wrapper = document.createElement('label');
+                        wrapper.style.cssText = 'display:flex; align-items:center; gap:0.35rem; background: var(--card); border:1px solid var(--border); padding:0.25rem 0.5rem; border-radius:0.4rem; cursor:pointer;';
+                        const cb = document.createElement('input');
+                        cb.type = 'checkbox';
+                        cb.value = c;
+                        cb.id = id;
+                        cb.addEventListener('change', applyHomeCapabilityFilters);
+                        const span = document.createElement('span');
+                        span.textContent = c;
+                        wrapper.appendChild(cb);
+                        wrapper.appendChild(span);
+                        capFilterHost.appendChild(wrapper);
+                    });
+                    // Reset button
+                    const resetBtn = document.createElement('button');
+                    resetBtn.textContent = 'Reset';
+                    resetBtn.style.cssText = 'margin-left:0.5rem; padding:0.25rem 0.5rem; background: var(--card); color: var(--text); border:1px solid var(--border); border-radius:0.4rem;';
+                    resetBtn.addEventListener('click', () => {
+                        capFilterHost.querySelectorAll('input[type="checkbox"]').forEach(i => i.checked = false);
+                        applyHomeCapabilityFilters();
+                    });
+                    capFilterHost.appendChild(resetBtn);
+                }
                 
                 // Top Models Table
                 const topModelsBody = document.getElementById('home-top-models');
                 if (data.top_models && data.top_models.length > 0) {
-                    topModelsBody.innerHTML = data.top_models.map(model => `
-                        <tr style="border-bottom: 1px solid var(--border);">
-                            <td style="padding: 0.75rem;">${model.model_name}</td>
+                    topModelsBody.innerHTML = data.top_models.map(model => {
+                        const caps = Array.isArray(model.capabilities) ? model.capabilities : [];
+                        const capsHtml = caps.map(c => `<span class="cap-badge">${c}</span>`).join('');
+                        const capsAttr = caps.join(',');
+                        return `
+                        <tr style="border-bottom: 1px solid var(--border);" data-caps="${capsAttr}">
+                            <td style="padding: 0.75rem;">
+                                <div>${model.model_name}</div>
+                                ${capsHtml ? `<div style=\"margin-top:0.25rem;\">${capsHtml}</div>` : ''}
+                            </td>
                             <td style="padding: 0.75rem;">${model.quantization}</td>
                             <td style="padding: 0.75rem; text-align: right; font-weight: 600; color: var(--success);">${model.speed}</td>
                             <td style="padding: 0.75rem; text-align: right;">${model.vram_mb}</td>
-                        </tr>
-                    `).join('');
+                        </tr>`;
+                    }).join('');
                 } else {
                     topModelsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Keine Daten verfügbar</td></tr>';
                 }
@@ -2233,14 +2276,21 @@
                 // Recent Runs Table
                 const recentRunsBody = document.getElementById('home-recent-runs');
                 if (data.recent_runs && data.recent_runs.length > 0) {
-                    recentRunsBody.innerHTML = data.recent_runs.map(run => `
-                        <tr style="border-bottom: 1px solid var(--border);">
-                            <td style="padding: 0.75rem;">${run.model_name}</td>
+                    recentRunsBody.innerHTML = data.recent_runs.map(run => {
+                        const caps = Array.isArray(run.capabilities) ? run.capabilities : [];
+                        const capsHtml = caps.map(c => `<span class="cap-badge">${c}</span>`).join('');
+                        const capsAttr = caps.join(',');
+                        return `
+                        <tr style="border-bottom: 1px solid var(--border);" data-caps="${capsAttr}">
+                            <td style="padding: 0.75rem;">
+                                <div>${run.model_name}</div>
+                                ${capsHtml ? `<div style=\"margin-top:0.25rem;\">${capsHtml}</div>` : ''}
+                            </td>
                             <td style="padding: 0.75rem;">${run.quantization}</td>
                             <td style="padding: 0.75rem; text-align: right; font-weight: 600;">${run.speed}</td>
                             <td style="padding: 0.75rem;">${new Date(run.timestamp).toLocaleString('de-DE')}</td>
-                        </tr>
-                    `).join('');
+                        </tr>`;
+                    }).join('');
                 } else {
                     recentRunsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Keine Daten verfügbar</td></tr>';
                 }
@@ -2249,6 +2299,26 @@
                 console.error('Error loading dashboard stats:', error);
                 showToast('Fehler beim Laden der Dashboard-Statistiken', 'error');
             }
+        }
+
+        // Capability Badge Style (scoped via class)
+        const capBadgeStyle = document.createElement('style');
+        capBadgeStyle.textContent = `.cap-badge{display:inline-block;padding:0.15rem 0.4rem;border-radius:0.4rem;background:rgba(0,0,0,0.08);border:1px solid var(--border);font-size:0.7rem;margin-right:0.25rem;color:var(--text)}`;
+        document.head.appendChild(capBadgeStyle);
+
+        function applyHomeCapabilityFilters() {
+            const host = document.getElementById('home-capability-filters');
+            const selected = Array.from(host.querySelectorAll('input[type="checkbox"]:checked')).map(i => i.value);
+            const rowsTop = document.querySelectorAll('#home-top-models tr');
+            const rowsRecent = document.querySelectorAll('#home-recent-runs tr');
+            const predicate = (row) => {
+                if (!selected.length) return true;
+                const capsAttr = row.getAttribute('data-caps') || '';
+                const caps = capsAttr ? capsAttr.split(',').filter(Boolean) : [];
+                return selected.every(s => caps.includes(s));
+            };
+            rowsTop.forEach(r => { if (r.querySelector('td')) r.style.display = predicate(r) ? '' : 'none'; });
+            rowsRecent.forEach(r => { if (r.querySelector('td')) r.style.display = predicate(r) ? '' : 'none'; });
         }
 
         // ===== Back to Top Button =====

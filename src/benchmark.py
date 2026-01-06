@@ -113,6 +113,7 @@ VRAM_SAFETY_HEADROOM_GB = 1.0  # Reserve für System
 CONTEXT_VRAM_FACTOR = 0.000002  # ~2KB pro Token
 RESULTS_DIR = PROJECT_ROOT / "results"
 DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
+METADATA_DATABASE_FILE = RESULTS_DIR / "model_metadata.db"
 
 # Optimierte Inference-Parameter für standardisierte Benchmarks
 # (Für konsistente, reproduzierbare Messungen)
@@ -1106,6 +1107,26 @@ class ModelDiscovery:
             'has_vision': False,
             'has_tools': False,
         })
+
+    @staticmethod
+    def get_scraped_metadata(model_key: str) -> Dict:
+        """Liest optionale, gescrapete Metadaten aus model_metadata.db."""
+        if not METADATA_DATABASE_FILE.exists():
+            return {}
+        base_key = model_key.split('@')[0] if '@' in model_key else model_key
+        try:
+            conn = sqlite3.connect(METADATA_DATABASE_FILE)
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            row = cur.execute(
+                "SELECT * FROM model_metadata WHERE model_key = ?",
+                (base_key,),
+            ).fetchone()
+            conn.close()
+            return dict(row) if row else {}
+        except Exception as e:
+            logger.warning(f"⚠️ Konnte gescrapete Metadaten nicht lesen: {e}")
+            return {}
     
     @staticmethod
     def get_installed_models() -> List[str]:

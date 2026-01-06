@@ -86,6 +86,8 @@ BENCHMARK_SCRIPT = SRC_DIR / "benchmark.py"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 RESULTS_DIR = PROJECT_ROOT / "results"
 DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
+METADATA_DATABASE_FILE = RESULTS_DIR / "model_metadata.db"
+SCRAPER_SCRIPT = PROJECT_ROOT / "tools" / "scrape_metadata.py"
 
 # Importiere BenchmarkCache aus benchmark.py
 import sys
@@ -397,10 +399,33 @@ class BenchmarkManager:
 manager = BenchmarkManager()
 
 
+async def run_metadata_scraper():
+    """Runs the metadata scraper script best-effort."""
+    if not SCRAPER_SCRIPT.exists():
+        logger.warning(f"⚠️ Scraper-Skript nicht gefunden: {SCRAPER_SCRIPT}")
+        return
+    try:
+        await asyncio.to_thread(
+            subprocess.run,
+            [sys.executable, str(SCRAPER_SCRIPT)],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        logger.info("📝 Metadata-Scraper ausgeführt (nur fehlende Modelle)")
+    except subprocess.CalledProcessError as scrape_err:
+        logger.warning(f"⚠️ Scraper Fehler: {scrape_err.stderr or scrape_err}")
+    except Exception as scrape_exc:  # pragma: no cover
+        logger.warning(f"⚠️ Scraper Ausführung fehlgeschlagen: {scrape_exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handle FastAPI startup/shutdown for benchmark manager."""
     try:
+        # Starte Scraper im Hintergrund, blockiere nicht den Startup
+        asyncio.create_task(run_metadata_scraper())
         yield
     finally:
         if manager.is_running():
@@ -2532,6 +2557,28 @@ async def get_dashboard_stats() -> dict:
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
 
+        # Lade Capabilities aus model_metadata.db
+        capabilities_by_model: Dict[str, List[str]] = {}
+        distinct_capabilities: set[str] = set()
+        try:
+            if METADATA_DATABASE_FILE.exists():
+                mconn = sqlite3.connect(METADATA_DATABASE_FILE)
+                mcur = mconn.cursor()
+                mcur.execute("SELECT model_key, capabilities FROM model_metadata WHERE capabilities IS NOT NULL AND TRIM(capabilities) <> ''")
+                for mk, caps_json in mcur.fetchall():
+                    try:
+                        caps = json.loads(caps_json) if caps_json else []
+                        if isinstance(caps, list):
+                            capabilities_by_model[mk] = caps
+                            for c in caps:
+                                distinct_capabilities.add(c)
+                    except Exception:
+                        continue
+                mconn.close()
+        except Exception as _meta_err:
+            # Nicht kritisch für Dashboard
+            pass
+
         # LM Studio Healthcheck - ROBUST via HTTP API Ping
         # Primär: HTTP GET auf LM Studio API (Port 1234 default)
         # Fallback: CLI `lms status` mit "Server: OFF" Erkennung
@@ -2868,13 +2915,15 @@ async def get_dashboard_stats() -> dict:
                     "quantization": r.quantization,
                     "speed": round(r.avg_tokens_per_sec, 2),
                     "vram_mb": r.vram_mb,
-                    "params_size": r.params_size
+                    "params_size": r.params_size,
+                    "capabilities": capabilities_by_model.get(r.model_name, [])
                 })
                 # Speichere schnellstes Modell
                 if i == 0:
                     fastest_model = {
                         "name": r.model_name,
-                        "speed": round(r.avg_tokens_per_sec, 2)
+                        "speed": round(r.avg_tokens_per_sec, 2),
+                        "capabilities": capabilities_by_model.get(r.model_name, [])
                     }
         
         # Letzte 10 Benchmark-Runs (mit Timestamp)
@@ -2888,7 +2937,8 @@ async def get_dashboard_stats() -> dict:
                     "quantization": r.quantization,
                     "speed": round(r.avg_tokens_per_sec, 2),
                     "timestamp": r.timestamp,
-                    "gpu_offload": r.gpu_offload
+                    "gpu_offload": r.gpu_offload,
+                    "capabilities": capabilities_by_model.get(r.model_name, [])
                 })
                 # Speichere letzten Run Timestamp
                 if i == 0:
@@ -2903,6 +2953,7 @@ async def get_dashboard_stats() -> dict:
             "top_models": top_models,
             "recent_runs": recent_runs,
             "fastest_model": fastest_model,
+            "capability_catalog": sorted(list(distinct_capabilities)) if distinct_capabilities else [],
             "last_run": last_run_timestamp,
             "lmstudio": lmstudio_health
         }
