@@ -846,11 +846,20 @@ async def get_dashboard_stats() -> dict:
                     pass
         
         # Besserer CPU-Namen via cpuinfo wenn verfügbar
+        cpu_gpu_series = None  # Für iGPU-Extraktion aus CPU-String
         try:
             import cpuinfo
             cpu_data = cpuinfo.get_cpu_info()
             if 'brand_raw' in cpu_data and cpu_data['brand_raw']:
-                system_info["cpu"] = cpu_data['brand_raw'].replace('®', '').replace('™', '').strip()
+                raw_cpu = cpu_data['brand_raw'].replace('®', '').replace('™', '').strip()
+                system_info["cpu"] = raw_cpu
+                
+                # Extrahiere iGPU-Modell aus CPU-String (z.B. "w/ Radeon 890M")
+                if 'Radeon' in raw_cpu:
+                    import re
+                    radeon_match = re.search(r'Radeon\s+(\d+[A-Za-z]*)', raw_cpu)
+                    if radeon_match:
+                        cpu_gpu_series = f"AMD Radeon {radeon_match.group(1)}"
         except:
             pass
         
@@ -903,7 +912,7 @@ async def get_dashboard_stats() -> dict:
                     
                     # AMD GPU-Kartenserie Mapping basierend auf Device ID
                     amd_device_mapping = {
-                        '150e': 'Radeon Graphics (Ryzen 9 7950X3D)',  # iGPU aus CPU
+                        '150e': 'Radeon Graphics',  # Generische iGPU - wird durch CPU-Info überschrieben
                         '7340': 'Radeon RX 5700 XT',
                         '731f': 'Radeon RX 5700',
                         '7360': 'Radeon RX 6700 XT',
@@ -994,16 +1003,25 @@ async def get_dashboard_stats() -> dict:
                         pass
                     
                     # Zusammenstellen GPU-Modellname mit Fallback-Kette
-                    if gpu_series and 'Radeon' in gpu_series:
+                    # 1. Höchste Priorität: GPU-Serie aus CPU-String extrahiert (z.B. "Radeon 890M" aus CPU-Name)
+                    if cpu_gpu_series:
+                        gpu_model = cpu_gpu_series
+                    # 2. lspci Kartenserie falls vorhanden
+                    elif gpu_series and 'Radeon' in gpu_series:
                         gpu_model = gpu_series
+                    # 3. Device ID Mapping
                     elif device_id and device_id in amd_device_mapping:
                         gpu_model = f"AMD {amd_device_mapping[device_id]}"
+                    # 4. GFX-Code Mapping
                     elif gfx_code and gfx_code in amd_device_mapping:
                         gpu_model = f"AMD {amd_device_mapping[gfx_code]}"
+                    # 5. Fallback: Device ID anzeigen
                     elif device_id:
                         gpu_model = f"AMD GPU (Device: 1002:{device_id})"
+                    # 6. Fallback: GFX-Code
                     elif gfx_code:
                         gpu_model = f"AMD {gfx_code}"
+                    # 7. Fallback: Generisch
                     else:
                         gpu_model = "AMD GPU"
                     
