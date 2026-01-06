@@ -2008,6 +2008,13 @@ async def run_experiment(request: Request) -> dict:
 
         if not model_name:
             return {"success": False, "error": "model_name fehlt"}
+        
+        # Normalisiere model_name: Entferne Quantisierung (@q3_k_l etc)
+        # DB speichert nur "qwen/qwen2.5-vl-7b", nicht "qwen/qwen2.5-vl-7b@q3_k_l"
+        if "@" in model_name:
+            model_name = model_name.split("@")[0]
+        
+        logger.info(f"🎯 Normalized model_name: {model_name}")
 
         def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) -> bool:
             """
