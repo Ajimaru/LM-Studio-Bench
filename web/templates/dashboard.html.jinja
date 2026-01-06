@@ -1483,6 +1483,7 @@
         // ===== Globale Variablen =====
         let websocket = null;
         let statusCheckInterval = null;
+        let lmstudioHealthInterval = null;
         let uptimeInterval = null;
         let startTime = null;
 
@@ -1572,6 +1573,7 @@
             
             statusCheckInterval = setInterval(updateStatus, 2000);
             uptimeInterval = setInterval(updateUptime, 1000);
+            lmstudioHealthInterval = setInterval(checkLMStudioHealth, 5000);  // LM Studio Health alle 5s
 
             // Stelle sicher, dass eine View sichtbar ist (Home als Default)
             showView('home');
@@ -1705,6 +1707,31 @@
             }
         });
 
+        // ===== LM Studio Health Check (Live Update) =====
+        function updateLMStudioHealth(lmstudio) {
+            const el = document.getElementById('home-lmstudio-version');
+            if (!el) return;
+            
+            if (lmstudio && lmstudio.ok) {
+                const version = lmstudio.version ? `Online (v${lmstudio.version})` : 'Online';
+                el.textContent = version;
+                el.style.color = 'var(--success)';
+            } else {
+                el.textContent = 'Offline';
+                el.style.color = '#e74c3c';
+            }
+        }
+        
+        async function checkLMStudioHealth() {
+            try {
+                const response = await fetch('/api/lmstudio/health');
+                const data = await response.json();
+                updateLMStudioHealth(data);
+            } catch (error) {
+                updateLMStudioHealth({ ok: false });
+            }
+        }
+
         // ===== Dashboard Stats Loading =====
         async function loadDashboardStats() {
             try {
@@ -1737,14 +1764,7 @@
                 }
                 
                 // LM Studio Health
-                if (data.lmstudio && data.lmstudio.ok) {
-                    const version = data.lmstudio.version ? `Online (v${data.lmstudio.version})` : 'Online';
-                    document.getElementById('home-lmstudio-version').textContent = version;
-                    document.getElementById('home-lmstudio-version').style.color = 'var(--success)';
-                } else {
-                    document.getElementById('home-lmstudio-version').textContent = 'Offline';
-                    document.getElementById('home-lmstudio-version').style.color = '#e74c3c';
-                }
+                updateLMStudioHealth(data.lmstudio);
                 
                 // === BENCHMARK ===
                 // Cache Stats (rechts) + Cache-Kachel (links)

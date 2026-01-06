@@ -439,6 +439,39 @@ async def get_status() -> dict:
     }
 
 
+@app.get("/api/lmstudio/health")
+async def get_lmstudio_health() -> dict:
+    """LM Studio Healthcheck - Live Status ohne Cache"""
+    lmstudio_health = {"ok": False, "status": "offline"}
+    lmstudio_ports = [1234, 1235]
+    
+    # 1. HTTP API Check
+    for port in lmstudio_ports:
+        try:
+            with httpx.Client(timeout=1.5) as client:
+                resp = client.get(f"http://localhost:{port}/v1/models")
+                if resp.status_code == 200:
+                    return {"ok": True, "status": f"online (port {port})", "version": None}
+        except Exception:
+            continue
+    
+    # 2. CLI Fallback
+    try:
+        import subprocess
+        result = subprocess.run(["lms", "status"], capture_output=True, text=True, timeout=2)
+        text = (result.stdout + result.stderr).lower()
+        offline_keywords = ["server:  off", "server: off", "off", "not running", "stopped", "offline"]
+        online_keywords = ["server:  on", "server: on", "running", "listening", "ready"]
+        is_offline = any(kw in text for kw in offline_keywords) or result.returncode != 0
+        is_online = any(kw in text for kw in online_keywords) and not is_offline
+        if is_online:
+            return {"ok": True, "status": "online (cli)", "version": None}
+    except Exception:
+        pass
+    
+    return {"ok": False, "status": "offline"}
+
+
 @app.post("/api/benchmark/start")
 async def start_benchmark(params: BenchmarkParams) -> dict:
     """Startet neuen Benchmark"""
