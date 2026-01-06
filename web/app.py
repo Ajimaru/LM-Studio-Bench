@@ -741,18 +741,31 @@ async def get_dashboard_stats() -> dict:
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
 
-        # LM Studio Healthcheck (leichtgewichtiger CLI-Call)
+        # LM Studio Healthcheck (CLI, tolerant gegenüber fehlendem --json)
         lmstudio_health = {"ok": False, "status": "unknown"}
         try:
-            output = subprocess.check_output([
-                "lms", "status", "--json"
-            ], timeout=3)
-            status_json = json.loads(output.decode()) if output else None
-            lmstudio_health = {
-                "ok": True,
-                "status": status_json.get("status", "online") if isinstance(status_json, dict) else "online",
-                "version": status_json.get("version") if isinstance(status_json, dict) else None
-            }
+            # Prefer JSON output if available
+            try:
+                output = subprocess.check_output(["lms", "status", "--json"], timeout=3)
+                status_json = json.loads(output.decode()) if output else None
+                if isinstance(status_json, dict):
+                    lmstudio_health = {
+                        "ok": True,
+                        "status": status_json.get("status", "online"),
+                        "version": status_json.get("version")
+                    }
+                else:
+                    lmstudio_health = {"ok": True, "status": "online"}
+            except Exception:
+                # Fallback: parse plain text output
+                output = subprocess.check_output(["lms", "status"], timeout=3, text=True)
+                text = output.lower() if output else ""
+                is_online = "online" in text or "running" in text or "server" in text
+                lmstudio_health = {
+                    "ok": is_online,
+                    "status": output.strip() if output else "unknown",
+                    "version": None
+                }
         except Exception as health_err:
             lmstudio_health = {
                 "ok": False,
