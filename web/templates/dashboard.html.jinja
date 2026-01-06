@@ -1059,23 +1059,20 @@
             </div>
 
             <!-- Cache & Performance Stats -->
-            <div class="grid">
+            <div class="grid" style="grid-template-columns: 1fr 2fr; gap: 2rem;">
+                <!-- LEFT COLUMN: CACHE + PERFORMANCE (schmaler) -->
                 <div class="card">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; font-size: 0.9rem;">
-                        <!-- LEFT COLUMN: CACHE -->
+                    <div style="display: flex; flex-direction: column; gap: 2rem; font-size: 0.9rem;">
+                        <!-- CACHE SECTION -->
                         <div>
                             <div style="color: var(--primary); font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--primary);">📦 CACHE</div>
                             <div style="color: var(--text-light); line-height: 1.8;">
                                 <div><span style="color: var(--text); font-weight: 500;">Gecachte Modelle:</span> <span id="home-cache-count">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">DB-Größe:</span> <span id="home-db-size">--</span></div>
                             </div>
-                            <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 0.75rem;">
-                                <button onclick="showView('benchmark')" style="padding: 0.5rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">⚡ Benchmark starten</button>
-                                <button onclick="showView('results')" style="padding: 0.5rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">📊 Ergebnisse</button>
-                            </div>
                         </div>
 
-                        <!-- RIGHT COLUMN: PERFORMANCE -->
+                        <!-- PERFORMANCE SECTION (unter Cache) -->
                         <div>
                             <div style="color: #f39c12; font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #f39c12;">⚡ PERFORMANCE</div>
                             <div style="color: var(--text-light); line-height: 1.8;">
@@ -1084,9 +1081,16 @@
                                 <div><span style="color: var(--text); font-weight: 500;">Total Runs:</span> <span id="home-total-runs">--</span></div>
                             </div>
                         </div>
+
+                        <!-- ACTION BUTTONS -->
+                        <div style="padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 0.75rem;">
+                            <button onclick="showView('benchmark')" style="padding: 0.5rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">⚡ Benchmark starten</button>
+                            <button onclick="showView('results')" style="padding: 0.5rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">📊 Ergebnisse</button>
+                        </div>
                     </div>
                 </div>
 
+                <!-- RIGHT COLUMN: HARDWARE & BENCHMARK (breiter) -->
                 <div class="card">
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; font-size: 0.9rem;">
                         <!-- LEFT COLUMN: HARDWARE -->
@@ -1110,12 +1114,12 @@
                             </div>
                         </div>
 
-                        <!-- RIGHT COLUMN: BENCHMARK -->
+                        <!-- RIGHT COLUMN: BENCHMARK (mit zusätzlichen Details) -->
                         <div>
                             <div style="color: #e74c3c; font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e74c3c;">📊 BENCHMARK</div>
                             <div style="color: var(--text-light); line-height: 1.8;">
                                 <div><span style="color: var(--text); font-weight: 500;">Gecachte Modelle:</span> <span id="home-cached-models">--</span></div>
-                                <div><span style="color: var(--text); font-weight: 500;">Ø Geschwindigkeit:</span> <span id="home-avg-speed">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Ø Geschwindigkeit:</span> <span id="home-benchmark-avg-speed">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">Cache Größe:</span> <span id="home-cache-size">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">Letzter Durchlauf:</span> <span id="home-last-run">--</span></div>
                             </div>
@@ -1740,18 +1744,24 @@
                 document.getElementById('home-lmstudio-version').textContent = 'Running';
                 document.getElementById('home-lmstudio-port').textContent = window.location.port || '53381';
                 
-                // === RIGHT COLUMN: BENCHMARK ===
-                // Cache Stats
-                document.getElementById('home-cached-models').textContent = data.cache_stats.total_models || 0;
+                // === BENCHMARK ===
+                // Cache Stats (rechts) + Cache-Kachel (links)
+                const totalModels = data.cache_stats.total_models || 0;
+                document.getElementById('home-cached-models').textContent = totalModels;
+                document.getElementById('home-cache-count').textContent = totalModels;
                 document.getElementById('home-cache-size').textContent = `${data.cache_stats.db_size_mb} MB`;
-                
-                // Performance Stats (auch in Cache & Performance Kachel)
+
+                // Performance Stats (links) + Benchmark Ø (rechts)
                 if (data.perf_stats.avg_speed) {
-                    document.getElementById('home-avg-speed').textContent = `${data.perf_stats.avg_speed} tok/s`;
-                    document.getElementById('home-max-speed').textContent = `${data.perf_stats.max_speed} tok/s`;
+                    const avg = `${data.perf_stats.avg_speed} tok/s`;
+                    const max = `${data.perf_stats.max_speed} tok/s`;
+                    document.getElementById('home-avg-speed').textContent = avg;
+                    document.getElementById('home-benchmark-avg-speed').textContent = avg;
+                    document.getElementById('home-max-speed').textContent = max;
                     document.getElementById('home-total-runs').textContent = data.cache_stats.total_runs || 0;
                 } else {
                     document.getElementById('home-avg-speed').textContent = 'Keine Daten';
+                    document.getElementById('home-benchmark-avg-speed').textContent = 'Keine Daten';
                     document.getElementById('home-max-speed').textContent = 'Keine Daten';
                     document.getElementById('home-total-runs').textContent = 0;
                 }
