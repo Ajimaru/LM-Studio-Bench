@@ -705,10 +705,59 @@
         }
 
         label {
-            display: block;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
             margin-bottom: 0.5rem;
             font-weight: 600;
             font-size: 0.875rem;
+        }
+
+        /* Tooltip-Icon Styling */
+        .tooltip-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: white;
+            font-size: 0.75rem;
+            font-weight: bold;
+            cursor: help;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .tooltip-icon:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--dark);
+            color: white;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            white-space: nowrap;
+            font-weight: normal;
+            z-index: 1000;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .tooltip-icon:hover::before {
+            content: '';
+            position: absolute;
+            bottom: 120%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: var(--dark);
+            z-index: 1000;
+            pointer-events: none;
         }
 
         input, select {
@@ -1223,33 +1272,33 @@
                     <h3 style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem; text-transform: uppercase;">📋 Basis-Parameter</h3>
                     
                     <div class="form-group">
-                        <label>Runs (Messungen pro Modell)</label>
+                        <label><span class="tooltip-icon" data-tooltip="Anzahl Test-Durchläufe pro Modell">?</span> Runs</label>
                         <input type="number" id="paramRuns" value="3" min="1" max="10">
                     </div>
 
                     <div class="form-group">
-                        <label>Context Length</label>
+                        <label><span class="tooltip-icon" data-tooltip="Eingabe-Kontextlänge in Tokens">?</span> Context Length</label>
                         <input type="number" id="paramContext" value="2048" min="512" max="32768">
                     </div>
 
                     <div class="form-group">
-                        <label>Modell-Limit</label>
+                        <label><span class="tooltip-icon" data-tooltip="Max. Anzahl Modelle zum Testen">?</span> Modell-Limit</label>
                         <input type="number" id="paramLimit" placeholder="Leer = alle Modelle" min="1">
                     </div>
 
                     <div class="form-group">
-                        <label>Min. Context-Length</label>
+                        <label><span class="tooltip-icon" data-tooltip="Minimale Context-Länge des Modells">?</span> Min. Context</label>
                         <input type="number" id="paramMinContext" placeholder="z.B. 32000" min="512">
                     </div>
 
                     <div class="form-group">
-                        <label>Max. Modellgröße (GB)</label>
+                        <label><span class="tooltip-icon" data-tooltip="Größenlimit für Modelle in GB">?</span> Max. Größe</label>
                         <input type="number" id="paramMaxSize" placeholder="z.B. 10.0" min="0.1" step="0.1">
                     </div>
 
                     <div class="form-group">
-                        <label>Custom Prompt (optional)</label>
-                        <input type="text" id="paramPrompt" placeholder="Leer = Standard-Prompt">
+                        <label><span class="tooltip-icon" data-tooltip="Eigener Test-Prompt statt Standard">?</span> Custom Prompt</label>
+                        <input type="text" id="paramPrompt" placeholder="Leer = Standard">
                     </div>
                 </div>
 
@@ -1258,32 +1307,32 @@
                     <h3 style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem; text-transform: uppercase;">🔍 Filter & Optionen</h3>
                     
                     <div class="form-group">
-                        <label>Include Pattern (Regex, optional)</label>
+                        <label><span class="tooltip-icon" data-tooltip="Regex: nur Modelle die dem Pattern entsprechen">?</span> Include Pattern</label>
                         <input type="text" id="paramInclude" placeholder="z.B. mistral|llama">
                     </div>
 
                     <div class="form-group">
-                        <label>Exclude Pattern (Regex, optional)</label>
+                        <label><span class="tooltip-icon" data-tooltip="Regex: Modelle ausschließen die dem Pattern entsprechen">?</span> Exclude Pattern</label>
                         <input type="text" id="paramExclude" placeholder="z.B. gpt|claude">
                     </div>
 
                     <div class="form-group">
-                        <label>Quantisierungen (optional)</label>
+                        <label><span class="tooltip-icon" data-tooltip="Nur bestimmte Quantisierungen (z.B. q4,q5)">?</span> Quantisierungen</label>
                         <input type="text" id="paramQuants" placeholder="z.B. q4,q5,q6">
                     </div>
 
                     <div class="form-group">
-                        <label>Architekturen (optional)</label>
+                        <label><span class="tooltip-icon" data-tooltip="Nur bestimmte Architekturen (z.B. llama,mistral)">?</span> Architekturen</label>
                         <input type="text" id="paramArch" placeholder="z.B. llama,mistral">
                     </div>
 
                     <div class="form-group">
-                        <label>Parametergrößen (optional)</label>
+                        <label><span class="tooltip-icon" data-tooltip="Nur bestimmte Parametergrößen (z.B. 3B,7B)">?</span> Parametergrößen</label>
                         <input type="text" id="paramParams" placeholder="z.B. 3B,7B">
                     </div>
 
                     <div class="form-group">
-                        <label>Rangieren nach</label>
+                        <label><span class="tooltip-icon" data-tooltip="Sortierung der Ergebnisse">?</span> Rangieren nach</label>
                         <select id="paramRankBy" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.25rem; font-size: 0.9rem;">
                             <option value="">Standard (Namen)</option>
                             <option value="speed">⚡ Geschwindigkeit (Tokens/s)</option>
@@ -1301,37 +1350,37 @@
                 <div class="checkbox-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramVisionOnly">
-                        <label for="paramVisionOnly">Nur Vision-Modelle</label>
+                        <label for="paramVisionOnly"><span class="tooltip-icon" data-tooltip="Nur multimodale Modelle (mit Bild-Unterstützung)">?</span> Vision-Modelle</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramDisableGTT">
-                        <label for="paramDisableGTT">GTT deaktivieren (nur VRAM)</label>
+                        <label for="paramDisableGTT"><span class="tooltip-icon" data-tooltip="Deaktiviere Shared System RAM (GTT), nutze nur VRAM">?</span> GTT deaktivieren</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramToolsOnly">
-                        <label for="paramToolsOnly">Nur Tool-Modelle</label>
+                        <label for="paramToolsOnly"><span class="tooltip-icon" data-tooltip="Nur Modelle mit Function-Calling/Tool-Support">?</span> Tool-Modelle</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramDevMode">
-                        <label for="paramDevMode">Dev-Mode (1 Modell, 1 Run)</label>
+                        <label for="paramDevMode"><span class="tooltip-icon" data-tooltip="Schnell: kleinstes Modell, 1 Durchlauf">?</span> Dev-Mode</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramRetest">
-                        <label for="paramRetest">Bereits getestete Modelle neu testen</label>
+                        <label for="paramRetest"><span class="tooltip-icon" data-tooltip="Gecachte Modelle erneut testen (überschreibe Ergebnisse)">?</span> Neu testen</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramEnableProfiling" checked>
-                        <label for="paramEnableProfiling">Hardware-Profiling (GPU Temp/Power)</label>
+                        <label for="paramEnableProfiling"><span class="tooltip-icon" data-tooltip="Messe GPU-Temperatur und Stromverbrauch während Benchmark">?</span> Profiling</label>
                     </div>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
                     <div class="form-group">
-                        <label>Max. GPU-Temperatur (°C)</label>
+                        <label><span class="tooltip-icon" data-tooltip="Warnung wenn GPU-Temperatur überschritten wird">?</span> Max. GPU-Temp</label>
                         <input type="number" id="paramMaxTemp" placeholder="z.B. 85.0" min="30" max="120" step="0.1">
                     </div>
                     <div class="form-group">
-                        <label>Max. GPU Power (Watts)</label>
+                        <label><span class="tooltip-icon" data-tooltip="Warnung wenn GPU-Stromverbrauch überschritten wird">?</span> Max. GPU Power</label>
                         <input type="number" id="paramMaxPower" placeholder="z.B. 400.0" min="50" max="1000" step="0.1">
                     </div>
                 </div>
