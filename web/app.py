@@ -544,6 +544,28 @@ def perform_ttest(baseline_speeds: List[float], test_speeds: List[float]) -> Dic
         return {"test_name": "t-test", "error": str(e), "significant": False}
 
 
+def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) -> bool:
+    """
+    Prüft ob die Parameter eines DB-Eintrags den Ziel-Parametern entsprechen.
+    Ignoriert None-Werte in target_params (Parameter wurden nicht überschrieben).
+    """
+    for key, target_value in target_params.items():
+        if target_value is None:
+            continue  # Parameter wurde nicht überschrieben, also nicht filtern
+        
+        row_value = row_params.get(key)
+        
+        # Zahlenlänge/Typen vergleichen (floats mit Toleranz)
+        if isinstance(target_value, float) and isinstance(row_value, (int, float)):
+            if abs(row_value - target_value) > 0.001:
+                return False
+        else:
+            if row_value != target_value:
+                return False
+    
+    return True
+
+
 def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]) -> Dict[str, float]:
     """Berechne Cohen's d effect size"""
     if not baseline_speeds or not test_speeds:
@@ -1712,6 +1734,10 @@ async def post_experiment_comparison(
 
         if not model_name:
             return {"success": False, "error": "model_name fehlt", "comparison": {}}
+        
+        # Normalisiere model_name: Entferne Quantisierung (@q3_k_l etc)
+        if "@" in model_name:
+            model_name = model_name.split("@")[0]
 
         # DB Query mit optionalen Datum-Filtern
         conn = sqlite3.connect(DATABASE_FILE)
@@ -2015,27 +2041,6 @@ async def run_experiment(request: Request) -> dict:
             model_name = model_name.split("@")[0]
         
         logger.info(f"🎯 Normalized model_name: {model_name}")
-
-        def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) -> bool:
-            """
-            Prüft ob die Parameter eines DB-Eintrags den Ziel-Parametern entsprechen.
-            Ignoriert None-Werte in target_params (Parameter wurden nicht überschrieben).
-            """
-            for key, target_value in target_params.items():
-                if target_value is None:
-                    continue  # Parameter wurde nicht überschrieben, also nicht filtern
-                
-                row_value = row_params.get(key)
-                
-                # Zahlenlänge/Typen vergleichen (floats mit Toleranz)
-                if isinstance(target_value, float) and isinstance(row_value, (int, float)):
-                    if abs(row_value - target_value) > 0.001:
-                        return False
-                else:
-                    if row_value != target_value:
-                        return False
-            
-            return True
 
         def build_args(param_set: Dict[str, Any]) -> List[str]:
             args: List[str] = []
