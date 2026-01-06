@@ -20,7 +20,7 @@ import threading
 import psutil
 import glob
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from statistics import quantiles, mean, median
@@ -36,7 +36,6 @@ try:
     PLOTLY_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
     go = None
-    PLOTLY_AVAILABLE = False
     PLOTLY_AVAILABLE = False
 
 
@@ -174,6 +173,17 @@ class BenchmarkResult:
     min_p_sampling: Optional[float] = None      # Min Probability Threshold
     repeat_penalty: Optional[float] = None      # Strafe gegen Wiederholungen
     max_tokens: Optional[int] = None            # Max Output-Tokens
+    
+    # Load-Config Performance-Parameter
+    n_gpu_layers: Optional[int] = None          # Anzahl GPU-Layer (explizit)
+    n_batch: Optional[int] = None               # Batch-Size für Prompt-Processing
+    n_threads: Optional[int] = None             # CPU-Threads für nicht-GPU-Ops
+    flash_attention: Optional[bool] = None      # Flash Attention aktiviert
+    rope_freq_base: Optional[float] = None      # RoPE Frequency Base
+    rope_freq_scale: Optional[float] = None     # RoPE Frequency Scale
+    use_mmap: Optional[bool] = None             # Memory-Mapping aktiviert
+    use_mlock: Optional[bool] = None            # RAM-Locking aktiviert
+    kv_cache_quant: Optional[str] = None        # KV-Cache Quantisierung (none/q4_0/q8_0)
     
     # Run-Informationen
     num_runs: Optional[int] = None              # Anzahl durchgeführter Messungen
@@ -577,7 +587,16 @@ class BenchmarkCache:
                 cpu_model TEXT,
                 python_version TEXT,
                 benchmark_duration_seconds REAL,
-                error_count INTEGER
+                error_count INTEGER,
+                n_gpu_layers INTEGER,
+                n_batch INTEGER,
+                n_threads INTEGER,
+                flash_attention INTEGER,
+                rope_freq_base REAL,
+                rope_freq_scale REAL,
+                use_mmap INTEGER,
+                use_mlock INTEGER,
+                kv_cache_quant TEXT
             )
         ''')
         
@@ -596,17 +615,39 @@ class BenchmarkCache:
             conn.commit()
             logger.info("✅ Migration erfolgreich")
         
+        # Migration: Füge Performance-Parameter-Spalten hinzu
+        new_columns = [
+            ("n_gpu_layers", "INTEGER"),
+            ("n_batch", "INTEGER"),
+            ("n_threads", "INTEGER"),
+            ("flash_attention", "INTEGER"),
+            ("rope_freq_base", "REAL"),
+            ("rope_freq_scale", "REAL"),
+            ("use_mmap", "INTEGER"),
+            ("use_mlock", "INTEGER"),
+            ("kv_cache_quant", "TEXT")
+        ]
+        for col_name, col_type in new_columns:
+            try:
+                cursor.execute(f"SELECT {col_name} FROM benchmark_results LIMIT 1")
+            except sqlite3.OperationalError:
+                logger.info(f"📦 Migration: Füge {col_name} Spalte hinzu...")
+                cursor.execute(f"ALTER TABLE benchmark_results ADD COLUMN {col_name} {col_type}")
+                conn.commit()
+        
         conn.commit()
         conn.close()
     
     @staticmethod
-    def compute_params_hash(prompt: str, context_length: int, inference_params: dict) -> str:
+    def compute_params_hash(prompt: str, context_length: int, inference_params: dict, load_params: Optional[dict] = None) -> str:
         """Berechnet Hash aus allen relevanten Parametern"""
         params_dict = {
             'prompt': prompt,
             'context_length': context_length,
             **inference_params
         }
+        if load_params:
+            params_dict['load_config'] = load_params
         hash_input = json.dumps(params_dict, sort_keys=True)
         return hashlib.md5(hash_input.encode()).hexdigest()[:8]
     
@@ -614,6 +655,10 @@ class BenchmarkCache:
         """Holt gecachtes Ergebnis aus Datenbank"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
+        
+        # Prüfe welche Spalten existieren für backward compatibility
+        cursor.execute("PRAGMA table_info(benchmark_results)")
+        columns = {row[1]: row[0] for row in cursor.fetchall()}  # {column_name: index}
         
         cursor.execute('''
             SELECT * FROM benchmark_results 
@@ -625,30 +670,55 @@ class BenchmarkCache:
         conn.close()
         
         if row:
-            # Konvertiere DB-Row zu BenchmarkResult
-            return BenchmarkResult(
-                model_name=row[2],
-                quantization=row[3],
-                gpu_type=row[5],
-                gpu_offload=row[6],
-                vram_mb=row[7],
-                avg_tokens_per_sec=row[8],
-                avg_ttft=row[9],
-                avg_gen_time=row[10],
-                prompt_tokens=row[11],
-                completion_tokens=row[12],
-                timestamp=row[13],
-                params_size=row[14],
-                architecture=row[15],
-                max_context_length=row[16],
-                model_size_gb=row[17],
-                has_vision=bool(row[18]),
-                has_tools=bool(row[19]),
-                tokens_per_sec_per_gb=row[20],
-                tokens_per_sec_per_billion_params=row[21],
-                speed_delta_pct=row[22],
-                prev_timestamp=row[23]
-            )
+            # Basis-Felder (verwende feste Positionen nur für kritische Felder)
+            result_dict = {
+                'model_name': row[2],
+                'quantization': row[3],
+                'gpu_type': row[5],
+                'gpu_offload': row[6],
+                'vram_mb': row[7],
+                'avg_tokens_per_sec': row[8],
+                'avg_ttft': row[9],
+                'avg_gen_time': row[10],
+                'prompt_tokens': row[11],
+                'completion_tokens': row[12],
+                'timestamp': row[13],
+                'params_size': row[14],
+                'architecture': row[15],
+                'max_context_length': row[16],
+                'model_size_gb': row[17],
+                'has_vision': bool(row[18]),
+                'has_tools': bool(row[19]),
+                'tokens_per_sec_per_gb': row[20],
+                'tokens_per_sec_per_billion_params': row[21],
+                'speed_delta_pct': row[22],
+                'prev_timestamp': row[23],
+            }
+            
+            # Optionale neue Felder (Load-Config Parameter)
+            if 'n_gpu_layers' in columns:
+                result_dict['n_gpu_layers'] = row[columns['n_gpu_layers']]
+            if 'n_batch' in columns:
+                result_dict['n_batch'] = row[columns['n_batch']]
+            if 'n_threads' in columns:
+                result_dict['n_threads'] = row[columns['n_threads']]
+            if 'flash_attention' in columns:
+                val = row[columns['flash_attention']]
+                result_dict['flash_attention'] = bool(val) if val is not None else None
+            if 'rope_freq_base' in columns:
+                result_dict['rope_freq_base'] = row[columns['rope_freq_base']]
+            if 'rope_freq_scale' in columns:
+                result_dict['rope_freq_scale'] = row[columns['rope_freq_scale']]
+            if 'use_mmap' in columns:
+                val = row[columns['use_mmap']]
+                result_dict['use_mmap'] = bool(val) if val is not None else None
+            if 'use_mlock' in columns:
+                val = row[columns['use_mlock']]
+                result_dict['use_mlock'] = bool(val) if val is not None else None
+            if 'kv_cache_quant' in columns:
+                result_dict['kv_cache_quant'] = row[columns['kv_cache_quant']]
+            
+            return BenchmarkResult(**result_dict)
         return None
     
     def save_result(self, result: BenchmarkResult, model_key: str, params_hash: str, 
@@ -658,7 +728,7 @@ class BenchmarkCache:
         cursor = conn.cursor()
         
         try:
-            # Vorbereite alle Werte
+            # Vorbereite alle Werte (47 + 9 neue = 56 Spalten)
             values = (
                 model_key, result.model_name, result.quantization, result.inference_params_hash,
                 result.gpu_type, result.gpu_offload, result.vram_mb, result.avg_tokens_per_sec,
@@ -674,10 +744,17 @@ class BenchmarkCache:
                 result.intel_driver_version,
                 result.prompt_hash, params_hash, result.os_name, result.os_version,
                 result.cpu_model, result.python_version, result.benchmark_duration_seconds,
-                result.error_count
+                result.error_count,
+                # Neue Load-Config Parameter (9 Spalten)
+                result.n_gpu_layers, result.n_batch, result.n_threads,
+                int(result.flash_attention) if result.flash_attention is not None else None,
+                result.rope_freq_base, result.rope_freq_scale,
+                int(result.use_mmap) if result.use_mmap is not None else None,
+                int(result.use_mlock) if result.use_mlock is not None else None,
+                result.kv_cache_quant
             )
             
-            logger.debug(f"📊 INSERT: {len(values)} Werte für 47 Spalten")
+            logger.debug(f"📊 INSERT: {len(values)} Werte für 56 Spalten")
 
             placeholders = ", ".join("?" for _ in values)
 
@@ -693,7 +770,9 @@ class BenchmarkCache:
                     min_p_sampling, repeat_penalty, max_tokens, num_runs, runs_averaged_from,
                     warmup_runs, run_index, lmstudio_version, nvidia_driver_version, rocm_driver_version,
                     intel_driver_version, prompt_hash, params_hash, os_name, os_version,
-                    cpu_model, python_version, benchmark_duration_seconds, error_count
+                    cpu_model, python_version, benchmark_duration_seconds, error_count,
+                    n_gpu_layers, n_batch, n_threads, flash_attention, rope_freq_base,
+                    rope_freq_scale, use_mmap, use_mlock, kv_cache_quant
                 ) VALUES ({placeholders})
             ''', values)
             
@@ -900,6 +979,7 @@ class GPUMonitor:
     
     def __init__(self):
         self.gpu_type: Optional[str] = None
+        self.gpu_model: Optional[str] = None  # Vollständiger GPU-Modellname
         self.gpu_tool: Optional[str] = None
         self._detect_gpu()
     
@@ -925,7 +1005,21 @@ class GPUMonitor:
         if nvidia_tool:
             self.gpu_type = "NVIDIA"
             self.gpu_tool = nvidia_tool
-            logger.info(f"🟢 NVIDIA GPU erkannt, Tool: {nvidia_tool}")
+            # Hole vollständigen GPU-Modellnamen
+            try:
+                result = subprocess.run(
+                    [nvidia_tool, '--query-gpu=name', '--format=csv,noheader'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    self.gpu_model = result.stdout.strip().split('\n')[0]
+                else:
+                    self.gpu_model = "NVIDIA GPU"
+            except Exception:
+                self.gpu_model = "NVIDIA GPU"
+            logger.info(f"🟢 NVIDIA GPU erkannt: {self.gpu_model}, Tool: {nvidia_tool}")
             return
         
         # AMD - Suche in ROCm Versionsverzeichnissen
@@ -939,7 +1033,9 @@ class GPUMonitor:
         if amd_tool:
             self.gpu_type = "AMD"
             self.gpu_tool = amd_tool
-            logger.info(f"🔴 AMD GPU erkannt, Tool: {amd_tool}")
+            # Hole AMD GPU-Modellnamen (umfassende Erkennung)
+            self.gpu_model = self._detect_amd_gpu_model()
+            logger.info(f"🔴 AMD GPU erkannt: {self.gpu_model}, Tool: {amd_tool}")
             return
         
         # Intel
@@ -948,11 +1044,114 @@ class GPUMonitor:
         if intel_tool:
             self.gpu_type = "Intel"
             self.gpu_tool = intel_tool
-            logger.info(f"🔵 Intel GPU erkannt, Tool: {intel_tool}")
+            self.gpu_model = self._detect_intel_gpu_model()
+            logger.info(f"🔵 Intel GPU erkannt: {self.gpu_model}, Tool: {intel_tool}")
             return
         
         logger.warning("⚠️ Keine GPU-Monitoring-Tools gefunden. VRAM-Messung nicht verfügbar.")
         self.gpu_type = "Unknown"
+        self.gpu_model = "Unknown"
+    
+    def _detect_amd_gpu_model(self) -> str:
+        """Erkennt AMD GPU-Modellnamen mit Fallback-Kette"""
+        # AMD Device ID Mapping
+        amd_device_mapping = {
+            '150e': 'Radeon Graphics',
+            '7340': 'Radeon RX 5700 XT',
+            '731f': 'Radeon RX 5700',
+            '7360': 'Radeon RX 6700 XT',
+            '73bf': 'Radeon RX 6600 XT',
+            '73df': 'Radeon RX 6600',
+            '15c8': 'Radeon RX 7600 XT',
+            '5450': 'Radeon RX 6800 XT',
+            '5498': 'Radeon RX 6900 XT',
+            'gfx906': 'Radeon RX 5700 XT',
+            'gfx1103': 'Radeon 890M',  # Phoenix APU
+        }
+        
+        # 1. Versuche iGPU aus CPU-Info zu extrahieren
+        try:
+            import cpuinfo
+            cpu = cpuinfo.get_cpu_info()
+            brand = cpu.get('brand_raw', '')
+            # Suche nach Radeon in CPU-String (z.B. "AMD Ryzen AI 9 HX 370 with Radeon 890M")
+            if 'Radeon' in brand:
+                radeon_part = brand.split('Radeon')[1].strip()
+                # Extrahiere Modell (z.B. "890M Graphics" -> "Radeon 890M")
+                model = radeon_part.split()[0]
+                if model:
+                    return f"AMD Radeon {model}"
+        except Exception:
+            pass
+        
+        # 2. Versuche Device ID aus lspci
+        device_id = None
+        try:
+            result = subprocess.run(
+                ['lspci', '-d', '1002:'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0 and result.stdout:
+                for line in result.stdout.strip().split('\n'):
+                    if '1002:' in line:
+                        parts = line.split('1002:')
+                        if len(parts) > 1:
+                            device_id = parts[1].split()[0].lower()
+                            # Wenn Device ID gemappt ist, verwende Namen
+                            if device_id in amd_device_mapping:
+                                return f"AMD {amd_device_mapping[device_id]}"
+                            break
+        except Exception:
+            pass
+        
+        # 3. Versuche gfx-Code von rocm-smi
+        if self.gpu_tool:
+            try:
+                result = subprocess.run(
+                    [self.gpu_tool, '--showproductname'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if 'GPU[0]' in line:
+                            parts = line.split(':')
+                            if len(parts) > 1:
+                                gfx_code = parts[1].strip()
+                                if gfx_code in amd_device_mapping:
+                                    return f"AMD {amd_device_mapping[gfx_code]}"
+                                return f"AMD {gfx_code}"
+            except Exception:
+                pass
+        
+        # Fallback
+        if device_id:
+            return f"AMD GPU (1002:{device_id})"
+        return "AMD GPU"
+    
+    def _detect_intel_gpu_model(self) -> str:
+        """Erkennt Intel GPU-Modellnamen"""
+        try:
+            result = subprocess.run(
+                ['lspci', '-d', '8086::0300'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0 and result.stdout:
+                # Parse erste Zeile für GPU-Modell
+                line = result.stdout.strip().split('\n')[0]
+                if 'Intel' in line:
+                    # Extrahiere Teil nach "VGA compatible controller: "
+                    parts = line.split(': ')
+                    if len(parts) > 1:
+                        return parts[1].split('[')[0].strip()
+        except Exception:
+            pass
+        return "Intel GPU"
     
     def get_vram_usage(self) -> str:
         """Misst aktuelle VRAM-Nutzung"""
@@ -1351,9 +1550,25 @@ class LMStudioBenchmark:
         """Ruft Betriebssystem und Kernel-Version ab"""
         try:
             import platform
-            os_name = platform.system()  # Linux, Windows, Darwin
-            os_version = platform.release()  # z.B. 6.8.0-45-generic
-            return os_name, os_version
+            os_system = platform.system()  # Linux, Windows, Darwin
+            
+            # Bei Linux: Hole Distribution-Namen
+            if os_system == "Linux":
+                try:
+                    import distro
+                    os_name = distro.name()  # z.B. "Pop!_OS", "Ubuntu", "Arch Linux"
+                    os_version = distro.version()  # z.B. "22.04"
+                    return os_name, os_version
+                except Exception:
+                    # Fallback auf platform.release() (Kernel-Version)
+                    os_name = os_system
+                    os_version = platform.release()
+                    return os_name, os_version
+            else:
+                # Windows/macOS: Nutze system() und release()
+                os_name = os_system
+                os_version = platform.release()
+                return os_name, os_version
         except Exception:
             logger.debug("OS-Info nicht verfügbar")
         return None, None
@@ -1380,7 +1595,7 @@ class LMStudioBenchmark:
             logger.debug("Python-Version nicht verfügbar")
         return None
     
-    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True, inference_overrides: Optional[Dict] = None):
+    def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True, inference_overrides: Optional[Dict] = None, load_params: Optional[Dict] = None):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
@@ -1397,11 +1612,27 @@ class LMStudioBenchmark:
         self.use_gtt = use_gtt
         self.previous_results: List[BenchmarkResult] = []
         self._gtt_info = {}  # Speichert GTT-Informationen von AMD GPU
+        
+        # Load-Parameter mit Defaults (Performance-Tuning)
+        self.load_params = {
+            'n_gpu_layers': -1,        # -1 = auto (alle Layer auf GPU)
+            'n_batch': 512,            # Batch-Größe für Prompt-Verarbeitung
+            'n_threads': -1,           # -1 = auto (nutzt alle CPU-Kerne)
+            'flash_attention': True,   # Flash Attention aktivieren wenn verfügbar
+            'rope_freq_base': None,    # RoPE Frequenz-Basis (None = Model-Default)
+            'rope_freq_scale': None,   # RoPE Frequenz-Skalierung (None = Model-Default)
+            'use_mmap': True,          # Memory-Mapping aktivieren (schneller Load)
+            'use_mlock': False,        # Memory-Locking (verhindert Swap)
+            'kv_cache_quant': None,    # KV-Cache Quantisierung (None, 'q4_0', 'q8_0')
+        }
+        if load_params:
+            self.load_params.update(load_params)
+        
         # Cache wird IMMER initialisiert (zum Speichern von Ergebnissen)
         # use_cache kontrolliert nur das LADEN von Cache-Hits
         self.cache = BenchmarkCache()
         self.params_hash = BenchmarkCache.compute_params_hash(
-            prompt, context_length, OPTIMIZED_INFERENCE_PARAMS
+            prompt, context_length, OPTIMIZED_INFERENCE_PARAMS, self.load_params
         )
         
         # Hardware Monitor für Profiling
@@ -1468,8 +1699,8 @@ class LMStudioBenchmark:
         
         # Speichere Hashes für Reproduzierbarkeit
         self.prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-        # Hash mit tatsächlichen Inference-Parametern (inkl. Overrides)
-        self.params_hash = BenchmarkCache.compute_params_hash(prompt, context_length, self.inference_params)
+        # Hash mit tatsächlichen Inference-Parametern (inkl. Overrides) UND Load-Parametern
+        self.params_hash = BenchmarkCache.compute_params_hash(prompt, context_length, self.inference_params, self.load_params)
         
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
@@ -1482,6 +1713,7 @@ class LMStudioBenchmark:
         """Ermittelt verfügbares VRAM in GB (inkl. GTT wenn aktiviert)"""
         try:
             gpu_type = self.gpu_monitor.gpu_type
+            gpu_model = self.gpu_monitor.gpu_model or self.gpu_monitor.gpu_type
             gpu_tool = self.gpu_monitor.gpu_tool
             
             if not gpu_tool:
@@ -1946,7 +2178,17 @@ class LMStudioBenchmark:
                             python_version=result.python_version,
                             benchmark_duration_seconds=result.benchmark_duration_seconds / len(measurements),  # Anteilige Zeit
                             error_count=error_count,
-                            inference_params_hash=result.inference_params_hash
+                            inference_params_hash=result.inference_params_hash,
+                            # Load-Config Parameter
+                            n_gpu_layers=self.load_params.get('n_gpu_layers'),
+                            n_batch=self.load_params.get('n_batch'),
+                            n_threads=self.load_params.get('n_threads'),
+                            flash_attention=self.load_params.get('flash_attention'),
+                            rope_freq_base=self.load_params.get('rope_freq_base'),
+                            rope_freq_scale=self.load_params.get('rope_freq_scale'),
+                            use_mmap=self.load_params.get('use_mmap'),
+                            use_mlock=self.load_params.get('use_mlock'),
+                            kv_cache_quant=self.load_params.get('kv_cache_quant')
                         )
                         
                         # Speichere einzelnen Run
@@ -2002,12 +2244,47 @@ class LMStudioBenchmark:
         try:
             import lmstudio as lms
             
-            # Lade Modell über SDK mit Kontextlängen-Konfiguration
+            # Lade Modell über SDK mit Load-Parametern
+            load_config_params: Dict[str, Any] = {
+                'context_length': self.context_length,
+            }
+            
+            # Flash Attention (wenn unterstützt vom SDK) - bool type
+            flash_attn = self.load_params.get('flash_attention')
+            if flash_attn is not None and isinstance(flash_attn, bool):
+                load_config_params['flash_attention'] = flash_attn
+            
+            # Memory Mapping (try_mmap Parameter) - bool type
+            use_mmap = self.load_params.get('use_mmap')
+            if use_mmap is not None and isinstance(use_mmap, bool):
+                load_config_params['try_mmap'] = use_mmap
+            
+            # KV-Cache Quantisierung (beide Typen K und V) - string literal type
+            kv_quant = self.load_params.get('kv_cache_quant')
+            if kv_quant and isinstance(kv_quant, str) and kv_quant in ['f32', 'f16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1']:
+                load_config_params['llama_k_cache_quantization_type'] = kv_quant
+                load_config_params['llama_v_cache_quantization_type'] = kv_quant
+            
+            # Hinweis: n_gpu_layers, n_batch, n_threads, rope_freq_base, rope_freq_scale, use_mlock
+            # werden im BenchmarkResult gespeichert, sind aber nicht direkt als SDK-Parameter verfügbar.
+            # Diese Parameter beeinflussen die Performance auf llama.cpp-Ebene und werden über
+            # die CLI oder Modell-Config gesetzt, nicht über das Python SDK.
+            
+            # INFO-Level Logging für Load Config (vollständige Übersicht)
+            logger.info(f"⚙️ Load Config: context={self.context_length}, "
+                       f"n_gpu_layers={self.load_params.get('n_gpu_layers')}, "
+                       f"n_batch={self.load_params.get('n_batch')}, "
+                       f"n_threads={self.load_params.get('n_threads')}, "
+                       f"flash_attention={self.load_params.get('flash_attention')}, "
+                       f"rope_freq_base={self.load_params.get('rope_freq_base')}, "
+                       f"rope_freq_scale={self.load_params.get('rope_freq_scale')}, "
+                       f"use_mmap={self.load_params.get('use_mmap')}, "
+                       f"use_mlock={self.load_params.get('use_mlock')}, "
+                       f"kv_cache_quant={kv_quant}")
+            
             model = lms.llm(
                 model_key,
-                config=lms.LlmLoadModelConfig(
-                    context_length=self.context_length
-                )
+                config=lms.LlmLoadModelConfig(**load_config_params)
             )
             
             # Erstelle Prediction-Konfiguration (mit Overrides, falls vorhanden)
@@ -2020,8 +2297,8 @@ class LMStudioBenchmark:
                 max_tokens=self.inference_params['max_tokens']
             )
             
-            # DEBUG: Logging der konfigurierten Parameter
-            logger.info(f"⚙️ Verwende Prediction Config: temp={prediction_config.temperature}, "
+            # INFO-Level Logging für Prediction Config (vollständige Übersicht)
+            logger.info(f"⚙️ Inference Config: temp={prediction_config.temperature}, "
                        f"top_k={prediction_config.top_k_sampling}, top_p={prediction_config.top_p_sampling}, "
                        f"min_p={prediction_config.min_p_sampling}, repeat_penalty={prediction_config.repeat_penalty}, "
                        f"max_tokens={prediction_config.max_tokens}")
@@ -2089,7 +2366,7 @@ class LMStudioBenchmark:
         result = BenchmarkResult(
             model_name=model_name,
             quantization=quantization,
-            gpu_type=self.gpu_monitor.gpu_type or "Unknown",
+            gpu_type=self.gpu_monitor.gpu_model or self.gpu_monitor.gpu_type or "Unknown",
             gpu_offload=gpu_offload,
             vram_mb=vram_mb,
             avg_tokens_per_sec=round(avg_tokens_per_sec, 2),
@@ -2401,7 +2678,7 @@ class LMStudioBenchmark:
             return recommendations
         
         # GPU-Typ Detection
-        gpu_type = self.gpu_monitor.gpu_type or "Unknown"
+        gpu_model = self.gpu_monitor.gpu_model or self.gpu_monitor.gpu_type or "Unknown"
         
         # Beste Modelle nach Kriterien
         best_speed = max(self.results, key=lambda x: x.avg_tokens_per_sec)
@@ -2412,7 +2689,7 @@ class LMStudioBenchmark:
         best_balance = max(self.results, key=lambda x: x.avg_tokens_per_sec * 0.6 + x.tokens_per_sec_per_gb * 0.4)
         
         # Hardware-spezifische Empfehlungen
-        recommendations.append(f"🖥️  Hardware: {gpu_type} GPU erkannt")
+        recommendations.append(f"🖥️  Hardware: {gpu_model} erkannt")
         recommendations.append("")
         
         # Top-Empfehlung für Speed
@@ -3916,6 +4193,75 @@ Beispiele:
         help='Override: Max Output-Tokens (z.B. 256)'
     )
     
+    # Load-Config Parameter (Performance Tuning)
+    parser.add_argument(
+        '--n-gpu-layers',
+        type=int,
+        default=-1,
+        help='Anzahl GPU-Layers (-1=auto/alle, 0=nur CPU, >0=spezifische Anzahl, Standard: -1)'
+    )
+    parser.add_argument(
+        '--n-batch',
+        type=int,
+        default=512,
+        help='Batch-Größe für Prompt-Verarbeitung (Standard: 512)'
+    )
+    parser.add_argument(
+        '--n-threads',
+        type=int,
+        default=-1,
+        help='Anzahl CPU-Threads (-1=auto/alle, Standard: -1)'
+    )
+    parser.add_argument(
+        '--flash-attention',
+        action='store_true',
+        default=True,
+        help='Flash Attention aktivieren (schnellere Attention-Berechnung, Standard: aktiviert)'
+    )
+    parser.add_argument(
+        '--no-flash-attention',
+        action='store_false',
+        dest='flash_attention',
+        help='Flash Attention deaktivieren'
+    )
+    parser.add_argument(
+        '--rope-freq-base',
+        type=float,
+        default=None,
+        help='RoPE Frequenz-Basis (None=Model-Default, z.B. 10000.0)'
+    )
+    parser.add_argument(
+        '--rope-freq-scale',
+        type=float,
+        default=None,
+        help='RoPE Frequenz-Skalierung (None=Model-Default, z.B. 1.0)'
+    )
+    parser.add_argument(
+        '--use-mmap',
+        action='store_true',
+        default=True,
+        help='Memory-Mapping aktivieren (schnellerer Model-Load, Standard: aktiviert)'
+    )
+    parser.add_argument(
+        '--no-mmap',
+        action='store_false',
+        dest='use_mmap',
+        help='Memory-Mapping deaktivieren'
+    )
+    parser.add_argument(
+        '--use-mlock',
+        action='store_true',
+        default=False,
+        help='Memory-Locking aktivieren (verhindert Swapping, Standard: deaktiviert)'
+    )
+    parser.add_argument(
+        '--kv-cache-quant',
+        type=str,
+        choices=['f32', 'f16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1'],
+        default=None,
+        help='KV-Cache Quantisierung (reduziert VRAM, kann Performance beeinflussen, None=Model-Default)'
+    )
+    
     args = parser.parse_args()
     
     # Cache-Verwaltungs-Befehle (beenden vor Benchmark)
@@ -4075,6 +4421,19 @@ Beispiele:
         'repeat_penalty': args.repeat_penalty,
         'max_tokens': args.max_tokens,
     }
+    
+    # Sammle Load-Config Parameter
+    load_params = {
+        'n_gpu_layers': args.n_gpu_layers,
+        'n_batch': args.n_batch,
+        'n_threads': args.n_threads,
+        'flash_attention': args.flash_attention,
+        'rope_freq_base': args.rope_freq_base,
+        'rope_freq_scale': args.rope_freq_scale,
+        'use_mmap': args.use_mmap,
+        'use_mlock': args.use_mlock,
+        'kv_cache_quant': args.kv_cache_quant,
+    }
 
     benchmark = LMStudioBenchmark(
         num_runs=args.runs,
@@ -4089,7 +4448,8 @@ Beispiele:
         max_temp=args.max_temp,
         max_power=args.max_power,
         use_gtt=not args.disable_gtt,
-        inference_overrides=inference_overrides
+        inference_overrides=inference_overrides,
+        load_params=load_params
     )
     benchmark.run_all_benchmarks()
     

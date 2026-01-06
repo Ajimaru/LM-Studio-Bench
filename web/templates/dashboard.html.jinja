@@ -1380,6 +1380,59 @@
                     </div>
                 </div>
 
+                <!-- Load-Config Parameter (Performance Tuning) -->
+                <details style="margin-top: 1rem;">
+                    <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 4px;">⚙️ Erweiterte Load-Optionen (Performance-Tuning)</summary>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 4px;">
+                        <div class="form-group">
+                            <label><span class="tooltip-icon" data-tooltip="GPU-Layers bestimmen wie viele Modell-Schichten auf der GPU laufen. -1=automatisch (nutzt alle verfügbaren Layers basierend auf VRAM), 0=nur CPU (sehr langsam, für große Modelle ohne GPU), >0=spezifische Anzahl (z.B. 32 für teilweises Offloading bei VRAM-Mangel). Standard: -1 für beste Performance.">?</span> GPU-Layers</label>
+                            <input type="number" id="paramNGpuLayers" value="-1" min="-1" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label><span class="tooltip-icon" data-tooltip="Batch-Größe kontrolliert wie viele Tokens parallel beim Prompt-Processing verarbeitet werden. Höher=schnellerer Prompt-Verarbeitung aber mehr VRAM. 512=Standard (ausgewogen), 256=weniger VRAM, 1024+=schneller bei viel VRAM. Beeinflusst nur Prompt-Phase, nicht Generation.">?</span> Batch-Size</label>
+                            <input type="number" id="paramNBatch" value="512" min="1" max="2048" step="128">
+                        </div>
+                        <div class="form-group">
+                            <label><span class="tooltip-icon" data-tooltip="CPU-Threads für nicht-GPU Berechnungen (z.B. wenn Layers auf CPU laufen oder bei Multi-GPU-Setup). -1=automatisch (nutzt alle CPU-Kerne), 4-8=reduziert CPU-Last für andere Tasks. Nur relevant wenn n_gpu_layers < Gesamt-Layers. Standard: -1.">?</span> CPU-Threads</label>
+                            <input type="number" id="paramNThreads" value="-1" min="-1" max="64">
+                        </div>
+                        <div class="checkbox-item" style="grid-column: span 1;">
+                            <input type="checkbox" id="paramFlashAttention" checked>
+                            <label for="paramFlashAttention"><span class="tooltip-icon" data-tooltip="Flash Attention ist eine optimierte Implementierung des Attention-Mechanismus die 20-30% schneller ist und weniger VRAM nutzt (bei gleicher Qualität). Aktiviert=schneller+effizienter. Deaktiviert=langsamere Standard-Implementation. Nur bei kompatiblen Modellen aktiv. Standard: AN (empfohlen).">?</span> Flash Attention</label>
+                        </div>
+                        <div class="form-group">
+                            <label><span class="tooltip-icon" data-tooltip="RoPE (Rotary Position Embedding) Frequenz-Basis kontrolliert wie Positionen kodiert werden. Höhere Werte (z.B. 500000) erlauben längere Context-Windows. Nur ändern wenn Modell für erweiterten Context trainiert wurde (z.B. Code Llama mit 100k Context). Falsche Werte → schlechtere Qualität. Leer=Model-Default (empfohlen).">?</span> RoPE Freq Base</label>
+                            <input type="number" id="paramRopeFreqBase" placeholder="z.B. 10000.0" min="0" step="1000">
+                        </div>
+                        <div class="form-group">
+                            <label><span class="tooltip-icon" data-tooltip="RoPE Frequenz-Skalierung für Context-Verlängerung. <1.0=komprimiert Positionen für längere Contexts (z.B. 0.5 für doppelten Context), >1.0=expandiert (selten). Ermöglicht größere Contexts als Modell-Training, mit Qualitätsverlust. Nur für experimentelle Context-Extension. Leer=1.0 (Model-Default, empfohlen).">?</span> RoPE Freq Scale</label>
+                            <input type="number" id="paramRopeFreqScale" placeholder="z.B. 1.0" min="0" step="0.1">
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="paramUseMmap" checked>
+                            <label for="paramUseMmap"><span class="tooltip-icon" data-tooltip="Memory-Mapping (mmap) lädt Modell-Dateien direkt von Disk statt in RAM zu kopieren. Vorteile: schnellerer Load-Start, geringerer RAM-Peak. Nachteil: erster Zugriff auf neue Layers langsamer (von SSD). Aktiviert=empfohlen (besonders bei großen Modellen). Deaktiviert=lädt alles in RAM (schneller nach Load, braucht viel RAM).">?</span> Use Memory-Mapping</label>
+                        </div>
+                        <div class="checkbox-item">
+                            <input type="checkbox" id="paramUseMlock">
+                            <label for="paramUseMlock"><span class="tooltip-icon" data-tooltip="Memory-Locking (mlock) pinnt Modell-Gewichte im RAM fest und verhindert Swapping auf Disk. Vorteil: konsistente Performance (kein Swap-Slowdown). Nachteil: blockiert RAM dauerhaft, System kann instabil werden bei RAM-Mangel. Nur aktivieren wenn genug RAM vorhanden. Standard: AUS (sicherer).">?</span> Use Memory-Locking</label>
+                        </div>
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label><span class="tooltip-icon" data-tooltip="KV-Cache Quantisierung komprimiert Key-Value Cache im Speicher um VRAM zu sparen. f32/f16=volle Qualität (viel VRAM), q8_0=8-bit (geringer Qualitätsverlust, -50% VRAM), q4_0/q4_1=4-bit (spürbarer Verlust, -75% VRAM). Empfohlen: leer (Model-Default) oder f16 bei VRAM-Problemen. Bei langen Contexts kann VRAM-Einsparung kritisch sein.">?</span> KV-Cache Quantisierung</label>
+                            <select id="paramKvCacheQuant">
+                                <option value="">Model-Default</option>
+                                <option value="f32">f32 (Full Precision)</option>
+                                <option value="f16">f16 (Half Precision)</option>
+                                <option value="q8_0">q8_0 (8-bit)</option>
+                                <option value="q4_0">q4_0 (4-bit)</option>
+                                <option value="q4_1">q4_1 (4-bit v2)</option>
+                                <option value="iq4_nl">iq4_nl (4-bit improved)</option>
+                                <option value="q5_0">q5_0 (5-bit)</option>
+                                <option value="q5_1">q5_1 (5-bit v2)</option>
+                            </select>
+                        </div>
+                    </div>
+                </details>
+
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
                     <div class="form-group">
                         <label><span class="tooltip-icon" data-tooltip="Warnung wenn GPU-Temperatur überschritten wird">?</span> Max. GPU-Temp</label>
@@ -1753,34 +1806,70 @@
                         <h4 style="color: var(--success); margin-bottom: 0.75rem; font-size: 0.95rem;">📊 Baseline Params</h4>
                         
                         <div class="form-group">
-                            <label>Temperature:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Steuert Zufälligkeit der Ausgabe. Niedrig (0.1-0.3) = vorhersehbarer/fokussierter. Hoch (0.7-1.0) = kreativer/diverser. Standard: 0.7">?</span> Temperature:</label>
                             <input type="number" id="ab-baseline-temp" placeholder="0.1" value="0.1" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label>Top-K:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Begrenzt Auswahl auf die K wahrscheinlichsten Tokens. Niedrig (10-20) = konservativer. Hoch (50-100) = variabler. Standard: 40">?</span> Top-K:</label>
                             <input type="number" id="ab-baseline-topk" placeholder="40" value="40" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label>Top-P:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Nucleus Sampling: wählt kleinste Token-Menge deren Wahrscheinlichkeit >= P. Niedrig (0.5-0.7) = präziser. Hoch (0.9-0.95) = abwechslungsreicher. Standard: 0.9">?</span> Top-P:</label>
                             <input type="number" id="ab-baseline-topp" placeholder="0.9" value="0.9" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
+                        
+                        <details style="margin-top: 0.5rem;">
+                            <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-light);">⚙️ Load-Config</summary>
+                            <div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(255,255,255,0.02); border-radius: 4px;">
+                                <div class="form-group">
+                                    <label><span class="tooltip-icon" data-tooltip="GPU-Layers: -1=auto (alle verfügbaren Layers auf GPU), 0=nur CPU, >0=spezifische Anzahl. Wichtig für A/B Tests mit unterschiedlichem VRAM-Verbrauch.">?</span> GPU-Layers:</label>
+                                    <input type="number" id="ab-baseline-gpu-layers" value="-1" min="-1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                                </div>
+                                <div class="form-group">
+                                    <label><span class="tooltip-icon" data-tooltip="Batch-Size für Prompt-Verarbeitung. Höher=schneller, mehr VRAM. Teste z.B. 256 vs 1024 für VRAM/Speed Trade-off.">?</span> Batch:</label>
+                                    <input type="number" id="ab-baseline-batch" value="512" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                                </div>
+                                <div class="form-group">
+                                    <input type="checkbox" id="ab-baseline-flash" checked />
+                                    <label for="ab-baseline-flash" style="margin:0;"><span class="tooltip-icon" data-tooltip="Flash Attention: 20-30% Speed-Up. Ideal für A/B Tests um Flash ON vs OFF Performance-Unterschied zu messen.">?</span> Flash Attention</label>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                     
                     <div style="border-top: 1px solid var(--border); margin: 1rem 0; padding-top: 1rem;">
                         <h4 style="color: var(--warning); margin-bottom: 0.75rem; font-size: 0.95rem;">⚡ Test Params</h4>
                         
                         <div class="form-group">
-                            <label>Temperature:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Steuert Zufälligkeit der Ausgabe. Niedrig (0.1-0.3) = vorhersehbarer/fokussierter. Hoch (0.7-1.0) = kreativer/diverser. Standard: 0.7">?</span> Temperature:</label>
                             <input type="number" id="ab-test-temp" placeholder="0.7" value="0.7" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label>Top-K:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Begrenzt Auswahl auf die K wahrscheinlichsten Tokens. Niedrig (10-20) = konservativer. Hoch (50-100) = variabler. Standard: 40">?</span> Top-K:</label>
                             <input type="number" id="ab-test-topk" placeholder="50" value="50" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label>Top-P:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Nucleus Sampling: wählt kleinste Token-Menge deren Wahrscheinlichkeit >= P. Niedrig (0.5-0.7) = präziser. Hoch (0.9-0.95) = abwechslungsreicher. Standard: 0.9">?</span> Top-P:</label>
                             <input type="number" id="ab-test-topp" placeholder="0.95" value="0.95" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
+                        
+                        <details style="margin-top: 0.5rem;">
+                            <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-light);">⚙️ Load-Config</summary>
+                            <div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(255,255,255,0.02); border-radius: 4px;">
+                                <div class="form-group">
+                                    <label><span class="tooltip-icon" data-tooltip="GPU-Layers: -1=auto (alle verfügbaren Layers auf GPU), 0=nur CPU, >0=spezifische Anzahl. Wichtig für A/B Tests mit unterschiedlichem VRAM-Verbrauch.">?</span> GPU-Layers:</label>
+                                    <input type="number" id="ab-test-gpu-layers" value="-1" min="-1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                                </div>
+                                <div class="form-group">
+                                    <label><span class="tooltip-icon" data-tooltip="Batch-Size für Prompt-Verarbeitung. Höher=schneller, mehr VRAM. Teste z.B. 256 vs 1024 für VRAM/Speed Trade-off.">?</span> Batch:</label>
+                                    <input type="number" id="ab-test-batch" value="512" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
+                                </div>
+                                <div class="form-group">
+                                    <input type="checkbox" id="ab-test-flash" checked />
+                                    <label for="ab-test-flash" style="margin:0;"><span class="tooltip-icon" data-tooltip="Flash Attention: 20-30% Speed-Up. Ideal für A/B Tests um Flash ON vs OFF Performance-Unterschied zu messen.">?</span> Flash Attention</label>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                     
                     <button id="ab-experiment-btn" onclick="handleABExperiment()" style="width: 100%; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600; margin-top: 1rem;">🚀 Experiment starten</button>
@@ -2515,7 +2604,18 @@
                 
                 // Hardware-Limits
                 max_temp: parseFloat(document.getElementById('paramMaxTemp').value) || null,
-                max_power: parseFloat(document.getElementById('paramMaxPower').value) || null
+                max_power: parseFloat(document.getElementById('paramMaxPower').value) || null,
+                
+                // Load-Config Parameter (Performance Tuning)
+                n_gpu_layers: parseInt(document.getElementById('paramNGpuLayers').value) ?? null,
+                n_batch: parseInt(document.getElementById('paramNBatch').value) ?? null,
+                n_threads: parseInt(document.getElementById('paramNThreads').value) ?? null,
+                flash_attention: document.getElementById('paramFlashAttention').checked,
+                rope_freq_base: parseFloat(document.getElementById('paramRopeFreqBase').value) || null,
+                rope_freq_scale: parseFloat(document.getElementById('paramRopeFreqScale').value) || null,
+                use_mmap: document.getElementById('paramUseMmap').checked,
+                use_mlock: document.getElementById('paramUseMlock').checked,
+                kv_cache_quant: document.getElementById('paramKvCacheQuant').value || null
             };
 
             try {
@@ -3514,14 +3614,22 @@
             const baselineParams = {
                 temperature: parseGermanFloat(document.getElementById('ab-baseline-temp').value),
                 top_k: parseInt(document.getElementById('ab-baseline-topk').value),
-                top_p: parseGermanFloat(document.getElementById('ab-baseline-topp').value)
+                top_p: parseGermanFloat(document.getElementById('ab-baseline-topp').value),
+                // Load-Config
+                n_gpu_layers: parseInt(document.getElementById('ab-baseline-gpu-layers').value) ?? null,
+                n_batch: parseInt(document.getElementById('ab-baseline-batch').value) ?? null,
+                flash_attention: document.getElementById('ab-baseline-flash').checked
             };
 
             // Test Params (ohne 'name' - wird nur für Anzeige benötigt)
             const testParams = {
                 temperature: parseGermanFloat(document.getElementById('ab-test-temp').value),
                 top_k: parseInt(document.getElementById('ab-test-topk').value),
-                top_p: parseGermanFloat(document.getElementById('ab-test-topp').value)
+                top_p: parseGermanFloat(document.getElementById('ab-test-topp').value),
+                // Load-Config
+                n_gpu_layers: parseInt(document.getElementById('ab-test-gpu-layers').value) ?? null,
+                n_batch: parseInt(document.getElementById('ab-test-batch').value) ?? null,
+                flash_attention: document.getElementById('ab-test-flash').checked
             };
             const activeRun = document.getElementById('ab-active-run-toggle').checked;
 
@@ -3671,8 +3779,14 @@
                 badgeDiv.style.color = 'var(--primary)';
             }
 
-            // Confidence
+            // Confidence - remove any existing one first
+            const parent = badgeDiv.parentElement;
+            const existingConf = parent.querySelector('.ab-confidence');
+            if (existingConf) {
+                existingConf.remove();
+            }
             const confDiv = document.createElement('div');
+            confDiv.className = 'ab-confidence';
             confDiv.style.marginTop = '0.5rem';
             confDiv.style.fontSize = '0.9rem';
             confDiv.style.color = 'var(--text-light)';
@@ -3684,7 +3798,7 @@
                 : confidenceRaw === 'Low' ? 'Niedrig'
                 : confidenceRaw;
             confDiv.textContent = `Konfidenz: ${confidenceLabel}`;
-            badgeDiv.parentElement.appendChild(confDiv);
+            parent.appendChild(confDiv);
         }
 
         function createABSpeedChart(baselineData, testData) {

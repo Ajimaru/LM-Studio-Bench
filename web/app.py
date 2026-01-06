@@ -22,7 +22,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
 import sqlite3
-import json
 import math
 import statistics
 from contextlib import asynccontextmanager
@@ -480,6 +479,17 @@ class BenchmarkParams(BaseModel):
     # Hardware-Limits
     max_temp: Optional[float] = None
     max_power: Optional[float] = None
+    
+    # Load-Config Parameter (Performance Tuning)
+    n_gpu_layers: Optional[int] = -1
+    n_batch: Optional[int] = 512
+    n_threads: Optional[int] = -1
+    flash_attention: Optional[bool] = True
+    rope_freq_base: Optional[float] = None
+    rope_freq_scale: Optional[float] = None
+    use_mmap: Optional[bool] = True
+    use_mlock: Optional[bool] = False
+    kv_cache_quant: Optional[str] = None
 
 
 class InferenceParamSet(BaseModel):
@@ -491,6 +501,16 @@ class InferenceParamSet(BaseModel):
     min_p: Optional[float] = None
     repeat_penalty: Optional[float] = None
     max_tokens: Optional[int] = None
+    # Load-Config Parameter (für A/B Tests)
+    n_gpu_layers: Optional[int] = None
+    n_batch: Optional[int] = None
+    n_threads: Optional[int] = None
+    flash_attention: Optional[bool] = None
+    rope_freq_base: Optional[float] = None
+    rope_freq_scale: Optional[float] = None
+    use_mmap: Optional[bool] = None
+    use_mlock: Optional[bool] = None
+    kv_cache_quant: Optional[str] = None
 
 
 class CreateExperimentRequest(BaseModel):
@@ -756,6 +776,32 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
         args.extend(["--max-temp", str(params.max_temp)])
     if params.max_power:
         args.extend(["--max-power", str(params.max_power)])
+    
+    # Load-Config Parameter (Performance Tuning)
+    if params.n_gpu_layers is not None:
+        args.extend(["--n-gpu-layers", str(params.n_gpu_layers)])
+    if params.n_batch is not None:
+        args.extend(["--n-batch", str(params.n_batch)])
+    if params.n_threads is not None:
+        args.extend(["--n-threads", str(params.n_threads)])
+    if params.flash_attention is not None:
+        if params.flash_attention:
+            args.append("--flash-attention")
+        else:
+            args.append("--no-flash-attention")
+    if params.rope_freq_base is not None:
+        args.extend(["--rope-freq-base", str(params.rope_freq_base)])
+    if params.rope_freq_scale is not None:
+        args.extend(["--rope-freq-scale", str(params.rope_freq_scale)])
+    if params.use_mmap is not None:
+        if params.use_mmap:
+            args.append("--use-mmap")
+        else:
+            args.append("--no-mmap")
+    if params.use_mlock is not None and params.use_mlock:
+        args.append("--use-mlock")
+    if params.kv_cache_quant:
+        args.extend(["--kv-cache-quant", params.kv_cache_quant])
     
     # Debug: Zeige übergebene Args
     logger.info(f"🔧 Benchmark-Args: {args}")
@@ -2679,9 +2725,19 @@ async def get_dashboard_stats() -> dict:
             vram_total_gb = None
             gtt_total_gb = None
             
-            # GPU-Typ aus Results ermitteln (falls vorhanden)
+            # GPU-Typ und GPU-Modell aus Results ermitteln (falls vorhanden)
+            # Die Benchmark-DB enthält jetzt vollständige GPU-Modellnamen ("AMD Radeon 890M" statt nur "AMD")
             if results:
-                gpu_type = results[0].gpu_type
+                gpu_model = results[0].gpu_type  # Nutze vollständigen Namen aus DB
+                # Extrahiere GPU-Typ (NVIDIA, AMD, Intel) aus Modellnamen
+                if "NVIDIA" in gpu_model or "GeForce" in gpu_model or "RTX" in gpu_model or "GTX" in gpu_model:
+                    gpu_type = "NVIDIA"
+                elif "AMD" in gpu_model or "Radeon" in gpu_model:
+                    gpu_type = "AMD"
+                elif "Intel" in gpu_model or "Arc" in gpu_model or "Iris" in gpu_model:
+                    gpu_type = "Intel"
+                else:
+                    gpu_type = gpu_model
             
             # NVIDIA GPU Erkennung
             try:
