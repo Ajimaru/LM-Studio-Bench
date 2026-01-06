@@ -2230,6 +2230,31 @@ async def run_experiment(request: Request) -> dict:
                 args.extend(["--repeat-penalty", str(param_set["repeat_penalty"])])
             if param_set.get("max_tokens") is not None:
                 args.extend(["--max-tokens", str(param_set["max_tokens"])])
+            # Load-Config Parameter
+            if param_set.get("n_gpu_layers") is not None:
+                args.extend(["--n-gpu-layers", str(param_set["n_gpu_layers"])])
+            if param_set.get("n_batch") is not None:
+                args.extend(["--n-batch", str(param_set["n_batch"])])
+            if param_set.get("n_threads") is not None:
+                args.extend(["--n-threads", str(param_set["n_threads"])])
+            if param_set.get("flash_attention") is not None:
+                if param_set["flash_attention"]:
+                    args.append("--flash-attention")
+                else:
+                    args.append("--no-flash-attention")
+            if param_set.get("rope_freq_base") is not None:
+                args.extend(["--rope-freq-base", str(param_set["rope_freq_base"])])
+            if param_set.get("rope_freq_scale") is not None:
+                args.extend(["--rope-freq-scale", str(param_set["rope_freq_scale"])])
+            if param_set.get("use_mmap") is not None:
+                if param_set["use_mmap"]:
+                    args.append("--use-mmap")
+                else:
+                    args.append("--no-mmap")
+            if param_set.get("use_mlock") is not None and param_set["use_mlock"]:
+                args.append("--use-mlock")
+            if param_set.get("kv_cache_quant"):
+                args.extend(["--kv-cache-quant", param_set["kv_cache_quant"]])
             # Profiling aktiv lassen
             args.append("--enable-profiling")
             return args
@@ -2276,7 +2301,9 @@ async def run_experiment(request: Request) -> dict:
         cursor.execute('''
             SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
                    temperature, top_k_sampling, top_p_sampling, min_p_sampling, 
-                   repeat_penalty, max_tokens, run_index
+                   repeat_penalty, max_tokens, run_index,
+                   n_gpu_layers, n_batch, n_threads, flash_attention, 
+                   rope_freq_base, rope_freq_scale, use_mmap, use_mlock, kv_cache_quant
             FROM benchmark_results
             WHERE model_name = ? AND timestamp >= ?
             ORDER BY timestamp DESC, run_index DESC
@@ -2293,14 +2320,26 @@ async def run_experiment(request: Request) -> dict:
         logger.info(f"🔍 Gefundene Gesamt-Einträge: {len(all_rows)}")
 
         for row in all_rows:
-            ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts, run_idx = row
+            ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts, run_idx, \
+            gpu_layers, batch, threads, flash, rope_base, rope_scale, mmap, mlock, kv_quant = row
+            
             row_params = {
                 "temperature": temp,
                 "top_k": topk,
                 "top_p": topp,
                 "min_p": minp,
                 "repeat_penalty": penalty,
-                "max_tokens": maxts
+                "max_tokens": maxts,
+                # Load-Config Parameter
+                "n_gpu_layers": gpu_layers,
+                "n_batch": batch,
+                "n_threads": threads,
+                "flash_attention": bool(flash) if flash is not None else None,
+                "rope_freq_base": rope_base,
+                "rope_freq_scale": rope_scale,
+                "use_mmap": bool(mmap) if mmap is not None else None,
+                "use_mlock": bool(mlock) if mlock is not None else None,
+                "kv_cache_quant": kv_quant
             }
             
             # Match against baseline params
@@ -2312,7 +2351,7 @@ async def run_experiment(request: Request) -> dict:
                     "gen_time": gen_time,
                     "run_index": run_idx
                 })
-                logger.debug(f"✅ Baseline: {row_params} matched (run_index={run_idx})")
+                logger.info(f"✅ Baseline Match: run_index={run_idx}, speed={speed}, params={row_params}")
             # Match against test params
             elif match_parameters(row_params, test_params):
                 test_data.append({
@@ -2322,7 +2361,9 @@ async def run_experiment(request: Request) -> dict:
                     "gen_time": gen_time,
                     "run_index": run_idx
                 })
-                logger.debug(f"✅ Test: {row_params} matched (run_index={run_idx})")
+                logger.info(f"✅ Test Match: run_index={run_idx}, speed={speed}, params={row_params}")
+            else:
+                logger.info(f"❌ No Match: run_index={run_idx}, params={row_params}")
 
         logger.info(f"🔍 Nach Filterung: Baseline={len(baseline_data)}, Test={len(test_data)}")
 
