@@ -15,16 +15,24 @@ pip install -r requirements.txt
 ./run.py --webapp
 ```
 
-✅ Opens browser automatically at <http://localhost:8080>
+✅ Opens browser automatically at `http://localhost:8080`
 ✅ Live streaming of benchmark output via WebSocket
 ✅ Browse all cached results with interactive tables
-✅ Dark mode by default with toggle option
-✅ All CLI parameters available as web form
+✅ System info (GPU model detection, LM Studio health, hardware details)
+✅ Dark mode by default with 27 theme options
+✅ All CLI parameters available as web form with tooltips
+✅ Advanced filtering (quantization, architecture, size, context-length)
 ✅ Separate logs: `logs/webapp_*.log` and `logs/benchmark_*.log`
 
 **Dashboard Features:**
 
 - **Start Benchmark**: Configure and run benchmarks from web interface
+  - Filter by quantization, architecture, parameter size
+  - Rank results by speed, efficiency, TTFT, or VRAM
+  - Set hardware limits (max GPU temp, max power draw)
+  - Tooltip help for all options
+- **System Info**: OS, Kernel, CPU, GPU (with detailed model names)
+- **LM Studio Health**: Live healthcheck status (HTTP API + CLI fallback)
 - **Live Output**: Real-time streaming with colored logs and progress
 - **Results Browser**: Filter and sort all cached benchmark results
 - **Export**: Download JSON/CSV/PDF/HTML reports
