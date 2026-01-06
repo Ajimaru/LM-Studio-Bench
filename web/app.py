@@ -862,6 +862,7 @@ async def get_dashboard_stats() -> dict:
             import re
             
             gpu_type = "Unknown"
+            gpu_model = "Unknown"
             vram_total_gb = None
             gtt_total_gb = None
             
@@ -871,10 +872,19 @@ async def get_dashboard_stats() -> dict:
             
             # NVIDIA GPU Erkennung
             try:
+                # Hole VRAM-Größe
                 output = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'], timeout=5)
                 vram_total_mb = int(output.decode().strip().split('\n')[0])
                 vram_total_gb = round(vram_total_mb / 1024, 2)
                 gpu_type = "NVIDIA"
+                
+                # Hole GPU-Modell
+                try:
+                    model_output = subprocess.check_output(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'], timeout=5)
+                    gpu_model = model_output.decode().strip().split('\n')[0]
+                except Exception:
+                    gpu_model = "NVIDIA GPU"
+                    
             except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
                 pass
             
@@ -890,6 +900,28 @@ async def get_dashboard_stats() -> dict:
                     
                     if not rocm_tool:
                         rocm_tool = 'rocm-smi'  # Fallback auf PATH
+                    
+                    # Hole GPU-Modell mit --showproductname
+                    try:
+                        result = subprocess.run(
+                            [rocm_tool, '--showproductname'],
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        if result.returncode == 0:
+                            # Parse "GPU[0] : gfx906"
+                            for line in result.stdout.split('\n'):
+                                if 'GPU[0]' in line:
+                                    # Extrahiere das GPU-Modell nach ':'
+                                    parts = line.split(':')
+                                    if len(parts) > 1:
+                                        product = parts[1].strip()
+                                        if product:
+                                            gpu_model = f"AMD {product}"
+                                    break
+                    except Exception:
+                        gpu_model = "AMD GPU"
                     
                     # Hole VRAM-Größe
                     result = subprocess.run(
@@ -935,6 +967,7 @@ async def get_dashboard_stats() -> dict:
             # Zusammenstellen GPU-Info
             gpu_info = {
                 "type": gpu_type,
+                "model": gpu_model,
                 "vram_gb": vram_total_gb,
                 "gtt_gb": gtt_total_gb if gtt_total_gb else system_info["ram_gb"],
                 "total_gb": (vram_total_gb + gtt_total_gb) if (vram_total_gb and gtt_total_gb) else (vram_total_gb or system_info["ram_gb"])

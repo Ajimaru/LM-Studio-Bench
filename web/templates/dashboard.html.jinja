@@ -1728,7 +1728,7 @@
                 
                 // GPU Info
                 if (data.gpu_info) {
-                    document.getElementById('home-gpu-model').textContent = data.gpu_info.type || '--';
+                    document.getElementById('home-gpu-model').textContent = data.gpu_info.model || data.gpu_info.type || '--';
                     document.getElementById('home-gpu-vram').textContent = data.gpu_info.vram_gb ? `${data.gpu_info.vram_gb} GB` : 'Nicht erkannt';
                     document.getElementById('home-gpu-gtt').textContent = data.gpu_info.gtt_gb ? `${data.gpu_info.gtt_gb} GB` : '--';
                     document.getElementById('home-gpu-total').textContent = data.gpu_info.total_gb ? `${data.gpu_info.total_gb} GB` : '--';
