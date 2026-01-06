@@ -2120,6 +2120,10 @@ async def run_experiment(request: Request) -> dict:
             model_name = model_name.split("@")[0]
         
         logger.info(f"🎯 Normalized model_name: {model_name}")
+        
+        # Entferne 'name' Feld aus params (wird nur fürs Frontend benötigt, nicht für Matching)
+        baseline_params.pop("name", None)
+        test_params.pop("name", None)
 
         def build_args(param_set: Dict[str, Any]) -> List[str]:
             args: List[str] = []

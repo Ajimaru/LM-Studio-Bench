@@ -3360,17 +3360,15 @@
 
             const expName = document.getElementById('ab-experiment-name').value || `Experiment ${new Date().toLocaleTimeString()}`;
 
-            // Baseline Params
+            // Baseline Params (ohne 'name' - wird nur für Anzeige benötigt)
             const baselineParams = {
-                name: 'Baseline',
                 temperature: parseFloat(document.getElementById('ab-baseline-temp').value),
                 top_k: parseInt(document.getElementById('ab-baseline-topk').value),
                 top_p: parseFloat(document.getElementById('ab-baseline-topp').value)
             };
 
-            // Test Params
+            // Test Params (ohne 'name' - wird nur für Anzeige benötigt)
             const testParams = {
-                name: 'Test',
                 temperature: parseFloat(document.getElementById('ab-test-temp').value),
                 top_k: parseInt(document.getElementById('ab-test-topk').value),
                 top_p: parseFloat(document.getElementById('ab-test-topp').value)
