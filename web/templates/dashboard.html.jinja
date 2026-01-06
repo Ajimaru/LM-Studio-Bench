@@ -1782,7 +1782,7 @@
                         </div>
                     </div>
                     
-                    <button onclick="startABExperiment()" style="width: 100%; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600; margin-top: 1rem;">🚀 Experiment starten</button>
+                    <button id="ab-experiment-btn" onclick="handleABExperiment()" style="width: 100%; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600; margin-top: 1rem;">🚀 Experiment starten</button>
                 </div>
                 
                 <!-- Results Panel -->
@@ -3351,6 +3351,60 @@
             }
         }
 
+        let abExperimentRunning = false;
+
+        async function handleABExperiment() {
+            if (abExperimentRunning) {
+                // Stop the running experiment
+                await stopABExperiment();
+                return;
+            }
+            await startABExperiment();
+        }
+
+        async function stopABExperiment() {
+            try {
+                const response = await fetch('/api/benchmark/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast('⏹️ Experiment gestoppt', 'info', 'A/B Test');
+                    updateABButton('start');
+                    abExperimentRunning = false;
+                } else {
+                    showToast('❌ Fehler beim Stoppen', 'error', 'A/B Test');
+                }
+            } catch (error) {
+                console.error('Fehler beim Stoppen:', error);
+            }
+        }
+
+        function updateABButton(state) {
+            const btn = document.getElementById('ab-experiment-btn');
+            if (!btn) return;
+            
+            switch(state) {
+                case 'running':
+                    btn.innerHTML = '⏹️ Experiment stoppen';
+                    btn.style.background = '#dc3545';
+                    btn.disabled = false;
+                    break;
+                case 'calculating':
+                    btn.innerHTML = '⏳ Berechne...';
+                    btn.style.background = '#6c757d';
+                    btn.disabled = true;
+                    break;
+                case 'start':
+                default:
+                    btn.innerHTML = '🚀 Experiment starten';
+                    btn.style.background = 'var(--primary)';
+                    btn.disabled = false;
+                    break;
+            }
+        }
+
         async function startABExperiment() {
             const modelName = document.getElementById('ab-model-select').value;
             if (!modelName) {
@@ -3359,6 +3413,10 @@
             }
 
             const expName = document.getElementById('ab-experiment-name').value || `Experiment ${new Date().toLocaleTimeString()}`;
+            
+            // Set button to running state
+            abExperimentRunning = true;
+            updateABButton('running');
 
             // Hilfsfunktion: Konvertiert Komma zu Punkt für Dezimalzahlen
             const parseGermanFloat = (value) => {
@@ -3397,9 +3455,15 @@
                             context: 2048
                         })
                     });
+                    
+                    // Benchmarks finished, now calculating
+                    updateABButton('calculating');
+                    
                     comparisonData = await runResponse.json();
                     if (!comparisonData.success) {
                         alert(`Fehler beim aktiven A/B Lauf: ${comparisonData.error}`);
+                        updateABButton('start');
+                        abExperimentRunning = false;
                         return;
                     }
                     abExperimentData = {
@@ -3457,9 +3521,16 @@
 
                 // Rendere Ergebnisse
                 renderABResults(comparisonData);
+                
+                // Reset button state
+                updateABButton('start');
+                abExperimentRunning = false;
+                
             } catch (error) {
                 console.error('A/B Experiment Fehler:', error);
                 alert('Fehler beim A/B Experiment');
+                updateABButton('start');
+                abExperimentRunning = false;
             }
         }
 
