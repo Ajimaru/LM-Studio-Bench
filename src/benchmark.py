@@ -18,6 +18,7 @@ import sqlite3
 import hashlib
 import threading
 import psutil
+import glob
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict, field
@@ -164,6 +165,25 @@ class BenchmarkResult:
     gtt_enabled: Optional[bool] = None          # GTT-Nutzung aktiviert
     gtt_total_gb: Optional[float] = None        # GTT Total verfügbar
     gtt_used_gb: Optional[float] = None         # GTT verwendet
+    
+    # Inference-Parameter (für Reproduzierbarkeit)
+    temperature: Optional[float] = None         # Sampling-Temperatur
+    top_k_sampling: Optional[int] = None        # Top-K Token-Filter
+    top_p_sampling: Optional[float] = None      # Nucleus Sampling Threshold
+    min_p_sampling: Optional[float] = None      # Min Probability Threshold
+    repeat_penalty: Optional[float] = None      # Strafe gegen Wiederholungen
+    max_tokens: Optional[int] = None            # Max Output-Tokens
+    
+    # Run-Informationen
+    num_runs: Optional[int] = None              # Anzahl durchgeführter Messungen
+    runs_averaged_from: Optional[int] = None    # Anzahl erfolgreicher Runs im Durchschnitt
+    warmup_runs: Optional[int] = None           # Anzahl Warmup-Durchläufe
+    
+    # Versions-Informationen
+    lmstudio_version: Optional[str] = None      # LM Studio Version beim Test
+    nvidia_driver_version: Optional[str] = None # NVIDIA Driver Version
+    rocm_driver_version: Optional[str] = None   # AMD ROCm/Driver Version
+    intel_driver_version: Optional[str] = None  # Intel GPU Driver Version
     
     # Historischer Vergleich (optional)
     speed_delta_pct: Optional[float] = None     # Performance-Veränderung (%) vs. vorheriger Benchmark
@@ -521,7 +541,19 @@ class BenchmarkCache:
                 prev_timestamp TEXT,
                 prompt TEXT NOT NULL,
                 context_length INTEGER NOT NULL,
-                UNIQUE(model_key, inference_params_hash)
+                temperature REAL,
+                top_k_sampling INTEGER,
+                top_p_sampling REAL,
+                min_p_sampling REAL,
+                repeat_penalty REAL,
+                max_tokens INTEGER,
+                num_runs INTEGER,
+                runs_averaged_from INTEGER,
+                warmup_runs INTEGER,
+                lmstudio_version TEXT,
+                nvidia_driver_version TEXT,
+                rocm_driver_version TEXT,
+                intel_driver_version TEXT
             )
         ''')
         
@@ -594,15 +626,18 @@ class BenchmarkCache:
         
         try:
             cursor.execute('''
-                INSERT OR REPLACE INTO benchmark_results (
+                INSERT INTO benchmark_results (
                     model_key, model_name, quantization, inference_params_hash,
                     gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec,
                     avg_ttft, avg_gen_time, prompt_tokens, completion_tokens,
                     timestamp, params_size, architecture, max_context_length,
                     model_size_gb, has_vision, has_tools, tokens_per_sec_per_gb,
                     tokens_per_sec_per_billion_params, speed_delta_pct, prev_timestamp,
-                    prompt, context_length
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    prompt, context_length, temperature, top_k_sampling, top_p_sampling,
+                    min_p_sampling, repeat_penalty, max_tokens, num_runs, runs_averaged_from,
+                    warmup_runs, lmstudio_version, nvidia_driver_version, rocm_driver_version,
+                    intel_driver_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 model_key, result.model_name, result.quantization, params_hash,
                 result.gpu_type, result.gpu_offload, result.vram_mb, result.avg_tokens_per_sec,
@@ -610,7 +645,12 @@ class BenchmarkCache:
                 result.timestamp, result.params_size, result.architecture, result.max_context_length,
                 result.model_size_gb, int(result.has_vision), int(result.has_tools),
                 result.tokens_per_sec_per_gb, result.tokens_per_sec_per_billion_params,
-                result.speed_delta_pct, result.prev_timestamp, prompt, context_length
+                result.speed_delta_pct, result.prev_timestamp, prompt, context_length,
+                result.temperature, result.top_k_sampling, result.top_p_sampling,
+                result.min_p_sampling, result.repeat_penalty, result.max_tokens,
+                result.num_runs, result.runs_averaged_from, result.warmup_runs,
+                result.lmstudio_version, result.nvidia_driver_version, result.rocm_driver_version,
+                result.intel_driver_version
             ))
             
             conn.commit()
@@ -645,6 +685,16 @@ class BenchmarkCache:
                 optional_cols.extend(['gtt_enabled', 'gtt_total_gb', 'gtt_used_gb'])
             if 'speed_delta_pct' in columns:
                 optional_cols.extend(['speed_delta_pct', 'prev_timestamp'])
+            
+            # Neue Spalten für erweiterte Cache-Speicherung
+            if 'temperature' in columns:
+                optional_cols.extend(['temperature', 'top_k_sampling', 'top_p_sampling', 
+                                    'min_p_sampling', 'repeat_penalty', 'max_tokens'])
+            if 'num_runs' in columns:
+                optional_cols.extend(['num_runs', 'runs_averaged_from', 'warmup_runs'])
+            if 'lmstudio_version' in columns:
+                optional_cols.extend(['lmstudio_version', 'nvidia_driver_version', 
+                                    'rocm_driver_version', 'intel_driver_version'])
             
             select_cols = base_cols + (", " + ", ".join(optional_cols) if optional_cols else "")
             
@@ -691,6 +741,31 @@ class BenchmarkCache:
                 if 'speed_delta_pct' in columns:
                     result_dict['speed_delta_pct'] = row[idx]
                     result_dict['prev_timestamp'] = row[idx+1]
+                    idx += 2
+                
+                # Neue Felder - Inference-Parameter
+                if 'temperature' in columns:
+                    result_dict['temperature'] = row[idx]
+                    result_dict['top_k_sampling'] = row[idx+1]
+                    result_dict['top_p_sampling'] = row[idx+2]
+                    result_dict['min_p_sampling'] = row[idx+3]
+                    result_dict['repeat_penalty'] = row[idx+4]
+                    result_dict['max_tokens'] = row[idx+5]
+                    idx += 6
+                
+                # Neue Felder - Run-Informationen
+                if 'num_runs' in columns:
+                    result_dict['num_runs'] = row[idx]
+                    result_dict['runs_averaged_from'] = row[idx+1]
+                    result_dict['warmup_runs'] = row[idx+2]
+                    idx += 3
+                
+                # Neue Felder - Versions-Informationen
+                if 'lmstudio_version' in columns:
+                    result_dict['lmstudio_version'] = row[idx]
+                    result_dict['nvidia_driver_version'] = row[idx+1]
+                    result_dict['rocm_driver_version'] = row[idx+2]
+                    result_dict['intel_driver_version'] = row[idx+3]
                 
                 result = BenchmarkResult(**result_dict)
                 results.append(result)
@@ -1098,6 +1173,93 @@ class ModelDiscovery:
 class LMStudioBenchmark:
     """Haupt-Benchmark-Klasse"""
     
+    @staticmethod
+    def get_lmstudio_version() -> Optional[str]:
+        """Ruft LM Studio Version ab"""
+        try:
+            result = subprocess.run(['lms', 'version'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                # Format: "lms - LM Studio CLI - v0.0.47\n..."
+                for line in result.stdout.split('\n'):
+                    if 'v' in line and ('0.0' in line or line.strip().startswith('v')):
+                        # Versuche Version zu extrahieren (z.B. "v0.0.47")
+                        parts = line.split()
+                        for part in parts:
+                            if part.startswith('v') and len(part) > 1:
+                                return part
+                # Fallback: erste Zeile
+                first_line = result.stdout.strip().split('\n')[0]
+                return first_line if first_line else None
+        except Exception as e:
+            logger.debug(f"Fehler beim Abrufen der LM Studio Version: {e}")
+        return None
+    
+    @staticmethod
+    def get_nvidia_driver_version() -> Optional[str]:
+        """Ruft NVIDIA Driver Version ab"""
+        try:
+            result = subprocess.run(
+                ['nvidia-smi', '--query-gpu=driver_version', '--format=csv,noheader'],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                version = result.stdout.strip()
+                return version if version else None
+        except Exception:
+            logger.debug("NVIDIA Driver nicht verfügbar")
+        return None
+    
+    @staticmethod
+    def get_rocm_driver_version() -> Optional[str]:
+        """Ruft AMD ROCm/Driver Version ab"""
+        try:
+            # Versuche rocm-smi in verschiedenen Pfaden
+            rocm_paths = ['/usr/bin/rocm-smi', '/usr/local/bin/rocm-smi']
+            rocm_paths.extend(glob.glob('/opt/rocm-*/bin/rocm-smi'))
+            
+            for rocm_smi in rocm_paths:
+                try:
+                    result = subprocess.run(
+                        [rocm_smi, '--version'],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        # Format: "ROCM-SMI version: 4.0.0+1a5c7ec\nROCM-SMI-LIB version: 7.8.0"
+                        output = result.stdout.strip()
+                        lines = output.split('\n')
+                        if lines and 'version' in lines[0].lower():
+                            # Extrahiere Version aus erstem Line
+                            parts = lines[0].split(':')
+                            if len(parts) > 1:
+                                return parts[1].strip()
+                        return output if output else None
+                except Exception:
+                    continue
+        except Exception:
+            logger.debug("ROCm Driver nicht verfügbar")
+        return None
+    
+    @staticmethod
+    def get_intel_driver_version() -> Optional[str]:
+        """Ruft Intel GPU Driver Version ab"""
+        try:
+            result = subprocess.run(
+                ['intel_gpu_top', '--help'],
+                capture_output=True, text=True, timeout=5
+            )
+            # Intel_gpu_top zeigt Version im Help-Text
+            for line in result.stdout.split('\n'):
+                if 'version' in line.lower():
+                    # Versuche Version zu extrahieren
+                    parts = line.split()
+                    for i, part in enumerate(parts):
+                        if 'version' in part.lower() and i + 1 < len(parts):
+                            return parts[i + 1]
+                    return line.strip()
+        except Exception:
+            logger.debug("Intel GPU Driver nicht verfügbar")
+        return None
+    
     def __init__(self, num_runs: int = 3, context_length: int = 2048, prompt: str = "Erkläre maschinelles Lernen in 3 Sätzen", model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
@@ -1150,6 +1312,22 @@ class LMStudioBenchmark:
             'max_power': max_power,
             'use_gtt': use_gtt,
         }
+        
+        # Erfasse Versions-Informationen einmalig bei Benchmark-Start
+        self.system_versions = {
+            'lmstudio_version': self.get_lmstudio_version(),
+            'nvidia_driver_version': self.get_nvidia_driver_version(),
+            'rocm_driver_version': self.get_rocm_driver_version(),
+            'intel_driver_version': self.get_intel_driver_version(),
+        }
+        
+        # Debug-Logging für erfasste Versionen
+        logger.info(f"📋 Erfasste Versions-Informationen:")
+        for key, value in self.system_versions.items():
+            logger.info(f"   • {key}: {value if value else 'N/A'}")
+        
+        # Speichere Inference-Parameter
+        self.inference_params = OPTIMIZED_INFERENCE_PARAMS.copy()
         
         # Erstelle Results-Verzeichnis
         RESULTS_DIR.mkdir(exist_ok=True)
@@ -1715,7 +1893,23 @@ class LMStudioBenchmark:
             # GTT-Informationen (AMD GPUs)
             gtt_enabled=self.use_gtt if self._gtt_info else None,
             gtt_total_gb=round(self._gtt_info.get('total', 0), 2) if self._gtt_info else None,
-            gtt_used_gb=round(self._gtt_info.get('used', 0), 2) if self._gtt_info else None
+            gtt_used_gb=round(self._gtt_info.get('used', 0), 2) if self._gtt_info else None,
+            # Inference-Parameter (aus Benchmark-Konfiguration)
+            temperature=self.inference_params.get('temperature'),
+            top_k_sampling=self.inference_params.get('top_k_sampling'),
+            top_p_sampling=self.inference_params.get('top_p_sampling'),
+            min_p_sampling=self.inference_params.get('min_p_sampling'),
+            repeat_penalty=self.inference_params.get('repeat_penalty'),
+            max_tokens=self.inference_params.get('max_tokens'),
+            # Informationen über Anzahl Läufe
+            num_runs=self.num_measurement_runs,
+            runs_averaged_from=len(measurements),
+            warmup_runs=NUM_WARMUP_RUNS,
+            # Versions-Informationen (erfasst beim Start des Benchmarks)
+            lmstudio_version=self.system_versions.get('lmstudio_version'),
+            nvidia_driver_version=self.system_versions.get('nvidia_driver_version'),
+            rocm_driver_version=self.system_versions.get('rocm_driver_version'),
+            intel_driver_version=self.system_versions.get('intel_driver_version')
         )
         
         # Berechne Delta zu vorherigem Benchmark falls vorhanden
