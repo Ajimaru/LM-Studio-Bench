@@ -1741,20 +1741,18 @@
                 updateLMStudioHealth(data.lmstudio);
                 
                 // === BENCHMARK ===
-                // Cache Stats (rechts) + Cache-Kachel (links)
+                // Cache Stats
                 const totalModels = data.cache_stats.total_models || 0;
                 document.getElementById('home-cached-models').textContent = totalModels;
-                document.getElementById('home-cache-count').textContent = totalModels;
-                document.getElementById('home-db-size').textContent = `${data.cache_stats.db_size_mb} MB`;
-                document.getElementById('home-cache-size').textContent = `${data.cache_stats.db_size_mb} MB`;
 
-                // Performance Stats (links) + Benchmark Ø (rechts)
+                // Performance Stats
                 if (data.perf_stats && data.perf_stats.avg_speed) {
                     const avg = `${data.perf_stats.avg_speed} tok/s`;
-                    const max = `${data.perf_stats.max_speed} tok/s`;
                     document.getElementById('home-benchmark-avg-speed').textContent = avg;
+                    document.getElementById('home-cache-size').textContent = `${data.cache_stats.db_size_mb} MB`;
                 } else {
                     document.getElementById('home-benchmark-avg-speed').textContent = 'Keine Daten';
+                    document.getElementById('home-cache-size').textContent = 'Keine Daten';
                 }
                 
                 // Last Run
