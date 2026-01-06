@@ -760,9 +760,9 @@ async def get_dashboard_stats() -> dict:
                 # Fallback: parse plain text output; non-zero exit -> offline
                 try:
                     output = subprocess.check_output(["lms", "status"], timeout=3, text=True)
-                    text = output.lower() if output else ""
-                    offline_tokens = ["not running", "stopped", "offline", "no server"]
-                    online_tokens = ["running", "online", "server listening", "server running"]
+                    text = (output or "").lower()
+                    offline_tokens = ["not running", "stopped", "offline", "no server", "not loaded"]
+                    online_tokens = ["running", "online", "listening", "ready", "server", "started", "serving", "up and running"]
                     is_offline = any(tok in text for tok in offline_tokens)
                     is_online = not is_offline and any(tok in text for tok in online_tokens)
                     lmstudio_health = {
