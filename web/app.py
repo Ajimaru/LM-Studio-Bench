@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """
-FastAPI Web-Dashboard für LM Studio Benchmark
+FastAPI Web Dashboard for LM Studio Benchmark
 
-Steuert benchmark.py via Subprocess und bietet Live-Monitoring über WebSocket.
+Controls benchmark.py via subprocess and provides live monitoring via WebSocket.
 """
 
 import argparse
 import asyncio
 import json
 import logging
-import os
 import signal
 import socket
 import subprocess
@@ -40,37 +39,40 @@ except ImportError:  # pragma: no cover - optional dependency
 
 SCIPY_AVAILABLE = scipy_stats is not None
 
-# Logging konfigurieren - mit Console und File Handler
+# Configure logging - with console and file handler
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# WebApp Startup Log-Datei
+# WebApp startup log file
+
+
 def setup_webapp_logger():
-    """Erstellt separate WebApp Startup Log-Datei"""
+    """Creates a separate WebApp startup log file"""
     logs_dir = Path(PROJECT_ROOT) / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    
+
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     log_file = logs_dir / f"webapp_{timestamp}.log"
-    
+
     # File Handler hinzufügen
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     ))
     logger.addHandler(file_handler)
-    
+
     return log_file
 
 # ============================================================================
-# Hilfsfunktionen
+# Helper functions
 # ============================================================================
 
+
 def find_free_port() -> int:
-    """Sucht einen freien Port auf dem System"""
+    """Finds a free port on the system"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         s.listen(1)
@@ -78,7 +80,7 @@ def find_free_port() -> int:
     return port
 
 
-# Pfade
+# Paths
 PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
 BENCHMARK_SCRIPT = SRC_DIR / "benchmark.py"
@@ -88,14 +90,14 @@ DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
 METADATA_DATABASE_FILE = RESULTS_DIR / "model_metadata.db"
 SCRAPER_SCRIPT = PROJECT_ROOT / "tools" / "scrape_metadata.py"
 
-# Importiere BenchmarkCache aus benchmark.py
+# Import BenchmarkCache from benchmark.py
 import sys
 sys.path.insert(0, str(SRC_DIR))
 from config_loader import DEFAULT_CONFIG
 try:
     from benchmark import BenchmarkCache, BenchmarkResult  # type: ignore
 except ImportError as e:
-    logger.error(f"❌ Konnte benchmark.py nicht importieren: {e}")
+    logger.error(f"❌ Could not import benchmark.py: {e}")
     BenchmarkCache = None  # type: ignore
     BenchmarkResult = None  # type: ignore
 
@@ -103,10 +105,12 @@ CONFIG_DEFAULTS = DEFAULT_CONFIG
 LMSTUDIO_HOST = CONFIG_DEFAULTS.get("lmstudio", {}).get("host", "localhost")
 LMSTUDIO_PORTS = CONFIG_DEFAULTS.get("lmstudio", {}).get("ports", [1234, 1235])
 
-# Jinja2 Template Environment
+# Jinja2 template environment
 template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
 
-# Globale Benchmark-Prozess-Verwaltung
+# Global benchmark process management
+
+
 class BenchmarkManager:
     def __init__(self):
         self.process: Optional[subprocess.Popen] = None
@@ -117,8 +121,8 @@ class BenchmarkManager:
         self.benchmark_log_file: Optional[Path] = None  # Log-Datei nur für aktive Benchmarks
         self.output_queue: Optional[asyncio.Queue[str]] = None  # Puffer für neue Output-Chunks
         self.output_task: Optional[asyncio.Task] = None
-        
-        # Hardware-Monitoring Daten
+
+        # Hardware monitoring data
         self.hardware_history = {
             "temperatures": [],  # Liste von {"timestamp": ISO, "value": float}
             "power": [],
@@ -133,65 +137,65 @@ class BenchmarkManager:
         return self.process is not None and self.process.poll() is None
 
     async def _consume_output(self):
-        """Liest kontinuierlich stdout und legt neue Chunks in output_queue."""
+        """Continuously reads stdout and puts new chunks into output_queue."""
         if self.output_queue is None:
             self.output_queue = asyncio.Queue()
 
-        logger.info("🔄 Output-Consumer-Task gestartet")
-        
+        logger.info("🔄 Output consumer task started")
+
         try:
             loop = asyncio.get_event_loop()
-            
-            # Lese bis EOF (auch nach Prozessende)
+
+            # Read until EOF (even after process ends)
             while True:
                 if not self.process or not self.process.stdout:
                     break
-                
+
                 try:
-                    # Blockierendes Lesen in Executor (wartet bis Zeile da ist)
+                    # Blocking read in executor (waits until line is available)
                     line = await loop.run_in_executor(
                         None,
                         self.process.stdout.readline
                     )
-                    
+
                     if not line:
                         # EOF erreicht - Prozess ist fertig
                         break
-                    
-                    # Schreibe sofort in Log-Datei
+
+                    # Write immediately to log file
                     if self.benchmark_log_file:
                         try:
                             with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
                                 f.write(line)
                         except Exception as log_error:
-                            logger.error(f"❌ Log-Write-Fehler: {log_error}")
-                    
-                    # Parse Hardware-Metriken
+                            logger.error(f"❌ Log write error: {log_error}")
+
+                    # Parse hardware metrics
                     self.parse_hardware_metrics(line)
-                    
-                    # In Queue für WebSocket
+
+                    # Into queue for WebSocket
                     await self.output_queue.put(line)
                     self.current_output += line
-                    
+
                 except Exception as read_error:
-                    logger.error(f"❌ Read-Fehler: {read_error}")
+                    logger.error(f"❌ Read error: {read_error}")
                     break
-            
-            # Setze Status auf completed wenn Prozess fertig
+
+            # Set status to completed when process is done
             if not self.is_running():
                 self.status = "completed"
-            
-            logger.info("🔄 Output-Consumer-Task beendet (EOF erreicht)")
-            
-            # Completion-Log
+
+            logger.info("🔄 Output consumer task ended (EOF reached)")
+
+            # Completion log
             if self.benchmark_log_file and self.benchmark_log_file.exists():
                 logger.info(f"✅ Benchmark-Log: {self.benchmark_log_file}")
-                
+   
         except Exception as e:
-            logger.error(f"❌ Fehler im Output-Consumer: {e}")
+            logger.error(f"❌ Error in output consumer: {e}")
 
     def drain_output_queue(self) -> str:
-        """Holt alle aktuell verfügbaren Output-Chunks ohne zu blockieren."""
+        """Fetches all currently available output chunks without blocking."""
         if not self.output_queue:
             return ""
         chunks: List[str] = []
@@ -203,13 +207,13 @@ class BenchmarkManager:
         return ''.join(chunks)
 
     async def start_benchmark(self, args: list) -> bool:
-        """Startet neuen Benchmark-Prozess"""
+        """Starts a new benchmark process"""
         if self.is_running():
             logger.warning("Benchmark läuft bereits")
             return False
 
         try:
-            # Output-Puffer/Task zurücksetzen
+            # Reset output buffer/task
             self.output_queue = asyncio.Queue()
             if self.output_task and not self.output_task.done():
                 self.output_task.cancel()
@@ -225,27 +229,27 @@ class BenchmarkManager:
             self.status = "running"
             self.start_time = datetime.now()
             self.current_output = ""
-            
-            # Setze nur den Pfad - die Datei wird erst beim ersten Write erstellt
+
+            # Only set the path - the file is created on first write
             logs_dir = RESULTS_DIR.parent / "logs"
             logs_dir.mkdir(parents=True, exist_ok=True)
             self.benchmark_log_file = logs_dir / f"benchmark_{self.start_time.strftime('%Y%m%d_%H%M%S')}.log"
-            
-            # Starte Hintergrund-Task zum kontinuierlichen Lesen des Outputs
+
+            # Start background task for continuous output reading
             self.output_task = asyncio.create_task(self._consume_output())
 
             logger.info(f"✅ Benchmark gestartet mit PID {self.process.pid}")
             logger.info(f"📝 Benchmark-Log wird geschrieben nach: {self.benchmark_log_file}")
             return True
         except Exception as e:
-            logger.error(f"❌ Fehler beim Starten des Benchmarks: {e}")
+            logger.error(f"❌ Error starting benchmark: {e}")
             self.status = "idle"
             return False
 
     def pause_benchmark(self) -> bool:
-        """Pausiert laufenden Benchmark"""
+        """Pauses running benchmark"""
         if not self.is_running() or not self.process:
-            logger.warning("Kein laufender Benchmark")
+            logger.warning("No running benchmark")
             return False
         try:
             self.process.send_signal(signal.SIGSTOP)
@@ -253,13 +257,13 @@ class BenchmarkManager:
             logger.info("⏸️ Benchmark pausiert")
             return True
         except Exception as e:
-            logger.error(f"❌ Fehler beim Pausieren: {e}")
+            logger.error(f"❌ Error pausing: {e}")
             return False
 
     def resume_benchmark(self) -> bool:
-        """Setzt pausiertes Benchmark fort"""
+        """Resumes paused benchmark"""
         if self.status != "paused" or not self.process:
-            logger.warning("Kein pausiertes Benchmark")
+            logger.warning("No paused benchmark")
             return False
         try:
             self.process.send_signal(signal.SIGCONT)
@@ -267,41 +271,41 @@ class BenchmarkManager:
             logger.info("▶️ Benchmark fortgesetzt")
             return True
         except Exception as e:
-            logger.error(f"❌ Fehler beim Fortsetzen: {e}")
+            logger.error(f"❌ Error resuming: {e}")
             return False
 
     def stop_benchmark(self) -> bool:
-        """Stoppt laufenden Benchmark"""
+        """Stops running benchmark"""
         if not self.process:
-            logger.warning("Kein laufender Benchmark")
+            logger.warning("No running benchmark")
             return False
 
         try:
-            # Versuche graceful shutdown mit SIGTERM
+            # Try graceful shutdown with SIGTERM
             self.process.send_signal(signal.SIGTERM)
             try:
                 self.process.wait(timeout=5)
-                logger.info("⏹️ Benchmark beendet (SIGTERM)")
+                logger.info("⏹️ Benchmark stopped (SIGTERM)")
             except TimeoutExpired:
                 # Fallback zu SIGKILL
                 self.process.kill()
                 self.process.wait()
-                logger.warning("⏹️ Benchmark erzwungen beendet (SIGKILL)")
-            
+                logger.warning("⏹️ Benchmark forcefully stopped (SIGKILL)")
+
             self.status = "stopped"
             self.process = None
             if self.output_task and not self.output_task.done():
                 self.output_task.cancel()
             return True
         except Exception as e:
-            logger.error(f"❌ Fehler beim Stoppen: {e}")
+            logger.error(f"❌ Error stopping: {e}")
             return False
 
     def parse_hardware_metrics(self, output_line: str):
-        """Parse Hardware-Metriken aus Benchmark-Output"""
+        """Parse hardware metrics from benchmark output"""
         import re
-        
-        # Pattern für GPU-Temperatur: "🌡️ GPU Temp: 45.5°C"
+
+        # Pattern for GPU temperature: "🌡️ GPU Temp: 45.5°C"
         temp_match = re.search(r'GPU\s+Temp\s*:\s*(\d+(?:\.\d+)?)°?C', output_line, re.IGNORECASE)
         if temp_match:
             temp_value = float(temp_match.group(1))
@@ -309,8 +313,8 @@ class BenchmarkManager:
                 "timestamp": datetime.now().isoformat(),
                 "value": temp_value
             })
-        
-        # Pattern für Power: "⚡ GPU Power: 150.5W"
+
+        # Pattern for power: "⚡ GPU Power: 150.5W"
         power_match = re.search(r'GPU\s+Power\s*:\s*(\d+(?:\.\d+)?)W', output_line, re.IGNORECASE)
         if power_match:
             power_value = float(power_match.group(1))
@@ -318,8 +322,8 @@ class BenchmarkManager:
                 "timestamp": datetime.now().isoformat(),
                 "value": power_value
             })
-        
-        # Pattern für VRAM: "💾 GPU VRAM: 8.5GB"
+
+        # Pattern for VRAM: "💾 GPU VRAM: 8.5GB"
         vram_match = re.search(r'GPU\s+VRAM\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
         if vram_match:
             vram_value = float(vram_match.group(1))
@@ -327,8 +331,8 @@ class BenchmarkManager:
                 "timestamp": datetime.now().isoformat(),
                 "value": vram_value
             })
-        
-        # Pattern für GTT: "🧠 GPU GTT: 1.5GB"
+
+        # Pattern for GTT: "🧠 GPU GTT: 1.5GB"
         gtt_match = re.search(r'GPU\s+GTT\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
         if gtt_match:
             gtt_value = float(gtt_match.group(1))
@@ -336,8 +340,8 @@ class BenchmarkManager:
                 "timestamp": datetime.now().isoformat(),
                 "value": gtt_value
             })
-        
-        # Pattern für CPU: "🖥️ CPU: 45.2%"
+
+        # Pattern for CPU: "🖥️ CPU: 45.2%"
         cpu_match = re.search(r'CPU\s*:\s*(\d+(?:\.\d+)?)%', output_line, re.IGNORECASE)
         if cpu_match:
             cpu_value = float(cpu_match.group(1))
@@ -345,9 +349,9 @@ class BenchmarkManager:
                 "timestamp": datetime.now().isoformat(),
                 "value": cpu_value
             })
-        
-        # Pattern für RAM: "💾 RAM: 8.5GB" (aber NICHT "GPU VRAM:")
-        # Verwende negative Lookbehind, um nur "RAM:" zu matchen (nicht "VRAM:")
+
+        # Pattern for RAM: "💾 RAM: 8.5GB" (but NOT "GPU VRAM:")
+        # Use negative lookbehind to match only "RAM:" (not "VRAM:")
         ram_match = re.search(r'(?<![V])RAM\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
         if ram_match:
             ram_value = float(ram_match.group(1))
@@ -357,7 +361,7 @@ class BenchmarkManager:
             })
 
     async def read_output(self) -> str:
-        """Liest ALLE verfügbaren Zeilen aus Prozess ohne Blocking"""
+        """Reads ALL available lines from process without blocking"""
         if not self.process or not self.process.stdout:
             return ""
 
@@ -365,7 +369,7 @@ class BenchmarkManager:
             # Lese ALLE verfügbaren Zeilen (nicht nur eine!)
             loop = asyncio.get_event_loop()
             lines = []
-            
+
             # Lese so viele Zeilen wie verfügbar sind (nicht-blockierend)
             while True:
                 try:
@@ -377,7 +381,7 @@ class BenchmarkManager:
                         ),
                         timeout=0.1  # Kurzer Timeout (100ms) pro Zeile
                     )
-                    
+
                     if output:
                         lines.append(output)
                     else:
@@ -386,13 +390,13 @@ class BenchmarkManager:
                 except asyncio.TimeoutError:
                     # Timeout bedeutet keine weiteren Zeilen verfügbar
                     break
-            
+
             # Kombiniere alle gelesenen Zeilen
             if lines:
                 combined_output = ''.join(lines)
                 self.current_output += combined_output
                 return combined_output
-            
+       
             return ""
         except Exception as e:
             logger.error(f"❌ Fehler beim Lesen des Outputs: {e}")
@@ -441,7 +445,9 @@ async def lifespan(app: FastAPI):
 # FastAPI App initialisieren (mit Lifespan-Handler)
 app = FastAPI(
     title="LM Studio Benchmark Dashboard",
-    description="Web-Dashboard zur Steuerung und Überwachung von LM Studio Benchmarks",
+    description=(
+        "Web-Dashboard zur Steuerung und Überwachung von LM Studio Benchmarks"
+    ),
     lifespan=lifespan
 )
 
@@ -460,7 +466,7 @@ class BenchmarkParams(BaseModel):
     context: Optional[int] = None
     limit: Optional[int] = None
     prompt: Optional[str] = None
-    
+
     # Neue Filter-Parameter
     min_context: Optional[int] = None
     max_size: Optional[float] = None
@@ -468,19 +474,19 @@ class BenchmarkParams(BaseModel):
     arch: Optional[str] = None
     params: Optional[str] = None
     rank_by: Optional[str] = None
-    
+
     # Regex-Filter
     only_vision: bool = False
     only_tools: bool = False
     include_models: Optional[str] = None
     exclude_models: Optional[str] = None
-    
+
     # Boolean Flags
     retest: bool = False
     dev_mode: bool = False
     enable_profiling: bool = True
     disable_gtt: bool = False
-    
+
     # Hardware-Limits
     max_temp: Optional[float] = None
     max_power: Optional[float] = None
@@ -492,7 +498,7 @@ class BenchmarkParams(BaseModel):
     min_p_sampling: Optional[float] = None
     repeat_penalty: Optional[float] = None
     max_tokens: Optional[int] = None
-    
+
     # Load-Config Parameter (Performance Tuning)
     n_gpu_layers: Optional[int] = -1
     n_batch: Optional[int] = 512
@@ -2771,7 +2777,7 @@ async def get_dashboard_stats() -> dict:
             if 'brand_raw' in cpu_data and cpu_data['brand_raw']:
                 raw_cpu = cpu_data['brand_raw'].replace('®', '').replace('™', '').strip()
                 system_info["cpu"] = raw_cpu
-                
+ 
                 # Extrahiere iGPU-Modell aus CPU-String (z.B. "w/ Radeon 890M")
                 if 'Radeon' in raw_cpu:
                     import re
@@ -2780,19 +2786,19 @@ async def get_dashboard_stats() -> dict:
                         cpu_gpu_series = f"AMD Radeon {radeon_match.group(1)}"
         except:
             pass
-        
+
         # GPU-Info - Verbesserte Erkennung mit nvidia-smi/rocm-smi
         gpu_info = None
         try:
             import subprocess
             import glob
             import re
-            
+
             gpu_type = "Unknown"
             gpu_model = "Unknown"
             vram_total_gb = None
             gtt_total_gb = None
-            
+
             # GPU-Typ und GPU-Modell aus Results ermitteln (falls vorhanden)
             # Die Benchmark-DB enthält jetzt vollständige GPU-Modellnamen ("AMD Radeon 890M" statt nur "AMD")
             if results:
@@ -2806,7 +2812,7 @@ async def get_dashboard_stats() -> dict:
                     gpu_type = "Intel"
                 else:
                     gpu_type = gpu_model
-            
+
             # NVIDIA GPU Erkennung
             try:
                 # Hole VRAM-Größe
@@ -2814,17 +2820,17 @@ async def get_dashboard_stats() -> dict:
                 vram_total_mb = int(output.decode().strip().split('\n')[0])
                 vram_total_gb = round(vram_total_mb / 1024, 2)
                 gpu_type = "NVIDIA"
-                
+
                 # Hole GPU-Modell
                 try:
                     model_output = subprocess.check_output(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'], timeout=5)
                     gpu_model = model_output.decode().strip().split('\n')[0]
                 except Exception:
                     gpu_model = "NVIDIA GPU"
-                    
+    
             except (TimeoutExpired, FileNotFoundError, ValueError):
                 pass
-            
+
             # AMD GPU Erkennung mit rocm-smi
             if not vram_total_gb:
                 try:
@@ -2834,10 +2840,10 @@ async def get_dashboard_stats() -> dict:
                         if Path(path).exists():
                             rocm_tool = path
                             break
-                    
+
                     if not rocm_tool:
                         rocm_tool = 'rocm-smi'  # Fallback auf PATH
-                    
+
                     # AMD GPU-Kartenserie Mapping basierend auf Device ID
                     amd_device_mapping = {
                         '150e': 'Radeon Graphics',  # Generische iGPU - wird durch CPU-Info überschrieben
@@ -2854,11 +2860,11 @@ async def get_dashboard_stats() -> dict:
                         'gfx908': 'MI100',
                         'gfx90a': 'MI250',
                     }
-                    
+
                     # Hole GPU Device ID aus lspci oder sysfs
                     gpu_series = None
                     device_id = None
-                    
+
                     try:
                         # Versuche Device ID aus lspci zu holen (für dedizierte GPUs)
                         lspci_output = subprocess.run(
@@ -2899,7 +2905,7 @@ async def get_dashboard_stats() -> dict:
                                         break
                     except (FileNotFoundError, TimeoutExpired):
                         pass
-                    
+
                     # Fallback: Hole Device ID aus /sys
                     if not device_id:
                         try:
@@ -2910,7 +2916,7 @@ async def get_dashboard_stats() -> dict:
                                     break
                         except:
                             pass
-                    
+
                     # Hole gfx-Code von rocm-smi als Fallback
                     gfx_code = None
                     try:
@@ -2929,7 +2935,7 @@ async def get_dashboard_stats() -> dict:
                                     break
                     except Exception:
                         pass
-                    
+
                     # Zusammenstellen GPU-Modellname mit Fallback-Kette
                     # 1. Höchste Priorität: GPU-Serie aus CPU-String extrahiert (z.B. "Radeon 890M" aus CPU-Name)
                     if cpu_gpu_series:
@@ -2952,7 +2958,7 @@ async def get_dashboard_stats() -> dict:
                     # 7. Fallback: Generisch
                     else:
                         gpu_model = "AMD GPU"
-                    
+
                     # Hole VRAM-Größe
                     result = subprocess.run(
                         [rocm_tool, '--showmeminfo', 'vram'],
@@ -2960,7 +2966,7 @@ async def get_dashboard_stats() -> dict:
                         text=True,
                         timeout=5
                     )
-                    
+
                     if result.returncode == 0:
                         # Parse "GPU[0] : VRAM Total Memory (B): 33550180352"
                         for line in result.stdout.split('\n'):
@@ -2971,7 +2977,7 @@ async def get_dashboard_stats() -> dict:
                                     vram_total_gb = round(vram_bytes / (1024**3), 2)
                                     gpu_type = "AMD"
                                     break
-                    
+
                     # Hole GTT-Größe (AMD spezifisch)
                     if gpu_type == "AMD":
                         result = subprocess.run(
@@ -2980,7 +2986,7 @@ async def get_dashboard_stats() -> dict:
                             text=True,
                             timeout=5
                         )
-                        
+
                         if result.returncode == 0:
                             # Parse "GPU[0] : GTT Total Memory (B): 98618482688"
                             for line in result.stdout.split('\n'):
@@ -2990,10 +2996,10 @@ async def get_dashboard_stats() -> dict:
                                         gtt_bytes = int(match.group(1))
                                         gtt_total_gb = round(gtt_bytes / (1024**3), 2)
                                         break
-                
+
                 except (TimeoutExpired, FileNotFoundError):
                     pass
-            
+
             # Zusammenstellen GPU-Info
             gpu_info = {
                 "type": gpu_type,
@@ -3002,7 +3008,7 @@ async def get_dashboard_stats() -> dict:
                 "gtt_gb": gtt_total_gb if gtt_total_gb else system_info["ram_gb"],
                 "total_gb": (vram_total_gb + gtt_total_gb) if (vram_total_gb and gtt_total_gb) else (vram_total_gb or system_info["ram_gb"])
             }
-        
+
         except Exception:
             gpu_info = {
                 "type": "Unknown",
@@ -3010,14 +3016,14 @@ async def get_dashboard_stats() -> dict:
                 "gtt_gb": system_info["ram_gb"],
                 "total_gb": system_info["ram_gb"]
             }
-        
+
         # Cache-Statistiken
         cache_stats = {
             "total_models": len(results),
             "total_runs": len(results),
             "db_size_mb": round(DATABASE_FILE.stat().st_size / (1024 * 1024), 2) if DATABASE_FILE.exists() else 0
         }
-        
+
         # Performance-Statistiken
         perf_stats = {}
         if results:
@@ -3027,7 +3033,7 @@ async def get_dashboard_stats() -> dict:
                 "max_speed": round(max(speeds), 2),
                 "min_speed": round(min(speeds), 2)
             }
-        
+
         # Top 5 Schnellste Modelle
         top_models = []
         fastest_model = None
@@ -3051,7 +3057,7 @@ async def get_dashboard_stats() -> dict:
                         "speed": round(r.avg_tokens_per_sec, 2),
                         "capabilities": capabilities_by_model.get(r.model_name, [])
                     }
-        
+
         # Letzte 10 Benchmark-Runs (mit Timestamp)
         recent_runs = []
         last_run_timestamp = None
@@ -3071,7 +3077,7 @@ async def get_dashboard_stats() -> dict:
                 # Speichere letzten Run Timestamp
                 if i == 0:
                     last_run_timestamp = r.timestamp
-        
+
         return {
             "success": True,
             "system_info": system_info,
@@ -3099,12 +3105,12 @@ async def websocket_benchmark(websocket: WebSocket):
     """WebSocket für Live-Streaming von Benchmark-Output"""
     await websocket.accept()
     manager.connected_clients.add(websocket)
-    
+
     heartbeat_count = 0
-    
+
     try:
         logger.info(f"✅ WebSocket Client verbunden (Total: {len(manager.connected_clients)})")
-        
+
         # Sende initialen Status
         await websocket.send_json({
             "type": "status",
