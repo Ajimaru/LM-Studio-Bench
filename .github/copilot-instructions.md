@@ -1,137 +1,137 @@
 # GitHub Copilot Instructions - LM Studio Benchmark
 
-## Projekt-Kontext
+## Project Context
 
-Dies ist ein Python-Benchmark-Tool für LM Studio mit modernem Web-Dashboard, das automatisch alle lokal installierten LLM-Modelle und deren Quantisierungen testet. Das Ziel ist es, Token/s-Geschwindigkeiten zu messen und zu vergleichen.
+This is a Python benchmark tool for LM Studio with a modern web dashboard that automatically tests all locally installed LLM models and their quantizations. The goal is to measure and compare token/s speeds.
 
 ## Coding Guidelines
 
-### Allgemein
-- Python 3.8+ kompatibel
-- Type Hints verwenden wo möglich
-- Docstrings für Klassen und wichtige Funktionen
-- Fehlerbehandlung mit aussagekräftigen Error Messages
-- Logging statt print() für wichtige Events
+### General
+- Compatible with Python 3.8+
+- Use type hints where possible
+- Docstrings for classes and important functions
+- Error handling with meaningful error messages
+- Use logging instead of print() for important events
 
-### Projekt-Spezifisch
-- **GPU-Handling**: Detaillierte Erkennung (NVIDIA nvidia-smi, AMD rocm-smi, Intel)
+### Project-Specific
+- **GPU Handling**: Detailed detection (NVIDIA nvidia-smi, AMD rocm-smi, Intel)
   - NVIDIA: `nvidia-smi --query-gpu=name` + `--query-gpu=memory.total`
-  - AMD: `rocm-smi --showproductname` (gfx-Code) + `lspci` (Device-ID-Mapping)
-  - iGPU-Extraktion: Radeon-Modelle aus CPU-String (z.B. "Radeon 890M")
-- **Healthcheck**: HTTP API (Ports 1234/1235) + CLI Fallback (`lms status`) + 5s Polling
-- **System-Info**: Linux-Distro (distro.name()), Kernel (platform.release()), CPU-Modell (cpuinfo)
-- **VRAM-Management**: Progressive GPU-Offload-Reduktion (1.0 → 0.7 → 0.5 → 0.3)
-- **Error Recovery**: Niemals gesamten Benchmark abbrechen, nur einzelnes Modell überspringen
-- **Progress Feedback**: tqdm für alle längeren Operationen
-- **Resource Cleanup**: Modelle immer entladen nach Test
-- **Web-UI**: FastAPI Backend + Jinja2 Templates + Plotly Charts
+  - AMD: `rocm-smi --showproductname` (gfx code) + `lspci` (device ID mapping)
+  - iGPU extraction: Radeon models from CPU string (e.g., "Radeon 890M")
+- **Healthcheck**: HTTP API (ports 1234/1235) + CLI fallback (`lms status`) + 5s polling
+- **System Info**: Linux distro (`distro.name()`), kernel (`platform.release()`), CPU model (`cpuinfo`)
+- **VRAM Management**: Progressive GPU offload reduction (1.0 → 0.7 → 0.5 → 0.3)
+- **Error Recovery**: Never abort the entire benchmark, only skip individual models
+- **Progress Feedback**: Use tqdm for all longer operations
+- **Resource Cleanup**: Always unload models after test
+- **Web UI**: FastAPI backend + Jinja2 templates + Plotly charts
 
 ### LM Studio SDK & Tools
-- Verwende `lmstudio` Python SDK
-- Server-Management via subprocess (`lms` CLI)
-- Nutze `stats` aus Response für Metriken
-- Context Length auf 2048 begrenzen (VRAM-Optimierung)
-- GPU-Tools nutzen: nvidia-smi, rocm-smi, lspci
+- Use `lmstudio` Python SDK
+- Server management via subprocess (`lms` CLI)
+- Use `stats` from response for metrics
+- Limit context length to 2048 (VRAM optimization)
+- Use GPU tools: nvidia-smi, rocm-smi, lspci
 
-### Dateistruktur
+### Directory Structure
 
 ```text
 project-root/
-├── run.py              # Wrapper-Script (entry point)
-├── README.md           # Hauptdokumentation
+├── run.py              # Wrapper script (entry point)
+├── README.md           # Main documentation
 ├── requirements.txt    # Dependencies
-├── .gitignore          # Git-Ausschlüsse
+├── .gitignore          # Git exclusions
 ├── src/
-│   ├── benchmark.py    # Haupt-Anwendung (~1,900 Zeilen)
-│   └── report_template.html.template  # HTML-Report-Template
+│   ├── benchmark.py    # Main application (~1,900 lines)
+│   └── report_template.html.template  # HTML report template
 ├── web/
-│   ├── app.py          # FastAPI Backend (~1,400 Zeilen)
+│   ├── app.py          # FastAPI backend (~1,400 lines)
 │   └── templates/
-│       └── dashboard.html.jinja  # Dashboard UI (~2,600 Zeilen)
-├── docs/               # Öffentliche Dokumentation
-│   ├── QUICKSTART.md   # Schnelleinstieg
+│       └── dashboard.html.jinja  # Dashboard UI (~2,600 lines)
+├── docs/               # Public documentation
+│   ├── QUICKSTART.md   # Quickstart
 │   ├── HARDWARE_MONITORING_GUIDE.md
 │   └── LLM_METADATA_GUIDE.md
-├── development/        # Interne Notizen (in .gitignore)
+├── development/        # Internal notes (in .gitignore)
 │   └── FEATURES.md
-├── results/            # Benchmark-Ergebnisse
+├── results/            # Benchmark results
 │   ├── benchmark_results_*.json
 │   ├── benchmark_results_*.csv
 │   ├── benchmark_results_*.pdf
 │   ├── benchmark_results_*.html
-│   └── benchmark_cache.db  # SQLite-Cache
-├── logs/               # Logs mit Datum
-│   ├── webapp_YYYYMMDD_HHMMSS.log  # Dashboard Logs
-│   └── benchmark_YYYYMMDD_HHMMSS.log  # Benchmark-Logs
-└── .vscode/            # VSCode-Einstellungen
+│   └── benchmark_cache.db  # SQLite cache
+├── logs/               # Logs with date
+│   ├── webapp_YYYYMMDD_HHMMSS.log  # Dashboard logs
+│   └── benchmark_YYYYMMDD_HHMMSS.log  # Benchmark logs
+└── .vscode/            # VSCode settings
     └── settings.json
 ```
 
-### Output-Format
-- **JSON**: Strukturiert, 21 Felder (11 Metriken + 6 Metadaten + 2 Effizienz + 2 Delta)
-- **CSV**: Tabellarisch, Excel/Sheets-kompatibel
-- **PDF**: Landscape A4 mit Tabellen, Diagrammen und Analyse
-- **HTML**: Interaktive Plotly-Diagramme (Bar, Scatter, Trend-Charts)
-- Felder: model_name, quantization, gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec, tokens_per_sec_per_gb, speed_delta_pct, etc.
+### Output Format
+- **JSON**: Structured, 21 fields (11 metrics + 6 metadata + 2 efficiency + 2 delta)
+- **CSV**: Tabular, Excel/Sheets compatible
+- **PDF**: Landscape A4 with tables, charts, and analysis
+- **HTML**: Interactive Plotly charts (bar, scatter, trend charts)
+- Fields: model_name, quantization, gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec, tokens_per_sec_per_gb, speed_delta_pct, etc.
 
-### Test-Konfiguration
-- **Prompt**: "Erkläre maschinelles Lernen in 3 Sätzen"
-- **Warmup**: 1 Durchlauf (verwerfen)
-- **Messungen**: 3 Durchläufe (Durchschnitt)
-- **Context**: 2048 Tokens
-- **VRAM-Limit**: 12GB optimiert
+### Test Configuration
+- **Prompt**: "Explain machine learning in 3 sentences"
+- **Warmup**: 1 run (discard)
+- **Measurements**: 3 runs (average)
+- **Context**: 2048 tokens
+- **VRAM Limit**: 12GB optimized
 
-## Web-Dashboard (FastAPI)
+## Web Dashboard (FastAPI)
 
 ### Backend (web/app.py)
-- **GPU-Detection**: Umfassende Erkennung mit fallback-Kette
-- **System-Info**: Linux-Distro, Kernel, CPU-Modell, RAM
-- **Healthcheck**: `/api/lmstudio/health` mit 5s Polling
-- **Dashboard-Stats**: `/api/dashboard/stats` mit System- und GPU-Info
-- **Benchmark-Control**: Start/Pause/Resume/Stop via REST API
-- **WebSocket**: Live-Streaming von Benchmark-Output
+- **GPU Detection**: Comprehensive detection with fallback chain
+- **System Info**: Linux distro, kernel, CPU model, RAM
+- **Healthcheck**: `/api/lmstudio/health` with 5s polling
+- **Dashboard Stats**: `/api/dashboard/stats` with system and GPU info
+- **Benchmark Control**: Start/Pause/Resume/Stop via REST API
+- **WebSocket**: Live streaming of benchmark output
 
 ### Frontend (web/templates/dashboard.html.jinja)
-- **Responsive Design**: 2-Spalten Layout (Hardware | Benchmark)
+- **Responsive Design**: 2-column layout (hardware | benchmark)
 - **27 Themes**: Light, Dark, Ocean Blue, Gruvbox, Dracula, Nord, etc.
-- **Benchmark-Form**: Web-Formular mit Tooltip-Erklärungen für alle CLI-Argumente
-- **Filter-Optionen**: Quantisierung, Architektur, Parametergröße, Context-Length
-- **Ranking**: Nach Speed, Effizienz, TTFT oder VRAM
-- **Hardware-Limits**: Max. GPU-Temp, Max. Power-Draw
-- **Live-Charts**: GPU Temp, Power, VRAM, GTT, CPU, System-RAM (6 interaktive Plotly-Charts)
+- **Benchmark Form**: Web form with tooltip explanations for all CLI arguments
+- **Filter Options**: Quantization, architecture, parameter size, context length
+- **Ranking**: By speed, efficiency, TTFT or VRAM
+- **Hardware Limits**: Max GPU temp, max power draw
+- **Live Charts**: GPU temp, power, VRAM, GTT, CPU, system RAM (6 interactive Plotly charts)
 
-### Tooltip-System
-- Fragezeichen-Icons neben jedem Label
-- Hover zeigt kurze Erklärung
-- Konsistente dunkle Hintergrund-Farbe (rgba(0,0,0,0.9)) für alle Themes
+### Tooltip System
+- Question mark icons next to each label
+- Hover shows short explanation
+- Consistent dark background color (rgba(0,0,0,0.9)) for all themes
 
 ## Best Practices
-- Subprocess-Calls mit Timeout versehen (z.B. `timeout=5`)
-- GPU-Monitoring kann fehlschlagen → Graceful degradation
-- Alle Pfade OS-agnostisch (pathlib.Path)
-- CSV mit UTF-8 encoding
-- JSON mit indent=2 für Lesbarkeit
-- Type Hints vollständig (Pylance type-safe)
-- Plotly-Availability prüfen für HTML/PDF exports
-- Error Recovery: Niemals ganzen Benchmark abbrechen, einzelne Modelle überspringen
-- GPU-Erkennung: Immer fallback-Ketten verwenden (HTTP → CLI → Parse sysfs)
-- Healthcheck: Nicht blockierend, 5s Polling, keine Fehler wenn LM Studio offline
+- Subprocess calls with timeout (e.g., `timeout=5`)
+- GPU monitoring may fail → graceful degradation
+- All paths OS-agnostic (`pathlib.Path`)
+- CSV with UTF-8 encoding
+- JSON with indent=2 for readability
+- Full type hints (Pylance type-safe)
+- Check Plotly availability for HTML/PDF exports
+- Error recovery: Never abort entire benchmark, skip individual models
+- GPU detection: Always use fallback chains (HTTP → CLI → parse sysfs)
+- Healthcheck: Non-blocking, 5s polling, no error if LM Studio offline
 
-## Neue Dependencies
-- `httpx`: HTTP-Client für Healthcheck
-- `distro`: Linux-Distro-Erkennung
-- `py-cpuinfo`: CPU-Modell-Extraktion
-- `fastapi`: Web-Framework (existiert bereits)
-- `jinja2`: Template-Rendering (existiert bereits)
+## New Dependencies
+- `httpx`: HTTP client for healthcheck
+- `distro`: Linux distro detection
+- `py-cpuinfo`: CPU model extraction
+- `fastapi`: Web framework (already present)
+- `jinja2`: Template rendering (already present)
 
-## Implementierungsplan
-- Interne Roadmap: siehe `development/FEATURES.md`
+## Implementation Plan
+- Internal roadmap: see `development/FEATURES.md`
 
 ## Troubleshooting
-- Prüfe LM Studio Installation mit `lms --help`
-- Nutze Log-Dateien in `logs/` für Debugging (separate Logs für Webapp und Benchmark)
-- Nutze LMStudio logs in `~/.lmstudio/server-logs/` für tiefere Fehleranalyse
-- Bei Plotly-Fehlern: HTML/PDF fallback auf Text-Ausgabe
-- GPU-Probleme: Prüfe VRAM mit `nvidia-smi` (NVIDIA), `rocm-smi` (AMD), `intel_gpu_top` (Intel)
-- Healthcheck-Fehler: Überprüfe ob LM Studio auf Port 1234 oder 1235 läuft
-- Device-ID-Mapping: Nutze `lspci -d 1002:` für AMD GPU-Erkennung
+- Check LM Studio installation with `lms --help`
+- Use log files in `logs/` for debugging (separate logs for webapp and benchmark)
+- Use LMStudio logs in `~/.lmstudio/server-logs/` for deeper error analysis
+- For Plotly errors: HTML/PDF fallback to text output
+- GPU issues: Check VRAM with `nvidia-smi` (NVIDIA), `rocm-smi` (AMD), `intel_gpu_top` (Intel)
+- Healthcheck errors: Check if LM Studio is running on port 1234 or 1235
+- Device ID mapping: Use `lspci -d 1002:` for AMD GPU detection
