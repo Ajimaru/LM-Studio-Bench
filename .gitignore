@@ -134,3 +134,6 @@ error_*.log
 
 # Development (internal notes)
 development/
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
