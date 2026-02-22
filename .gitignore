@@ -127,6 +127,7 @@ Thumbs.db
 *.temp
 *.bak
 *~
+
 # Logging
 logs/
 error.log
@@ -137,3 +138,8 @@ development/
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+
+# Agents
+codacy-cli.sh
+.codacy/
+.qodo/
