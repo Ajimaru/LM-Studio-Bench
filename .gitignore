@@ -142,4 +142,3 @@ development/
 # Agents
 codacy-cli.sh
 .codacy/
-.qodo/
