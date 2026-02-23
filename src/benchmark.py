@@ -1482,16 +1482,32 @@ class LMStudioBenchmark:
         try:
             result = subprocess.run(['lms', 'version'], capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
-                # Format: "lms - LM Studio CLI - v0.0.47\n..."
-                for line in result.stdout.split('\n'):
-                    if 'v' in line and ('0.0' in line or line.strip().startswith('v')):
-                        # Versuche Version zu extrahieren (z.B. "v0.0.47")
-                        parts = line.split()
-                        for part in parts:
-                            if part.startswith('v') and len(part) > 1:
-                                return part
-                # Fallback: erste Zeile
-                first_line = result.stdout.strip().split('\n')[0]
+                # Beispiel-Ausgaben:
+                # - Banner mit SemVer: "lms - LM Studio CLI - v0.0.47"
+                # - Banner mit Commit: "CLI commit: 92cac59"
+                stdout = result.stdout.strip()
+                # Suche bevorzugt nach SemVer-Format vX.Y.Z
+                m = re.search(r"v\d+\.\d+\.\d+", stdout)
+                if m:
+                    return m.group(0)
+
+                # Suche nach Commit-Hash (z.B. 'CLI commit: 92cac59')
+                m2 = re.search(r"CLI commit:\s*([0-9a-fA-F]{6,40})", stdout)
+                if m2:
+                    commit = m2.group(1)
+                    # Versuche, die installierte Python-Paketversion als menschenlesbare Version zu nutzen
+                    try:
+                        import lmstudio
+                        pkg_ver = getattr(lmstudio, '__version__', None)
+                        if pkg_ver:
+                            return f"{pkg_ver} (commit:{commit})"
+                    except Exception:
+                        pass
+                    # Fallback: gib Commit im lesbaren Format zurück
+                    return f"commit:{commit}"
+
+                # Letzter Fallback: erste nicht-leere Zeile
+                first_line = stdout.split('\n')[0] if stdout else None
                 return first_line if first_line else None
         except Exception as e:
             logger.debug(f"Fehler beim Abrufen der LM Studio Version: {e}")
