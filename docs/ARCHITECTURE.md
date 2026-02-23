@@ -1,0 +1,520 @@
+# Architecture Documentation
+
+> Comprehensive architecture documentation with Mermaid diagrams showing how the Python modules interact and how CLI arguments and configuration files are processed.
+
+---
+
+## Table of Contents
+
+- [Architecture Documentation](#architecture-documentation)
+  - [Table of Contents](#table-of-contents)
+  - [System Architecture Overview](#system-architecture-overview)
+  - [Startup Flow](#startup-flow)
+  - [Configuration Loading](#configuration-loading)
+  - [Configuration Priority](#configuration-priority)
+  - [Benchmark Execution Flow](#benchmark-execution-flow)
+  - [REST API vs SDK Mode](#rest-api-vs-sdk-mode)
+  - [Component Details](#component-details)
+    - [1. run.py (Entry Point)](#1-runpy-entry-point)
+    - [2. config\_loader.py (Configuration Manager)](#2-config_loaderpy-configuration-manager)
+    - [3. benchmark.py (Main Engine)](#3-benchmarkpy-main-engine)
+    - [4. rest\_client.py (REST API Client)](#4-rest_clientpy-rest-api-client)
+  - [Data Flow Summary](#data-flow-summary)
+  - [See Also](#see-also)
+
+---
+
+## System Architecture Overview
+
+```mermaid
+graph TB
+    User([User]) --> RunPy[run.py<br/>Entry Point]
+    
+    RunPy -->|--webapp/-w flag| WebApp[web/app.py<br/>FastAPI Server]
+    RunPy -->|benchmark mode| Benchmark[src/benchmark.py<br/>Benchmark Engine]
+    
+    Benchmark --> ConfigLoader[src/config_loader.py<br/>Configuration Manager]
+    Benchmark --> RestClient[src/rest_client.py<br/>REST API Client]
+    
+    ConfigLoader -->|reads| DefaultsJSON[config/defaults.json<br/>Default Configuration]
+    ConfigLoader -->|provides| DefaultConfig[(DEFAULT_CONFIG)]
+    
+    Benchmark -->|uses| LMStudio[LM Studio Server<br/>localhost:1234/1235]
+    RestClient -->|HTTP API v1| LMStudio
+    
+    Benchmark -->|writes| ResultsDB[(results/benchmark_cache.db<br/>SQLite Cache)]
+    Benchmark -->|exports| Reports[JSON/CSV/PDF/HTML<br/>Reports]
+    
+    WebApp -->|launches| Benchmark
+    WebApp -->|reads| ResultsDB
+    WebApp -->|serves| Dashboard[Web Dashboard<br/>http://localhost:8080]
+    
+    style RunPy fill:#e1f5ff
+    style Benchmark fill:#ffe1e1
+    style ConfigLoader fill:#e1ffe1
+    style RestClient fill:#fff4e1
+    style DefaultsJSON fill:#f0f0f0
+    style LMStudio fill:#e8deff
+```
+
+**Key Components:**
+
+- **run.py**: Wrapper script that decides between web dashboard and CLI benchmark mode
+- **benchmark.py**: Main benchmark engine (~4,683 lines) with argparse, model discovery, and execution
+- **config_loader.py**: Loads and merges configuration from JSON file with built-in defaults
+- **rest_client.py**: REST API client for LM Studio v1 endpoints (optional mode)
+- **web/app.py**: FastAPI web dashboard with live streaming and results browser
+
+---
+
+## Startup Flow
+
+```mermaid
+flowchart TD
+    Start([./run.py args]) --> CheckHelp{--help or -h?}
+    CheckHelp -->|Yes| ShowHelp[Show Extended Help<br/>+ benchmark.py --help]
+    CheckHelp -->|No| CheckWebFlag{--webapp or -w<br/>in args?}
+    
+    CheckWebFlag -->|Yes| RemoveFlag[Remove --webapp/-w<br/>from args]
+    RemoveFlag --> FindWebApp{web/app.py<br/>exists?}
+    FindWebApp -->|Yes| StartWeb[subprocess.call<br/>python web/app.py + args]
+    FindWebApp -->|No| ErrorWeb[Error: app.py not found]
+    
+    CheckWebFlag -->|No| FindBenchmark{src/benchmark.py<br/>exists?}
+    FindBenchmark -->|Yes| StartBenchmark[subprocess.call<br/>python src/benchmark.py + args]
+    FindBenchmark -->|No| ErrorBench[Error: benchmark.py not found]
+    
+    ShowHelp --> Exit1([exit 0])
+    StartWeb --> Exit2([exit with app.py status])
+    StartBenchmark --> Exit3([exit with benchmark.py status])
+    ErrorWeb --> Exit4([exit 1])
+    ErrorBench --> Exit5([exit 1])
+    
+    style Start fill:#e1f5ff
+    style StartWeb fill:#ffe1ff
+    style StartBenchmark fill:#ffe1e1
+```
+
+**Decision Logic:**
+
+1. **Help Mode** (`--help`/`-h`): Displays extended help combining run.py explanation + benchmark.py CLI options
+2. **Web Mode** (`--webapp`/`-w`): Launches FastAPI dashboard at `http://localhost:8080`
+3. **Benchmark Mode** (default): Runs benchmark.py with all CLI arguments
+
+---
+
+## Configuration Loading
+
+```mermaid
+flowchart TD
+    Start([config_loader.py<br/>import]) --> BaseConfig[BASE_DEFAULT_CONFIG<br/>Hard-coded Defaults]
+    
+    BaseConfig --> LoadFunc[load_default_config]
+    LoadFunc --> CheckFile{config/defaults.json<br/>exists?}
+    
+    CheckFile -->|Yes| ReadJSON[Read JSON file]
+    CheckFile -->|No| UseBase[Use BASE_DEFAULT_CONFIG]
+    
+    ReadJSON --> ParseJSON[Parse JSON]
+    ParseJSON --> DeepMerge[_deep_merge<br/>Base + User Config]
+    
+    DeepMerge --> NormalizePorts[_normalize_ports<br/>Ensure valid LM Studio ports]
+    UseBase --> NormalizePorts
+    
+    NormalizePorts --> FinalConfig[(DEFAULT_CONFIG<br/>Global Singleton)]
+    
+    FinalConfig --> BenchmarkImport[benchmark.py imports<br/>DEFAULT_CONFIG]
+    FinalConfig --> WebAppImport[web/app.py imports<br/>DEFAULT_CONFIG]
+    
+    style BaseConfig fill:#f0f0f0
+    style FinalConfig fill:#e1ffe1
+    style DeepMerge fill:#fff4e1
+```
+
+**Configuration Layers:**
+
+| Layer | Source | Priority |
+| ----- | ------ | -------- |
+| **1. Hard-coded** | `BASE_DEFAULT_CONFIG` in config_loader.py | Lowest |
+| **2. JSON File** | `config/defaults.json` | Medium |
+| **3. CLI Arguments** | argparse in benchmark.py | Highest |
+
+**Merge Strategy:**
+
+- `_deep_merge()` recursively merges nested dictionaries
+- User config values override base config
+- `None` values in user config are skipped (base value retained)
+
+---
+
+## Configuration Priority
+
+```mermaid
+flowchart LR
+    CLI[CLI Arguments<br/>--runs 5<br/>--context 4096] -->|Highest Priority| Merge[Configuration<br/>Merge]
+    
+    JSON[config/defaults.json<br/>num_runs: 3<br/>context_length: 2048] -->|Medium Priority| Merge
+    
+    Base[BASE_DEFAULT_CONFIG<br/>prompt: default<br/>temperature: 0.1] -->|Lowest Priority| Merge
+    
+    Merge --> Final[Final Configuration<br/>runs=5<br/>context=4096<br/>temperature=0.1]
+    
+    style CLI fill:#ffe1e1
+    style JSON fill:#fff4e1
+    style Base fill:#f0f0f0
+    style Final fill:#e1ffe1
+```
+
+**Example Priority Resolution:**
+
+```python
+# BASE_DEFAULT_CONFIG
+{
+  "num_runs": 3,
+  "context_length": 2048,
+  "prompt": "Is the sky blue?"
+}
+
+# config/defaults.json
+{
+  "num_runs": 5,
+  "prompt": "Explain machine learning"
+}
+
+# CLI: ./run.py --runs 1 --context 4096
+
+# FINAL RESULT:
+{
+  "num_runs": 1,           # ← CLI override
+  "context_length": 4096,  # ← CLI override
+  "prompt": "Explain..."   # ← JSON override (no CLI arg)
+}
+```
+
+---
+
+## Benchmark Execution Flow
+
+```mermaid
+flowchart TD
+    Start([benchmark.py main]) --> ParseArgs[Parse CLI Arguments<br/>argparse.ArgumentParser]
+    
+    ParseArgs --> LoadConfig[Load DEFAULT_CONFIG<br/>from config_loader]
+    
+    LoadConfig --> CheckFlags{Special Flags?}
+    
+    CheckFlags -->|--list-cache| ListCache[Display Cache Entries<br/>exit]
+    CheckFlags -->|--export-cache| ExportCache[Export Cache to JSON<br/>exit]
+    CheckFlags -->|--export-only| ExportOnly[Generate Reports Only<br/>skip benchmark]
+    CheckFlags -->|Normal Mode| CreateBenchmark[Create LMStudioBenchmark<br/>instance]
+    
+    CreateBenchmark --> MergeConfig[Merge Config Layers:<br/>CLI > JSON > Base]
+    
+    MergeConfig --> InitComponents[Initialize Components:<br/>• GPUMonitor<br/>• BenchmarkCache<br/>• HardwareMonitor<br/>• REST Client optional]
+    
+    InitComponents --> CheckServer{LM Studio<br/>Server Running?}
+    
+    CheckServer -->|No| StartServer[Auto-start Server<br/>lms server start]
+    CheckServer -->|Yes| DiscoverModels[Discover Models<br/>lms ls --json]
+    StartServer --> DiscoverModels
+    
+    DiscoverModels --> FilterModels[Apply Filters:<br/>--quants, --arch<br/>--only-vision, etc.]
+    
+    FilterModels --> CheckCache{use_cache<br/>enabled?}
+    
+    CheckCache -->|Yes| LoadCache[Load Cached Results<br/>SQLite lookup]
+    CheckCache -->|No| SkipCache[Skip Cache]
+    
+    LoadCache --> RunBenchmarks[Run Benchmarks<br/>for Each Model]
+    SkipCache --> RunBenchmarks
+    
+    RunBenchmarks --> TestModel[Test Model:<br/>1. Load Model<br/>2. Warmup Run<br/>3. N Measurement Runs<br/>4. Collect Stats]
+    
+    TestModel --> Profiling{Profiling<br/>enabled?}
+    
+    Profiling -->|Yes| MonitorHW[Monitor GPU/CPU/RAM<br/>Background Thread]
+    Profiling -->|No| SkipMonitor[Skip Monitoring]
+    
+    MonitorHW --> SaveCache[Save Results to Cache<br/>SQLite INSERT]
+    SkipMonitor --> SaveCache
+    
+    SaveCache --> NextModel{More Models?}
+    
+    NextModel -->|Yes| RunBenchmarks
+    NextModel -->|No| Export[Export Reports:<br/>JSON, CSV, PDF, HTML]
+    
+    Export --> End([Done])
+    
+    ListCache --> End
+    ExportCache --> End
+    ExportOnly --> Export
+    
+    style Start fill:#e1f5ff
+    style CreateBenchmark fill:#ffe1e1
+    style RunBenchmarks fill:#ffe1ff
+    style Export fill:#e1ffe1
+```
+
+**Key Execution Steps:**
+
+1. **Argument Parsing**: 49 CLI arguments processed by argparse
+2. **Configuration Merge**: CLI args override JSON file, JSON overrides base
+3. **Component Initialization**: GPU monitor, cache, profiler, REST client
+4. **Model Discovery**: `lms ls --json` fetches all installed models
+5. **Filtering**: Regex, quantization, architecture, capabilities filters
+6. **Cache Lookup**: Skip already-tested models (unless `--retest`)
+7. **Benchmark Loop**: For each model: load → warmup → measure (N runs) → unload
+8. **Hardware Monitoring**: Optional background thread for GPU/CPU/RAM stats
+9. **Cache Storage**: Save results to SQLite for future runs
+10. **Report Generation**: Export to JSON/CSV/PDF/HTML
+
+---
+
+## REST API vs SDK Mode
+
+```mermaid
+flowchart TD
+    Start([Benchmark Init]) --> CheckMode{use_rest_api?<br/>CLI or config}
+    
+    CheckMode -->|True| InitREST[Initialize REST Client<br/>LMStudioRESTClient]
+    CheckMode -->|False| InitSDK[Use Python SDK<br/>lmstudio package]
+    
+    InitREST --> RESTURL[base_url from config:<br/>http://localhost:1234]
+    RESTURL --> RESTToken{api_token<br/>set?}
+    
+    RESTToken -->|Yes| RESTAuth[Add Bearer Token<br/>to headers]
+    RESTToken -->|No| RESTNoAuth[No Authentication]
+    
+    RESTAuth --> RESTReady[REST Client Ready]
+    RESTNoAuth --> RESTReady
+    
+    RESTReady --> RESTFeatures[REST API Features:<br/>• Download Progress<br/>• MCP Integration<br/>• Stateful Chat<br/>• Response Caching<br/>• Parallel Inference<br/>• Unified KV Cache]
+    
+    InitSDK --> SDKReady[SDK Ready]
+    SDKReady --> SDKFeatures[SDK Features:<br/>• Simple Python API<br/>• Model Loading<br/>• Inference<br/>• Basic Stats]
+    
+    RESTFeatures --> Benchmark[Run Benchmarks]
+    SDKFeatures --> Benchmark
+    
+    Benchmark --> RESTCall{Mode?}
+    
+    RESTCall -->|REST| CallREST[HTTP POST /v1/chat/completions<br/>+ parse response stats]
+    RESTCall -->|SDK| CallSDK[client.llm.predict<br/>+ parse Model response]
+    
+    CallREST --> Results[Collect Results:<br/>TTFT, tokens/s, VRAM]
+    CallSDK --> Results
+    
+    style InitREST fill:#e1f5ff
+    style InitSDK fill:#ffe1e1
+    style RESTFeatures fill:#e1ffe1
+    style SDKFeatures fill:#fff4e1
+```
+
+**Mode Comparison:**
+
+| Feature | REST API Mode | SDK/CLI Mode |
+| --- | --- | --- |
+| **Configuration** | `use_rest_api: true` in config or `--use-rest-api` | Default mode |
+| **Endpoint** | HTTP `/v1/chat/completions` | Python SDK `client.llm.predict()` |
+| **Stats** | Detailed (TTFT, prompt/completion tokens, tok/s) | Basic (tokens/s only) |
+| **Authentication** | Optional Bearer token | Not needed |
+| **Parallel Inference** | ✅ `--n-parallel` (continuous batching) | ❌ Sequential only |
+| **Stateful Chats** | ✅ response_id tracking | ❌ Stateless |
+| **MCP Integration** | ✅ `mcp_integrations` parameter | ❌ Not available |
+| **Response Caching** | ✅ MD5 hash caching (10,000x speedup) | ❌ No caching |
+| **Download Progress** | ✅ Real-time model loading status | ❌ No progress |
+
+**Configuration Example:**
+
+```json
+{
+  "lmstudio": {
+    "host": "localhost",
+    "ports": [1234, 1235],
+    "use_rest_api": true,
+    "api_token": "lms_your_token_here"
+  }
+}
+```
+
+---
+
+## Component Details
+
+### 1. run.py (Entry Point)
+
+**Responsibilities:**
+
+- Parse `--webapp`/`-w` flag
+- Route to web dashboard or benchmark
+- Show extended help (`--help`)
+
+**Key Functions:**
+
+- Flag detection: `"--webapp" in sys.argv or "-w" in sys.argv`
+- Subprocess launching: `subprocess.call([sys.executable, script] + args)`
+
+---
+
+### 2. config_loader.py (Configuration Manager)
+
+**Responsibilities:**
+
+- Load `config/defaults.json`
+- Merge with `BASE_DEFAULT_CONFIG`
+- Provide `DEFAULT_CONFIG` singleton
+
+**Key Functions:**
+
+- `load_default_config()`: Loads and merges config
+- `_deep_merge()`: Recursive dict merge
+- `_normalize_ports()`: Validates LM Studio ports
+
+**Configuration Fields:**
+
+| Section | Fields |
+| --- | --- |
+| **Root** | `prompt`, `context_length`, `num_runs` |
+| **lmstudio** | `host`, `ports`, `api_token`, `use_rest_api` |
+| **inference** | `temperature`, `top_k_sampling`, `top_p_sampling`, `min_p_sampling`, `repeat_penalty`, `max_tokens` |
+| **load** | `n_gpu_layers`, `n_batch`, `n_threads`, `flash_attention`, `rope_freq_base`, `rope_freq_scale`, `use_mmap`, `use_mlock`, `kv_cache_quant` |
+
+---
+
+### 3. benchmark.py (Main Engine)
+
+**Responsibilities:**
+
+- Parse 49 CLI arguments
+- Manage benchmark lifecycle
+- Model discovery and filtering
+- Cache management (SQLite)
+- Hardware monitoring
+- Report generation
+
+**Key Classes:**
+
+- `LMStudioBenchmark`: Main orchestrator
+- `BenchmarkCache`: SQLite caching
+- `GPUMonitor`: GPU detection (NVIDIA/AMD/Intel)
+- `HardwareMonitor`: Live profiling (GPU temp, power, VRAM, GTT, CPU, RAM)
+- `ModelDiscovery`: Model listing and metadata
+
+**CLI Arguments (49 total):**
+
+| Category | Arguments |
+| --- | --- |
+| **Basic** | `--runs`, `--context`, `--prompt`, `--limit`, `--dev-mode` |
+| **Filter** | `--only-vision`, `--only-tools`, `--quants`, `--arch`, `--params`, `--min-context`, `--max-size`, `--include-models`, `--exclude-models` |
+| **Cache** | `--retest`, `--list-cache`, `--export-cache`, `--export-only` |
+| **Profiling** | `--enable-profiling`, `--max-temp`, `--max-power`, `--disable-gtt` |
+| **Inference** | `--temperature`, `--top-k`, `--top-p`, `--min-p`, `--repeat-penalty`, `--max-tokens` |
+| **Load Config** | `--n-gpu-layers`, `--n-batch`, `--n-threads`, `--flash-attention`, `--rope-freq-base`, `--rope-freq-scale`, `--use-mmap`, `--use-mlock`, `--kv-cache-quant` |
+| **REST API** | `--use-rest-api`, `--api-token`, `--n-parallel`, `--unified-kv-cache` |
+| **Comparison** | `--compare-with`, `--rank-by` |
+
+---
+
+### 4. rest_client.py (REST API Client)
+
+**Responsibilities:**
+
+- HTTP communication with LM Studio v1 API
+- Model loading and unloading
+- Chat completions with stats
+- Download progress tracking
+- MCP integration
+- Stateful chat history
+- Response caching
+
+**Key Classes:**
+
+- `LMStudioRESTClient`: Main REST client
+- `ModelInfo`: Model metadata
+- `ChatStats`: Response statistics (TTFT, tokens/s, etc.)
+- `ModelCapabilities`: Vision, tools detection
+
+**New Features (✨ 2026-02-23):**
+
+1. **Download Progress Tracking**
+   - `wait_for_completion()` with progress callbacks
+   - Real-time model loading status
+
+2. **MCP Integration**
+   - `mcp_integrations` parameter in chat requests
+   - Model Context Protocol support
+
+3. **Stateful Chat History**
+   - `use_stateful=True` for conversation continuity
+   - `last_response_id` tracking
+
+4. **Response Caching**
+   - MD5 hash-based caching
+   - 10,000x+ speedup for repeated prompts
+   - `enable_cache` parameter
+
+**Example Usage:**
+
+```python
+client = LMStudioRESTClient(
+    base_url="http://localhost:1234",
+    api_token="lms_token"
+)
+
+# Load model with progress tracking
+def on_progress(percent, status):
+    print(f"Loading: {percent:.1f}% - {status}")
+
+client.load_model("model@q4", wait_for_completion=True, progress_callback=on_progress)
+
+# Chat with caching
+response = client.chat(
+    model="model@q4",
+    messages=[{"role": "user", "content": "Hello"}],
+    enable_cache=True,  # 10,000x speedup for repeated prompts
+    use_stateful=True   # Conversation continuity
+)
+```
+
+---
+
+## Data Flow Summary
+
+```mermaid
+graph LR
+    User([User]) -->|./run.py --runs 5| CLI[CLI Arguments]
+    
+    JSON[config/defaults.json] --> Config[Configuration<br/>Merge]
+    CLI --> Config
+    Base[BASE_DEFAULT_CONFIG] --> Config
+    
+    Config --> Benchmark[Benchmark<br/>Execution]
+    
+    Benchmark -->|lms ls| Models[Model<br/>Discovery]
+    Models --> Filter[Model<br/>Filtering]
+    
+    Filter --> Cache{Cache<br/>Hit?}
+    Cache -->|Yes| Skip[Skip Test]
+    Cache -->|No| Test[Run Test]
+    
+    Test --> LMStudio[LM Studio<br/>Server]
+    LMStudio --> Results[Collect<br/>Results]
+    
+    Results --> DB[(SQLite<br/>Cache)]
+    Results --> Reports[JSON/CSV<br/>PDF/HTML]
+    
+    Skip --> Reports
+    
+    style CLI fill:#ffe1e1
+    style Config fill:#e1ffe1
+    style Cache fill:#fff4e1
+    style Reports fill:#e1f5ff
+```
+
+---
+
+## See Also
+
+- [Configuration Reference](CONFIGURATION.md) - All CLI arguments and config file options
+- [REST API Features](REST_API_FEATURES.md) - REST API integration details
+- [Quickstart Guide](QUICKSTART.md) - Get started in 5 minutes

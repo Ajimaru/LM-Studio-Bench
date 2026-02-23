@@ -9,6 +9,15 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
 ## Features
 
 - 🌐 **Web Dashboard**: Modern FastAPI-based web UI with live streaming, dark mode and an interactive results browser
+- 🔌 **LM Studio REST API v1 Support**: Native integration with `/api/v1/*` endpoints
+  - 📥 **Download progress tracking** with callbacks (real-time model loading status)
+  - 🔌 **MCP integration** support (Model Context Protocol)
+  - 💬 **Stateful chat history** with response_id tracking (conversation continuity)
+  - ⚡ **Response caching** with MD5 hashing (10,000x+ speedup for repeated prompts)
+  - Parallel inference requests (continuous batching)
+  - Enhanced capabilities detection (vision, tool-calling)
+  - Detailed stats (TTF, tokens in/out, tokens/s)
+  - API authentication with permission keys
 - 🤖 **Automatic Model Discovery**: Finds all locally installed models and quantizations
 - 🎮 **GPU Detection**: Detailed GPU detection for NVIDIA, AMD and Intel GPUs
   - NVIDIA: GPU model via `nvidia-smi --query-gpu=name`
@@ -137,6 +146,36 @@ Start the modern web UI with live streaming and an interactive results browser:
 ./run.py --prompt "..."     # Custom prompt
 ./run.py --limit 5          # Test up to 5 NEW models (+ all cached results)
 ```
+
+#### REST API Mode (LM Studio 0.4.0+)
+
+```bash
+# Use REST API v1 instead of SDK/CLI
+./run.py --use-rest-api --limit 1
+
+# With API authentication
+./run.py --use-rest-api --api-token "lms_your_token" --limit 1
+
+# With parallel inference (continuous batching)
+./run.py --use-rest-api --n-parallel 8 --unified-kv-cache --limit 1
+
+# Filter by capabilities
+./run.py --use-rest-api --only-vision      # Vision models only
+./run.py --use-rest-api --only-tools       # Tool-calling models only
+```
+
+**Benefits of REST API mode:**
+
+- ✅ Detailed stats (TTF, tokens in/out, precise tokens/s)
+- ✅ Stateful chats with response tracking
+- ✅ Parallel requests support (LM Studio 0.4.0+)
+- ✅ Native capabilities detection (vision, tool-calling)
+- ✅ API authentication for secure access
+- ✅ Download progress tracking for model loading
+- ✅ MCP integration for advanced workflows
+- ✅ Response caching for instant repeated queries (10,000x+ speedup)
+
+See [REST API Features](docs/REST_API_FEATURES.md) for full documentation.
 
 ### Hardware profiling
 
@@ -507,6 +546,19 @@ All benchmark parameters can be configured via the dashboard:
 - Custom prompt
 - Include/exclude regex patterns
 - Vision/tools/retest/dev mode flags
+
+---
+
+## Documentation
+
+Comprehensive guides and references:
+
+- 📖 [**Configuration Reference**](docs/CONFIGURATION.md) - All CLI arguments and config file options
+- 🚀 [**Quickstart Guide**](docs/QUICKSTART.md) - Get started in 5 minutes
+- 🏗️ [**Architecture Documentation**](docs/ARCHITECTURE.md) - System architecture with Mermaid diagrams
+- 🔌 [**REST API Features**](docs/REST_API_FEATURES.md) - Advanced REST API integration
+- 🖥️ [**Hardware Monitoring Guide**](docs/HARDWARE_MONITORING_GUIDE.md) - GPU, CPU, RAM tracking
+- 🏷️ [**LLM Metadata Guide**](docs/LLM_METADATA_GUIDE.md) - Model capabilities and metadata
 
 ---
 

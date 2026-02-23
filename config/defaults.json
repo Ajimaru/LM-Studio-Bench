@@ -4,7 +4,9 @@
   "num_runs": 3,
   "lmstudio": {
     "host": "localhost",
-    "ports": [1234, 1235]
+    "ports": [1234, 1235],
+    "api_token": null,
+    "use_rest_api": false
   },
   "inference": {
     "temperature": 0.1,

@@ -1,0 +1,12 @@
+[book]
+title = "LM Studio Benchmark Docs"
+authors = ["LM Studio Bench"]
+language = "en"
+src = "."
+
+[build]
+create-missing = true
+build-dir = "../book"
+
+[output.html]
+default-theme = "light"

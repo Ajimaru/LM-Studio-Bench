@@ -19,6 +19,8 @@ BASE_DEFAULT_CONFIG: Dict[str, Any] = {
     "lmstudio": {
         "host": "localhost",
         "ports": [1234, 1235],
+        "api_token": None,
+        "use_rest_api": False,
     },
     "inference": {
         "temperature": 0.1,

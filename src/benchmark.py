@@ -33,6 +33,13 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 
 from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
+from rest_client import (
+    LMStudioRESTClient,
+    ModelInfo,
+    is_vision_model,
+    is_tool_model,
+    filter_llm_models,
+)
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
@@ -1629,7 +1636,7 @@ class LMStudioBenchmark:
             logger.debug("Python-Version nicht verfügbar")
         return None
     
-    def __init__(self, num_runs: int = NUM_MEASUREMENT_RUNS, context_length: int = CONTEXT_LENGTH, prompt: str = STANDARD_PROMPT, model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True, inference_overrides: Optional[Dict] = None, load_params: Optional[Dict] = None):
+    def __init__(self, num_runs: int = NUM_MEASUREMENT_RUNS, context_length: int = CONTEXT_LENGTH, prompt: str = STANDARD_PROMPT, model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True, inference_overrides: Optional[Dict] = None, load_params: Optional[Dict] = None, use_rest_api: Optional[bool] = None):
         self.gpu_monitor = GPUMonitor()
         self.results: List[BenchmarkResult] = []
         self.num_measurement_runs = num_runs
@@ -1646,6 +1653,20 @@ class LMStudioBenchmark:
         self.use_gtt = use_gtt
         self.previous_results: List[BenchmarkResult] = []
         self._gtt_info = {}  # Speichert GTT-Informationen von AMD GPU
+        
+        # REST API Mode (aus Config oder CLI)
+        lmstudio_config = DEFAULT_CONFIG.get('lmstudio', {})
+        self.use_rest_api = use_rest_api if use_rest_api is not None else lmstudio_config.get('use_rest_api', False)
+        self.rest_client: Optional[LMStudioRESTClient] = None
+        
+        if self.use_rest_api:
+            # Initialisiere REST Client
+            base_url = f"http://{lmstudio_config.get('host', 'localhost')}:{lmstudio_config.get('ports', [1234])[0]}"
+            api_token = lmstudio_config.get('api_token')
+            self.rest_client = LMStudioRESTClient(base_url=base_url, api_token=api_token)
+            logger.info(f"🌐 REST API Modus aktiviert: {base_url}")
+        else:
+            logger.info("🔧 SDK/CLI Modus aktiviert")
         
         # Load-Parameter mit Defaults (Performance-Tuning)
         self.load_params = dict(DEFAULT_LOAD_PARAMS)
@@ -1734,6 +1755,14 @@ class LMStudioBenchmark:
         # Lade frühere Ergebnisse wenn Vergleich gewünscht
         if self.compare_with:
             self._load_previous_results()
+    
+    def __del__(self):
+        """Cleanup REST client."""
+        if self.rest_client:
+            try:
+                self.rest_client.close()
+            except Exception:
+                pass
     
     def _get_available_vram_gb(self) -> Optional[float]:
         """Ermittelt verfügbares VRAM in GB (inkl. GTT wenn aktiviert)"""
@@ -2048,17 +2077,30 @@ class LMStudioBenchmark:
         error_count = 0
         
         # Entlade alle anderen Modelle zuerst
-        try:
-            subprocess.run(
-                ['lms', 'unload', '--all'],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            logger.info("🧹 Alle Modelle entladen")
-            time.sleep(1)  # Warte bis Speicher freigegeben
-        except Exception as e:
-            logger.warning(f"⚠️ Fehler beim Entladen aller Modelle: {e}")
+        if self.use_rest_api and self.rest_client:
+            # REST: Liste alle geladenen Modelle und entlade sie
+            try:
+                models = self.rest_client.list_models()
+                for model in models:
+                    for instance in model.loaded_instances:
+                        self._unload_model_rest(instance.instance_id)
+                logger.info("🧹 Alle Modelle via REST entladen")
+                time.sleep(1)
+            except Exception as e:
+                logger.warning(f"⚠️ REST Fehler beim Entladen: {e}")
+        else:
+            # SDK/CLI: Nutze lms unload --all
+            try:
+                subprocess.run(
+                    ['lms', 'unload', '--all'],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                logger.info("🧹 Alle Modelle entladen")
+                time.sleep(1)  # Warte bis Speicher freigegeben
+            except Exception as e:
+                logger.warning(f"⚠️ Fehler beim Entladen aller Modelle: {e}")
         
         # Parse Model-Name und Quantisierung
         if '@' in model_key:
@@ -2079,12 +2121,34 @@ class LMStudioBenchmark:
         # Das SDK handled den Offload automatisch, aber wir speichern den ersten Level
         # der erfolgreich ist für Cache-Zwecke
         used_offload = smart_offload_levels[0] if smart_offload_levels else 1.0
+        instance_id: Optional[str] = None
+
+        # If using REST API, ensure the model is loaded (server may have JIT disabled)
+        if self.use_rest_api and self.rest_client:
+            try:
+                instance_id = self._load_model_rest(model_key, used_offload)
+                if not instance_id:
+                    # Try to download then load (simple fallback)
+                    logger.info(f"⬇️ Modell nicht geladen; starte Download für {model_key}")
+                    try:
+                        self.rest_client.download_model(model_key)
+                        # wait a short time for server to process download request
+                        time.sleep(3)
+                        instance_id = self._load_model_rest(model_key, used_offload)
+                    except Exception as ex:
+                        logger.warning(f"⚠️ Download/Load via REST fehlgeschlagen: {ex}")
+                if instance_id:
+                    logger.info(f"🧩 Using REST instance id: {instance_id}")
+                else:
+                    logger.warning(f"⚠️ Could not load model via REST: {model_key}")
+            except Exception as e:
+                logger.warning(f"⚠️ REST error while loading model: {e}")
         
         try:
             # Warmup
             logger.info(f"🔥 Warmup für {model_key}...")
             for _ in range(NUM_WARMUP_RUNS):
-                warmup_result = self._run_inference(model_key)
+                warmup_result = self._run_inference(model_key, instance_id)
                 if not warmup_result:
                     logger.error(f"❌ Warmup für {model_key} fehlgeschlagen")
                     return None
@@ -2098,14 +2162,14 @@ class LMStudioBenchmark:
             vram_after = "N/A"  # Initialisiere Standard-Wert
             for run in range(self.num_measurement_runs):
                 vram_before = self.gpu_monitor.get_vram_usage()
-                stats = self._run_inference(model_key)
+                stats = self._run_inference(model_key, instance_id)
                 vram_after = self.gpu_monitor.get_vram_usage()
-                
+
                 if stats:
                     measurements.append(stats)
-                    logger.info(f"⚡ Run {run+1}/{self.num_measurement_runs}: {stats['tokens_per_second']:.2f} tokens/s")
+                    logger.info("⚡ Run %d/%d: %.2f tokens/s", run+1, self.num_measurement_runs, stats['tokens_per_second'])
                 else:
-                    logger.warning(f"⚠️ Run {run+1}/{self.num_measurement_runs} fehlgeschlagen")
+                    logger.warning("⚠️ Run %d/%d fehlgeschlagen", run+1, self.num_measurement_runs)
             
             # Stoppe Hardware-Profiling und hole Statistiken
             profiling_stats = self.hardware_monitor.stop()
@@ -2222,6 +2286,13 @@ class LMStudioBenchmark:
                                               self.prompt, self.context_length)
                 
                 logger.info(f"✓ {model_key}: {result.avg_tokens_per_sec:.2f} tokens/s (Duration: {result.benchmark_duration_seconds}s)")
+                # Unload REST instance if we loaded it
+                try:
+                    if self.use_rest_api and instance_id:
+                        self._unload_model_rest(instance_id)
+                except Exception:
+                    pass
+
                 return result
             else:
                 logger.error(f"❌ Keine erfolgreichen Messungen für {model_key}")
@@ -2265,8 +2336,15 @@ class LMStudioBenchmark:
         except Exception as e:
             logger.warning(f"⚠️ Fehler beim Entladen von {model_key}: {e}")
     
-    def _run_inference(self, model_key: str) -> Optional[Dict]:
-        """Führt Inferenz durch und gibt Stats zurück"""
+    def _run_inference(self, model_key: str, instance_id: Optional[str] = None) -> Optional[Dict]:
+        """Führt Inferenz durch und gibt Stats zurück (dispatcher)."""
+        if self.use_rest_api:
+            return self._run_inference_rest(model_key, instance_id)
+        else:
+            return self._run_inference_sdk(model_key)
+    
+    def _run_inference_sdk(self, model_key: str) -> Optional[Dict]:
+        """Führt Inferenz via SDK durch und gibt Stats zurück."""
         try:
             import lmstudio as lms
             
@@ -2354,6 +2432,89 @@ class LMStudioBenchmark:
         except Exception as e:
             logger.error(f"❌ Fehler bei Inferenz mit {model_key}: {e}")
             return None
+    
+    def _run_inference_rest(self, model_key: str, instance_id: Optional[str] = None) -> Optional[Dict]:
+        """Führt Inferenz via REST API durch und gibt Stats zurück."""
+        if not self.rest_client:
+            logger.error("❌ REST Client nicht initialisiert")
+            return None
+        
+        try:
+            # Baue Messages
+            messages = [{"role": "user", "content": self.prompt}]
+            
+            # Inference durchführen mit Streaming
+            result = self.rest_client.chat_stream(
+                messages=messages,
+                model=instance_id or model_key,
+                context_length=self.context_length,
+                temperature=self.inference_params['temperature'],
+                max_tokens=self.inference_params['max_tokens'],
+            )
+            
+            # Extrahiere Stats
+            stats = result.get('stats')
+            if not stats:
+                logger.warning("⚠️ Keine Stats in REST Response")
+                return None
+            
+            # Berechne tokens/s falls nicht vorhanden
+            tokens_per_sec = stats.tokens_per_second
+            if not tokens_per_sec and stats.tokens_out > 0:
+                # Fallback: berechne aus total_time
+                total_time_s = result.get('total_time_s', 0)
+                if total_time_s > 0:
+                    tokens_per_sec = stats.tokens_out / total_time_s
+            
+            return {
+                'tokens_per_second': tokens_per_sec,
+                'time_to_first_token': stats.time_to_first_token_ms / 1000.0,  # ms -> s
+                'generation_time': result.get('total_time_s', 0),
+                'prompt_tokens': stats.tokens_in,
+                'completion_tokens': stats.tokens_out,
+            }
+        
+        except Exception as e:
+            logger.error(f"❌ REST Fehler bei Inferenz mit {model_key}: {e}")
+            return None
+    
+    def _load_model_rest(self, model_key: str, gpu_offload: Optional[float] = None) -> Optional[str]:
+        """Lädt ein Modell via REST API."""
+        if not self.rest_client:
+            return None
+        
+        try:
+            # Parse load config
+            n_parallel = self.load_params.get('n_parallel')
+            unified_kv = self.load_params.get('unified_kv_cache')
+            
+            instance_id = self.rest_client.load_model(
+                model_key=model_key,
+                context_length=self.context_length,
+                n_parallel=n_parallel,
+                unified_kv_cache=unified_kv,
+                gpu_offload=gpu_offload,
+            )
+            
+            logger.info(f"✓ Modell via REST geladen: {instance_id}")
+            return instance_id
+        
+        except Exception as e:
+            logger.error(f"❌ REST Fehler beim Laden von {model_key}: {e}")
+            return None
+    
+    def _unload_model_rest(self, instance_id: str) -> bool:
+        """Entlädt ein Modell via REST API."""
+        if not self.rest_client:
+            return False
+        
+        try:
+            self.rest_client.unload_model(instance_id)
+            logger.info(f"✓ Modell via REST entladen: {instance_id}")
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ REST Fehler beim Entladen: {e}")
+            return False
     
     def _calculate_averages(
         self,
@@ -4288,6 +4449,31 @@ Beispiele:
         help='KV-Cache Quantisierung (reduziert VRAM, kann Performance beeinflussen, None=Model-Default)'
     )
     
+    # REST API Mode
+    parser.add_argument(
+        '--use-rest-api',
+        action='store_true',
+        help='Nutze LM Studio REST API v1 anstatt Python SDK/CLI (ermöglicht erweiterte Features wie stateful chats, parallel requests)'
+    )
+    parser.add_argument(
+        '--api-token',
+        type=str,
+        default=None,
+        help='LM Studio API Permission Token für REST API Authentifizierung'
+    )
+    parser.add_argument(
+        '--n-parallel',
+        type=int,
+        default=None,
+        help='Max. parallele Predictions pro Modell (nur REST API, Standard: 4, erfordert continuous batching support)'
+    )
+    parser.add_argument(
+        '--unified-kv-cache',
+        action='store_true',
+        default=None,
+        help='Unified KV Cache aktivieren (nur REST API, optimiert VRAM bei parallelen Requests)'
+    )
+    
     args = parser.parse_args()
     
     # Cache-Verwaltungs-Befehle (beenden vor Benchmark)
@@ -4459,7 +4645,15 @@ Beispiele:
         'use_mmap': args.use_mmap,
         'use_mlock': args.use_mlock,
         'kv_cache_quant': args.kv_cache_quant,
+        'n_parallel': args.n_parallel,  # REST API only
+        'unified_kv_cache': args.unified_kv_cache,  # REST API only
     }
+    
+    # REST API token override
+    if args.api_token:
+        # Override config token with CLI token
+        lmstudio_config = DEFAULT_CONFIG.get('lmstudio', {})
+        lmstudio_config['api_token'] = args.api_token
 
     benchmark = LMStudioBenchmark(
         num_runs=args.runs,
@@ -4475,7 +4669,8 @@ Beispiele:
         max_power=args.max_power,
         use_gtt=not args.disable_gtt,
         inference_overrides=inference_overrides,
-        load_params=load_params
+        load_params=load_params,
+        use_rest_api=args.use_rest_api,
     )
     benchmark.run_all_benchmarks()
     
