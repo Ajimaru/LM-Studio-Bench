@@ -2,7 +2,8 @@
 """
 FastAPI Web Dashboard for LM Studio Benchmark
 
-Controls benchmark.py via subprocess and provides live monitoring via WebSocket.
+Controls benchmark.py via subprocess and provides live monitoring via
+WebSocket.
 """
 
 import argparse
@@ -25,6 +26,7 @@ import math
 import statistics
 from contextlib import asynccontextmanager
 
+import re
 import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
@@ -83,6 +85,11 @@ def find_free_port() -> int:
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
+# Ensure local `src/` is on sys.path so imports like `config_loader` work
+sys.path.insert(0, str(SRC_DIR))
+
+# Import config defaults from src/config_loader.py after sys.path is set
+from config_loader import DEFAULT_CONFIG
 BENCHMARK_SCRIPT = SRC_DIR / "benchmark.py"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 RESULTS_DIR = PROJECT_ROOT / "results"
@@ -91,9 +98,8 @@ METADATA_DATABASE_FILE = RESULTS_DIR / "model_metadata.db"
 SCRAPER_SCRIPT = PROJECT_ROOT / "tools" / "scrape_metadata.py"
 
 # Import BenchmarkCache from benchmark.py
-import sys
+
 sys.path.insert(0, str(SRC_DIR))
-from config_loader import DEFAULT_CONFIG
 try:
     from benchmark import BenchmarkCache, BenchmarkResult  # type: ignore
 except ImportError as e:
@@ -118,8 +124,8 @@ class BenchmarkManager:
         self.start_time: Optional[datetime] = None
         self.current_output = ""
         self.connected_clients = set()
-        self.benchmark_log_file: Optional[Path] = None  # Log-Datei nur für aktive Benchmarks
-        self.output_queue: Optional[asyncio.Queue[str]] = None  # Puffer für neue Output-Chunks
+        self.benchmark_log_file: Optional[Path] = None
+        self.output_queue: Optional[asyncio.Queue[str]] = None
         self.output_task: Optional[asyncio.Task] = None
 
         # Hardware monitoring data
@@ -127,11 +133,11 @@ class BenchmarkManager:
             "temperatures": [],  # Liste von {"timestamp": ISO, "value": float}
             "power": [],
             "vram": [],
-            "gtt": [],  # GTT-Nutzung (System RAM für AMD GPUs)
-            "cpu": [],  # CPU-Auslastung in %
-            "ram": []   # RAM-Nutzung in GB
+            "gtt": [],
+            "cpu": [],
+            "ram": []
         }
-        self.last_hardware_send_time: float = 0  # Zur Drosselung von WebSocket-Updates
+        self.last_hardware_send_time: float = 0
 
     def is_running(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -165,7 +171,9 @@ class BenchmarkManager:
                     # Write immediately to log file
                     if self.benchmark_log_file:
                         try:
-                            with open(self.benchmark_log_file, 'a', encoding='utf-8') as f:
+                            with open(
+                                self.benchmark_log_file, 'a', encoding='utf-8'
+                            ) as f:
                                 f.write(line)
                         except Exception as log_error:
                             logger.error(f"❌ Log write error: {log_error}")
@@ -190,7 +198,7 @@ class BenchmarkManager:
             # Completion log
             if self.benchmark_log_file and self.benchmark_log_file.exists():
                 logger.info(f"✅ Benchmark-Log: {self.benchmark_log_file}")
-   
+
         except Exception as e:
             logger.error(f"❌ Error in output consumer: {e}")
 
@@ -233,13 +241,15 @@ class BenchmarkManager:
             # Only set the path - the file is created on first write
             logs_dir = RESULTS_DIR.parent / "logs"
             logs_dir.mkdir(parents=True, exist_ok=True)
-            self.benchmark_log_file = logs_dir / f"benchmark_{self.start_time.strftime('%Y%m%d_%H%M%S')}.log"
+            timestamp_str = self.start_time.strftime('%Y%m%d_%H%M%S')
+            filename = f"benchmark_{timestamp_str}.log"
+            self.benchmark_log_file = logs_dir / filename
 
             # Start background task for continuous output reading
             self.output_task = asyncio.create_task(self._consume_output())
 
-            logger.info(f"✅ Benchmark gestartet mit PID {self.process.pid}")
-            logger.info(f"📝 Benchmark-Log wird geschrieben nach: {self.benchmark_log_file}")
+            logger.info("✅ Benchmark gestartet mit PID %s", self.process.pid)
+            logger.info("📝 Benchmark-Log: %s", self.benchmark_log_file)
             return True
         except Exception as e:
             logger.error(f"❌ Error starting benchmark: {e}")
@@ -303,10 +313,14 @@ class BenchmarkManager:
 
     def parse_hardware_metrics(self, output_line: str):
         """Parse hardware metrics from benchmark output"""
-        import re
 
         # Pattern for GPU temperature: "🌡️ GPU Temp: 45.5°C"
-        temp_match = re.search(r'GPU\s+Temp\s*:\s*(\d+(?:\.\d+)?)°?C', output_line, re.IGNORECASE)
+        temp_pat = r'GPU\s+Temp\s*:\s*(\d+(?:\.\d+)?)°?C'
+        temp_match = re.search(
+            temp_pat,
+            output_line,
+            re.IGNORECASE
+        )
         if temp_match:
             temp_value = float(temp_match.group(1))
             self.hardware_history["temperatures"].append({
@@ -315,7 +329,12 @@ class BenchmarkManager:
             })
 
         # Pattern for power: "⚡ GPU Power: 150.5W"
-        power_match = re.search(r'GPU\s+Power\s*:\s*(\d+(?:\.\d+)?)W', output_line, re.IGNORECASE)
+        power_pat = r'GPU\s+Power\s*:\s*(\d+(?:\.\d+)?)W'
+        power_match = re.search(
+            power_pat,
+            output_line,
+            re.IGNORECASE
+        )
         if power_match:
             power_value = float(power_match.group(1))
             self.hardware_history["power"].append({
@@ -324,7 +343,12 @@ class BenchmarkManager:
             })
 
         # Pattern for VRAM: "💾 GPU VRAM: 8.5GB"
-        vram_match = re.search(r'GPU\s+VRAM\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
+        vram_pat = r'GPU\s+VRAM\s*:\s*(\d+(?:\.\d+)?)GB'
+        vram_match = re.search(
+            vram_pat,
+            output_line,
+            re.IGNORECASE
+        )
         if vram_match:
             vram_value = float(vram_match.group(1))
             self.hardware_history["vram"].append({
@@ -333,7 +357,12 @@ class BenchmarkManager:
             })
 
         # Pattern for GTT: "🧠 GPU GTT: 1.5GB"
-        gtt_match = re.search(r'GPU\s+GTT\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
+        gtt_pat = r'GPU\s+GTT\s*:\s*(\d+(?:\.\d+)?)GB'
+        gtt_match = re.search(
+            gtt_pat,
+            output_line,
+            re.IGNORECASE
+        )
         if gtt_match:
             gtt_value = float(gtt_match.group(1))
             self.hardware_history["gtt"].append({
@@ -342,7 +371,12 @@ class BenchmarkManager:
             })
 
         # Pattern for CPU: "🖥️ CPU: 45.2%"
-        cpu_match = re.search(r'CPU\s*:\s*(\d+(?:\.\d+)?)%', output_line, re.IGNORECASE)
+        cpu_pat = r'CPU\s*:\s*(\d+(?:\.\d+)?)%'
+        cpu_match = re.search(
+            cpu_pat,
+            output_line,
+            re.IGNORECASE
+        )
         if cpu_match:
             cpu_value = float(cpu_match.group(1))
             self.hardware_history["cpu"].append({
@@ -352,7 +386,8 @@ class BenchmarkManager:
 
         # Pattern for RAM: "💾 RAM: 8.5GB" (but NOT "GPU VRAM:")
         # Use negative lookbehind to match only "RAM:" (not "VRAM:")
-        ram_match = re.search(r'(?<![V])RAM\s*:\s*(\d+(?:\.\d+)?)GB', output_line, re.IGNORECASE)
+        ram_pattern = r'(?<![V])RAM\s*:\s*(\d+(?:\.\d+)?)GB'
+        ram_match = re.search(ram_pattern, output_line, re.IGNORECASE)
         if ram_match:
             ram_value = float(ram_match.group(1))
             self.hardware_history["ram"].append({
@@ -366,20 +401,17 @@ class BenchmarkManager:
             return ""
 
         try:
-            # Lese ALLE verfügbaren Zeilen (nicht nur eine!)
             loop = asyncio.get_event_loop()
             lines = []
 
-            # Lese so viele Zeilen wie verfügbar sind (nicht-blockierend)
             while True:
                 try:
-                    # Versuche eine Zeile zu lesen mit kurzem Timeout
                     output = await asyncio.wait_for(
                         loop.run_in_executor(
                             None,
                             self.process.stdout.readline
                         ),
-                        timeout=0.1  # Kurzer Timeout (100ms) pro Zeile
+                        timeout=0.1
                     )
 
                     if output:
@@ -396,14 +428,12 @@ class BenchmarkManager:
                 combined_output = ''.join(lines)
                 self.current_output += combined_output
                 return combined_output
-       
+
             return ""
         except Exception as e:
             logger.error(f"❌ Fehler beim Lesen des Outputs: {e}")
             return ""
 
-
-# Globale Manager-Instanz
 manager = BenchmarkManager()
 
 
@@ -432,7 +462,6 @@ async def run_metadata_scraper():
 async def lifespan(app: FastAPI):
     """Handle FastAPI startup/shutdown for benchmark manager."""
     try:
-        # Starte Scraper im Hintergrund, blockiere nicht den Startup
         asyncio.create_task(run_metadata_scraper())
         yield
     finally:
@@ -441,8 +470,6 @@ async def lifespan(app: FastAPI):
             manager.stop_benchmark()
             await asyncio.sleep(1)
 
-
-# FastAPI App initialisieren (mit Lifespan-Handler)
 app = FastAPI(
     title="LM Studio Benchmark Dashboard",
     description=(
@@ -451,7 +478,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Mount Results-Verzeichnis für statische Dateien (PDF, HTML, JSON, CSV)
 app.mount("/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
 
 
@@ -461,13 +487,11 @@ app.mount("/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
 
 class BenchmarkParams(BaseModel):
     """Parameter für Benchmark-Start"""
-    # Basis-Parameter
     runs: Optional[int] = None
     context: Optional[int] = None
     limit: Optional[int] = None
     prompt: Optional[str] = None
 
-    # Neue Filter-Parameter
     min_context: Optional[int] = None
     max_size: Optional[float] = None
     quants: Optional[str] = None
@@ -475,23 +499,19 @@ class BenchmarkParams(BaseModel):
     params: Optional[str] = None
     rank_by: Optional[str] = None
 
-    # Regex-Filter
     only_vision: bool = False
     only_tools: bool = False
     include_models: Optional[str] = None
     exclude_models: Optional[str] = None
 
-    # Boolean Flags
     retest: bool = False
     dev_mode: bool = False
     enable_profiling: bool = True
     disable_gtt: bool = False
 
-    # Hardware-Limits
     max_temp: Optional[float] = None
     max_power: Optional[float] = None
 
-    # Inference-Parameter (Sonderparameter)
     temperature: Optional[float] = None
     top_k_sampling: Optional[int] = None
     top_p_sampling: Optional[float] = None
@@ -499,7 +519,6 @@ class BenchmarkParams(BaseModel):
     repeat_penalty: Optional[float] = None
     max_tokens: Optional[int] = None
 
-    # Load-Config Parameter (Performance Tuning)
     n_gpu_layers: Optional[int] = -1
     n_batch: Optional[int] = 512
     n_threads: Optional[int] = -1
@@ -513,14 +532,14 @@ class BenchmarkParams(BaseModel):
 
 class InferenceParamSet(BaseModel):
     """Satz von Inference-Parametern für A/B Test"""
-    name: str  # z.B. "Baseline" oder "Test-High-Temp"
+    name: str
     temperature: Optional[float] = None
     top_k: Optional[int] = None
     top_p: Optional[float] = None
     min_p: Optional[float] = None
     repeat_penalty: Optional[float] = None
     max_tokens: Optional[int] = None
-    # Load-Config Parameter (für A/B Tests)
+
     n_gpu_layers: Optional[int] = None
     n_batch: Optional[int] = None
     n_threads: Optional[int] = None
@@ -534,11 +553,11 @@ class InferenceParamSet(BaseModel):
 
 class CreateExperimentRequest(BaseModel):
     """Request zum Erstellen eines A/B Experiments"""
-    name: str  # Experiment Name
+    name: str
     model_name: str
     baseline_params: InferenceParamSet
     test_params: InferenceParamSet
-    start_date: Optional[str] = None  # YYYY-MM-DD
+    start_date: Optional[str] = None
     end_date: Optional[str] = None
 
 
@@ -548,8 +567,8 @@ class ExperimentResult(BaseModel):
     model_name: str
     baseline_data: Dict[str, Any]
     test_data: Dict[str, Any]
-    statistical_test: Dict[str, Any]  # p-value, effect_size, significant
-    winner: str  # "baseline", "test", "tie"
+    statistical_test: Dict[str, Any]
+    winner: str
 
 
 # ============================================================================
@@ -563,7 +582,10 @@ def calculate_hash(params: Dict[str, Any]) -> str:
     return hashlib.sha256(params_str.encode()).hexdigest()[:16]
 
 
-def perform_ttest(baseline_speeds: List[float], test_speeds: List[float]) -> Dict[str, Any]:
+def perform_ttest(
+    baseline_speeds: List[float],
+    test_speeds: List[float],
+) -> Dict[str, Any]:
     """Führe Independent Samples t-test durch"""
     if len(baseline_speeds) < 2 or len(test_speeds) < 2:
         return {
@@ -573,46 +595,61 @@ def perform_ttest(baseline_speeds: List[float], test_speeds: List[float]) -> Dic
             "significant": False,
             "reason": "Unzureichend Daten (min. 2 Proben pro Gruppe)"
         }
-    
+
     try:
         if SCIPY_AVAILABLE and scipy_stats is not None:
-            t_stat, p_value = scipy_stats.ttest_ind(baseline_speeds, test_speeds)  # type: ignore[call-overload]
+            t_stat, p_value = scipy_stats.ttest_ind(
+                baseline_speeds, test_speeds
+            )
             return {
                 "test_name": "Welch's t-test",
-                "t_statistic": round(t_stat, 4),
-                "p_value": round(p_value, 4),
-                "significant": p_value < 0.05,  # α = 0.05
-                "alpha": 0.05
-            }
-        else:
-            # Fallback: Vereinfachte t-test Berechnung ohne scipy
-            baseline_mean = statistics.mean(baseline_speeds)
-            test_mean = statistics.mean(test_speeds)
-            baseline_var = statistics.variance(baseline_speeds) if len(baseline_speeds) > 1 else 0
-            test_var = statistics.variance(test_speeds) if len(test_speeds) > 1 else 0
-            
-            n1, n2 = len(baseline_speeds), len(test_speeds)
-            se = math.sqrt((baseline_var / n1) + (test_var / n2))
-            
-            if se == 0:
-                return {"test_name": "t-test", "p_value": None, "significant": False, "reason": "Keine Varianz"}
-            
-            t_stat = (baseline_mean - test_mean) / se
-            
-            # Approximation für p-value (sehr vereinfacht)
-            # Echte p-value Berechnung benötigt CDF der t-Verteilung
-            p_value = 0.01 if abs(t_stat) > 2.5 else 0.1
-            
-            return {
-                "test_name": "t-test (approximiert)",
                 "t_statistic": round(t_stat, 4),
                 "p_value": round(p_value, 4),
                 "significant": p_value < 0.05,
                 "alpha": 0.05
             }
+
+        baseline_mean = statistics.mean(baseline_speeds)
+        test_mean = statistics.mean(test_speeds)
+        baseline_var = (
+            statistics.variance(baseline_speeds)
+            if len(baseline_speeds) > 1 else 0
+        )
+        test_var = (
+            statistics.variance(test_speeds)
+            if len(test_speeds) > 1 else 0
+        )
+
+        n1, n2 = len(baseline_speeds), len(test_speeds)
+        se = math.sqrt((baseline_var / n1) + (test_var / n2))
+
+        if se == 0:
+            return {
+                "test_name": "t-test",
+                "p_value": None,
+                "significant": False,
+                "reason": "Keine Varianz"
+            }
+
+        t_stat = (baseline_mean - test_mean) / se
+
+        p_value = 0.01 if abs(t_stat) > 2.5 else 0.1
+
+        return {
+            "test_name": "t-test (approximiert)",
+            "t_statistic": round(t_stat, 4),
+            "p_value": round(p_value, 4),
+            "significant": p_value < 0.05,
+            "alpha": 0.05
+        }
+
     except Exception as e:
         logger.error(f"Fehler bei t-test: {e}")
-        return {"test_name": "t-test", "error": str(e), "significant": False}
+        return {
+            "test_name": "t-test",
+            "error": str(e),
+            "significant": False
+        }
 
 
 def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Optional[Any]]) -> bool:
@@ -623,7 +660,7 @@ def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Option
     for key, target_value in target_params.items():
         if target_value is None:
             continue  # Parameter wurde nicht überschrieben, also nicht filtern
-        
+
         row_value = row_params.get(key)
 
         if isinstance(target_value, (int, float)) and isinstance(row_value, (int, float)):
@@ -632,7 +669,7 @@ def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Option
         else:
             if row_value != target_value:
                 return False
-    
+
     return True
 
 
@@ -640,27 +677,27 @@ def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]
     """Berechne Cohen's d effect size"""
     if not baseline_speeds or not test_speeds:
         return {"cohens_d": 0.0, "effect_magnitude": "negligible"}
-    
+
     baseline_mean = statistics.mean(baseline_speeds)
     test_mean = statistics.mean(test_speeds)
-    
+
     baseline_var = statistics.variance(baseline_speeds) if len(baseline_speeds) > 1 else 0
     test_var = statistics.variance(test_speeds) if len(test_speeds) > 1 else 0
-    
+
     # Pooled standard deviation
     n1, n2 = len(baseline_speeds), len(test_speeds)
     denom = n1 + n2 - 2
-    
+
     # Guard gegen Division durch 0 (wenn n1 + n2 <= 2)
     if denom <= 0:
         # Fallback: Nutze unpooled standard deviation oder 0
         return {"cohens_d": 0.0, "effect_magnitude": "negligible", "reason": "Unzureichend Daten für Effektgröße"}
-    
+
     pooled_var = ((n1 - 1) * baseline_var + (n2 - 1) * test_var) / denom
     pooled_sd = math.sqrt(pooled_var) if pooled_var > 0 else 1
-    
+
     cohens_d = (test_mean - baseline_mean) / pooled_sd if pooled_sd > 0 else 0
-    
+
     # Magnitude Interpretation
     abs_d = abs(cohens_d)
     if abs_d < 0.2:
@@ -671,17 +708,17 @@ def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]
         magnitude = "medium"
     else:
         magnitude = "large"
-    
+
     return {
         "cohens_d": round(cohens_d, 4),
         "effect_magnitude": magnitude
     }
 
 
-
 # ============================================================================
 # API Endpoints
 # ============================================================================
+
 
 @app.get("/")
 async def root() -> HTMLResponse:
@@ -3111,18 +3148,14 @@ async def websocket_benchmark(websocket: WebSocket):
     try:
         logger.info(f"✅ WebSocket Client verbunden (Total: {len(manager.connected_clients)})")
 
-        # Sende initialen Status
         await websocket.send_json({
             "type": "status",
             "status": manager.status,
             "running": manager.is_running()
         })
-        
-        # Stream Output während Benchmark läuft
+
         while True:
-            # Prüfe auf Client-Nachrichten (mit kurzen Timeout)
             try:
-                # Client kann commands schicken (zukünftige Erweiterung)
                 data = await asyncio.wait_for(websocket.receive_json(), timeout=0.5)
                 logger.debug(f"📨 Client message: {data}")
             except asyncio.TimeoutError:
@@ -3133,8 +3166,7 @@ async def websocket_benchmark(websocket: WebSocket):
             except Exception as e:
                 logger.error(f"❌ WebSocket Receive Error: {e}")
                 break
-            
-            # Lese Output wenn Benchmark läuft
+
             if manager.is_running():
                 output = manager.drain_output_queue()
                 if output:
@@ -3144,17 +3176,15 @@ async def websocket_benchmark(websocket: WebSocket):
                             "line": output,
                             "status": manager.status
                         })
-                        heartbeat_count = 0  # Reset heartbeat counter
+                        heartbeat_count = 0
                     except Exception as e:
                         logger.error(f"❌ WebSocket Send Error: {e}")
                         break
-                
-                # Sende Hardware-Monitoring-Daten periodisch (alle 2s)
+
                 current_time = time.time()
                 if current_time - manager.last_hardware_send_time >= 2.0:
                     if manager.hardware_history["temperatures"] or manager.hardware_history["power"] or manager.hardware_history["vram"] or manager.hardware_history["gtt"] or manager.hardware_history["cpu"] or manager.hardware_history["ram"]:
                         try:
-                            # Behalte nur letzte 60 Einträge pro Metrik (2 Minuten bei 2s Intervall)
                             max_history = 60
                             hardware_data = {
                                 "temperatures": manager.hardware_history["temperatures"][-max_history:],
@@ -3164,7 +3194,7 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "cpu": manager.hardware_history["cpu"][-max_history:],
                                 "ram": manager.hardware_history["ram"][-max_history:]
                             }
-                            
+
                             await websocket.send_json({
                                 "type": "hardware",
                                 "data": hardware_data
@@ -3173,9 +3203,8 @@ async def websocket_benchmark(websocket: WebSocket):
                         except Exception as e:
                             logger.error(f"❌ WebSocket Hardware Send Error: {e}")
             else:
-                # Keep-Alive Heartbeat: Sende Status periodisch
                 heartbeat_count += 1
-                if heartbeat_count % 2 == 0:  # Alle 1 Sekunde (0.5s * 2)
+                if heartbeat_count % 2 == 0:
                     try:
                         await websocket.send_json({
                             "type": "status",
@@ -3185,8 +3214,7 @@ async def websocket_benchmark(websocket: WebSocket):
                     except Exception as e:
                         logger.error(f"❌ WebSocket Heartbeat Error: {e}")
                         break
-                
-                # Beende Streaming wenn Benchmark komplett
+
                 if manager.status == "completed":
                     try:
                         await websocket.send_json({
@@ -3196,11 +3224,10 @@ async def websocket_benchmark(websocket: WebSocket):
                     except Exception as e:
                         logger.warning(f"⚠️ Konnte Completion-Message nicht senden: {e}")
                     finally:
-                        # Halte die Verbindung für nachfolgende Benchmarks offen
                         manager.status = "idle"
-                
+
                 await asyncio.sleep(0.5)
-    
+
     except WebSocketDisconnect:
         logger.info("ℹ️ WebSocket normaler Disconnect")
     except Exception as e:
@@ -3218,18 +3245,15 @@ async def websocket_benchmark(websocket: WebSocket):
 async def get_latest_results() -> dict:
     """Findet die neuesten Benchmark-Ergebnisse"""
     try:
-        results_dir = RESULTS_DIR  # /home/robby/Temp/local-llm-bench/results/
-        
-        # Finde alle benchmark_results_*.json Dateien
+        results_dir = RESULTS_DIR
+
         json_files = list(results_dir.glob("benchmark_results_*.json"))
-        
+
         if not json_files:
             return {"latest": None}
-        
-        # Sortiere nach Modifizierungszeit, neueste zuerst
+
         latest_file = max(json_files, key=lambda x: x.stat().st_mtime)
-        
-        # Gib nur den Dateinamen zurück (ohne Pfad, weil /results/ schon gemountet ist)
+
         return {"latest": latest_file.name}
     except Exception as e:
         logger.error(f"Fehler beim Finden der neuesten Ergebnisse: {e}")
