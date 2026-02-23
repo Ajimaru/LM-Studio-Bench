@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-cd ~/local-llm-bench
+cd ~/LM-Studio-Bench
 pip install -r requirements.txt
 ```
 

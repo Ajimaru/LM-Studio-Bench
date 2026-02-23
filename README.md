@@ -63,7 +63,7 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
 
   ```bash
   git clone <repository-url>
-  cd local-llm-bench
+  cd LM-Studio-Bench
   ```
 
 **2. Create and activate a virtual environment**:
@@ -398,7 +398,7 @@ CONTEXT_LENGTH = 4096  # Default: 2048
 ## Project Structure
 
 ```text
-local-llm-bench/
+LM-Studio-Bench/
 ├── benchmark.py              # Main script
 ├── requirements.txt          # Python dependencies
 ├── results/                  # Benchmark results
