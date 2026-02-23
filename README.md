@@ -1,8 +1,8 @@
+# LM Studio Model Benchmark
+
 ![alt text](assets/logo.svg)
 
 ---
-
-# LM Studio Model Benchmark
 
 Automatic benchmarking tool for all locally installed LM Studio models. Systematically tests different models and quantizations to measure and compare tokens-per-second performance.
 
@@ -59,14 +59,14 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
 
 ## Installation
 
-1. **Clone the repository**:
+**1. Clone the repository**:
 
   ```bash
   git clone <repository-url>
   cd local-llm-bench
   ```
 
-2. **Create and activate a virtual environment**:
+**2. Create and activate a virtual environment**:
 
   ```bash
   # Create virtual environment
@@ -76,16 +76,16 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
   source .venv/bin/activate
 
   # Activate (Windows)
-  # .venv\Scripts\activate
+  .venv\Scripts\activate
   ```
 
-3. **Install Python dependencies**:
+**3. Install Python dependencies**:
 
   ```bash
   pip install -r requirements.txt
   ```
 
-4. **Check LM Studio CLI**:
+**4. Check LM Studio CLI**:
 
   ```bash
   lms --help
@@ -98,10 +98,6 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
 Start the modern web UI with live streaming and an interactive results browser:
 
 ```bash
-# Ensure the virtual environment is activated
-source .venv/bin/activate  # Linux/macOS
-.venv\Scripts\activate   # Windows
-
 # Start the web dashboard (opens browser automatically)
 ./run.py --webapp
 ```
