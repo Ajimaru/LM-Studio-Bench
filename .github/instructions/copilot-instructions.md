@@ -1,3 +1,8 @@
+---
+    description: Configuration for Copilot's behavior when interacting with the LM Studio Benchmark project
+    applyTo: '**'
+---
+---
 # GitHub Copilot Instructions - LM Studio Benchmark
 
 ## Project Context
