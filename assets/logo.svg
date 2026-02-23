@@ -31,7 +31,7 @@
     </g>
     <rect x="20" y="16" width="260" height="178" rx="14" fill="url(#chipGrad)"/>
     <g fill="#fff" opacity="0.95" transform="matrix(1, 0, 0, 1, -248.124588, -517.464294)">
-      <text x="408.741" y="612.219" dominant-baseline="middle" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="56" font-weight="700" style="white-space: pre; font-size: 56px;">LM</text>
+      <text x="399.741" y="619.219" dominant-baseline="middle" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="56" font-weight="700" style="white-space: pre; font-size: 56px;">LLM</text>
       <text x="400" y="684.36" dominant-baseline="middle" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif" font-size="14" opacity="0.95" style="white-space: pre; font-size: 14px;">MODEL BENCHMARK</text>
     </g>
   </g>
@@ -56,13 +56,14 @@
       <circle cx="299.727" cy="26.997" r="6" fill="#10b981" stroke="#05222a" stroke-width="1"/>
     </g>
     <g transform="translate(40,230)" fill="#bfe9ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="12">
-      <text x="0" y="0" style="white-space: pre;">3B</text>
-      <text x="90" y="0" style="white-space: pre;">7B</text>
-      <text x="180" y="0" style="white-space: pre;">13B</text>
-      <text x="270" y="0" style="white-space: pre;">30B+</text>
+      <text x="22" y="0" style="white-space: pre; font-size: 12px;">3B</text>
+      <text x="111" y="0" style="white-space: pre; font-size: 12px;">7B</text>
+      <text x="198" y="0" style="white-space: pre; font-size: 12px;">13B</text>
+      <text x="284" y="0" style="white-space: pre; font-size: 12px;">30B+</text>
     </g>
   </g>
   <g transform="matrix(1, 0, 0, 1, 60, 270)" fill="#9fd5ff" font-family="DejaVu Sans, Arial, sans-serif" font-size="12">
     <text x="0" y="0" style="white-space: pre;">LM Studio Model Benchmark </text>
   </g>
+  <text style="white-space: pre; fill: rgb(51, 51, 51); font-family: Arial, sans-serif; font-size: 28px;" x="704.925" y="298.898"> </text>
 </svg>
