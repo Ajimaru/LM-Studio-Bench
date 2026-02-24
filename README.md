@@ -365,6 +365,39 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 | **temp_celsius_min/max/avg** | GPU temperature during the benchmark (°C) - only with `--enable-profiling` |
 | **power_watts_min/max/avg** | GPU power draw during the benchmark (W) - only with `--enable-profiling` |
 
+## Technical Details
+
+### GPU Detection
+
+The tool searches for GPU monitoring tools in:
+
+- Standard PATH
+- `/usr/bin`
+- `/usr/local/bin`
+- `/opt/rocm/bin` (AMD)
+- `/usr/lib/xpu` (Intel)
+
+### GPU Offload Strategy
+
+If loading fails, offload is automatically reduced:
+
+1. 🟢 `gpuOffload: 1.0` (100% GPU)
+2. 🟡 `gpuOffload: 0.7` (70% GPU)
+3. 🟠 `gpuOffload: 0.5` (50% GPU)
+4. 🔴 `gpuOffload: 0.3` (30% GPU)
+5. ❌ Error → Skip model + log
+
+### REST API Endpoints
+
+- `GET /` - Dashboard UI
+- `GET /api/status` - Benchmark status
+- `GET /api/output` - Terminal output
+- `POST /api/benchmark/start` - Start benchmark
+- `POST /api/benchmark/pause` - Pause
+- `POST /api/benchmark/resume` - Resume
+- `POST /api/benchmark/stop` - Stop
+- `WS /ws/benchmark` - WebSocket live streaming
+
 ## Troubleshooting
 
 ### "lms: command not found"
@@ -443,39 +476,6 @@ The script will automatically try lower GPU offload levels. With ~12GB VRAM:
 
 </details>
 
-## Technical Details
-
-### GPU Detection
-
-The tool searches for GPU monitoring tools in:
-
-- Standard PATH
-- `/usr/bin`
-- `/usr/local/bin`
-- `/opt/rocm/bin` (AMD)
-- `/usr/lib/xpu` (Intel)
-
-### GPU Offload Strategy
-
-If loading fails, offload is automatically reduced:
-
-1. 🟢 `gpuOffload: 1.0` (100% GPU)
-2. 🟡 `gpuOffload: 0.7` (70% GPU)
-3. 🟠 `gpuOffload: 0.5` (50% GPU)
-4. 🔴 `gpuOffload: 0.3` (30% GPU)
-5. ❌ Error → Skip model + log
-
-### REST API Endpoints
-
-- `GET /` - Dashboard UI
-- `GET /api/status` - Benchmark status
-- `GET /api/output` - Terminal output
-- `POST /api/benchmark/start` - Start benchmark
-- `POST /api/benchmark/pause` - Pause
-- `POST /api/benchmark/resume` - Resume
-- `POST /api/benchmark/stop` - Stop
-- `WS /ws/benchmark` - WebSocket live streaming
-
 ## Documentation
 
 Comprehensive guides and references:
@@ -494,6 +494,27 @@ If you encounter problems:
 1. Check `logs/` for error logs
 2. Make sure LM Studio is running
 3. Open an issue with logs and system info
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR guidance.
+
+## Code of Conduct
+
+Please review [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before participating.
+
+## Security
+
+Report vulnerabilities via the process in [SECURITY.md](SECURITY.md).
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+## Third-party licenses
+
+Dependency licensing details are listed in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ---
 
