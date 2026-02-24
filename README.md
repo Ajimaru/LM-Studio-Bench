@@ -248,7 +248,7 @@ See [REST API Features](docs/REST_API_FEATURES.md) for full documentation.
 
 ### Default settings
 
-- **Prompt**: "Explain machine learning in 3 sentences"
+- **Prompt**: "Is the sky blue?"
 - **Context length**: 2048 tokens
 - **Warmup**: 1 run
 - **Measurements**: 3 runs
