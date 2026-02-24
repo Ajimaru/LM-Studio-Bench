@@ -44,7 +44,9 @@ BASE_DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(
+    base: Dict[str, Any], override: Dict[str, Any]
+) -> Dict[str, Any]:
     """Recursively merge override into base without mutating base."""
     merged: Dict[str, Any] = dict(base)
     for key, value in override.items():
@@ -79,9 +81,10 @@ def load_default_config(config_path: Path | None = None) -> Dict[str, Any]:
             with path.open("r", encoding="utf-8") as f:
                 user_config = json.load(f)
             config = _deep_merge(config, user_config)
-            logger.info(f"Loaded defaults from {path}")
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(f"Failed to load defaults from {path}: {exc}")
+            logger.info("Loaded defaults from %s", path)
+        except (json.JSONDecodeError, OSError) as exc:  # pragma: no cover
+            # defensive
+            logger.warning("Failed to load defaults from %s: %s", path, exc)
 
     # Normalize LM Studio ports (always ensure at least one port)
     lmstudio_cfg = config.get("lmstudio", {}) or {}

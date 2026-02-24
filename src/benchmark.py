@@ -2,8 +2,8 @@
 """
 LM Studio Model Benchmark Tool
 
-Automatisches Testen aller lokal installierten LM Studio Modelle und deren
-Quantisierungen. Misst Token/s-Geschwindigkeit mit standardisiertem Prompt.
+Automatically tests all locally installed LM Studio models and their
+quantizations. Measures token/s speed with a standardized prompt.
 """
 
 import subprocess
@@ -19,27 +19,34 @@ import hashlib
 import threading
 import psutil
 import glob
+import sys
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from statistics import quantiles, mean, median
 from tqdm import tqdm
 import re
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+
+try:
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Table,
+        TableStyle,
+        Paragraph,
+        Spacer,
+        PageBreak,
+    )
+    REPORTLAB_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    REPORTLAB_AVAILABLE = False
 
 from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
-from rest_client import (
-    LMStudioRESTClient,
-    ModelInfo,
-    is_vision_model,
-    is_tool_model,
-    filter_llm_models,
-)
+from rest_client import LMStudioRESTClient
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
@@ -54,9 +61,10 @@ PROJECT_ROOT = SCRIPT_DIR.parent    # root
 LOGS_DIR = PROJECT_ROOT / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
-# Logging konfigurieren - Log-Datei wird NUR erstellt wenn als __main__ aufgerufen
-# NICHT beim Import (um WebApp-Startup nicht zu beeinflussen)
+# Logging konfigurieren - Log-Datei nur bei '__main__' erstellen
+# Nicht beim Import, sonst WebApp-Startup stören
 log_filename = None  # Wird später gesetzt wenn __main__
+
 
 # Custom Filter um JSON-Logs von externen Libs zu filtern
 class NoJSONFilter(logging.Filter):
@@ -66,22 +74,23 @@ class NoJSONFilter(logging.Filter):
             return False
         return True
 
-# Initialisiere Logging mit Console nur (Log-Datei wird später hinzugefügt)
-# StreamHandler nutzt standardmäßig sys.stderr - wir erzwingen sys.stdout für WebApp-Kompatibilität
-import sys
 
 # Auto-Flush für stdout - wichtig für WebApp-Subprocess-Kommunikation
 class AutoFlushStream:
     """Wrapper der bei jedem write() automatisch flusht"""
     def __init__(self, stream):
         self.stream = stream
+    
     def write(self, data):
         self.stream.write(data)
         self.stream.flush()
+    
     def flush(self):
         self.stream.flush()
+    
     def __getattr__(self, attr):
         return getattr(self.stream, attr)
+
 
 # Ersetze sys.stdout mit Auto-Flush Version
 sys.stdout = AutoFlushStream(sys.stdout)
@@ -113,7 +122,7 @@ logging.getLogger("websockets").setLevel(logging.WARNING)
 BASE_STANDARD_PROMPT = "Erkläre maschinelles Lernen in 3 Sätzen"
 BASE_CONTEXT_LENGTH = 2048
 BASE_NUM_MEASUREMENT_RUNS = 3
-GPU_OFFLOAD_LEVELS = [1.0, 0.7, 0.5, 0.3]  # Fallback falls keine intelligente Berechnung möglich
+GPU_OFFLOAD_LEVELS = [1.0, 0.7, 0.5, 0.3]  # Fallback if smart calc fails
 NUM_WARMUP_RUNS = 1
 
 STANDARD_PROMPT = DEFAULT_CONFIG.get("prompt", BASE_STANDARD_PROMPT)
