@@ -34,7 +34,6 @@ import re
 import hashlib
 import httpx
 from urllib.parse import unquote
-from config_loader import DEFAULT_CONFIG
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -95,6 +94,8 @@ SRC_DIR = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SRC_DIR))
 
 # Import config defaults from src/config_loader.py after sys.path is set
+from config_loader import DEFAULT_CONFIG
+
 BENCHMARK_SCRIPT = SRC_DIR / "benchmark.py"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 RESULTS_DIR = PROJECT_ROOT / "results"
