@@ -123,6 +123,15 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
 # WebApp startup log file
 
 
+# ---------------------------------------------------------------------------
+# System tray helper (GTK3-based, moved to separate module)
+# ---------------------------------------------------------------------------
+
+
+# the tray helper lives in web/tray.py; we will import it lazily at
+# startup when the dashboard URL is known.  Import errors (e.g. no GTK
+# available) are handled gracefully during invocation.
+
 def setup_webapp_logger():
     """Creates a separate WebApp startup log file"""
     logs_dir = Path(PROJECT_ROOT) / "logs"
@@ -157,8 +166,8 @@ def find_free_port() -> int:
 # Paths
 PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
-# Ensure local `src/` is on sys.path so imports like `config_loader` work
 sys.path.insert(0, str(SRC_DIR))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # Import config defaults from src/config_loader.py after sys.path is set
 from config_loader import DEFAULT_CONFIG
@@ -3603,6 +3612,16 @@ if __name__ == "__main__":
     dashboard_url = f"http://localhost:{port}"
     logger.info(f"🚀 Dashboard verfügbar auf {dashboard_url}")
     logger.info(f"📊 API Docs: {dashboard_url}/docs")
+
+    # Launch optional system tray icon (GTK-based) linking to the dashboard URL
+    # Attempt to start the GTK tray; import failures are non-fatal.
+    try:
+        import web.tray as tray_module
+        tray_module.start_tray(dashboard_url)
+    except ImportError as ie:
+        logger.info("🔧 Tray-Modul nicht verfügbar: %s", ie)
+    except Exception as tray_exc:  # pragma: no cover - best-effort
+        logger.warning(f"⚠️ Fehler beim Starten der Tray-Anwendung: {tray_exc}")
 
     # Öffne Browser in separatem Thread nach kurzer Verzögerung
     def open_browser():
