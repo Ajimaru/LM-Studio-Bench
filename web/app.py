@@ -55,7 +55,74 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _collect_lms_variants(base_model: str) -> list[dict]:
+    """Return a list of variant entries for the given base model.
+
+    The LM Studio CLI output (JSON) contains metadata about each installed
+    model, including a ``variants`` array.  ``base_model`` is something like
+    ``qwen/qwen2.5-vl-7b`` and we want to return a list of dicts with keys
+    ``name``, ``params`` and ``size`` so the dashboard can populate selects.
+    If we fail or nothing matches we return an empty list.
+    """
+    try:
+        # get a full JSON dump once; parsing per-base would be inefficient but
+        # in practice the number of models is small so it doesn't matter.
+        result = subprocess.run(
+            ["lms", "ls", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            return []
+        import json
+
+        data = json.loads(result.stdout)
+        out_models: list[dict] = []
+        for m in data:
+            # some entries may not have a modelKey
+            model_key = m.get("modelKey")
+            if not model_key:
+                continue
+            if not model_key.startswith(base_model):
+                continue
+
+            # found the parent entry; build list of variants (or itself)
+            params_str = m.get("paramsString", "?")
+            size_bytes = m.get("sizeBytes", 0) or 0
+            size_gb = round(size_bytes / 1024**3, 2)
+            size_label = f"{size_gb} GB" if size_gb else "--"
+
+            variants = m.get("variants") or []
+            if variants:
+                for v in variants:
+                    out_models.append({
+                        "name": v,
+                        "params": params_str,
+                        "size": size_label,
+                    })
+                return out_models
+
+            # no variants – return single base
+            out_models.append({
+                "name": model_key,
+                "params": params_str,
+                "size": size_label,
+            })
+            return out_models
+        # if we finish loop without returning, just return whatever we collected (possibly empty)
+        return out_models
+    except Exception:
+        return []
+
+
 # WebApp startup log file
+
+
 def setup_webapp_logger():
     """Creates a separate WebApp startup log file"""
     logs_dir = Path(PROJECT_ROOT) / "logs"
@@ -450,15 +517,19 @@ async def run_metadata_scraper():
         logger.warning(f"⚠️ Scraper-Skript nicht gefunden: {SCRAPER_SCRIPT}")
         return
     try:
+        # run the scraper with a generous timeout; it occasionally stalls when
+        # fetching readmes over the network. 60s was too short, so bump to 5min.
         await asyncio.to_thread(
             subprocess.run,
             [sys.executable, str(SCRAPER_SCRIPT)],
             check=True,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=300,  # seconds
         )
         logger.info("📝 Metadata-Scraper ausgeführt (nur fehlende Modelle)")
+    except subprocess.TimeoutExpired:
+        logger.warning("⚠️ Scraper Ablaufzeit erreicht (>=300s), abbrechen")
     except subprocess.CalledProcessError as scrape_err:
         logger.warning(f"⚠️ Scraper Fehler: {scrape_err.stderr or scrape_err}")
     except Exception as scrape_exc:  # pragma: no cover
@@ -2930,6 +3001,13 @@ async def get_dashboard_stats() -> dict:
                     lmstudio_health = {"ok": True, "status": "online (cli)", "version": None}
             except Exception:
                 pass
+
+        # Attach configured benchmark mode to help dashboard display it
+        try:
+            use_rest = CONFIG_DEFAULTS.get("lmstudio", {}).get("use_rest_api", False)
+            lmstudio_health["mode"] = "REST API" if use_rest else "Python SDK"
+        except Exception:
+            lmstudio_health["mode"] = "???"
 
         # System-Info (erweitert mit besseren Details)
         system_info = {

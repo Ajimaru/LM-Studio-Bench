@@ -6,7 +6,7 @@
     "host": "localhost",
     "ports": [1234, 1235],
     "api_token": null,
-    "use_rest_api": false
+    "use_rest_api": true
   },
   "inference": {
     "temperature": 0.1,

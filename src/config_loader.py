@@ -20,7 +20,7 @@ BASE_DEFAULT_CONFIG: Dict[str, Any] = {
         "host": "localhost",
         "ports": [1234, 1235],
         "api_token": None,
-        "use_rest_api": False,
+        "use_rest_api": True,
     },
     "inference": {
         "temperature": 0.1,
