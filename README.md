@@ -2,9 +2,15 @@
 
 ![alt text](assets/logo.svg)
 
----
-
 Automatic benchmarking tool for all locally installed LM Studio models. Systematically tests different models and quantizations to measure and compare tokens-per-second performance.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Platform](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://www.linux.org/)
+[![LM Studio App v0.4.3+](https://img.shields.io/badge/LM_Studio_App-v0.4.3+-green.svg)](https://lmstudio.ai/download)
+[![llmster v0.0.3+](https://img.shields.io/badge/llmster-v0.0.3+-green.svg)](https://lmstudio.ai)
+[![Release](https://img.shields.io/github/v/release/Ajimaru/LM-Studio-Bench)](https://github.com/Ajimaru/LM-Studio-Bench/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Ajimaru/LM-Studio-Bench/total.svg)](https://github.com/Ajimaru/LM-Studio-Bench/releases)
 
 ## Features
 
@@ -487,6 +493,8 @@ Comprehensive guides and references:
 - 🖥️ [**Hardware Monitoring Guide**](docs/HARDWARE_MONITORING_GUIDE.md) - GPU, CPU, RAM tracking
 - 🏷️ [**LLM Metadata Guide**](docs/LLM_METADATA_GUIDE.md) - Model capabilities and metadata
 
+[![Docs](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/mdbook.yml/badge.svg)](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/mdbook.yml)
+
 ## Support
 
 If you encounter problems:
@@ -499,6 +507,9 @@ If you encounter problems:
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR guidance.
 
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/230bc2828cc645f28b52803d11227b9c)](https://app.codacy.com/gh/Ajimaru/LM-Studio-Bench/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![CI](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/ci.yml/badge.svg)](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/ci.yml)
+
 ## Code of Conduct
 
 Please review [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before participating.
@@ -506,6 +517,20 @@ Please review [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before participating.
 ## Security
 
 Report vulnerabilities via the process in [SECURITY.md](SECURITY.md).
+
+[![Security](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/snyk-security.yml/badge.svg)](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/snyk-security.yml)
+[![Bandit](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/bandit.yml/badge.svg)](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/bandit.yml)
+[![CodeQL](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/codeql.yml/badge.svg)](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/codeql.yml)
+
+## Project Meta
+
+- **[Changelog](CHANGELOG.md)** - Notable project changes by release
+- **[Contributing Guide](CONTRIBUTING.md)** - How to contribute and validate changes
+- **[Authors](AUTHORS)** - Project contributors displayed in the About dialog
+
+[![Last Commit](https://img.shields.io/github/last-commit/Ajimaru/LM-Studio-Bench)](https://github.com/Ajimaru/LM-Studio-Bench/commits/main)
+[![Issues](https://img.shields.io/github/issues/Ajimaru/LM-Studio-Bench)](https://github.com/Ajimaru/LM-Studio-Bench/issues)
+[![Contributors](https://img.shields.io/github/contributors/Ajimaru/LM-Studio-Bench)](https://github.com/Ajimaru/LM-Studio-Bench/graphs/contributors)
 
 ## License
 
@@ -517,5 +542,10 @@ Dependency licensing details are listed in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ---
+
+[![Stars](https://img.shields.io/github/stars/Ajimaru/LM-Studio-Bench?style=social)](https://github.com/Ajimaru/LM-Studio-Bench/stargazers)
+[![Forks](https://img.shields.io/github/forks/Ajimaru/LM-Studio-Bench?style=social)](https://github.com/Ajimaru/LM-Studio-Bench/network/members)
+[![Watchers](https://img.shields.io/github/watchers/Ajimaru/LM-Studio-Bench?style=social)](https://github.com/Ajimaru/LM-Studio-Bench/watchers)
+[![Made with Love in 🇪🇺](https://img.shields.io/badge/Made_with_❤️_in_🇪🇺-gray.svg)](https://europa.eu/)
 
 **Note**: This tool is intended for development/testing. For production deployments, see the LM Studio documentation.

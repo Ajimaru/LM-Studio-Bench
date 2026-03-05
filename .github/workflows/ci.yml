@@ -1,0 +1,133 @@
+# CI workflow runs syntax validation and unit tests with coverage
+name: CI
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  # allow manual invocation from Actions tab for testing
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+
+    steps:
+      # check out repository code
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # prepare Python environment for later checks
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # ensure main python script compiles
+      - name: Python syntax check (tray-app)
+        run: python -m py_compile lmstudio_tray.py
+
+      # also check auxiliary Python modules
+      - name: Python syntax check (build_binary)
+        run: python -m py_compile build_binary.py
+
+      # verify shell script syntax
+      - name: Bash syntax check
+        run: |
+          bash -n lmstudio_autostart.sh
+          bash -n setup.sh
+          bash -n build.sh
+
+      # install shellcheck if not available
+      - name: Install shellcheck
+        run: |
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y shellcheck
+          fi
+
+      # lint the shell scripts
+      - name: Shellcheck
+        run: shellcheck lmstudio_autostart.sh setup.sh build.sh
+
+      # try to run the build script to make sure the binary can be produced
+      # only run this if every previous step in the job succeeded (shellcheck,
+      # syntax checks, etc.). a failing step aborts the job by default, but
+      # adding the explicit condition makes the intent clear.
+      - name: Build binary
+        if: ${{ success() }}
+        run: |
+          bash build.sh
+          test -f dist/lmstudio-tray-manager
+
+      # exercise the generated executable to ensure it starts and returns 0
+      - name: Smoke‑run built binary
+        run: |
+          chmod +x dist/lmstudio-tray-manager
+          ./dist/lmstudio-tray-manager --version
+          ./dist/lmstudio-tray-manager --help
+
+      # invoke autostart helper in a non‑destructive mode (list-models)
+      # this doesn't actually launch LM Studio, but confirms the script runs and
+      # the Python helper is reachable
+      - name: Run autostart script in list-models mode
+        run: |
+          if command -v llmster >/dev/null 2>&1 || command -v lms >/dev/null 2>&1; then
+              bash lmstudio_autostart.sh --list-models || true
+          else
+              echo "skipping autostart invocation (no llmster/lms installed)"
+          fi
+          python -m lmstudio_tray --help
+
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        run-coverage: [true]
+
+    steps:
+      # checkout the repo for tests
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # set up same Python version
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # install test dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+
+      # execute unit tests and collect coverage
+      - name: Run tests (with coverage)
+        if: ${{ matrix.run-coverage }}
+        run: |
+          pytest --cov-report=xml:coverage.xml
+
+      # send coverage report to Codecov
+      - name: Upload coverage to Codecov
+        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Tray-Manager' }}
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de
+        with:
+          files: coverage.xml
+          flags: unittests
+          fail_ci_if_error: false
+
+      # optionally report coverage to Codacy
+      - name: Upload coverage to Codacy
+        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Tray-Manager' }}
+        env:
+          CODACY_API_TOKEN: ${{ secrets.CODACY_API_TOKEN }}
+          CODACY_ORGANIZATION_PROVIDER: ${{ vars.CODACY_ORGANIZATION_PROVIDER }}
+          CODACY_USERNAME: ${{ vars.CODACY_USERNAME }}
+          CODACY_PROJECT_NAME: ${{ vars.CODACY_PROJECT_NAME }}
+        continue-on-error: true
+        run: |
+          bash <(curl -Ls https://coverage.codacy.com/get.sh) report -r coverage.xml -t "$CODACY_API_TOKEN"
