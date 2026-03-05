@@ -1,5 +1,7 @@
 # LM Studio Model Benchmark
 
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/1c4744b0742c458f99d4475ce3131e65)](https://app.codacy.com/gh/Ajimaru/LM-Studio-Bench?utm_source=github.com&utm_medium=referral&utm_content=Ajimaru/LM-Studio-Bench&utm_campaign=Badge_Grade)
+
 ![alt text](assets/logo.svg)
 
 ---
