@@ -1,8 +1,8 @@
 ---
-    description: Configuration for Copilot's behavior when interacting with the LM Studio Benchmark project
-    applyTo: '**'
+description: Configuration for Copilot's behavior when interacting with the LM Studio Benchmark project
+applyTo: '**'
 ---
----
+
 # GitHub Copilot Instructions - LM Studio Benchmark
 
 ## Project Context
@@ -12,10 +12,7 @@ This is a Python benchmark tool for LM Studio with a modern web dashboard that a
 ## Coding Guidelines
 
 ### General
-- Compatible with Python 3.8+
-- Use type hints where possible
-- Docstrings for classes and important functions
-- Error handling with meaningful error messages
+- Compatible with Python 3.10+
 - Use logging instead of print() for important events
 
 ### Project-Specific
@@ -116,7 +113,6 @@ project-root/
 - All paths OS-agnostic (`pathlib.Path`)
 - CSV with UTF-8 encoding
 - JSON with indent=2 for readability
-- Full type hints (Pylance type-safe)
 - Check Plotly availability for HTML/PDF exports
 - Error recovery: Never abort entire benchmark, skip individual models
 - GPU detection: Always use fallback chains (HTTP → CLI → parse sysfs)
