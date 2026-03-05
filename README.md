@@ -62,7 +62,7 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
 ## System Requirements
 
 - **OS**: Linux (primary), macOS (untested), Windows (untested)
-- **Python**: 3.8 or newer
+- **Python**: 3.10 or newer
 - **GPU**: ~12GB VRAM recommended (NVIDIA/AMD/Intel)
 - **Software**: [LM Studio](https://lmstudio.ai/) or [LM Studio (Headless)](https://lmstudio.ai/docs/developer/core/headless_llmster/) installed locally
 

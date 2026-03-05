@@ -21,10 +21,10 @@ jobs:
         uses: actions/checkout@v6
 
       # prepare Python environment for later checks
-      - name: Set up Python 3.12
+      - name: Set up Python 3.10
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.10'
 
       # ensure main python script compiles
       - name: Python syntax check (tray-app)
@@ -61,14 +61,14 @@ jobs:
         if: ${{ success() }}
         run: |
           bash build.sh
-          test -f dist/lmstudio-tray-manager
+          test -f dist/lmstudio-bench
 
       # exercise the generated executable to ensure it starts and returns 0
       - name: Smoke‑run built binary
         run: |
-          chmod +x dist/lmstudio-tray-manager
-          ./dist/lmstudio-tray-manager --version
-          ./dist/lmstudio-tray-manager --help
+          chmod +x dist/lmstudio-bench
+          ./dist/lmstudio-bench --version
+          ./dist/lmstudio-bench --help
 
       # invoke autostart helper in a non‑destructive mode (list-models)
       # this doesn't actually launch LM Studio, but confirms the script runs and
@@ -94,10 +94,10 @@ jobs:
         uses: actions/checkout@v6
 
       # set up same Python version
-      - name: Set up Python 3.12
+      - name: Set up Python 3.10
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.10'
 
       # install test dependencies
       - name: Install dependencies
@@ -113,7 +113,7 @@ jobs:
 
       # send coverage report to Codecov
       - name: Upload coverage to Codecov
-        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Tray-Manager' }}
+        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-bench' }}
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de
         with:
           files: coverage.xml
@@ -122,7 +122,7 @@ jobs:
 
       # optionally report coverage to Codacy
       - name: Upload coverage to Codacy
-        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Tray-Manager' }}
+        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-bench' }}
         env:
           CODACY_API_TOKEN: ${{ secrets.CODACY_API_TOKEN }}
           CODACY_ORGANIZATION_PROVIDER: ${{ vars.CODACY_ORGANIZATION_PROVIDER }}
