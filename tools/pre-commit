@@ -127,7 +127,7 @@ if [[ -n "$MARKDOWN_FILES" ]]; then
 
     # Run markdownlint
     echo -e "${YELLOW}Running markdownlint...${NC}"
-    if ! markdownlint $MARKDOWN_FILES; then
+    if ! markdownlint -c "$PROJECT_ROOT/.markdownlintrc.json" "$MARKDOWN_FILES"; then
         echo -e "${RED}❌ markdownlint found issues!${NC}"
         FAILED=1
     else

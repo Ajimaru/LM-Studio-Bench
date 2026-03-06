@@ -60,16 +60,5 @@ format_css = false
 format_js = false
 preserve_blank_lines = true
 
-# Exclude patterns
-exclude = [
-    ".git",
-    "__pycache__",
-    ".venv",
-    "venv",
-    "env",
-    "build",
-    "dist",
-    ".tox",
-    ".pytest_cache",
-    "node_modules"
-]
+# Exclude patterns (comma-separated)
+exclude = ".git,__pycache__,.venv,venv,env,build,dist,.tox,.pytest_cache,node_modules"

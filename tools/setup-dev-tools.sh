@@ -51,17 +51,17 @@ echo -e "${YELLOW}Checking for Node.js...${NC}"
 if command -v npm &> /dev/null; then
     echo -e "${GREEN}✓ npm found: $(npm --version)${NC}"
 
-    # Install markdownlint-cli2
+    # Install markdownlint-cli (compatible with Node 18+)
     echo ""
-    echo -e "${YELLOW}Installing markdownlint-cli2 (npm)...${NC}"
-    npm install -g markdownlint-cli2 2>/dev/null || {
-        echo -e "${YELLOW}Note: Could not install markdownlint-cli2 globally${NC}"
+    echo -e "${YELLOW}Installing markdownlint-cli (npm)...${NC}"
+    npm install -g markdownlint-cli@0.37.0 2>/dev/null || {
+        echo -e "${YELLOW}Note: Could not install markdownlint-cli globally${NC}"
         echo -e "${YELLOW}You can install it locally in the project:${NC}"
-        echo -e "${YELLOW}  npm install --save-dev markdownlint-cli2${NC}"
+        echo -e "${YELLOW}  npm install --save-dev markdownlint-cli@0.37.0${NC}"
     }
 else
     echo -e "${YELLOW}⚠ Node.js/npm not found${NC}"
-    echo -e "${YELLOW}To install markdownlint-cli2, install Node.js first:${NC}"
+    echo -e "${YELLOW}To install markdownlint-cli, install Node.js first:${NC}"
     echo -e "${YELLOW}  Ubuntu/Debian: sudo apt-get install nodejs npm${NC}"
     echo -e "${YELLOW}  macOS: brew install node${NC}"
 fi

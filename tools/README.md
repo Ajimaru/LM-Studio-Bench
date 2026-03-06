@@ -17,19 +17,38 @@ The pre-commit hook runs automatic code quality checks before each commit.
 
 ### Installation
 
+**Easy Setup (recommended):**
+
 ```bash
-# Install the git hooks
+# 1. Run the complete setup script
+./tools/setup-dev-tools.sh
+
+# This will:
+# - Create/activate Python virtual environment
+# - Install Python dev tools (flake8, isort, pylint, djlint)
+# - Install Node.js tools (markdownlint-cli2)
+# - Ask to install system tools (shellcheck)
+# - Install git hooks
+```
+
+**Manual Setup:**
+
+```bash
+# 1. Install git hooks
 ./tools/install-hooks.sh
 
-# Install required Python tools
-pip install flake8 isort pylint djlint markdownlint-cli2
+# 2. Install required Python tools
+pip install -r requirements-dev.txt
 
-# Install system tools
+# 3. Install system tools
 # On Ubuntu/Debian:
 sudo apt-get install shellcheck
 
 # On macOS:
 brew install shellcheck
+
+# 4. Install Node.js tools (if you have npm)
+npm install -g markdownlint-cli2
 ```
 
 ### Skip pylint (optional)
@@ -231,14 +250,22 @@ djlint --reformat web/templates/dashboard.html.jinja
 ## Configuration Files
 
 | File | Purpose |
-| ------ | --------- |
+| --- | --- |
 | `.flake8` | Flake8 style configuration |
 | `.pylintrc` | Pylint configuration |
 | `.markdownlintrc.json` | Markdown lint rules |
 | `.shellcheckrc` | Shellcheck configuration |
 | `pyproject.toml` | isort and djlint configuration |
-| `tools/pre-commit` | Git pre-commit hook |
-| `tools/install-hooks.sh` | Installation script |
+| `requirements-dev.txt` | Python development dependencies |
+
+## Setup & Installation Scripts
+
+| Script | Purpose |
+| --- | --- |
+| `tools/setup-dev-tools.sh` | Full setup (recommended) - installs all tools |
+| `tools/install-hooks.sh` | Install git hooks only |
+| `tools/scan-all.sh` | Scan all project files (with optional `--fix`) |
+| `tools/pre-commit` | Git pre-commit hook (runs linters) |
 
 ---
 
@@ -257,6 +284,39 @@ djlint --check web/templates/
 
 # Or use the hook automatically in git commit
 ```
+
+### Scan all files
+
+Scan the entire project (not just staged files):
+
+```bash
+# Full scan
+./tools/scan-all.sh
+
+# Skip pylint (faster)
+SKIP_PYLINT=1 ./tools/scan-all.sh
+```
+
+### Auto-fix issues
+
+Automatically fix issues that can be auto-corrected:
+
+```bash
+# Interactive auto-fix (fixes isort and djlint issues)
+./tools/scan-all.sh --fix
+```
+
+**What gets auto-fixed:**
+
+- ✅ isort - import order (automatic)
+- ✅ djlint - HTML/Jinja formatting (automatic)
+
+**What needs manual fixes:**
+
+- ⚠️ flake8 - style issues
+- ⚠️ pylint - code quality
+- ⚠️ markdownlint - markdown style
+- ⚠️ shellcheck - shell scripts
 
 ### Fix all files
 
@@ -327,15 +387,24 @@ source /path/to/your/venv/bin/activate
 
 ### Missing tools
 
-Install all required tools:
+Use the setup script for easy installation:
 
 ```bash
-# Python tools (pylint is optional)
-pip install flake8 isort pylint djlint markdownlint-cli2
+./tools/setup-dev-tools.sh
+```
+
+Or install manually:
+
+```bash
+# Python tools
+pip install -r requirements-dev.txt
 
 # System tools
 sudo apt-get install shellcheck     # Ubuntu/Debian
 brew install shellcheck              # macOS
+
+# Node.js tool (requires npm)
+npm install -g markdownlint-cli2
 ```
 
 ### Pylint is slow
