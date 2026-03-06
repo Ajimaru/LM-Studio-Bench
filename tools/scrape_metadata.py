@@ -34,6 +34,10 @@ BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
 def setup_logger() -> logging.Logger:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOGS_DIR / f"metadata_scraper_{timestamp}.log"
+    latest_link = LOGS_DIR / "metadata_scraper_latest.log"
+    latest_link.unlink(missing_ok=True)
+    latest_link.symlink_to(log_file.name)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",

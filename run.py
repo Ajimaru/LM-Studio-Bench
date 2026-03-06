@@ -103,7 +103,10 @@ def _start_tray_process(
     logs_dir = project_root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    launcher_log = logs_dir / f"tray_launcher_{timestamp}.log"
+    launcher_log = logs_dir / f"runapp_{timestamp}.log"
+    latest_link = logs_dir / "runapp_latest.log"
+    latest_link.unlink(missing_ok=True)
+    latest_link.symlink_to(launcher_log.name)
 
     env = _build_subprocess_env()
 
@@ -126,7 +129,7 @@ def _start_tray_process(
             time.sleep(0.6)
             if tray_proc.poll() is None:
                 print(f"🧩 Tray started ({tray_dashboard_url})")
-                print(f"📝 Tray launcher log: {launcher_log}")
+                print(f"📝 Run log: {launcher_log}")
                 return tray_proc
 
             print(

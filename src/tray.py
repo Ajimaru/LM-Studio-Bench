@@ -48,7 +48,10 @@ def _setup_logger(debug: bool) -> Path:
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = logs_dir / f"tray_{timestamp}.log"
+    log_file = logs_dir / f"trayapp_{timestamp}.log"
+    latest_link = logs_dir / "trayapp_latest.log"
+    latest_link.unlink(missing_ok=True)
+    latest_link.symlink_to(log_file.name)
 
     level = logging.DEBUG if debug else logging.INFO
     LOGGER.setLevel(level)

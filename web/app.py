@@ -139,6 +139,9 @@ def setup_webapp_logger():
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     log_file = logs_dir / f"webapp_{timestamp}.log"
+    latest_link = logs_dir / "webapp_latest.log"
+    latest_link.unlink(missing_ok=True)
+    latest_link.symlink_to(log_file.name)
 
     # Add file handler
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
@@ -196,6 +199,8 @@ LMSTUDIO_PORTS = CONFIG_DEFAULTS.get("lmstudio", {}).get("ports", [1234, 1235])
 # Jinja2 template environment
 template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
 
+# Global debug flag (set in main)
+DEBUG_MODE = False
 
 # Global benchmark process management
 class BenchmarkManager:
@@ -1009,6 +1014,10 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
         args.append("--use-mlock")
     if params.kv_cache_quant:
         args.extend(["--kv-cache-quant", params.kv_cache_quant])
+
+    # Debug-Modus weitergeben
+    if DEBUG_MODE:
+        args.append("--debug")
 
     # Debug: Zeige übergebene Args
     logger.info(f"🔧 Benchmark-Args: {args}")
@@ -3592,6 +3601,8 @@ if __name__ == "__main__":
         help='Aktiviere DEBUG-Logging für detaillierte Ausgaben'
     )
     args = parser.parse_args()
+
+    DEBUG_MODE = args.debug
 
     if args.debug:
         logger.setLevel(logging.DEBUG)

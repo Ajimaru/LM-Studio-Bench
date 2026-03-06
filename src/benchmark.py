@@ -264,8 +264,43 @@ class HardwareMonitor:
         self.gtts: List[float] = []   # GTT-Nutzung in GB (System RAM für AMD GPUs)
         self.cpus: List[float] = []   # CPU-Auslastung in %
         self.rams: List[float] = []   # RAM-Nutzung in GB
-        self.ram_readings: List[float] = []  # Für RAM-Smoothing (gleitendes Mittel über 7 Messungen)
+        self.ram_readings: List[float] = []  # Für RAM-Smoothing
         self.lock = threading.Lock()
+        self._amd_sysfs_path: Optional[str] = None
+        self._amd_hwmon_path: Optional[str] = None
+        
+        # Cache sysfs-Pfade beim Init (AMD ohne rocm-smi)
+        if self.gpu_type == "AMD" and self.gpu_tool == "sysfs":
+            self._init_amd_sysfs_paths()
+        self._amd_sysfs_path: Optional[str] = None
+        self._amd_hwmon_path: Optional[str] = None
+        
+        # Cache sysfs-Pfade beim Init (AMD ohne rocm-smi)
+        if self.gpu_type == "AMD" and self.gpu_tool == "sysfs":
+            self._init_amd_sysfs_paths()
+    
+    def _init_amd_sysfs_paths(self):
+        """Initialisiert AMD sysfs-Pfade beim Start"""
+        try:
+            # Finde AMD GPU device path
+            for cardpath in glob.glob('/sys/class/drm/card*/device'):
+                vendor_file = Path(cardpath) / 'vendor'
+                if vendor_file.exists():
+                    vendor = vendor_file.read_text().strip()
+                    if vendor == '0x1002':  # AMD Vendor ID
+                        # Prüfe ob VRAM-Info verfügbar ist
+                        vram_file = Path(cardpath) / 'mem_info_vram_total'
+                        if vram_file.exists():
+                            self._amd_sysfs_path = cardpath
+                            # Finde hwmon-Pfad
+                            hwmon_paths = glob.glob(
+                                f"{cardpath}/hwmon/hwmon*"
+                            )
+                            if hwmon_paths:
+                                self._amd_hwmon_path = hwmon_paths[0]
+                            break
+        except Exception:
+            pass
     
     def start(self):
         """Starte Background-Monitoring"""
@@ -395,28 +430,41 @@ class HardwareMonitor:
                     return float(temp_str)
             
             elif self.gpu_type == "AMD":
-                result = subprocess.run(
-                    [self.gpu_tool, '--showtemp'],
-                    capture_output=True,
-                    text=True,
-                    timeout=3
-                )
-                if result.returncode == 0:
-                    # Parse AMD rocm-smi output:
-                    # Format: "GPU[0]          : Temperature (Sensor edge) (C): 47.0"
-                    import re
-                    for line in result.stdout.split('\n'):
-                        if 'GPU[' in line and ('(C):' in line or 'c' in line.lower()):
-                            try:
-                                # Versuche letzte Zahl in der Zeile zu extrahieren
-                                match = re.search(r'[\d.]+\s*$', line.strip())
-                                if match:
-                                    return float(match.group())
-                                # Fallback: Alte Methode
-                                temp_str = line.split(':')[-1].strip().replace('c', '').replace('C', '')
-                                return float(temp_str)
-                            except (ValueError, IndexError):
-                                pass
+                # Prüfe ob rocm-smi oder sysfs
+                if self.gpu_tool == "sysfs" and self._amd_hwmon_path:
+                    # sysfs Fallback
+                    temp_file = Path(self._amd_hwmon_path) / 'temp1_input'
+                    if temp_file.exists():
+                        temp_millic = int(temp_file.read_text().strip())
+                        return float(temp_millic) / 1000.0  # mC zu C
+                else:
+                    # rocm-smi
+                    result = subprocess.run(
+                        [self.gpu_tool, '--showtemp'],
+                        capture_output=True,
+                        text=True,
+                        timeout=3
+                    )
+                    if result.returncode == 0:
+                        # Parse AMD rocm-smi output
+                        for line in result.stdout.split('\n'):
+                            if 'GPU[' in line and (
+                                '(C):' in line or 'c' in line.lower()
+                            ):
+                                try:
+                                    match = re.search(
+                                        r'[\d.]+\s*$', line.strip()
+                                    )
+                                    if match:
+                                        return float(match.group())
+                                    # Fallback
+                                    temp_str = line.split(':')[-1].strip()
+                                    temp_str = temp_str.replace(
+                                        'c', ''
+                                    ).replace('C', '')
+                                    return float(temp_str)
+                                except (ValueError, IndexError):
+                                    pass
         except (subprocess.TimeoutExpired, Exception):
             pass
         
@@ -485,22 +533,29 @@ class HardwareMonitor:
                     return vram_mb / 1024.0  # MB zu GB
             
             elif self.gpu_type == "AMD":
-                result = subprocess.run(
-                    [self.gpu_tool, '--showmeminfo', 'vram'],
-                    capture_output=True,
-                    text=True,
-                    timeout=3
-                )
-                if result.returncode == 0:
-                    # Parse AMD rocm-smi output:
-                    # Format: "GPU[0]          : VRAM Total Used Memory (B): 1234567890"
-                    import re
-                    for line in result.stdout.split('\n'):
-                        if 'GPU[' in line and 'Used Memory' in line:
-                            match = re.search(r'(\d+)\s*$', line.strip())
-                            if match:
-                                vram_bytes = float(match.group(1))
-                                return vram_bytes / (1024**3)  # Bytes zu GB
+                # Prüfe ob rocm-smi oder sysfs
+                if self.gpu_tool == "sysfs" and self._amd_sysfs_path:
+                    # sysfs Fallback
+                    vram_file = Path(self._amd_sysfs_path) / 'mem_info_vram_used'
+                    if vram_file.exists():
+                        vram_bytes = int(vram_file.read_text().strip())
+                        return float(vram_bytes) / (1024**3)  # Bytes zu GB
+                else:
+                    # rocm-smi
+                    result = subprocess.run(
+                        [self.gpu_tool, '--showmeminfo', 'vram'],
+                        capture_output=True,
+                        text=True,
+                        timeout=3
+                    )
+                    if result.returncode == 0:
+                        # Parse AMD rocm-smi output
+                        for line in result.stdout.split('\n'):
+                            if 'GPU[' in line and 'Used Memory' in line:
+                                match = re.search(r'(\d+)\s*$', line.strip())
+                                if match:
+                                    vram_bytes = float(match.group(1))
+                                    return vram_bytes / (1024**3)  # Bytes zu GB
         except (subprocess.TimeoutExpired, Exception):
             pass
         
@@ -513,22 +568,29 @@ class HardwareMonitor:
             if self.gpu_type != "AMD" or not self.gpu_tool:
                 return None
             
-            result = subprocess.run(
-                [self.gpu_tool, '--showmeminfo', 'gtt'],
-                capture_output=True,
-                text=True,
-                timeout=3
-            )
-            if result.returncode == 0:
-                # Parse AMD rocm-smi output:
-                # Format: "GPU[0]          : GTT Total Used Memory (B): 1234567890"
-                import re
-                for line in result.stdout.split('\n'):
-                    if 'GPU[' in line and 'Used Memory' in line:
-                        match = re.search(r'(\d+)\s*$', line.strip())
-                        if match:
-                            gtt_bytes = float(match.group(1))
-                            return gtt_bytes / (1024**3)  # Bytes zu GB
+            # Prüfe ob rocm-smi oder sysfs
+            if self.gpu_tool == "sysfs" and self._amd_sysfs_path:
+                # sysfs Fallback
+                gtt_file = Path(self._amd_sysfs_path) / 'mem_info_gtt_used'
+                if gtt_file.exists():
+                    gtt_bytes = int(gtt_file.read_text().strip())
+                    return float(gtt_bytes) / (1024**3)  # Bytes zu GB
+            else:
+                # rocm-smi
+                result = subprocess.run(
+                    [self.gpu_tool, '--showmeminfo', 'gtt'],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0:
+                    # Parse AMD rocm-smi output
+                    for line in result.stdout.split('\n'):
+                        if 'GPU[' in line and 'Used Memory' in line:
+                            match = re.search(r'(\d+)\s*$', line.strip())
+                            if match:
+                                gtt_bytes = float(match.group(1))
+                                return gtt_bytes / (1024**3)  # Bytes zu GB
         except (subprocess.TimeoutExpired, Exception):
             pass
         
@@ -1031,6 +1093,35 @@ class GPUMonitor:
         
         return None
     
+    def _find_amd_sysfs_path(self) -> Optional[str]:
+        """Findet AMD GPU sysfs-Pfad für direktes Monitoring"""
+        try:
+            # Suche nach AMD GPU (Vendor ID 1002)
+            result = subprocess.run(
+                ['lspci', '-d', '1002:', '-n'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0 or not result.stdout:
+                return None
+            
+            # Finde card-Nummer (z.B. card1)
+            import glob
+            for cardpath in glob.glob('/sys/class/drm/card*/device'):
+                # Prüfe ob es AMD GPU ist (Vendor 0x1002)
+                vendor_file = Path(cardpath) / 'vendor'
+                if vendor_file.exists():
+                    vendor = vendor_file.read_text().strip()
+                    if vendor == '0x1002':
+                        # Prüfe ob VRAM-Info verfügbar ist
+                        vram_file = Path(cardpath) / 'mem_info_vram_total'
+                        if vram_file.exists():
+                            return str(Path(cardpath))
+            return None
+        except Exception:
+            return None
+    
     def _detect_gpu(self):
         """Erkennt GPU-Typ und findet entsprechendes Monitoring-Tool"""
         # NVIDIA
@@ -1070,6 +1161,18 @@ class GPUMonitor:
             # Hole AMD GPU-Modellnamen (umfassende Erkennung)
             self.gpu_model = self._detect_amd_gpu_model()
             logger.info(f"🔴 AMD GPU erkannt: {self.gpu_model}, Tool: {amd_tool}")
+            return
+        
+        # AMD sysfs Fallback (ohne rocm-smi)
+        amd_sysfs = self._find_amd_sysfs_path()
+        if amd_sysfs:
+            self.gpu_type = "AMD"
+            self.gpu_tool = "sysfs"  # Markiere als sysfs-basiert
+            self.gpu_model = self._detect_amd_gpu_model()
+            logger.info(
+                f"🔴 AMD GPU erkannt (sysfs): {self.gpu_model}, "
+                f"Path: {amd_sysfs}"
+            )
             return
         
         # Intel
@@ -1204,27 +1307,36 @@ class GPUMonitor:
                     return result.stdout.strip().split('\n')[0]
             
             elif self.gpu_type == "AMD":
-                result = subprocess.run(
-                    [self.gpu_tool, '--showmeminfo', 'vram'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0:
-                    # Parse AMD rocm-smi output: "GPU[X] : VRAM Total Used Memory (B): XXXXXX"
-                    for line in result.stdout.split('\n'):
-                        if 'VRAM Total Used Memory' in line:
-                            # Format: "GPU[0]          : VRAM Total Used Memory (B): 1674899456"
-                            parts = line.split(':')
-                            if len(parts) >= 3:
-                                # Letzter Teil contains "1674899456"
-                                bytes_used = parts[-1].strip()
-                                try:
-                                    # Konvertiere zu MB
-                                    mb_used = int(bytes_used) / (1024 * 1024)
-                                    return f"{int(mb_used)}"
-                                except ValueError:
-                                    pass
+                # Prüfe ob rocm-smi oder sysfs
+                if self.gpu_tool == "sysfs":
+                    # sysfs Fallback
+                    sysfs_path = self._find_amd_sysfs_path()
+                    if sysfs_path:
+                        vram_file = Path(sysfs_path) / 'mem_info_vram_used'
+                        if vram_file.exists():
+                            vram_bytes = int(vram_file.read_text().strip())
+                            mb_used = vram_bytes / (1024 * 1024)
+                            return f"{int(mb_used)}"
+                else:
+                    # rocm-smi
+                    result = subprocess.run(
+                        [self.gpu_tool, '--showmeminfo', 'vram'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        # Parse AMD rocm-smi output
+                        for line in result.stdout.split('\n'):
+                            if 'VRAM Total Used Memory' in line:
+                                parts = line.split(':')
+                                if len(parts) >= 3:
+                                    bytes_used = parts[-1].strip()
+                                    try:
+                                        mb_used = int(bytes_used) / (1024 * 1024)
+                                        return f"{int(mb_used)}"
+                                    except ValueError:
+                                        pass
             
             elif self.gpu_type == "Intel":
                 # Intel GPU Top hat kein einfaches VRAM-Query
@@ -1548,7 +1660,6 @@ class LMStudioBenchmark:
     def get_rocm_driver_version() -> Optional[str]:
         """Ruft AMD ROCm/Driver Version ab"""
         try:
-            # Versuche rocm-smi in verschiedenen Pfaden
             rocm_paths = ['/usr/bin/rocm-smi', '/usr/local/bin/rocm-smi']
             rocm_paths.extend(glob.glob('/opt/rocm-*/bin/rocm-smi'))
             
@@ -1558,18 +1669,48 @@ class LMStudioBenchmark:
                         [rocm_smi, '--version'],
                         capture_output=True, text=True, timeout=5
                     )
-                    if result.returncode == 0:
-                        # Format: "ROCM-SMI version: 4.0.0+1a5c7ec\nROCM-SMI-LIB version: 7.8.0"
+                    if result.returncode == 0 and result.stdout.strip():
                         output = result.stdout.strip()
                         lines = output.split('\n')
                         if lines and 'version' in lines[0].lower():
-                            # Extrahiere Version aus erstem Line
                             parts = lines[0].split(':')
                             if len(parts) > 1:
-                                return parts[1].strip()
+                                version = parts[1].strip()
+                                if '/rocm-' in rocm_smi and '/bin/' in rocm_smi:
+                                    tool_version = rocm_smi.split('/rocm-')[1].split('/')[0]
+                                    return f"{version} (tool: {tool_version})"
+                                return version
                         return output if output else None
                 except Exception:
-                    continue
+                    pass
+            
+            try:
+                result = subprocess.run(
+                    ['dpkg', '-l', 'rocm-smi'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if line.startswith('ii') and 'rocm-smi' in line:
+                            parts = line.split()
+                            if len(parts) >= 3:
+                                return f"{parts[2]} (package)"
+            except Exception:
+                pass
+            
+            try:
+                result = subprocess.run(
+                    ['modinfo', 'amdgpu'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        if line.startswith('srcversion:'):
+                            srcver = line.split(':')[1].strip()[:12]  # Erste 12 Zeichen
+                            return f"amdgpu:{srcver}"
+            except Exception:
+                pass
+                    
         except Exception:
             logger.debug("ROCm Driver nicht verfügbar")
         return None
@@ -1582,10 +1723,8 @@ class LMStudioBenchmark:
                 ['intel_gpu_top', '--help'],
                 capture_output=True, text=True, timeout=5
             )
-            # Intel_gpu_top zeigt Version im Help-Text
             for line in result.stdout.split('\n'):
                 if 'version' in line.lower():
-                    # Versuche Version zu extrahieren
                     parts = line.split()
                     for i, part in enumerate(parts):
                         if 'version' in part.lower() and i + 1 < len(parts):
@@ -1600,22 +1739,19 @@ class LMStudioBenchmark:
         """Ruft Betriebssystem und Kernel-Version ab"""
         try:
             import platform
-            os_system = platform.system()  # Linux, Windows, Darwin
+            os_system = platform.system()
             
-            # Bei Linux: Hole Distribution-Namen
             if os_system == "Linux":
                 try:
                     import distro
-                    os_name = distro.name()  # z.B. "Pop!_OS", "Ubuntu", "Arch Linux"
-                    os_version = distro.version()  # z.B. "22.04"
+                    os_name = distro.name()
+                    os_version = distro.version()
                     return os_name, os_version
                 except Exception:
-                    # Fallback auf platform.release() (Kernel-Version)
                     os_name = os_system
                     os_version = platform.release()
                     return os_name, os_version
             else:
-                # Windows/macOS: Nutze system() und release()
                 os_name = os_system
                 os_version = platform.release()
                 return os_name, os_version
@@ -1661,15 +1797,12 @@ class LMStudioBenchmark:
         self.max_power = max_power
         self.use_gtt = use_gtt
         self.previous_results: List[BenchmarkResult] = []
-        self._gtt_info = {}  # Speichert GTT-Informationen von AMD GPU
-        
-        # REST API Mode (aus Config oder CLI)
+        self._gtt_info = {}
         lmstudio_config = DEFAULT_CONFIG.get('lmstudio', {})
         self.use_rest_api = use_rest_api if use_rest_api is not None else lmstudio_config.get('use_rest_api', False)
         self.rest_client: Optional[LMStudioRESTClient] = None
         
         if self.use_rest_api:
-            # Initialisiere REST Client
             base_url = f"http://{lmstudio_config.get('host', 'localhost')}:{lmstudio_config.get('ports', [1234])[0]}"
             api_token = lmstudio_config.get('api_token')
             self.rest_client = LMStudioRESTClient(base_url=base_url, api_token=api_token)
@@ -1677,28 +1810,23 @@ class LMStudioBenchmark:
         else:
             logger.info("🔧 SDK/CLI Modus aktiviert")
         
-        # Load-Parameter mit Defaults (Performance-Tuning)
         self.load_params = dict(DEFAULT_LOAD_PARAMS)
         if load_params:
             for key, value in load_params.items():
                 if value is not None:
                     self.load_params[key] = value
         
-        # Cache wird IMMER initialisiert (zum Speichern von Ergebnissen)
-        # use_cache kontrolliert nur das LADEN von Cache-Hits
         self.cache = BenchmarkCache()
         self.params_hash = BenchmarkCache.compute_params_hash(
             prompt, context_length, OPTIMIZED_INFERENCE_PARAMS, self.load_params
         )
-        
-        # Hardware Monitor für Profiling
+
         self.hardware_monitor = HardwareMonitor(
             self.gpu_monitor.gpu_type or "Unknown",
             self.gpu_monitor.gpu_tool or "",
             enabled=enable_profiling
         )
-        
-        # Speichere CLI-Argumente für Reports
+
         self.cli_args = {
             'runs': num_runs,
             'context': context_length,
@@ -1719,21 +1847,18 @@ class LMStudioBenchmark:
             'max_power': max_power,
             'use_gtt': use_gtt,
         }
-        
-        # Erfasse Versions-Informationen einmalig bei Benchmark-Start
+
         self.system_versions = {
             'lmstudio_version': self.get_lmstudio_version(),
             'nvidia_driver_version': self.get_nvidia_driver_version(),
             'rocm_driver_version': self.get_rocm_driver_version(),
             'intel_driver_version': self.get_intel_driver_version(),
         }
-        
-        # Debug-Logging für erfasste Versionen
+
         logger.info(f"📋 Erfasste Versions-Informationen:")
         for key, value in self.system_versions.items():
             logger.info(f"   • {key}: {value if value else 'N/A'}")
-        
-        # Erfasse System-Informationen einmalig
+
         os_name, os_version = self.get_os_info()
         self.system_info = {
             'os_name': os_name,
@@ -1745,23 +1870,17 @@ class LMStudioBenchmark:
         logger.info(f"   • OS: {self.system_info['os_name']} {self.system_info['os_version']}")
         logger.info(f"   • CPU: {self.system_info['cpu_model'] or 'N/A'}")
         logger.info(f"   • Python: {self.system_info['python_version']}")
-        
-        # Speichere Inference-Parameter, ggf. Overrides anwenden
+
         self.inference_params = OPTIMIZED_INFERENCE_PARAMS.copy()
         self.inference_overrides = inference_overrides or {}
         for k, v in (self.inference_overrides or {}).items():
             if v is not None and k in self.inference_params:
                 self.inference_params[k] = v
-        
-        # Speichere Hashes für Reproduzierbarkeit
         self.prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-        # Hash mit tatsächlichen Inference-Parametern (inkl. Overrides) UND Load-Parametern
         self.params_hash = BenchmarkCache.compute_params_hash(prompt, context_length, self.inference_params, self.load_params)
-        
-        # Erstelle Results-Verzeichnis
+
         RESULTS_DIR.mkdir(exist_ok=True)
-        
-        # Lade frühere Ergebnisse wenn Vergleich gewünscht
+
         if self.compare_with:
             self._load_previous_results()
     
@@ -4147,8 +4266,11 @@ def main():
         except:
             pass
     
+    # Log-Filename immer erstellen (für Symlink)
+    log_filename = LOGS_DIR / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    
     if not is_webapp_subprocess:
-        log_filename = LOGS_DIR / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        # File-Handler nur für standalone Modus
         file_handler = logging.FileHandler(log_filename, mode='w')
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         file_handler.addFilter(NoJSONFilter())
@@ -4156,6 +4278,11 @@ def main():
         logger.info(f"📝 Benchmark-Log: {log_filename}")
     else:
         logger.info("📝 Benchmark läuft als WebApp-Subprocess - Logging via WebApp")
+    
+    # Symlink immer erstellen (standalone + webapp)
+    latest_link = LOGS_DIR / "benchmark_latest.log"
+    latest_link.unlink(missing_ok=True)
+    latest_link.symlink_to(log_filename.name)
     
     parser = argparse.ArgumentParser(
         description="LM Studio Model Benchmark - Testet alle lokal installierten LLM-Modelle",
