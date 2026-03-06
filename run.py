@@ -14,13 +14,14 @@ Examples:
     ./run.py -w                  - Starts web dashboard (short form)
 """
 
+from datetime import datetime
 import os
+from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
 import time
-from datetime import datetime
-from pathlib import Path
 
 project_root = Path(__file__).parent
 os.chdir(project_root)
@@ -38,13 +39,13 @@ def _resolve_python_executable() -> str:
     return sys.executable
 
 
-python_executable = _resolve_python_executable()
+PYTHON_EXECUTABLE = _resolve_python_executable()
 
 
 def _tray_python_candidates() -> list[str]:
     """Return Python candidates for tray startup."""
     candidates = [
-        python_executable,
+        PYTHON_EXECUTABLE,
         sys.executable,
         "/usr/bin/python3",
         "python3",
@@ -87,6 +88,21 @@ def _build_subprocess_env() -> dict[str, str]:
     env.pop("LD_LIBRARY_PATH", None)
     env.pop("LD_PRELOAD", None)
     return env
+
+
+_ALLOWED_ARG_RE = re.compile(r"^[A-Za-z0-9_./:=,@%+\-]+$")
+
+
+def _sanitize_cli_args(cli_args: list[str]) -> list[str]:
+    """Validate CLI arguments before forwarding to subprocesses."""
+    sanitized: list[str] = []
+    for arg in cli_args:
+        if any(char in arg for char in ("\x00", "\n", "\r")):
+            raise ValueError(f"Invalid control character in argument: {arg!r}")
+        if not _ALLOWED_ARG_RE.fullmatch(arg):
+            raise ValueError(f"Unsupported characters in argument: {arg!r}")
+        sanitized.append(arg)
+    return sanitized
 
 
 def _start_tray_process(
@@ -204,18 +220,18 @@ if "--help" in sys.argv or "-h" in sys.argv:
     benchmark_script = project_root / "src" / "benchmark.py"
     if benchmark_script.exists():
         result = subprocess.run(
-            [python_executable, str(benchmark_script), "--help"],
+            [PYTHON_EXECUTABLE, str(benchmark_script), "--help"],
             capture_output=True,
             text=True,
             check=False,
             env=_build_subprocess_env(),
         )
         lines = result.stdout.split("\n")
-        in_options = False
+        IN_OPTIONS = False
         for line in lines:
             if line.startswith("options:") or line.startswith("  -"):
-                in_options = True
-            if in_options:
+                IN_OPTIONS = True
+            if IN_OPTIONS:
                 print(line)
 
     sys.exit(0)
@@ -223,7 +239,7 @@ if "--help" in sys.argv or "-h" in sys.argv:
 has_web_flag = "--webapp" in sys.argv or "-w" in sys.argv
 debug_enabled = "--debug" in sys.argv or "-d" in sys.argv
 
-tray_process = None
+TRAY_PROCESS = None
 
 if has_web_flag:
     args = [arg for arg in sys.argv[1:] if arg not in ("--webapp", "-w")]
@@ -232,8 +248,14 @@ if has_web_flag:
         web_port = _find_free_port()
         args.extend(["--port", str(web_port)])
 
-    dashboard_url = f"http://localhost:{web_port}"
-    tray_process = _start_tray_process(dashboard_url, debug_enabled)
+    try:
+        safe_args = _sanitize_cli_args(args)
+    except ValueError as error:
+        print(f"❌ Invalid CLI arguments: {error}")
+        sys.exit(2)
+
+    DASHBOARD_URL = f"http://localhost:{web_port}"
+    TRAY_PROCESS = _start_tray_process(DASHBOARD_URL, debug_enabled)
 
     app_script = project_root / "web" / "app.py"
     if not app_script.exists():
@@ -243,29 +265,36 @@ if has_web_flag:
 
     print("🌐 Starting FastAPI web dashboard...")
     try:
-        sys.exit(
-            subprocess.call(
-                [python_executable, str(app_script)] + args,
-                env=_build_subprocess_env(),
-            )
+        result = subprocess.run(
+            [PYTHON_EXECUTABLE, str(app_script)] + safe_args,
+            env=_build_subprocess_env(),
+            check=False,
         )
+        sys.exit(result.returncode)
     finally:
-        _stop_tray_process(tray_process)
+        _stop_tray_process(TRAY_PROCESS)
 else:
     benchmark_script = project_root / "src" / "benchmark.py"
-    tray_process = _start_tray_process("http://localhost:1234", debug_enabled)
+    TRAY_PROCESS = _start_tray_process("http://localhost:1234", debug_enabled)
 
     if not benchmark_script.exists():
         print(f"❌ Error: {benchmark_script} not found")
-        _stop_tray_process(tray_process)
+        _stop_tray_process(TRAY_PROCESS)
         sys.exit(1)
 
     try:
-        sys.exit(
-            subprocess.call(
-                [python_executable, str(benchmark_script)] + sys.argv[1:],
-                env=_build_subprocess_env(),
-            )
+        safe_args = _sanitize_cli_args(sys.argv[1:])
+    except ValueError as error:
+        print(f"❌ Invalid CLI arguments: {error}")
+        _stop_tray_process(TRAY_PROCESS)
+        sys.exit(2)
+
+    try:
+        result = subprocess.run(
+            [PYTHON_EXECUTABLE, str(benchmark_script)] + safe_args,
+            env=_build_subprocess_env(),
+            check=False,
         )
+        sys.exit(result.returncode)
     finally:
-        _stop_tray_process(tray_process)
+        _stop_tray_process(TRAY_PROCESS)
