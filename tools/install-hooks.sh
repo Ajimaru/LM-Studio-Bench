@@ -19,6 +19,15 @@ echo -e "${YELLOW}Installing git hooks...${NC}"
 PROJECT_ROOT=$(git rev-parse --show-toplevel)
 cd "$PROJECT_ROOT"
 
+# Check if virtual environment is activated
+if [[ -z "${VIRTUAL_ENV}" ]]; then
+    if [[ -f ".venv/bin/activate" ]]; then
+        echo -e "${YELLOW}Activating virtual environment...${NC}"
+        # shellcheck disable=SC1091
+        source .venv/bin/activate
+    fi
+fi
+
 # Check if we're in a git repository
 if [[ ! -d ".git" ]]; then
     echo -e "${RED}Error: Not a git repository${NC}"
