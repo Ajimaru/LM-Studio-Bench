@@ -1,0 +1,12 @@
+# Development Requirements for LM-Studio-Bench
+# Install with: pip install -r requirements-dev.txt
+
+# Python Code Quality Tools
+flake8>=7.0.0              # Style checker (PEP 8)
+isort>=8.0.0               # Import sorter
+pylint>=4.0.0              # Code linter and checker
+djlint>=1.36.0             # HTML/Jinja linter
+
+# Optional tools for development
+black>=24.0.0              # Code formatter (for future use)
+mypy>=1.0.0                # Static type checker (for future use)
