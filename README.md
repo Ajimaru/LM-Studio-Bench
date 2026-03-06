@@ -88,13 +88,26 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
   .venv\Scripts\activate.bat
   ```
 
-**3. Install Python dependencies**:
+**3. Install system dependencies** (Linux only, for tray icon support):
+
+  ```bash
+  # Ubuntu/Debian
+  sudo apt install python3-dev libgirepository1.0-dev libcairo2-dev pkg-config
+  
+  # Fedora/RHEL
+  sudo dnf install python3-devel gobject-introspection-devel cairo-devel pkg-config
+  
+  # Arch
+  sudo pacman -S python gobject-introspection cairo pkgconf
+  ```
+
+**4. Install Python dependencies**:
 
   ```bash
   pip install -r requirements.txt
   ```
 
-**4. Check LM Studio CLI**:
+**5. Check LM Studio CLI**:
 
   ```bash
   lms --help

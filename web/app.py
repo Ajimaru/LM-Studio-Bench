@@ -3574,7 +3574,6 @@ async def health_check() -> dict:
 if __name__ == "__main__":
     import uvicorn
 
-    # ArgumentParser für Port-Option
     parser = argparse.ArgumentParser(
         description="FastAPI Web-Dashboard für LM Studio Benchmark"
     )
@@ -3587,9 +3586,19 @@ if __name__ == "__main__":
             "(Standard: automatisch freien Port suchen)"
         )
     )
+    parser.add_argument(
+        '--debug', '-d',
+        action='store_true',
+        help='Aktiviere DEBUG-Logging für detaillierte Ausgaben'
+    )
     args = parser.parse_args()
 
-    # Erstelle WebApp Startup Log-Datei
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        for handler in logging.root.handlers:
+            handler.setLevel(logging.DEBUG)
+        logger.debug("🐛 DEBUG-Modus aktiviert")
+
     webapp_log_file = setup_webapp_logger()
 
     logger.info("🌐 Starte FastAPI Web-Dashboard...")
@@ -3601,7 +3610,6 @@ if __name__ == "__main__":
         logger.error(f"❌ Benchmark-Script nicht gefunden: {BENCHMARK_SCRIPT}")
         sys.exit(1)
 
-    # Port bestimmen
     if args.port:
         port = args.port
         logger.info(f"🔧 Verwende angegebenen Port: {port}")
@@ -3613,19 +3621,8 @@ if __name__ == "__main__":
     logger.info(f"🚀 Dashboard verfügbar auf {dashboard_url}")
     logger.info(f"📊 API Docs: {dashboard_url}/docs")
 
-    # Launch optional system tray icon (GTK-based) linking to the dashboard URL
-    # Attempt to start the GTK tray; import failures are non-fatal.
-    try:
-        import web.tray as tray_module
-        tray_module.start_tray(dashboard_url)
-    except ImportError as ie:
-        logger.info("🔧 Tray-Modul nicht verfügbar: %s", ie)
-    except Exception as tray_exc:  # pragma: no cover - best-effort
-        logger.warning(f"⚠️ Fehler beim Starten der Tray-Anwendung: {tray_exc}")
-
-    # Öffne Browser in separatem Thread nach kurzer Verzögerung
     def open_browser():
-        time.sleep(1.5)  # Warte bis Server bereit ist
+        time.sleep(1.5)
         try:
             logger.info(f"🌐 Öffne Browser: {dashboard_url}")
             webbrowser.open(dashboard_url)
@@ -3635,4 +3632,5 @@ if __name__ == "__main__":
     browser_thread = threading.Thread(target=open_browser, daemon=True)
     browser_thread.start()
 
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    uvicorn_log_level = "debug" if args.debug else "info"
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level=uvicorn_log_level)

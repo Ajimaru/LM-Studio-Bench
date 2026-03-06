@@ -4103,8 +4103,7 @@ class LMStudioBenchmark:
                     {profile_rows}
                 </tbody>
             </table>"""
-            
-            # Ersetze Platzhalter im Template
+
             html_output = html_template.replace('{{SUMMARY_BOXES}}', summary_boxes)
             html_output = html_output.replace('{{CLI_SECTION}}', cli_section)
             html_output = html_output.replace('{{TREND_SECTION}}', trend_section)
@@ -4121,8 +4120,7 @@ class LMStudioBenchmark:
             html_output = html_output.replace('{{EFFICIENCY_DATA}}', json.dumps(fig_efficiency.to_dict()['data']))
             html_output = html_output.replace('{{EFFICIENCY_LAYOUT}}', json.dumps(fig_efficiency.to_dict()['layout']))
             html_output = html_output.replace('{{TREND_SCRIPT}}', trend_script)
-            
-            # Schreibe HTML-Datei
+
             with open(html_file, 'w', encoding='utf-8') as f:
                 f.write(html_output)
             
@@ -4135,16 +4133,11 @@ class LMStudioBenchmark:
 def main():
     """Hauptfunktion mit CLI-Argumenten"""
     global log_filename
-    
-    # Initialisiere Log-Datei NUR wenn direkt aufgerufen (nicht über WebApp)
-    # WebApp loggt bereits via read_output() zu ihrer eigenen Log-Datei
-    # Prüfe ob wir von einem Parent-Prozess gestartet wurden (WebApp subprocess)
+
     import psutil
     current_process = psutil.Process()
     parent_process = current_process.parent()
-    
-    # Wenn Parent "python" ist und "web/app.py" im Command → kein File-Logging
-    # (CLI über run.py soll weiterhin eine Log-Datei schreiben)
+
     is_webapp_subprocess = False
     if parent_process and 'python' in parent_process.name().lower():
         try:
@@ -4155,7 +4148,6 @@ def main():
             pass
     
     if not is_webapp_subprocess:
-        # Normaler direkter Aufruf → erstelle Log-Datei
         log_filename = LOGS_DIR / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
         file_handler = logging.FileHandler(log_filename, mode='w')
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
@@ -4163,7 +4155,6 @@ def main():
         logging.root.addHandler(file_handler)
         logger.info(f"📝 Benchmark-Log: {log_filename}")
     else:
-        # WebApp Subprocess → nur Console-Logging (WebApp schreibt die Log-Datei)
         logger.info("📝 Benchmark läuft als WebApp-Subprocess - Logging via WebApp")
     
     parser = argparse.ArgumentParser(
@@ -4208,7 +4199,6 @@ Beispiele:
         help='Maximale Anzahl von Modellen zum Testen (z.B. 3 testet nur die ersten 3 Modelle)'
     )
     
-    # Erweiterte Filter-Optionen
     parser.add_argument(
         '--only-vision',
         action='store_true',
@@ -4256,7 +4246,6 @@ Beispiele:
         help='Maximale Modellgröße in GB (z.B. 10.0)'
     )
     
-    # Regex-basierte Filter
     parser.add_argument(
         '--include-models',
         type=str,
@@ -4286,7 +4275,6 @@ Beispiele:
         help='Sortiere Ergebnisse nach: speed (tokens/s), efficiency (tokens/s pro GB), ttft (Time to First Token), vram (VRAM-Nutzung)'
     )
     
-    # Cache-Verwaltung
     parser.add_argument(
         '--retest',
         action='store_true',
@@ -4313,7 +4301,6 @@ Beispiele:
         help='Exportiere Cache-Inhalte als JSON (z.B. "cache_export.json") und beendet'
     )
     
-    # Hardware-Profiling
     parser.add_argument(
         '--enable-profiling',
         action='store_true',
@@ -4334,21 +4321,24 @@ Beispiele:
         help='Maximaler GPU Power-Draw in Watts (Warnung wenn überschritten, z.B. 400.0)'
     )
     
-    # GTT (Graphics Translation Table) - Shared System RAM für AMD GPUs
     parser.add_argument(
         '--disable-gtt',
         action='store_true',
         help='Deaktiviere GTT (Shared System RAM) bei AMD GPUs - nutze nur dediziertes VRAM'
     )
     
-    # Report-Regenerierung
     parser.add_argument(
         '--export-only',
         action='store_true',
         help='Generiere Reports (JSON/CSV/PDF/HTML) aus allen Ergebnissen in der Datenbank ohne neue Tests durchzuführen'
     )
 
-    # Inference-Parameter Overrides (optional)
+    parser.add_argument(
+        '--debug', '-d',
+        action='store_true',
+        help='Aktiviere DEBUG-Logging für detaillierte Ausgaben'
+    )
+
     parser.add_argument(
         '--temperature',
         type=float,
@@ -4484,6 +4474,16 @@ Beispiele:
     )
     
     args = parser.parse_args()
+    
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        for handler in logging.root.handlers:
+            handler.setLevel(logging.DEBUG)
+        logging.getLogger("httpx").setLevel(logging.DEBUG)
+        logging.getLogger("lmstudio").setLevel(logging.DEBUG)
+        logging.getLogger("urllib3").setLevel(logging.DEBUG)
+        logging.getLogger("websockets").setLevel(logging.DEBUG)
+        logger.debug("🐛 DEBUG-Modus aktiviert")
     
     # Cache-Verwaltungs-Befehle (beenden vor Benchmark)
     if args.list_cache:
