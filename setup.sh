@@ -245,9 +245,9 @@ pkg_name_for_key() {
                 cairo_dev) echo "libcairo2-dev" ;;
                 pciutils) echo "pciutils" ;;
                 lm_sensors) echo "lm-sensors" ;;
-                nvtop) echo "nvtop" ;;
                 intel_gpu_tools) echo "intel-gpu-tools" ;;
-                radeontop) echo "radeontop" ;;
+                rocm-smi) echo "rocm-smi" ;;
+                rocminfo) echo "rocminfo" ;;
                 *) echo "" ;;
             esac
             ;;
@@ -264,9 +264,9 @@ pkg_name_for_key() {
                 cairo_dev) echo "cairo-devel" ;;
                 pciutils) echo "pciutils" ;;
                 lm_sensors) echo "lm_sensors" ;;
-                nvtop) echo "nvtop" ;;
                 intel_gpu_tools) echo "intel-gpu-tools" ;;
-                radeontop) echo "radeontop" ;;
+                rocm-smi) echo "rocm-smi" ;;
+                rocminfo) echo "rocminfo" ;;
                 *) echo "" ;;
             esac
             ;;
@@ -283,9 +283,9 @@ pkg_name_for_key() {
                 cairo_dev) echo "cairo" ;;
                 pciutils) echo "pciutils" ;;
                 lm_sensors) echo "lm_sensors" ;;
-                nvtop) echo "nvtop" ;;
                 intel_gpu_tools) echo "intel-gpu-tools" ;;
-                radeontop) echo "radeontop" ;;
+                rocm-smi) echo "rocm-smi" ;;
+                rocminfo) echo "rocminfo" ;;
                 *) echo "" ;;
             esac
             ;;
@@ -302,9 +302,8 @@ pkg_name_for_key() {
                 cairo_dev) echo "cairo-devel" ;;
                 pciutils) echo "pciutils" ;;
                 lm_sensors) echo "lm_sensors" ;;
-                nvtop) echo "nvtop" ;;
                 intel_gpu_tools) echo "intel-gpu-tools" ;;
-                radeontop) echo "radeontop" ;;
+                rocminfo) echo "" ;;
                 *) echo "" ;;
             esac
             ;;
@@ -321,9 +320,9 @@ pkg_name_for_key() {
                 cairo_dev) echo "cairo-dev" ;;
                 pciutils) echo "pciutils" ;;
                 lm_sensors) echo "lm-sensors" ;;
-                nvtop) echo "" ;;
                 intel_gpu_tools) echo "" ;;
-                radeontop) echo "" ;;
+                rocm-smi) echo "" ;;
+                rocminfo) echo "" ;;
                 *) echo "" ;;
             esac
             ;;
@@ -590,7 +589,6 @@ check_gpu_and_monitoring() {
             "ROCm SMI für AMD (rocm-smi)" \
             "" \
             "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/" || true
-        check_optional_tool "radeontop" "RadeonTop für AMD" "radeontop" "" || true
     fi
 
     if [[ "${has_intel}" == "1" ]]; then
@@ -602,13 +600,140 @@ check_gpu_and_monitoring() {
             "https://gitlab.freedesktop.org/drm/igt-gpu-tools" || true
     fi
 
-    if [[ "${has_nvidia}" == "1" || "${has_amd}" == "1" || "${has_intel}" == "1" ]]; then
-        check_optional_tool "nvtop" "NVTOP (NVIDIA/AMD/Intel)" "nvtop" "" || true
-    fi
-
     if [[ "${has_nvidia}" == "0" && "${has_amd}" == "0" && \
           "${has_intel}" == "0" ]]; then
         log "WARN" "GPU-Hersteller konnte nicht eindeutig erkannt werden."
+    fi
+}
+
+check_amd_drivers() {
+    section "AMD GPU Treiber & ROCm"
+    
+    local gpu_device_id=""
+    local gpu_sku=""
+    
+    if lspci -nn 2>/dev/null | grep -i "AMD/ATI" | grep -qE "\[03[0-9a-f]{2}\]"; then
+        gpu_device_id=$(lspci -nn 2>/dev/null | grep -i "AMD/ATI" | grep -oP '\[1002:[0-9a-f]{4}\]' | head -1 | tr -d '[]')
+        log "OK" "AMD GPU gefunden: ${gpu_device_id}"
+    else
+        log "INFO" "Keine AMD GPU erkannt. Überspringe AMD-Treiber-Check."
+        return 0
+    fi
+    
+    # Prüfe amdgpu Kernel-Modul
+    if lsmod 2>/dev/null | grep -q "^amdgpu "; then
+        log "OK" "amdgpu Kernel-Treiber geladen"
+    elif lspci -k 2>/dev/null | grep -A 2 "AMD/ATI" | grep -q "Kernel driver in use: amdgpu"; then
+        log "OK" "amdgpu Kernel-Treiber aktiv (lspci)"
+    else
+        log "WARN" "amdgpu Kernel-Treiber nicht geladen oder nicht aktiv"
+        log "INFO" "Hinweis: Möglicherweise läuft ein proprietärer oder alter Treiber."
+        log "INFO" "Empfehlung: Installiere 'linux-firmware' und 'xserver-xorg-video-amdgpu'"
+    fi
+    
+    # Prüfe X.Org Display-Treiber
+    if dpkg -l xserver-xorg-video-amdgpu 2>/dev/null | grep -q "^ii"; then
+        local xorg_version
+        xorg_version=$(dpkg -l xserver-xorg-video-amdgpu 2>/dev/null | grep "^ii" | awk '{print $3}')
+        log "OK" "X.Org Display-Treiber (amdgpu): v${xorg_version}"
+    elif rpm -qa xserver-xorg-video-amdgpu 2>/dev/null | grep -q "xserver"; then
+        log "OK" "X.Org Display-Treiber (amdgpu) installiert"
+    else
+        log "INFO" "xserver-xorg-video-amdgpu nicht installiert (optional für Display)"
+        log "INFO" "Falls Displayprobleme auftreten, installiere: sudo apt install xserver-xorg-video-amdgpu"
+    fi
+    
+    # Prüfe ROCm SMI
+    if command -v rocm-smi >/dev/null 2>&1; then
+        log "OK" "rocm-smi gefunden: $(command -v rocm-smi)"
+        
+        # Versuche GPU-Info abzurufen
+        if rocm-smi --showproductname >/dev/null 2>&1; then
+            gpu_sku=$(rocm-smi --showproductname 2>/dev/null | grep "Card SKU:" | awk '{print $NF}')
+            if [[ -n "${gpu_sku}" ]]; then
+                log "OK" "ROCm erkennt GPU: ${gpu_sku}"
+            else
+                log "OK" "ROCm erkennt GPU (SKU nicht ermittelbar)"
+            fi
+        else
+            log "WARN" "rocm-smi installiert, aber GPU-Abfrage fehlgeschlagen"
+            log "INFO" "Möglicherweise fehlen ROCm-Kernel-Module oder Permissions."
+        fi
+    else
+        log "WARN" "rocm-smi nicht gefunden"
+        log "INFO" "rocm-smi ist wichtig für GPU-Monitoring (Temperatur, VRAM, etc.)"
+        
+        if [[ "${INTERACTIVE}" == "1" ]] && [[ "${DRY_RUN}" == "0" ]]; then
+            if ask_yes_no "rocm-smi jetzt installieren?"; then
+                install_package_key "rocm-smi" || log "ERROR" "Installation fehlgeschlagen"
+            fi
+        else
+            log "INFO" "Installation mit: sudo apt install rocm-smi  # Ubuntu/Debian"
+        fi
+    fi
+    
+    # Prüfe rocminfo (optional, aber nützlich)
+    if command -v rocminfo >/dev/null 2>&1; then
+        log "OK" "rocminfo gefunden: $(command -v rocminfo)"
+    else
+        log "INFO" "rocminfo nicht installiert (optional)"
+        log "INFO" "rocminfo zeigt detaillierte ROCm-Plattform-Informationen"
+        
+        if [[ "${INTERACTIVE}" == "1" ]] && [[ "${DRY_RUN}" == "0" ]]; then
+            if ask_yes_no "rocminfo jetzt installieren? (optional)"; then
+                install_package_key "rocminfo" || log "WARN" "Installation fehlgeschlagen"
+            fi
+        fi
+    fi
+    
+    # Prüfe ROCm SDK (für HIP/OpenCL Computing)
+    local rocm_found="0"
+    local rocm_version="unbekannt"
+    
+    if [[ -d "/opt/rocm" ]]; then
+        rocm_found="1"
+    else
+        for dir in /opt/rocm-*; do
+            if [[ -d "${dir}" ]]; then
+                rocm_found="1"
+                break
+            fi
+        done
+    fi
+    
+    if [[ "${rocm_found}" == "1" ]]; then
+        local rocm_path
+        rocm_path=$(find /opt -maxdepth 1 -type d -name "rocm*" 2>/dev/null | head -1)
+        if [[ -n "${rocm_path}" ]]; then
+            rocm_version=$(basename "${rocm_path}" | grep -oP 'rocm-\K[\d.]+' || echo "unbekannt")
+        fi
+        log "OK" "ROCm SDK installiert: ${rocm_version}"
+    else
+        log "INFO" "ROCm SDK nicht in /opt/rocm gefunden"
+        log "INFO" "Für Machine Learning mit AMD GPUs kann das vollständige ROCm SDK nützlich sein."
+        log "INFO" "Download: https://rocm.docs.amd.com/en/latest/deploy/linux/quick_start.html"
+        log "INFO" "Hinweis: LM Studio nutzt primär die GGML/llama.cpp Integration,"
+        log "INFO" "         das vollständige ROCm SDK ist nur für spezielle Frameworks nötig."
+    fi
+    
+    # Prüfe libdrm-amdgpu (wichtig für Userspace-Treiber)
+    if dpkg -l libdrm-amdgpu1 2>/dev/null | grep -q "^ii"; then
+        log "OK" "libdrm-amdgpu1 installiert"
+    elif rpm -qa 2>/dev/null | grep -q "^libdrm-amdgpu"; then
+        log "OK" "libdrm-amdgpu installiert"
+    else
+        log "WARN" "libdrm-amdgpu nicht gefunden"
+        log "INFO" "Dieses Paket ist wichtig für die Userspace-Kommunikation mit AMD GPUs"
+    fi
+    
+    # GPU-Kompatibilitätswarnung für sehr neue GPUs
+    if [[ "${gpu_device_id}" == "1002:150e" ]]; then
+        log "WARN" "Radeon 890M (STRIX Point) ist eine sehr neue iGPU"
+        log "INFO" "Für optimale Unterstützung benötigst du:"
+        log "INFO" "  - Kernel 6.12+ (aktuell: $(uname -r))"
+        log "INFO" "  - Mesa 24.2+ oder AMDGPU-PRO Treiber"
+        log "INFO" "  - ROCm 6.2+ für Computing-Workloads"
+        log "INFO" "Bei Problemen: Prüfe LM Studio logs für GPU-Fehler"
     fi
 }
 
@@ -641,6 +766,25 @@ check_python_requirements() {
 
     log "OK" "pip gefunden: $(python3 -m pip --version | head -n1)"
 
+    # Frage ob requirements.txt installiert werden soll
+    if ! ask_yes_no "Soll ich 'python3 -m pip install -r requirements.txt' ausführen?"; then
+        log "INFO" "Installation von requirements.txt übersprungen."
+        return 0
+    fi
+
+    # Wenn venv existiert aber nicht aktiv ist, aktiviere sie intern
+    if [[ -z "${VIRTUAL_ENV:-}" ]] && [[ -d "${PROJECT_ROOT}/.venv" ]]; then
+        log "INFO" "Aktiviere .venv intern für Installation..."
+        # shellcheck disable=SC1091
+        if source "${PROJECT_ROOT}/.venv/bin/activate" 2>/dev/null; then
+            log "OK" "venv intern aktiviert: $(sanitize_path "${VIRTUAL_ENV}")"
+        else
+            log "ERROR" "Konnte .venv nicht aktivieren."
+            log "INFO" "Bitte manuell aktivieren: source .venv/bin/activate"
+            return 1
+        fi
+    fi
+
     if [[ "${DRY_RUN}" == "0" ]]; then
         if python3 -m pip check >/dev/null 2>&1; then
             log "OK" "Aktuelles Python-Environment hat keine pip-Konflikte."
@@ -651,19 +795,15 @@ check_python_requirements() {
         log "INFO" "[DRY-RUN] Pip-Konflikt-Check übersprungen."
     fi
 
-    if ask_yes_no "Soll ich 'python3 -m pip install -r requirements.txt' ausführen?"; then
-        if [[ "${DRY_RUN}" == "1" ]]; then
-            log "INFO" "[DRY-RUN] Würde ausführen: python3 -m pip install -r requirements.txt"
-        else
-            if python3 -m pip install -r "${PROJECT_ROOT}/requirements.txt"; then
-                log "OK" "Python-Abhängigkeiten installiert/aktualisiert."
-            else
-                log "ERROR" "Installation aus requirements.txt fehlgeschlagen."
-                return 1
-            fi
-        fi
+    if [[ "${DRY_RUN}" == "1" ]]; then
+        log "INFO" "[DRY-RUN] Würde ausführen: python3 -m pip install -r requirements.txt"
     else
-        log "INFO" "Installation von requirements.txt übersprungen."
+        if python3 -m pip install -r "${PROJECT_ROOT}/requirements.txt"; then
+            log "OK" "Python-Abhängigkeiten installiert/aktualisiert."
+        else
+            log "ERROR" "Installation aus requirements.txt fehlgeschlagen."
+            return 1
+        fi
     fi
 
     return 0
@@ -809,6 +949,7 @@ main() {
     check_lmstudio_stack
 
     check_gpu_and_monitoring
+    check_amd_drivers
 
     create_project_venv || true
     check_python_requirements || true
