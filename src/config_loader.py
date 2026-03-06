@@ -13,7 +13,7 @@ DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "defaults.json"
 
 # Built-in fallbacks (used when JSON is missing or incomplete)
 BASE_DEFAULT_CONFIG: Dict[str, Any] = {
-    "prompt": "Erkläre maschinelles Lernen in 3 Sätzen",
+    "prompt": "Explain machine learning in 3 sentences",
     "context_length": 2048,
     "num_runs": 3,
     "lmstudio": {
