@@ -29,23 +29,29 @@ cd "$PROJECT_ROOT"
 if [[ -z "${VIRTUAL_ENV}" ]]; then
     if [[ -f ".venv/bin/activate" ]]; then
         echo -e "${YELLOW}Activating virtual environment...${NC}"
+        # shellcheck disable=SC1091
         source .venv/bin/activate
     fi
 fi
 
 # Get list of staged files by type
-PYTHON_FILES=$(git diff --cached --name-only --diff-filter=ACM | \
-    grep -E '\.py$' || true)
-BASH_FILES=$(git diff --cached --name-only --diff-filter=ACM | \
-    grep -E '\.(sh|bash)$' || true)
-MARKDOWN_FILES=$(git diff --cached --name-only --diff-filter=ACM | \
-    grep -E '\.md$' || true)
-HTML_JINJA_FILES=$(git diff --cached --name-only --diff-filter=ACM | \
-    grep -E '\.(html|jinja|jinja2)$' || true)
+readarray -t STAGED_FILES < <(git diff --cached --name-only --diff-filter=ACM)
+readarray -t PYTHON_FILES < <(
+    printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.py$' || true
+)
+readarray -t BASH_FILES < <(
+    printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.(sh|bash)$' || true
+)
+readarray -t MARKDOWN_FILES < <(
+    printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.md$' || true
+)
+readarray -t HTML_JINJA_FILES < <(
+    printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.(html|jinja|jinja2)$' || true
+)
 
 # Check if there are any files to check
-if [[ -z "$PYTHON_FILES" && -z "$BASH_FILES" && \
-      -z "$MARKDOWN_FILES" && -z "$HTML_JINJA_FILES" ]]; then
+if [[ ${#PYTHON_FILES[@]} -eq 0 && ${#BASH_FILES[@]} -eq 0 && \
+      ${#MARKDOWN_FILES[@]} -eq 0 && ${#HTML_JINJA_FILES[@]} -eq 0 ]]; then
     echo -e "${GREEN}No files to check.${NC}"
     exit 0
 fi
@@ -56,15 +62,15 @@ FAILED=0
 # ============================================================================
 # Python Checks
 # ============================================================================
-if [[ -n "$PYTHON_FILES" ]]; then
+if [[ ${#PYTHON_FILES[@]} -gt 0 ]]; then
     echo ""
     echo -e "${YELLOW}═══ Python Checks ═══${NC}"
 
     # Run isort
     echo -e "${YELLOW}Running isort...${NC}"
-    if ! isort --check-only --diff $PYTHON_FILES; then
+    if ! isort --check-only --diff "${PYTHON_FILES[@]}"; then
         echo -e "${RED}❌ isort found issues!${NC}"
-        echo -e "${YELLOW}Fix with: isort $PYTHON_FILES${NC}"
+        echo -e "${YELLOW}Fix with: isort ${PYTHON_FILES[*]}${NC}"
         FAILED=1
     else
         echo -e "${GREEN}✓ isort passed${NC}"
@@ -72,7 +78,7 @@ if [[ -n "$PYTHON_FILES" ]]; then
 
     # Run flake8
     echo -e "${YELLOW}Running flake8...${NC}"
-    if ! flake8 $PYTHON_FILES; then
+    if ! flake8 "${PYTHON_FILES[@]}"; then
         echo -e "${RED}❌ flake8 found issues!${NC}"
         FAILED=1
     else
@@ -82,11 +88,13 @@ if [[ -n "$PYTHON_FILES" ]]; then
     # Run pylint (optional, with timeout)
     if [[ -z "$SKIP_PYLINT" ]]; then
         echo -e "${YELLOW}Running pylint (timeout 10s)...${NC}"
-        PYLINT_FILES=$(echo "$PYTHON_FILES" | \
-            grep -E '^(src|web)/' || true)
+        readarray -t PYLINT_FILES < <(
+            printf '%s\n' "${PYTHON_FILES[@]}" | \
+                grep -E '^(src|web)/' || true
+        )
 
-        if [[ -n "$PYLINT_FILES" ]]; then
-            if timeout 10s pylint $PYLINT_FILES --exit-zero; then
+        if [[ ${#PYLINT_FILES[@]} -gt 0 ]]; then
+            if timeout 10s pylint "${PYLINT_FILES[@]}" --exit-zero; then
                 echo -e "${GREEN}✓ pylint passed${NC}"
             else
                 EXIT_CODE=$?
@@ -104,13 +112,13 @@ fi
 # ============================================================================
 # Bash/Shell Checks
 # ============================================================================
-if [[ -n "$BASH_FILES" ]]; then
+if [[ ${#BASH_FILES[@]} -gt 0 ]]; then
     echo ""
     echo -e "${YELLOW}═══ Shell Script Checks ═══${NC}"
 
     # Run shellcheck
     echo -e "${YELLOW}Running shellcheck...${NC}"
-    if ! shellcheck $BASH_FILES; then
+    if ! shellcheck "${BASH_FILES[@]}"; then
         echo -e "${RED}❌ shellcheck found issues!${NC}"
         FAILED=1
     else
@@ -121,13 +129,14 @@ fi
 # ============================================================================
 # Markdown Checks
 # ============================================================================
-if [[ -n "$MARKDOWN_FILES" ]]; then
+if [[ ${#MARKDOWN_FILES[@]} -gt 0 ]]; then
     echo ""
     echo -e "${YELLOW}═══ Markdown Checks ═══${NC}"
 
     # Run markdownlint
     echo -e "${YELLOW}Running markdownlint...${NC}"
-    if ! markdownlint -c "$PROJECT_ROOT/.markdownlintrc.json" "$MARKDOWN_FILES"; then
+    if ! markdownlint -c "$PROJECT_ROOT/.markdownlintrc.json" \
+        "${MARKDOWN_FILES[@]}"; then
         echo -e "${RED}❌ markdownlint found issues!${NC}"
         FAILED=1
     else
@@ -138,15 +147,15 @@ fi
 # ============================================================================
 # HTML/Jinja Checks
 # ============================================================================
-if [[ -n "$HTML_JINJA_FILES" ]]; then
+if [[ ${#HTML_JINJA_FILES[@]} -gt 0 ]]; then
     echo ""
     echo -e "${YELLOW}═══ HTML/Jinja Checks ═══${NC}"
 
     # Run djlint
     echo -e "${YELLOW}Running djlint...${NC}"
-    if ! djlint --check $HTML_JINJA_FILES; then
+    if ! djlint --check "${HTML_JINJA_FILES[@]}"; then
         echo -e "${RED}❌ djlint found issues!${NC}"
-        echo -e "${YELLOW}Fix with: djlint --reformat $HTML_JINJA_FILES${NC}"
+        echo -e "${YELLOW}Fix with: djlint --reformat ${HTML_JINJA_FILES[*]}${NC}"
         FAILED=1
     else
         echo -e "${GREEN}✓ djlint passed${NC}"
