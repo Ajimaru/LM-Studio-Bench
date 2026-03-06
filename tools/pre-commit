@@ -59,6 +59,33 @@ fi
 # Flag to track if any checks fail
 FAILED=0
 
+# Track files that were automatically fixed
+AUTOFIXED_FILES=()
+
+add_autofixed_file() {
+    local file="$1"
+    local existing_file
+
+    for existing_file in "${AUTOFIXED_FILES[@]}"; do
+        if [[ "$existing_file" == "$file" ]]; then
+            return
+        fi
+    done
+
+    AUTOFIXED_FILES+=("$file")
+}
+
+restage_autofixed_files() {
+    if [[ ${#AUTOFIXED_FILES[@]} -eq 0 ]]; then
+        return
+    fi
+
+    echo ""
+    echo -e "${YELLOW}Re-staging auto-fixed files...${NC}"
+    git add -- "${AUTOFIXED_FILES[@]}"
+    echo -e "${GREEN}✓ Auto-fixed files re-staged${NC}"
+}
+
 # ============================================================================
 # Python Checks
 # ============================================================================
@@ -66,12 +93,19 @@ if [[ ${#PYTHON_FILES[@]} -gt 0 ]]; then
     echo ""
     echo -e "${YELLOW}═══ Python Checks ═══${NC}"
 
-    # Run isort
+    # Run isort (auto-fix if needed)
     echo -e "${YELLOW}Running isort...${NC}"
     if ! isort --check-only --diff "${PYTHON_FILES[@]}"; then
-        echo -e "${RED}❌ isort found issues!${NC}"
-        echo -e "${YELLOW}Fix with: isort ${PYTHON_FILES[*]}${NC}"
-        FAILED=1
+        echo -e "${YELLOW}Applying isort auto-fix...${NC}"
+        if isort "${PYTHON_FILES[@]}"; then
+            for file in "${PYTHON_FILES[@]}"; do
+                add_autofixed_file "$file"
+            done
+            echo -e "${GREEN}✓ isort auto-fix applied${NC}"
+        else
+            echo -e "${RED}❌ isort auto-fix failed!${NC}"
+            FAILED=1
+        fi
     else
         echo -e "${GREEN}✓ isort passed${NC}"
     fi
@@ -151,12 +185,19 @@ if [[ ${#HTML_JINJA_FILES[@]} -gt 0 ]]; then
     echo ""
     echo -e "${YELLOW}═══ HTML/Jinja Checks ═══${NC}"
 
-    # Run djlint
+    # Run djlint (auto-fix if needed)
     echo -e "${YELLOW}Running djlint...${NC}"
     if ! djlint --check "${HTML_JINJA_FILES[@]}"; then
-        echo -e "${RED}❌ djlint found issues!${NC}"
-        echo -e "${YELLOW}Fix with: djlint --reformat ${HTML_JINJA_FILES[*]}${NC}"
-        FAILED=1
+        echo -e "${YELLOW}Applying djlint auto-fix...${NC}"
+        if djlint --reformat "${HTML_JINJA_FILES[@]}"; then
+            for file in "${HTML_JINJA_FILES[@]}"; do
+                add_autofixed_file "$file"
+            done
+            echo -e "${GREEN}✓ djlint auto-fix applied${NC}"
+        else
+            echo -e "${RED}❌ djlint auto-fix failed!${NC}"
+            FAILED=1
+        fi
     else
         echo -e "${GREEN}✓ djlint passed${NC}"
     fi
@@ -165,6 +206,8 @@ fi
 # ============================================================================
 # Final Result
 # ============================================================================
+restage_autofixed_files
+
 echo ""
 if [[ $FAILED -ne 0 ]]; then
     echo -e "${RED}Pre-commit checks failed!${NC}"
