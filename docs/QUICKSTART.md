@@ -23,6 +23,7 @@ pip install -r requirements.txt
 ✅ All CLI parameters available as web form with tooltips
 ✅ Advanced filtering (quantization, architecture, size, context-length)
 ✅ Separate logs: `logs/webapp_*.log` and `logs/benchmark_*.log`
+✅ Linux tray control with dynamic status icon and quick actions
 
 **Dashboard Features:**
 
@@ -37,6 +38,22 @@ pip install -r requirements.txt
 - **Results Browser**: Filter and sort all cached benchmark results
 - **Export**: Download JSON/CSV/PDF/HTML reports
 - **Network Access**: Access from other devices on same network
+
+### Linux Tray Control
+
+When GTK/AppIndicator dependencies are installed, a tray controller starts
+with the web app.
+
+- **Dynamic status icon**:
+  - Gray: idle
+  - Green: running
+  - Yellow: paused
+  - Red: API unreachable/error
+- **Smart controls**:
+  - Start enabled in idle/error states
+  - Pause/Stop enabled only in running/paused states
+- **Auto refresh**: status and controls refresh every 3 seconds
+- **Quit behavior**: tray `Quit` triggers graceful full shutdown
 
 ### Network Access
 

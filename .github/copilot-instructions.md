@@ -136,3 +136,8 @@ project-root/
 - GPU issues: Check VRAM with `nvidia-smi` (NVIDIA), `rocm-smi` (AMD), `intel_gpu_top` (Intel)
 - Healthcheck errors: Check if LM Studio is running on port 1234 or 1235
 - Device ID mapping: Use `lspci -d 1002:` for AMD GPU detection
+
+## additional instructions
+
+- .github/instructions/codacy.instructions.md
+- .github/instructions/code-standards.instructions.md

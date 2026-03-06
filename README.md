@@ -22,6 +22,10 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
     - Last 10 benchmark runs
   - ⚡ **Live Streaming**: WebSocket for real-time terminal output
   - 🎮 **Benchmark Control**: Start/stop via web interface
+  - 🖱️ **Linux Tray Control**: Status icon + Start/Pause/Stop/Quit controls
+    - Dynamic status icon: gray (idle), green (running), yellow (paused)
+    - Error state icon: red when API is unreachable
+    - Smart button states with automatic 3-second status polling
   - 📊 **Results Browser**: Browse all cached benchmark results
     - 📥 **Export Functions**: Download JSON/CSV/PDF/HTML reports
       - 🗂️ JSON, CSV (Excel/Sheets compatible)
@@ -415,6 +419,7 @@ If loading fails, offload is automatically reduced:
 - `POST /api/benchmark/pause` - Pause
 - `POST /api/benchmark/resume` - Resume
 - `POST /api/benchmark/stop` - Stop
+- `POST /api/system/shutdown` - Graceful full app shutdown
 - `WS /ws/benchmark` - WebSocket live streaming
 
 ## Troubleshooting

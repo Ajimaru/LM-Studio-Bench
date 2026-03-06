@@ -1,5 +1,7 @@
 # Architecture Documentation
 
+<!-- markdownlint-disable MD033 MD046 -->
+
 > Comprehensive architecture documentation with Mermaid diagrams showing how the Python modules interact and how CLI arguments and configuration files are processed.
 
 ---
@@ -10,6 +12,8 @@
   - [Table of Contents](#table-of-contents)
   - [System Architecture Overview](#system-architecture-overview)
   - [Startup Flow](#startup-flow)
+  - [Tray Control Flow (Linux)](#tray-control-flow-linux)
+  - [Tray Quit Sequence (Linux)](#tray-quit-sequence-linux)
   - [Configuration Loading](#configuration-loading)
   - [Configuration Priority](#configuration-priority)
   - [Benchmark Execution Flow](#benchmark-execution-flow)
@@ -19,6 +23,7 @@
     - [2. config\_loader.py (Configuration Manager)](#2-config_loaderpy-configuration-manager)
     - [3. benchmark.py (Main Engine)](#3-benchmarkpy-main-engine)
     - [4. rest\_client.py (REST API Client)](#4-rest_clientpy-rest-api-client)
+    - [5. tray.py (Linux Tray Controller)](#5-traypy-linux-tray-controller)
   - [Data Flow Summary](#data-flow-summary)
   - [See Also](#see-also)
 
@@ -29,7 +34,7 @@
 ```mermaid
 graph TB
     User([User]) --> RunPy[run.py<br/>Entry Point]
-    
+
     RunPy -->|--webapp/-w flag| WebApp[web/app.py<br/>FastAPI Server]
     RunPy -->|benchmark mode| Benchmark[src/benchmark.py<br/>Benchmark Engine]
     
@@ -47,7 +52,11 @@ graph TB
     
     WebApp -->|launches| Benchmark
     WebApp -->|reads| ResultsDB
-    WebApp -->|serves| Dashboard[Web Dashboard<br/>http://localhost:8080]
+    WebApp -->|serves| Dashboard[Web Dashboard<br/>http://localhost:PORT]
+    RunPy -->|starts background process| Tray[src/tray.py<br/>Linux Tray Controller]
+    Tray -->|polls /api/status| WebApp
+    Tray -->|calls /api/benchmark/*| WebApp
+    Tray -->|Quit calls /api/system/shutdown| WebApp
     
     style RunPy fill:#e1f5ff
     style Benchmark fill:#ffe1e1
@@ -64,6 +73,7 @@ graph TB
 - **config_loader.py**: Loads and merges configuration from JSON file with built-in defaults
 - **rest_client.py**: REST API client for LM Studio v1 endpoints (optional mode)
 - **web/app.py**: FastAPI web dashboard with live streaming and results browser
+- **tray.py**: Linux AppIndicator tray controller for benchmark controls
 
 ---
 
@@ -74,13 +84,16 @@ flowchart TD
     Start([./run.py args]) --> CheckHelp{--help or -h?}
     CheckHelp -->|Yes| ShowHelp[Show Extended Help<br/>+ benchmark.py --help]
     CheckHelp -->|No| CheckWebFlag{--webapp or -w<br/>in args?}
-    
+
     CheckWebFlag -->|Yes| RemoveFlag[Remove --webapp/-w<br/>from args]
-    RemoveFlag --> FindWebApp{web/app.py<br/>exists?}
+    RemoveFlag --> ResolvePort[Extract or assign<br/>web port]
+    ResolvePort --> StartTrayWeb[start tray.py<br/>with --url dashboard]
+    StartTrayWeb --> FindWebApp{web/app.py<br/>exists?}
     FindWebApp -->|Yes| StartWeb[subprocess.call<br/>python web/app.py + args]
     FindWebApp -->|No| ErrorWeb[Error: app.py not found]
     
-    CheckWebFlag -->|No| FindBenchmark{src/benchmark.py<br/>exists?}
+    CheckWebFlag -->|No| StartTrayCLI[start tray.py<br/>with localhost:1234]
+    StartTrayCLI --> FindBenchmark{src/benchmark.py<br/>exists?}
     FindBenchmark -->|Yes| StartBenchmark[subprocess.call<br/>python src/benchmark.py + args]
     FindBenchmark -->|No| ErrorBench[Error: benchmark.py not found]
     
@@ -98,8 +111,66 @@ flowchart TD
 **Decision Logic:**
 
 1. **Help Mode** (`--help`/`-h`): Displays extended help combining run.py explanation + benchmark.py CLI options
-2. **Web Mode** (`--webapp`/`-w`): Launches FastAPI dashboard at `http://localhost:8080`
-3. **Benchmark Mode** (default): Runs benchmark.py with all CLI arguments
+2. **Web Mode** (`--webapp`/`-w`): Launches tray + FastAPI dashboard on a free
+   local port
+3. **Benchmark Mode** (default): Launches tray + benchmark.py with all CLI
+   arguments
+
+---
+
+## Tray Control Flow (Linux)
+
+```mermaid
+flowchart TD
+    TrayStart([tray.py start]) --> Poll[Poll /api/status<br/>every 3 seconds]
+    Poll --> Reachable{API reachable?}
+
+    Reachable -->|No| IconRed[Set icon: red<br/>error/unreachable]
+    Reachable -->|Yes| ReadStatus[Read status field]
+
+    ReadStatus -->|idle| IconGray[Set icon: gray]
+    ReadStatus -->|running| IconGreen[Set icon: green]
+    ReadStatus -->|paused| IconYellow[Set icon: yellow]
+
+    ReadStatus --> BtnLogic[Update Start/Pause/Stop states]
+    BtnLogic --> UserAction{User action}
+
+    UserAction -->|Start| StartCall[POST /api/benchmark/start]
+    UserAction -->|Pause/Resume| PauseCall[POST /api/benchmark/pause or resume]
+    UserAction -->|Stop| StopCall[POST /api/benchmark/stop]
+    UserAction -->|Quit| QuitCall[POST /api/system/shutdown]
+
+    QuitCall --> ExitTray[GTK main loop exit]
+```
+
+**Tray behavior summary:**
+
+- Dynamic status icons: gray (idle), green (running), yellow (paused), red
+  (API error/unreachable)
+- Smart controls: Start enabled in idle/error, Pause and Stop enabled only in
+  running or paused state
+- Quit path: Tray triggers graceful shutdown endpoint, then exits
+
+## Tray Quit Sequence (Linux)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant T as Tray (GTK/AppIndicator)
+    participant A as web/app.py (FastAPI)
+    participant B as Benchmark Manager
+    participant P as Process Signal Handler
+
+    U->>T: Click Quit
+    T->>A: POST /api/system/shutdown
+    A->>B: stop_benchmark()
+    B-->>A: benchmark stopped or no-op
+    A-->>T: 200 OK (shutdown accepted)
+    A->>P: Start delayed SIGTERM thread
+    T->>T: Stop polling + GTK main_quit()
+    P->>A: Send SIGTERM to process
+    A-->>A: Uvicorn graceful shutdown
+```
 
 ---
 
@@ -108,7 +179,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     Start([config_loader.py<br/>import]) --> BaseConfig[BASE_DEFAULT_CONFIG<br/>Hard-coded Defaults]
-    
+
     BaseConfig --> LoadFunc[load_default_config]
     LoadFunc --> CheckFile{config/defaults.json<br/>exists?}
     
@@ -152,7 +223,7 @@ flowchart TD
 ```mermaid
 flowchart LR
     CLI[CLI Arguments<br/>--runs 5<br/>--context 4096] -->|Highest Priority| Merge[Configuration<br/>Merge]
-    
+
     JSON[config/defaults.json<br/>num_runs: 3<br/>context_length: 2048] -->|Medium Priority| Merge
     
     Base[BASE_DEFAULT_CONFIG<br/>prompt: default<br/>temperature: 0.1] -->|Lowest Priority| Merge
@@ -198,7 +269,7 @@ flowchart LR
 ```mermaid
 flowchart TD
     Start([benchmark.py main]) --> ParseArgs[Parse CLI Arguments<br/>argparse.ArgumentParser]
-    
+
     ParseArgs --> LoadConfig[Load DEFAULT_CONFIG<br/>from config_loader]
     
     LoadConfig --> CheckFlags{Special Flags?}
@@ -275,7 +346,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     Start([Benchmark Init]) --> CheckMode{use_rest_api?<br/>CLI or config}
-    
+
     CheckMode -->|True| InitREST[Initialize REST Client<br/>LMStudioRESTClient]
     CheckMode -->|False| InitSDK[Use Python SDK<br/>lmstudio package]
     
@@ -478,12 +549,31 @@ response = client.chat(
 
 ---
 
+### 5. tray.py (Linux Tray Controller)
+
+**Responsibilities:**
+
+- Provide Linux AppIndicator tray UI with benchmark controls
+- Poll benchmark status and update icon/button state
+- Trigger benchmark actions via web API
+- Trigger graceful full shutdown via `/api/system/shutdown`
+
+**Key Behaviors:**
+
+- 3-second polling loop via GLib timeout
+- Icon states: gray (idle), green (running), yellow (paused), red (error)
+- Control state logic:
+  - Start enabled in idle and recovery/error state
+  - Pause/Stop enabled only while benchmark is active
+
+---
+
 ## Data Flow Summary
 
 ```mermaid
 graph LR
     User([User]) -->|./run.py --runs 5| CLI[CLI Arguments]
-    
+
     JSON[config/defaults.json] --> Config[Configuration<br/>Merge]
     CLI --> Config
     Base[BASE_DEFAULT_CONFIG] --> Config

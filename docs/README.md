@@ -11,6 +11,7 @@ A Python benchmark tool for LM Studio with a modern web dashboard that:
 - **Exports results** in JSON, CSV, PDF, and interactive HTML formats
 - **Detects GPU capabilities** (NVIDIA, AMD, Intel) and monitors VRAM usage
 - **Provides a web dashboard** with live charts and filtering options
+- **Includes Linux tray controls** with live status icons and quick actions
 
 ## Quick Links
 
@@ -29,6 +30,7 @@ A Python benchmark tool for LM Studio with a modern web dashboard that:
 ✅ Caching system (skip already-tested models)  
 ✅ Filter by quantization, architecture, params, context length  
 ✅ Live web dashboard with 27 themes  
+✅ Linux tray controller with dynamic benchmark status icons  
 ✅ REST API mode with parallel inference support  
 ✅ Download progress tracking, MCP integration, stateful chats  
 ✅ Response caching with 10,000x+ speedup for repeated prompts  

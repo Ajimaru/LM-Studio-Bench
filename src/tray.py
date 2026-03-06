@@ -89,6 +89,8 @@ class TrayApp:
         self.pause_item: Optional[Gtk.MenuItem] = None
         self.stop_item: Optional[Gtk.MenuItem] = None
         self._polling_timer_id: Optional[int] = None
+        self.appindicator: Optional[AppIndicator3.Indicator] = None
+        self.icon_dir: Optional[Path] = None
 
     def _call_api(
         self,
@@ -155,6 +157,32 @@ class TrayApp:
         dialog.run()
         dialog.destroy()
 
+    def _update_icon_for_status(
+        self, status: str, api_reachable: bool
+    ) -> None:
+        """Update tray icon based on benchmark status.
+
+        Args:
+            status: Benchmark status (running/paused/idle/etc).
+            api_reachable: Whether API call succeeded.
+        """
+        if not self.appindicator or not self.icon_dir:
+            return
+
+        # Map status to icon color
+        if not api_reachable:
+            color = "red"  # API unreachable = error state
+        elif status == "running":
+            color = "green"
+        elif status == "paused":
+            color = "yellow"
+        else:  # idle, stopped, unknown
+            color = "gray"
+
+        icon_name = f"lmstudio-bench-tray-{color}"
+        self.appindicator.set_icon(icon_name)
+        LOGGER.debug("Updated tray icon: %s (status=%s)", color, status)
+
     def _refresh_menu_buttons(self) -> None:
         """Refresh menu button states based on benchmark status.
 
@@ -167,11 +195,16 @@ class TrayApp:
         is in error state or API is unreachable.
         """
         status_data = self._call_api("/api/status")
-        if not status_data:
+        api_reachable = status_data is not None
+        
+        if not api_reachable:
             status = "idle"
             LOGGER.warning("API unreachable, treating as idle state")
         else:
             status = str(status_data.get("status", "idle")).lower()
+
+        # Update tray icon based on status
+        self._update_icon_for_status(status, api_reachable)
 
         LOGGER.debug(
             "Updating menu buttons: status=%s, data=%s", status, status_data
@@ -390,19 +423,21 @@ class TrayApp:
     def run(self) -> None:
         """Initialize AppIndicator3 and run GTK loop."""
         project_root = Path(__file__).resolve().parent.parent
-        icon_dir = project_root / "assets" / "icons"
-        icon_path = icon_dir / "lmstudio-bench-tray"
-
-        appindicator = AppIndicator3.Indicator.new(
+        self.icon_dir = project_root / "assets" / "icons"
+        
+        # AppIndicator3 needs icon theme path + icon name
+        self.appindicator = AppIndicator3.Indicator.new(
             "lm-studio-benchmark",
-            str(icon_path),
+            "lmstudio-bench-tray-gray",  # Initial icon name
             AppIndicator3.IndicatorCategory.APPLICATION_STATUS,
         )
-        appindicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+        # Set the directory where our icons are located
+        self.appindicator.set_icon_theme_path(str(self.icon_dir))
+        self.appindicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
 
         self.menu = self._build_menu()
-        appindicator.set_menu(self.menu)
-        self._refresh_menu_buttons()
+        self.appindicator.set_menu(self.menu)
+        self._refresh_menu_buttons()  # Will update icon based on actual status
 
         LOGGER.info(
             "AppIndicator3 tray started for dashboard: %s",
