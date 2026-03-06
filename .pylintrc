@@ -8,9 +8,6 @@ load-plugins = pylint.extensions.docparams
 # Ignore patterns (test files and generated code)
 ignore-patterns = test_.*?\.py
 
-# Exclude directories (must match .flake8 and pyproject.toml)
-exclude-dirs = .git,__pycache__,.venv,venv,env,build,dist,.tox,.pytest_cache,.mypy_cache,node_modules,book
-
 [MESSAGES CONTROL]
 # Disable certain warnings
 disable=
@@ -18,6 +15,7 @@ disable=
     too-many-locals,
     too-many-branches,
     too-many-statements,
+    too-many-nested-blocks,
 
 [FORMAT]
 # Maximum line length (must match other tools)
