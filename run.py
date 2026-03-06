@@ -22,7 +22,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-# Set working directory to project root
 project_root = Path(__file__).parent
 os.chdir(project_root)
 
@@ -175,7 +174,6 @@ def _stop_tray_process(tray_proc: subprocess.Popen | None) -> None:
             pass
 
 
-# Show extended help for --help/-h
 if "--help" in sys.argv or "-h" in sys.argv:
     print("LM Studio Model Benchmark - Entry Point")
     print("=" * 60)

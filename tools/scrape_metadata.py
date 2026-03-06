@@ -76,11 +76,8 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
 
 def _strip_tags(html: str) -> str:
-    # Remove script/style
     html = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.DOTALL | re.IGNORECASE)
-    # Remove all tags
     text = re.sub(r"<[^>]+>", " ", html)
-    # Unescape entities and collapse whitespace
     text = htmllib.unescape(text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
@@ -96,33 +93,27 @@ def fetch_lmstudio_readme(model_key: str, timeout: int = 5) -> str:
     except (HTTPError, URLError, TimeoutError, ValueError):
         return ""
 
-    # Try meta description first
     m = re.search(r"<meta\\s+name=\"description\"\\s+content=\"(.*?)\"", html, flags=re.IGNORECASE | re.DOTALL)
     if m:
         text = htmllib.unescape(m.group(1)).strip()
         if len(text) >= 40:
             return text[:1500]
 
-    # Heuristics: README or main content candidates
     candidates: List[str] = []
-    # Common containers for markdown/README-like blocks
     for pattern in [
         r"<article[^>]*>(.*?)</article>",
         r"<section[^>]*>(.*?)</section>",
         r"<div[^>]*class=\"[^\"]*(prose|markdown|readme)[^\"]*\"[^>]*>(.*?)</div>",
     ]:
         for match in re.finditer(pattern, html, flags=re.IGNORECASE | re.DOTALL):
-            # last group may be the content group (handle 1 or 2 capture groups)
             group_content = match.group(match.lastindex or 1)
             candidates.append(group_content)
 
-    # Fallback: gather first paragraphs
     if not candidates:
         ps = re.findall(r"<p[^>]*>(.*?)</p>", html, flags=re.IGNORECASE | re.DOTALL)
         if ps:
             candidates.append(" ".join(ps[:5]))
 
-    # Sanitize and pick the longest meaningful candidate
     best = ""
     for c in candidates:
         text = _strip_tags(c)
@@ -184,7 +175,6 @@ def infer_capabilities(model_key: str, display_name: str) -> List[str]:
 
 
 def fetch_hf_metadata(model_key: str, timeout: int = 3) -> Dict:
-    # model_key typically "publisher/name". If quant variant contains '@', strip it.
     base_key = model_key.split("@")[0]
     if "/" not in base_key:
         return {}
@@ -244,7 +234,6 @@ def upsert_metadata(conn: sqlite3.Connection, rows: List[Dict]) -> None:
 def update_rows(conn: sqlite3.Connection, updates: List[Dict]) -> None:
     if not updates:
         return
-    # ensure optional keys present
     for u in updates:
         u.setdefault("description", None)
         u.setdefault("capabilities", None)
@@ -291,7 +280,6 @@ def scrape(only_missing: bool = True, enable_hf: bool = True) -> None:
         if not model_key:
             continue
         base_key = model_key.split("@")[0]
-        # Read entry fields
         display_name = entry.get("displayName", model_key)
         architecture = entry.get("architecture", "unknown")
         params = entry.get("paramsString", "")
@@ -300,17 +288,14 @@ def scrape(only_missing: bool = True, enable_hf: bool = True) -> None:
         vision = 1 if entry.get("vision") else 0
         tool_use = 1 if entry.get("trainedForToolUse") else 0
 
-        # Always best-effort fetch LM Studio README for description enhancement
         lms_desc = fetch_lmstudio_readme(model_key) or ""
         if only_missing and model_key in existing_keys:
-            # Conditional updates: description backfill + capability enrichment from description
             row_update: Dict = {"model_key": model_key, "scraped_at": datetime.utcnow().isoformat()}
             changed = False
             if lms_desc and not existing_map[model_key]["description"]:
                 row_update["description"] = lms_desc
                 row_update["source_url"] = f"https://lmstudio.ai/models/{base_key}"
                 changed = True
-            # Enrich capabilities from description and flags
             desc_caps = infer_caps_from_description(lms_desc)
             existing_caps = existing_map[model_key].get("capabilities", [])
             new_caps_set = set(existing_caps)
@@ -328,21 +313,17 @@ def scrape(only_missing: bool = True, enable_hf: bool = True) -> None:
             continue
 
         caps = infer_capabilities(model_key, display_name)
-        # From description
         caps += [c for c in infer_caps_from_description(lms_desc) if c not in caps]
         if vision:
             caps.append("vision")
         if tool_use:
             caps.append("tool_use")
-        # Deduplicate & sort
         caps = sorted(list(dict.fromkeys(caps)))
-        # Only-add policy: if row exists, union with existing capabilities
         existing_caps = existing_map.get(model_key, {}).get("capabilities", [])
         if existing_caps:
             caps = sorted(set(existing_caps) | set(caps))
 
         hf_meta = fetch_hf_metadata(model_key) if enable_hf else {}
-        # Prefer LM Studio README; fallback to HF description
         description = lms_desc or hf_meta.get("hf_description", "")
 
         row = {
@@ -387,7 +368,7 @@ def main() -> None:
     try:
         scrape(only_missing=not args.refresh, enable_hf=not args.no_hf)
         logger.info("Scrape completed")
-    except Exception as exc:  # pragma: no cover - best-effort script
+    except Exception as exc:
         logger.error(f"Error during scraping: {exc}")
         sys.exit(1)
 

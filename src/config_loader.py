@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "defaults.json"
 
-# Built-in fallbacks (used when JSON is missing or incomplete)
 BASE_DEFAULT_CONFIG: Dict[str, Any] = {
     "prompt": "Is the sky blue?",
     "context_length": 2048,
@@ -82,11 +81,9 @@ def load_default_config(config_path: Path | None = None) -> Dict[str, Any]:
                 user_config = json.load(f)
             config = _deep_merge(config, user_config)
             logger.info("Loaded defaults from %s", path)
-        except (json.JSONDecodeError, OSError) as exc:  # pragma: no cover
-            # defensive
+        except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Failed to load defaults from %s: %s", path, exc)
 
-    # Normalize LM Studio ports (always ensure at least one port)
     lmstudio_cfg = config.get("lmstudio", {}) or {}
     lmstudio_cfg["ports"] = _normalize_ports(lmstudio_cfg.get("ports"))
     lmstudio_cfg.setdefault("host", BASE_DEFAULT_CONFIG["lmstudio"]["host"])

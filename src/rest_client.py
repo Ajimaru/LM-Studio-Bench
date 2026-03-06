@@ -16,7 +16,6 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Cache for REST API responses (response_id -> response)
 _RESPONSE_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
@@ -48,7 +47,7 @@ class LoadedInstance:
 class ModelInfo:
     """Model information from /api/v1/models."""
 
-    model_type: str  # "llm" or "embedding"
+    model_type: str
     publisher: str
     key: str
     display_name: str
@@ -103,7 +102,6 @@ class LMStudioRESTClient:
         self.timeout = timeout
         self.enable_cache = enable_cache
         self.client = httpx.Client(timeout=timeout)
-        # Track last response_id for stateful chats
         self.last_response_id: Optional[str] = None
 
     def _headers(self) -> Dict[str, str]:
@@ -150,7 +148,6 @@ class LMStudioRESTClient:
         models = []
 
         for item in data.get("models", []):
-            # Parse quantization
             quant_data = item.get("quantization")
             quantization = None
             if quant_data:
@@ -159,7 +156,6 @@ class LMStudioRESTClient:
                     bits_per_weight=quant_data.get("bits_per_weight"),
                 )
 
-            # Parse capabilities (only for LLMs)
             caps_data = item.get("capabilities")
             capabilities = None
             if caps_data:
@@ -170,7 +166,6 @@ class LMStudioRESTClient:
                     ),
                 )
 
-            # Parse loaded instances
             loaded_instances = []
             for inst in item.get("loaded_instances", []):
                 loaded_instances.append(
@@ -224,19 +219,13 @@ class LMStudioRESTClient:
         Raises:
             httpx.HTTPError: on API errors
         """
-        # Strip @quantization suffix - server expects base key only
         base_key = model_key.split('@')[0] if '@' in model_key else model_key
-
-        # Per LM Studio REST API, load request options are top-level
-        # fields (e.g. context_length, flash_attention, offload_kv_cache_to_gpu).
         payload: Dict[str, Any] = {"model": base_key}
 
         if context_length is not None:
             payload["context_length"] = context_length
 
-        # Map GPU offload hint to boolean offload flag expected by server.
         if gpu_offload is not None:
-            # Treat any positive value as requesting offload of KV cache to GPU
             payload["offload_kv_cache_to_gpu"] = bool(gpu_offload)
 
         logger.info(f"Loading model: {base_key}")
@@ -309,14 +298,12 @@ class LMStudioRESTClient:
         response.raise_for_status()
         result = response.json()
 
-        # If already downloaded, return immediately
         if result.get("status") == "already_downloaded":
             logger.info(f"Model already downloaded: {model_key}")
             return True
 
         logger.info(f"Download started: {model_key}")
 
-        # Poll for completion if requested
         if wait_for_completion:
             return self._poll_download_progress(model_key, progress_callback)
 
@@ -342,11 +329,9 @@ class LMStudioRESTClient:
                 status = self.download_status(model_key)
                 current_status = status.get("status")
 
-                # Call progress callback if provided
                 if progress_callback:
                     progress_callback(status)
 
-                # Check terminal states
                 if current_status == "completed":
                     logger.info(f"Download completed: {model_key}")
                     return True
@@ -357,7 +342,6 @@ class LMStudioRESTClient:
                     logger.info(f"Model already downloaded: {model_key}")
                     return True
 
-                # Still downloading, wait and poll again
                 time.sleep(2)
 
             except Exception as e:
@@ -416,20 +400,16 @@ class LMStudioRESTClient:
         Raises:
             httpx.HTTPError: on API errors
         """
-        # Check cache if enabled and not using stateful mode
         cache_key = None
         if self.enable_cache and not use_stateful and not mcp_integrations:
             cache_key = self._make_cache_key(messages, model, temperature)
             if cache_key in _RESPONSE_CACHE:
                 logger.debug("Returning cached response")
                 return _RESPONSE_CACHE[cache_key]
-        # Strip @quantization suffix - server expects base key only
         base_model = None
         if model:
             base_model = model.split('@')[0] if '@' in model else model
 
-        # Build payload according to LM Studio v1 API.
-        # Convert messages to input string.
         payload: Dict[str, Any] = {"temperature": temperature, "stream": True}
 
         if base_model:
@@ -439,21 +419,17 @@ class LMStudioRESTClient:
         if max_tokens:
             payload["max_output_tokens"] = max_tokens
 
-        # Convert messages -> input when messages provided
         if messages:
             try:
-                # join user/assistant message contents into a single input string
                 input_text = "\n\n".join([m.get("content", "") for m in messages])
                 payload["input"] = input_text
             except Exception:
                 payload["input"] = ""
 
-        # Add stateful chat support (previous_response_id)
         if use_stateful and self.last_response_id:
             payload["previous_response_id"] = self.last_response_id
             logger.debug(f"Using stateful chat: {self.last_response_id}")
 
-        # Add MCP integrations if provided
         if mcp_integrations:
             payload["integrations"] = mcp_integrations
             logger.debug(f"Using {len(mcp_integrations)} MCP integrations")
@@ -477,31 +453,26 @@ class LMStudioRESTClient:
                 if not line.strip():
                     continue
 
-                # Parse SSE format: "data: {json}"
                 if line.startswith("data: "):
-                    json_str = line[6:]  # skip "data: "
+                    json_str = line[6:]
                     try:
                         event = json.loads(json_str)
                     except json.JSONDecodeError:
                         logger.warning(f"Failed to parse event: {json_str}")
                         continue
 
-                    # Check for chat.end event (contains stats and final output)
                     if event.get("type") == "chat.end":
-                        final_event = event  # Capture for response_id extraction
+                        final_event = event
                         result_data = event.get("result", {})
-                        # Extract final output
                         if "output" in result_data:
                             for item in result_data["output"]:
                                 if item.get("type") == "message":
                                     content = item.get("content", "")
                                     if content and content not in full_text:
                                         full_text += content
-                        # Extract stats
                         if "stats" in result_data:
                             final_stats = result_data["stats"]
                     else:
-                        # Extract text chunk from incremental output (v1 API format)
                         chunk_text = ""
                         if "output" in event:
                             for item in event["output"]:
@@ -515,25 +486,22 @@ class LMStudioRESTClient:
 
         total_time = time.time() - start_time
 
-        # Build response
         result = {
             "text": full_text,
             "total_time_s": total_time,
         }
 
         if final_stats:
-            # Map v1 API stats fields to ChatStats
             result["stats"] = ChatStats(
                 tokens_in=final_stats.get("input_tokens", 0),
                 tokens_out=final_stats.get("total_output_tokens", 0),
                 time_to_first_token_ms=final_stats.get(
                     "time_to_first_token_seconds", 0.0
-                ) * 1000.0,  # Convert seconds to ms
+                ) * 1000.0,
                 total_time_ms=total_time * 1000.0,
                 tokens_per_second=final_stats.get("tokens_per_second", 0.0),
             )
 
-        # Extract response_id for stateful chat support
         response_id = None
         if final_event:
             response_id = final_event.get("result", {}).get("response_id")
@@ -543,7 +511,6 @@ class LMStudioRESTClient:
                 self.last_response_id = response_id
                 logger.debug(f"Saved response_id for stateful chat: {response_id}")
 
-        # Cache response if enabled
         if self.enable_cache and cache_key:
             _RESPONSE_CACHE[cache_key] = result
             logger.debug(f"Cached response (cache size: {len(_RESPONSE_CACHE)})")
@@ -607,8 +574,6 @@ class LMStudioRESTClient:
         """Context manager exit."""
         self.close()
 
-
-# Convenience functions
 
 def is_vision_model(model: ModelInfo) -> bool:
     """Check if model supports vision/image inputs."""

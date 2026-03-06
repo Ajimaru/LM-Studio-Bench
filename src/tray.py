@@ -21,7 +21,7 @@ try:
     gi.require_version("Gtk", "3.0")
     gi.require_version("AppIndicator3", "0.1")
     from gi.repository import Gtk, AppIndicator3
-except Exception as import_exc:  # pragma: no cover - runtime dependency
+except Exception as import_exc:
     gi = None
     Gtk = None
     AppIndicator3 = None
@@ -138,7 +138,7 @@ class TrayApp:
                 "API %s %s failed (%s): %s", method, endpoint, exc_type, exc
             )
             return None
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             LOGGER.error(
                 "Unexpected error on API %s %s: %s", method, endpoint, exc
             )
@@ -169,14 +169,13 @@ class TrayApp:
         if not self.appindicator or not self.icon_dir:
             return
 
-        # Map status to icon color
         if not api_reachable:
-            color = "red"  # API unreachable = error state
+            color = "red"
         elif status == "running":
             color = "green"
         elif status == "paused":
             color = "yellow"
-        else:  # idle, stopped, unknown
+        else:
             color = "gray"
 
         icon_name = f"lmstudio-bench-tray-{color}"
@@ -203,20 +202,16 @@ class TrayApp:
         else:
             status = str(status_data.get("status", "idle")).lower()
 
-        # Update tray icon based on status
         self._update_icon_for_status(status, api_reachable)
 
         LOGGER.debug(
             "Updating menu buttons: status=%s, data=%s", status, status_data
         )
 
-        # Update Start button: Enabled for idle/error states & fallback
-        # This allows user to recover if benchmark crashes
         is_running_or_paused = status in ("running", "paused")
         if self.start_item:
             self.start_item.set_sensitive(not is_running_or_paused)
 
-        # Update Pause/Resume button
         if self.pause_item:
             if status == "running":
                 self.pause_item.set_label("Pause")
@@ -228,7 +223,6 @@ class TrayApp:
                 self.pause_item.set_label("Pause")
                 self.pause_item.set_sensitive(False)
 
-        # Update Stop button: Only enabled for active states
         if self.stop_item:
             self.stop_item.set_sensitive(is_running_or_paused)
 
@@ -297,9 +291,9 @@ class TrayApp:
         """
         try:
             self._refresh_menu_buttons()
-        except Exception:  # pragma: no cover
+        except Exception:
             LOGGER.exception("Error during status polling")
-        return True  # Keep timer running
+        return True
 
     def _start_status_polling(self) -> None:
         """Start periodic status polling with 3-second interval.
@@ -308,15 +302,14 @@ class TrayApp:
         for user interaction, and helps recover from benchmark crashes.
         """
         if self._polling_timer_id is not None:
-            return  # Already running
+            return
 
         try:
             from gi.repository import GLib
-        except ImportError:  # pragma: no cover
+        except ImportError:
             LOGGER.warning("GLib not available, status polling disabled")
             return
 
-        # 3000 milliseconds = 3 seconds
         self._polling_timer_id = GLib.timeout_add(
             3000, self._on_polling_tick
         )
@@ -339,7 +332,7 @@ class TrayApp:
                 GLib.source_remove(self._polling_timer_id)
                 self._polling_timer_id = None
                 LOGGER.debug("Stopped status polling")
-            except Exception as exc:  # pragma: no cover
+            except Exception as exc:
                 LOGGER.warning("Failed to stop polling timer: %s", exc)
 
     def _on_quit(self, _item: Gtk.MenuItem) -> None:
@@ -351,12 +344,9 @@ class TrayApp:
         """
         LOGGER.info("Quit action triggered, initiating shutdown...")
 
-        # Stop polling timer first
         self._stop_status_polling()
 
-        # Stop any running benchmark and shutdown dashboard
         try:
-            # Try to shutdown via API (stops benchmark + closes app)
             LOGGER.info("Calling WebApp shutdown endpoint...")
             result = self._call_api("/api/system/shutdown", "POST")
             if result:
@@ -364,7 +354,6 @@ class TrayApp:
                     "Shutdown response: %s", result.get("message", "ok")
                 )
             else:
-                # Fallback: At least try to stop the benchmark
                 LOGGER.warning(
                     "Shutdown endpoint failed, trying stop only..."
                 )
@@ -374,10 +363,9 @@ class TrayApp:
                     if status in ("running", "paused"):
                         LOGGER.info("Stopping benchmark...")
                         self._call_api("/api/benchmark/stop", "POST")
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             LOGGER.warning("Error during shutdown: %s", exc)
 
-        # Quit tray application
         LOGGER.info("Benchmark Tray exiting")
         Gtk.main_quit()
 
@@ -425,27 +413,23 @@ class TrayApp:
         project_root = Path(__file__).resolve().parent.parent
         self.icon_dir = project_root / "assets" / "icons"
         
-        # AppIndicator3 needs icon theme path + icon name
         self.appindicator = AppIndicator3.Indicator.new(
             "lm-studio-benchmark",
-            "lmstudio-bench-tray-gray",  # Initial icon name
+            "lmstudio-bench-tray-gray",
             AppIndicator3.IndicatorCategory.APPLICATION_STATUS,
         )
-        # Set the directory where our icons are located
         self.appindicator.set_icon_theme_path(str(self.icon_dir))
         self.appindicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
 
         self.menu = self._build_menu()
         self.appindicator.set_menu(self.menu)
-        self._refresh_menu_buttons()  # Will update icon based on actual status
+        self._refresh_menu_buttons()
 
         LOGGER.info(
             "AppIndicator3 tray started for dashboard: %s",
             self.dashboard_url,
         )
 
-        # Start periodic status polling to detect changes without user
-        # interaction and allow recovery from benchmark crashes
         self._start_status_polling()
 
         Gtk.main()
@@ -456,7 +440,7 @@ def _run_tray(dashboard_url: str, debug: bool) -> None:
     try:
         app = TrayApp(dashboard_url=dashboard_url, debug=debug)
         app.run()
-    except Exception:  # pragma: no cover - runtime guard
+    except Exception:
         LOGGER.exception("Tray thread crashed")
 
 
@@ -528,7 +512,7 @@ def main() -> int:
     try:
         app = TrayApp(dashboard_url=args.url, debug=args.debug)
         app.run()
-    except Exception:  # pragma: no cover - runtime guard
+    except Exception:
         LOGGER.exception("Tray standalone startup failed")
         return 1
     return 0

@@ -620,7 +620,6 @@ check_amd_drivers() {
         return 0
     fi
     
-    # Prüfe amdgpu Kernel-Modul
     if lsmod 2>/dev/null | grep -q "^amdgpu "; then
         log "OK" "amdgpu Kernel-Treiber geladen"
     elif lspci -k 2>/dev/null | grep -A 2 "AMD/ATI" | grep -q "Kernel driver in use: amdgpu"; then
@@ -631,7 +630,6 @@ check_amd_drivers() {
         log "INFO" "Empfehlung: Installiere 'linux-firmware' und 'xserver-xorg-video-amdgpu'"
     fi
     
-    # Prüfe X.Org Display-Treiber
     if dpkg -l xserver-xorg-video-amdgpu 2>/dev/null | grep -q "^ii"; then
         local xorg_version
         xorg_version=$(dpkg -l xserver-xorg-video-amdgpu 2>/dev/null | grep "^ii" | awk '{print $3}')
@@ -643,11 +641,9 @@ check_amd_drivers() {
         log "INFO" "Falls Displayprobleme auftreten, installiere: sudo apt install xserver-xorg-video-amdgpu"
     fi
     
-    # Prüfe ROCm SMI
     if command -v rocm-smi >/dev/null 2>&1; then
         log "OK" "rocm-smi gefunden: $(command -v rocm-smi)"
         
-        # Versuche GPU-Info abzurufen
         if rocm-smi --showproductname >/dev/null 2>&1; then
             gpu_sku=$(rocm-smi --showproductname 2>/dev/null | grep "Card SKU:" | awk '{print $NF}')
             if [[ -n "${gpu_sku}" ]]; then
@@ -672,7 +668,6 @@ check_amd_drivers() {
         fi
     fi
     
-    # Prüfe rocminfo (optional, aber nützlich)
     if command -v rocminfo >/dev/null 2>&1; then
         log "OK" "rocminfo gefunden: $(command -v rocminfo)"
     else
@@ -686,7 +681,6 @@ check_amd_drivers() {
         fi
     fi
     
-    # Prüfe ROCm SDK (für HIP/OpenCL Computing)
     local rocm_found="0"
     local rocm_version="unbekannt"
     
@@ -716,7 +710,6 @@ check_amd_drivers() {
         log "INFO" "         das vollständige ROCm SDK ist nur für spezielle Frameworks nötig."
     fi
     
-    # Prüfe libdrm-amdgpu (wichtig für Userspace-Treiber)
     if dpkg -l libdrm-amdgpu1 2>/dev/null | grep -q "^ii"; then
         log "OK" "libdrm-amdgpu1 installiert"
     elif rpm -qa 2>/dev/null | grep -q "^libdrm-amdgpu"; then
@@ -726,7 +719,6 @@ check_amd_drivers() {
         log "INFO" "Dieses Paket ist wichtig für die Userspace-Kommunikation mit AMD GPUs"
     fi
     
-    # GPU-Kompatibilitätswarnung für sehr neue GPUs
     if [[ "${gpu_device_id}" == "1002:150e" ]]; then
         log "WARN" "Radeon 890M (STRIX Point) ist eine sehr neue iGPU"
         log "INFO" "Für optimale Unterstützung benötigst du:"
@@ -766,16 +758,13 @@ check_python_requirements() {
 
     log "OK" "pip gefunden: $(python3 -m pip --version | head -n1)"
 
-    # Frage ob requirements.txt installiert werden soll
     if ! ask_yes_no "Soll ich 'python3 -m pip install -r requirements.txt' ausführen?"; then
         log "INFO" "Installation von requirements.txt übersprungen."
         return 0
     fi
 
-    # Wenn venv existiert aber nicht aktiv ist, aktiviere sie intern
     if [[ -z "${VIRTUAL_ENV:-}" ]] && [[ -d "${PROJECT_ROOT}/.venv" ]]; then
         log "INFO" "Aktiviere .venv intern für Installation..."
-        # shellcheck disable=SC1091
         if source "${PROJECT_ROOT}/.venv/bin/activate" 2>/dev/null; then
             log "OK" "venv intern aktiviert: $(sanitize_path "${VIRTUAL_ENV}")"
         else
