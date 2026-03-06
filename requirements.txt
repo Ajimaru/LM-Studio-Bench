@@ -9,4 +9,5 @@ jinja2>=3.1.6
 httpx
 distro
 py-cpuinfo
+scipy>=1.11.0
 PyGObject>=3.48,<3.50
