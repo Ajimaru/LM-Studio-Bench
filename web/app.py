@@ -59,7 +59,7 @@ def setup_webapp_logger():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     log_file = logs_dir / f"webapp_{timestamp}.log"
 
-    # File Handler hinzufügen
+    # Add file handler
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -165,7 +165,7 @@ class BenchmarkManager:
                     )
 
                     if not line:
-                        # EOF erreicht - Prozess ist fertig
+                        # EOF reached - process is done
                         break
 
                     # Write immediately to log file
@@ -217,7 +217,7 @@ class BenchmarkManager:
     async def start_benchmark(self, args: list) -> bool:
         """Starts a new benchmark process"""
         if self.is_running():
-            logger.warning("Benchmark läuft bereits")
+            logger.warning("Benchmark already running")
             return False
 
         try:
@@ -248,8 +248,8 @@ class BenchmarkManager:
             # Start background task for continuous output reading
             self.output_task = asyncio.create_task(self._consume_output())
 
-            logger.info("✅ Benchmark gestartet mit PID %s", self.process.pid)
-            logger.info("📝 Benchmark-Log: %s", self.benchmark_log_file)
+            logger.info("✅ Benchmark started with PID %s", self.process.pid)
+            logger.info("📝 Benchmark log: %s", self.benchmark_log_file)
             return True
         except Exception as e:
             logger.error(f"❌ Error starting benchmark: {e}")
@@ -264,7 +264,7 @@ class BenchmarkManager:
         try:
             self.process.send_signal(signal.SIGSTOP)
             self.status = "paused"
-            logger.info("⏸️ Benchmark pausiert")
+            logger.info("⏸️ Benchmark paused")
             return True
         except Exception as e:
             logger.error(f"❌ Error pausing: {e}")
@@ -278,7 +278,7 @@ class BenchmarkManager:
         try:
             self.process.send_signal(signal.SIGCONT)
             self.status = "running"
-            logger.info("▶️ Benchmark fortgesetzt")
+            logger.info("▶️ Benchmark resumed")
             return True
         except Exception as e:
             logger.error(f"❌ Error resuming: {e}")
@@ -297,7 +297,7 @@ class BenchmarkManager:
                 self.process.wait(timeout=5)
                 logger.info("⏹️ Benchmark stopped (SIGTERM)")
             except TimeoutExpired:
-                # Fallback zu SIGKILL
+                # Fallback to SIGKILL
                 self.process.kill()
                 self.process.wait()
                 logger.warning("⏹️ Benchmark forcefully stopped (SIGKILL)")
@@ -417,13 +417,13 @@ class BenchmarkManager:
                     if output:
                         lines.append(output)
                     else:
-                        # Keine weitere Zeile verfügbar
+                        # No further line available
                         break
                 except asyncio.TimeoutError:
-                    # Timeout bedeutet keine weiteren Zeilen verfügbar
+                    # Timeout means no further lines available
                     break
 
-            # Kombiniere alle gelesenen Zeilen
+            # Combine all read lines
             if lines:
                 combined_output = ''.join(lines)
                 self.current_output += combined_output
@@ -431,7 +431,7 @@ class BenchmarkManager:
 
             return ""
         except Exception as e:
-            logger.error(f"❌ Fehler beim Lesen des Outputs: {e}")
+            logger.error(f"❌ Error reading output: {e}")
             return ""
 
 manager = BenchmarkManager()
@@ -440,7 +440,7 @@ manager = BenchmarkManager()
 async def run_metadata_scraper():
     """Runs the metadata scraper script best-effort."""
     if not SCRAPER_SCRIPT.exists():
-        logger.warning(f"⚠️ Scraper-Skript nicht gefunden: {SCRAPER_SCRIPT}")
+        logger.warning(f"⚠️ Scraper script not found: {SCRAPER_SCRIPT}")
         return
     try:
         await asyncio.to_thread(
@@ -451,11 +451,11 @@ async def run_metadata_scraper():
             text=True,
             timeout=60,
         )
-        logger.info("📝 Metadata-Scraper ausgeführt (nur fehlende Modelle)")
+        logger.info("📝 Metadata scraper executed (missing models only)")
     except subprocess.CalledProcessError as scrape_err:
-        logger.warning(f"⚠️ Scraper Fehler: {scrape_err.stderr or scrape_err}")
+        logger.warning(f"⚠️ Scraper error: {scrape_err.stderr or scrape_err}")
     except Exception as scrape_exc:  # pragma: no cover
-        logger.warning(f"⚠️ Scraper Ausführung fehlgeschlagen: {scrape_exc}")
+        logger.warning(f"⚠️ Scraper execution failed: {scrape_exc}")
 
 
 @asynccontextmanager
@@ -466,14 +466,14 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         if manager.is_running():
-            logger.info("🛑 Benchmark bei Shutdown beenden...")
+            logger.info("🛑 Stopping benchmark on shutdown...")
             manager.stop_benchmark()
             await asyncio.sleep(1)
 
 app = FastAPI(
     title="LM Studio Benchmark Dashboard",
     description=(
-        "Web-Dashboard zur Steuerung und Überwachung von LM Studio Benchmarks"
+        "Web dashboard for controlling and monitoring LM Studio benchmarks"
     ),
     lifespan=lifespan
 )
@@ -486,7 +486,7 @@ app.mount("/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
 # ============================================================================
 
 class BenchmarkParams(BaseModel):
-    """Parameter für Benchmark-Start"""
+    """Parameters for starting a benchmark"""
     runs: Optional[int] = None
     context: Optional[int] = None
     limit: Optional[int] = None
@@ -531,7 +531,7 @@ class BenchmarkParams(BaseModel):
 
 
 class InferenceParamSet(BaseModel):
-    """Satz von Inference-Parametern für A/B Test"""
+    """Set of inference parameters for an A/B test"""
     name: str
     temperature: Optional[float] = None
     top_k: Optional[int] = None
@@ -552,7 +552,7 @@ class InferenceParamSet(BaseModel):
 
 
 class CreateExperimentRequest(BaseModel):
-    """Request zum Erstellen eines A/B Experiments"""
+    """Request for creating an A/B experiment"""
     name: str
     model_name: str
     baseline_params: InferenceParamSet
@@ -562,7 +562,7 @@ class CreateExperimentRequest(BaseModel):
 
 
 class ExperimentResult(BaseModel):
-    """A/B Test Ergebnis mit Statistiken"""
+    """A/B test result with statistics"""
     experiment_id: str
     model_name: str
     baseline_data: Dict[str, Any]
@@ -576,7 +576,7 @@ class ExperimentResult(BaseModel):
 # ============================================================================
 
 def calculate_hash(params: Dict[str, Any]) -> str:
-    """Erstelle SHA256-Hash aus Parameter-Dictionary"""
+    """Create SHA256 hash from parameter dictionary"""
     import hashlib
     params_str = json.dumps(params, sort_keys=True, default=str)
     return hashlib.sha256(params_str.encode()).hexdigest()[:16]
@@ -586,14 +586,14 @@ def perform_ttest(
     baseline_speeds: List[float],
     test_speeds: List[float],
 ) -> Dict[str, Any]:
-    """Führe Independent Samples t-test durch"""
+    """Perform independent samples t-test"""
     if len(baseline_speeds) < 2 or len(test_speeds) < 2:
         return {
             "test_name": "t-test",
             "p_value": None,
             "t_statistic": None,
             "significant": False,
-            "reason": "Unzureichend Daten (min. 2 Proben pro Gruppe)"
+            "reason": "Insufficient data (min. 2 samples per group)"
         }
 
     try:
@@ -628,7 +628,7 @@ def perform_ttest(
                 "test_name": "t-test",
                 "p_value": None,
                 "significant": False,
-                "reason": "Keine Varianz"
+                "reason": "No variance"
             }
 
         t_stat = (baseline_mean - test_mean) / se
@@ -636,7 +636,7 @@ def perform_ttest(
         p_value = 0.01 if abs(t_stat) > 2.5 else 0.1
 
         return {
-            "test_name": "t-test (approximiert)",
+            "test_name": "t-test (approximated)",
             "t_statistic": round(t_stat, 4),
             "p_value": round(p_value, 4),
             "significant": p_value < 0.05,
@@ -644,7 +644,7 @@ def perform_ttest(
         }
 
     except Exception as e:
-        logger.error(f"Fehler bei t-test: {e}")
+        logger.error(f"Error in t-test: {e}")
         return {
             "test_name": "t-test",
             "error": str(e),
@@ -654,12 +654,12 @@ def perform_ttest(
 
 def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Optional[Any]]) -> bool:
     """
-    Prüft ob die Parameter eines DB-Eintrags den Ziel-Parametern entsprechen.
-    Ignoriert None-Werte in target_params (Parameter wurden nicht überschrieben).
+    Checks whether the parameters of a DB entry match the target parameters.
+    Ignores None values in target_params (parameters were not overridden).
     """
     for key, target_value in target_params.items():
         if target_value is None:
-            continue  # Parameter wurde nicht überschrieben, also nicht filtern
+            continue  # Parameter not overridden, so skip filtering
 
         row_value = row_params.get(key)
 
@@ -674,7 +674,7 @@ def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Option
 
 
 def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]) -> Dict[str, Union[float, str]]:
-    """Berechne Cohen's d effect size"""
+    """Calculate Cohen's d effect size"""
     if not baseline_speeds or not test_speeds:
         return {"cohens_d": 0.0, "effect_magnitude": "negligible"}
 
@@ -688,10 +688,10 @@ def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]
     n1, n2 = len(baseline_speeds), len(test_speeds)
     denom = n1 + n2 - 2
 
-    # Guard gegen Division durch 0 (wenn n1 + n2 <= 2)
+    # Guard against division by zero (when n1 + n2 <= 2)
     if denom <= 0:
-        # Fallback: Nutze unpooled standard deviation oder 0
-        return {"cohens_d": 0.0, "effect_magnitude": "negligible", "reason": "Unzureichend Daten für Effektgröße"}
+        # Fallback: use unpooled standard deviation or 0
+        return {"cohens_d": 0.0, "effect_magnitude": "negligible", "reason": "Insufficient data for effect size"}
 
     pooled_var = ((n1 - 1) * baseline_var + (n2 - 1) * test_var) / denom
     pooled_sd = math.sqrt(pooled_var) if pooled_var > 0 else 1
@@ -722,7 +722,7 @@ def calculate_effect_size(baseline_speeds: List[float], test_speeds: List[float]
 
 @app.get("/")
 async def root() -> HTMLResponse:
-    """Hauptseite - Dashboard"""
+    """Main page - Dashboard"""
     template = template_env.get_template("dashboard.html.jinja")
     html = template.render(config=CONFIG_DEFAULTS)
     return HTMLResponse(content=html)
@@ -730,7 +730,7 @@ async def root() -> HTMLResponse:
 
 @app.get("/api/status")
 async def get_status() -> dict:
-    """Aktueller Status des Benchmarks"""
+    """Current benchmark status"""
     return {
         "status": manager.status,
         "running": manager.is_running(),
@@ -745,7 +745,7 @@ async def get_status() -> dict:
 
 @app.get("/api/lmstudio/health")
 async def get_lmstudio_health() -> dict:
-    """LM Studio Healthcheck - Live Status ohne Cache"""
+    """LM Studio health check - live status without cache"""
     lmstudio_health = {"ok": False, "status": "offline"}
     lmstudio_ports = LMSTUDIO_PORTS
     
@@ -778,10 +778,10 @@ async def get_lmstudio_health() -> dict:
 
 @app.post("/api/benchmark/start")
 async def start_benchmark(params: BenchmarkParams) -> dict:
-    """Startet neuen Benchmark"""
+    """Starts a new benchmark"""
     args = []
     
-    # Basis-Parameter
+    # Base parameters
     if params.runs:
         args.extend(["--runs", str(params.runs)])
     if params.context:
@@ -805,13 +805,13 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
     if params.rank_by:
         args.extend(["--rank-by", params.rank_by])
     
-    # Regex-Filter
+    # Regex filters
     if params.include_models:
         args.extend(["--include-models", params.include_models])
     if params.exclude_models:
         args.extend(["--exclude-models", params.exclude_models])
     
-    # Boolean Flags
+    # Boolean flags
     if params.only_vision:
         args.append("--only-vision")
     if params.only_tools:
@@ -821,13 +821,13 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
     if params.dev_mode:
         args.append("--dev-mode")
     
-    # Hardware-Profiling
+    # Hardware profiling
     if params.enable_profiling:
         args.append("--enable-profiling")
     if params.disable_gtt:
         args.append("--disable-gtt")
     
-    # Hardware-Limits
+    # Hardware limits
     if params.max_temp:
         args.extend(["--max-temp", str(params.max_temp)])
     if params.max_power:
@@ -873,58 +873,58 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
     if params.kv_cache_quant:
         args.extend(["--kv-cache-quant", params.kv_cache_quant])
     
-    # Debug: Zeige übergebene Args
-    logger.info(f"🔧 Benchmark-Args: {args}")
+    # Debug: show passed args
+    logger.info(f"🔧 Benchmark args: {args}")
     logger.info(f"📊 enable_profiling={params.enable_profiling}, disable_gtt={params.disable_gtt}")
     
     success = await manager.start_benchmark(args)
     return {
         "success": success,
         "status": manager.status,
-        "message": "✅ Benchmark gestartet" if success else "❌ Fehler beim Starten"
+        "message": "✅ Benchmark started" if success else "❌ Error starting benchmark"
     }
 
 
 @app.post("/api/benchmark/pause")
 async def pause_benchmark() -> dict:
-    """Pausiert laufenden Benchmark"""
+    """Pauses running benchmark"""
     success = manager.pause_benchmark()
     return {
         "success": success,
         "status": manager.status,
-        "message": "⏸️ Pausiert" if success else "❌ Fehler"
+        "message": "⏸️ Paused" if success else "❌ Error"
     }
 
 
 @app.post("/api/benchmark/resume")
 async def resume_benchmark() -> dict:
-    """Setzt pausiertes Benchmark fort"""
+    """Resumes paused benchmark"""
     success = manager.resume_benchmark()
     return {
         "success": success,
         "status": manager.status,
-        "message": "▶️ Fortgesetzt" if success else "❌ Fehler"
+        "message": "▶️ Resumed" if success else "❌ Error"
     }
 
 
 @app.post("/api/benchmark/stop")
 async def stop_benchmark() -> dict:
-    """Stoppt laufenden Benchmark"""
+    """Stops running benchmark"""
     success = manager.stop_benchmark()
     return {
         "success": success,
         "status": manager.status,
-        "message": "⏹️ Beendet" if success else "❌ Fehler"
+        "message": "⏹️ Stopped" if success else "❌ Error"
     }
 
 
 @app.get("/api/results")
 async def get_results() -> dict:
-    """Gibt alle gecachten Benchmark-Ergebnisse zurück"""
+    """Returns all cached benchmark results"""
     if not BenchmarkCache:
         return {
             "success": False,
-            "error": "BenchmarkCache nicht verfügbar",
+            "error": "BenchmarkCache not available",
             "results": []
         }
     
@@ -932,10 +932,10 @@ async def get_results() -> dict:
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
         
-        # Konvertiere BenchmarkResult zu Dict
+        # Convert BenchmarkResult to dict
         results_data = []
         for result in results:
-            # model_key für Frontend (für Delete-Button)
+            # model_key for frontend (for delete button)
             model_key = f"{result.model_name}@{result.quantization}"
             
             result_dict = {
@@ -963,7 +963,7 @@ async def get_results() -> dict:
                 "prev_timestamp": result.prev_timestamp
             }
             
-            # Optionale Felder (Hardware-Profiling)
+            # Optional fields (hardware profiling)
             if hasattr(result, 'temp_celsius_avg') and result.temp_celsius_avg:
                 result_dict["temp_celsius_avg"] = result.temp_celsius_avg
             if hasattr(result, 'power_watts_avg') and result.power_watts_avg:
@@ -979,7 +979,7 @@ async def get_results() -> dict:
             "results": results_data
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Laden der Ergebnisse: {e}")
+        logger.error(f"❌ Error loading results: {e}")
         return {
             "success": False,
             "error": str(e),
@@ -989,9 +989,9 @@ async def get_results() -> dict:
 
 @app.get("/api/cache/stats")
 async def get_cache_stats() -> dict:
-    """Gibt Cache-Statistiken zurück"""
+    """Returns cache statistics"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
     
     try:
         cache = BenchmarkCache(DATABASE_FILE)
@@ -1003,9 +1003,9 @@ async def get_cache_stats() -> dict:
                 "stats": {
                     "total_entries": 0,
                     "avg_tokens_per_sec": 0,
-                    "fastest_model": "Keine Daten",
+                    "fastest_model": "No data",
                     "fastest_speed": 0,
-                    "slowest_model": "Keine Daten",
+                    "slowest_model": "No data",
                     "slowest_speed": 0,
                     "db_size_mb": 0
                 }
@@ -1031,103 +1031,103 @@ async def get_cache_stats() -> dict:
             }
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen von Cache-Statistiken: {e}")
+        logger.error(f"❌ Error retrieving cache statistics: {e}")
         return {"success": False, "error": str(e)}
-        logger.error(f"❌ Fehler beim Laden der Cache-Stats: {e}")
+        logger.error(f"❌ Error loading cache stats: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.delete("/api/cache/{model_key}")
 async def delete_cache_entry(model_key: str) -> dict:
-    """Löscht einen einzelnen Cache-Eintrag"""
+    """Deletes a single cache entry"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
     
     try:
         import sqlite3
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         
-        # Prüfe ob Eintrag existiert
+        # Check if entry exists
         cursor.execute("SELECT COUNT(*) FROM benchmark_results WHERE model_key = ?", (model_key,))
         count = cursor.fetchone()[0]
         
         if count == 0:
             conn.close()
-            return {"success": False, "error": f"Model {model_key} nicht im Cache gefunden"}
+            return {"success": False, "error": f"Model {model_key} not found in cache"}
         
-        # Lösche Eintrag
+        # Delete entry
         cursor.execute("DELETE FROM benchmark_results WHERE model_key = ?", (model_key,))
         conn.commit()
         deleted_count = cursor.rowcount
         conn.close()
         
-        logger.info(f"🗑️ Cache-Eintrag gelöscht: {model_key}")
+        logger.info(f"🗑️ Cache entry deleted: {model_key}")
         return {
             "success": True,
-            "message": f"✅ {deleted_count} Eintrag(e) gelöscht",
+            "message": f"✅ {deleted_count} entry/entries deleted",
             "model_key": model_key
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Löschen des Cache-Eintrags: {e}")
+        logger.error(f"❌ Error deleting cache entry: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.post("/api/cache/clear")
 async def clear_cache() -> dict:
-    """Leert den gesamten Cache mit Backup"""
+    """Clears the entire cache with backup"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
     
     try:
         import sqlite3
         import shutil
         
-        # Erstelle Backup vor dem Löschen
+        # Create backup before deleting
         backup_dir = RESULTS_DIR / "backups"
         backup_dir.mkdir(parents=True, exist_ok=True)
         backup_file = backup_dir / f"benchmark_cache_{datetime.now().strftime('%Y%m%d_%H%M%S')}_backup.db"
         
         try:
             shutil.copy2(DATABASE_FILE, backup_file)
-            logger.info(f"💾 Backup erstellt: {backup_file}")
+            logger.info(f"💾 Backup created: {backup_file}")
         except Exception as backup_error:
-            logger.warning(f"⚠️ Backup-Fehler (Cache wird trotzdem geleert): {backup_error}")
+            logger.warning(f"⚠️ Backup error (cache will be cleared anyway): {backup_error}")
             backup_file = None
         
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         
-        # Zähle Einträge vor dem Löschen
+        # Count entries before deleting
         cursor.execute("SELECT COUNT(*) FROM benchmark_results")
         count_before = cursor.fetchone()[0]
         
-        # Lösche alle Einträge
+        # Delete all entries
         cursor.execute("DELETE FROM benchmark_results")
         conn.commit()
         conn.close()
         
-        logger.warning(f"⚠️ Cache komplett geleert: {count_before} Einträge gelöscht")
-        logger.warning(f"💾 Backup verfügbar unter: {backup_file}")
+        logger.warning(f"⚠️ Cache fully cleared: {count_before} entries deleted")
+        logger.warning(f"💾 Backup available at: {backup_file}")
         
         return {
             "success": True,
-            "message": f"✅ Cache geleert: {count_before} Einträge gelöscht",
+            "message": f"✅ Cache cleared: {count_before} entries deleted",
             "deleted_count": count_before,
             "backup_file": str(backup_file) if backup_file else None
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Leeren des Cache: {e}")
+        logger.error(f"❌ Error clearing cache: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.get("/api/lmstudio/models")
 async def get_lmstudio_models() -> dict:
-    """Holt alle lokal installierten Modelle direkt von LM Studio (inkl. Quantisierungen)"""
+    """Fetches all locally installed models directly from LM Studio (incl. quantizations)"""
     try:
         import subprocess
         
-        # Hole Liste aller Modelle mit `lms ls`
+        # Get list of all models with `lms ls`
         result = subprocess.run(
             ["lms", "ls"],
             capture_output=True,
@@ -1138,16 +1138,16 @@ async def get_lmstudio_models() -> dict:
         if result.returncode != 0:
             return {
                 "success": False,
-                "error": f"LM Studio CLI Fehler: {result.stderr}",
+                "error": f"LM Studio CLI error: {result.stderr}",
                 "models": []
             }
         
-        # Parse Ausgabe: Zeilen mit model/name (N variants)
+        # Parse output: lines with model/name (N variants)
         models = []
         lines = result.stdout.strip().split("\n")
         
         for line in lines:
-            # Skip Header und leere Zeilen
+            # Skip header and empty lines
             if not line.strip() or "LLM" in line or "PARAMS" in line or "You have" in line:
                 continue
             
@@ -1158,7 +1158,7 @@ async def get_lmstudio_models() -> dict:
                 base_model = match.group(1)
                 variant_count = int(match.group(2))
                 
-                # Hole alle Varianten für dieses Modell
+                # Get all variants for this model
                 variants_result = subprocess.run(
                     ["lms", "ls", base_model],
                     capture_output=True,
@@ -1194,7 +1194,7 @@ async def get_lmstudio_models() -> dict:
     except TimeoutExpired:
         return {"success": False, "error": "LM Studio CLI Timeout", "models": []}
     except Exception as e:
-        logger.error(f"❌ Fehler beim Holen der LM Studio Modelle: {e}")
+        logger.error(f"❌ Error fetching LM Studio models: {e}")
         import traceback
         traceback.print_exc()
         return {"success": False, "error": str(e), "models": []}
@@ -1202,9 +1202,9 @@ async def get_lmstudio_models() -> dict:
 
 @app.get("/api/comparison/models")
 async def get_comparison_models() -> dict:
-    """Gibt alle Modelle mit historischen Daten zurück"""
+    """Returns all models with historical data"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar", "models": []}
+        return {"success": False, "error": "BenchmarkCache not available", "models": []}
     
     try:
         import sqlite3
@@ -1212,7 +1212,7 @@ async def get_comparison_models() -> dict:
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         
-        # Hole Modelle mit Count der Einträge
+        # Get models with entry count
         cursor.execute('''
             SELECT DISTINCT model_name, COUNT(*) as entry_count
             FROM benchmark_results
@@ -1222,7 +1222,7 @@ async def get_comparison_models() -> dict:
         
         models = []
         for model_name, count in cursor.fetchall():
-            # Hole neueste und älteste Einträge
+            # Get newest and oldest entries
             cursor.execute('''
                 SELECT timestamp, avg_tokens_per_sec FROM benchmark_results
                 WHERE model_name = ?
@@ -1253,19 +1253,19 @@ async def get_comparison_models() -> dict:
         conn.close()
         return {"success": True, "models": models}
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen von Vergleichs-Modellen: {e}")
+        logger.error(f"❌ Error fetching comparison models: {e}")
         return {"success": False, "error": str(e), "models": []}
 
 
 @app.get("/api/comparison/{model_name:path}")
 async def get_model_history(model_name: str) -> dict:
-    """Gibt Verlauf für ein bestimmtes Modell zurück"""
-    # URL-decode den model_name falls nötig
+    """Returns history for a specific model"""
+    # URL-decode model_name if necessary
     from urllib.parse import unquote
     model_name = unquote(model_name)
     
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar", "history": []}
+        return {"success": False, "error": "BenchmarkCache not available", "history": []}
     
     try:
         import sqlite3
@@ -1273,7 +1273,7 @@ async def get_model_history(model_name: str) -> dict:
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         
-        # Hole alle Einträge für das Modell, sortiert nach Timestamp
+        # Get all entries for the model, sorted by timestamp
         cursor.execute('''
             SELECT 
                 timestamp, quantization, avg_tokens_per_sec, avg_ttft, 
@@ -1306,7 +1306,7 @@ async def get_model_history(model_name: str) -> dict:
                 "error_count": row[15]
             })
         
-        # Berechne Statistiken
+        # Calculate statistics
         if history:
             speeds = [h["speed_tokens_sec"] for h in history]
             stats = {
@@ -1329,7 +1329,7 @@ async def get_model_history(model_name: str) -> dict:
             "stats": stats
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen des Modell-Verlaufs: {e}")
+        logger.error(f"❌ Error fetching model history: {e}")
         return {"success": False, "error": str(e), "history": []}
 
 
@@ -1340,9 +1340,9 @@ async def export_comparison_csv(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> dict:
-    """Exportiert Vergleichsdaten als CSV mit optionalen Filtern"""
+    """Exports comparison data as CSV with optional filters"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
     
     try:
         import sqlite3
@@ -1355,7 +1355,7 @@ async def export_comparison_csv(
         except Exception:
             payload = {}
 
-        # Fallback auf Query-Parameter für Abwärtskompatibilität
+        # Fallback to query parameters for backwards compatibility
         model_filter = payload.get("model_name", model_name)
         start_filter = payload.get("start_date", start_date)
         end_filter = payload.get("end_date", end_date)
@@ -1366,7 +1366,7 @@ async def export_comparison_csv(
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         
-        # Dynamische Filter-Query
+        # Dynamic filter query
         query = '''
             SELECT timestamp, model_name, quantization, avg_tokens_per_sec, avg_ttft, 
                    avg_gen_time, gpu_offload, vram_mb, temperature, top_k_sampling,
@@ -1397,7 +1397,7 @@ async def export_comparison_csv(
         conn.close()
         
         if not rows:
-            return {"success": False, "error": "Keine Daten gefunden"}
+            return {"success": False, "error": "No data found"}
 
         def safe_round(value, digits):
             try:
@@ -1433,7 +1433,7 @@ async def export_comparison_csv(
         
         return {
             "success": True,
-            "message": f"CSV exportiert: {len(rows)} Einträge",
+            "message": f"CSV exported: {len(rows)} entries",
             "file": str(export_file),
             "url": f"/results/{export_file.name}",
             "rows": len(rows),
@@ -1446,15 +1446,15 @@ async def export_comparison_csv(
             "csv_preview": csv_content.split('\n')[:5]
         }
     except Exception as e:
-        logger.error(f"❌ CSV Export Fehler: {e}")
+        logger.error(f"❌ CSV export error: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.post("/api/comparison/export/pdf")
 async def export_comparison_pdf(request: Request) -> dict:
-    """Exportiert Vergleichsdaten als einfache PDF-Zusammenfassung"""
+    """Exports comparison data as a simple PDF summary"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         import sqlite3
@@ -1504,7 +1504,7 @@ async def export_comparison_pdf(request: Request) -> dict:
         conn.close()
 
         if not rows:
-            return {"success": False, "error": "Keine Daten gefunden"}
+            return {"success": False, "error": "No data found"}
 
         speeds = [row[3] for row in rows if row[3] is not None]
         stats = {
@@ -1557,15 +1557,15 @@ async def export_comparison_pdf(request: Request) -> dict:
         header_lines = [
             "Historical Comparison Export",
             f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"Model: {model_filter or 'Alle Modelle'}",
-            f"Zeitraum: {start_filter or '---'} bis {end_filter or '---'}",
-            f"Quantisierung: {', '.join(quant_filters) if quant_filters else 'Alle'}",
+            f"Model: {model_filter or 'All models'}",
+            f"Period: {start_filter or '---'} to {end_filter or '---'}",
+            f"Quantization: {', '.join(quant_filters) if quant_filters else 'All'}",
             "",
-            "Statistiken:",
+            "Statistics:",
             f"  Min Speed: {stats['min_speed'] if stats['min_speed'] is not None else '-'} tok/s",
             f"  Max Speed: {stats['max_speed'] if stats['max_speed'] is not None else '-'} tok/s",
             f"  Avg Speed: {stats['avg_speed'] if stats['avg_speed'] is not None else '-'} tok/s",
-            f"  Läufe: {stats['entries']}",
+            f"  Runs: {stats['entries']}",
             "",
             "Top 50 Runs:"
         ]
@@ -1584,7 +1584,7 @@ async def export_comparison_pdf(request: Request) -> dict:
 
         return {
             "success": True,
-            "message": f"PDF exportiert: {len(rows)} Einträge",
+            "message": f"PDF exported: {len(rows)} entries",
             "file": str(export_file),
             "url": f"/results/{export_file.name}",
             "rows": len(rows),
@@ -1597,19 +1597,19 @@ async def export_comparison_pdf(request: Request) -> dict:
             }
         }
     except Exception as e:
-        logger.error(f"❌ PDF Export Fehler: {e}")
+        logger.error(f"❌ PDF export error: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.post("/api/comparison/statistics/{model_name:path}")
 async def get_advanced_statistics(model_name: str) -> dict:
-    """Berechnet erweiterte Statistiken (Volatility, Regression, Alerts)"""
-    # URL-decode den model_name falls nötig
+    """Calculates advanced statistics (volatility, regression, alerts)"""
+    # URL-decode model_name if necessary
     from urllib.parse import unquote
     model_name = unquote(model_name)
     
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
     
     try:
         import sqlite3
@@ -1619,7 +1619,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         
-        # Hole historische Daten
+        # Get historical data
         cursor.execute('''
             SELECT timestamp, avg_tokens_per_sec FROM benchmark_results
             WHERE model_name = ?
@@ -1630,13 +1630,13 @@ async def get_advanced_statistics(model_name: str) -> dict:
         conn.close()
         
         if not data or len(data) < 2:
-            return {"success": False, "error": "Unzureichend Daten für statistische Analyse"}
+            return {"success": False, "error": "Insufficient data for statistical analysis"}
         
-        # Extrahiere Speed-Werte
+        # Extract speed values
         speeds = [row[1] for row in data]
         timestamps = [row[0] for row in data]
         
-        # Berechne Statistiken
+        # Calculate statistics
         mean = statistics.mean(speeds)
         variance = statistics.variance(speeds) if len(speeds) > 1 else 0
         std_dev = math.sqrt(variance)
@@ -1656,7 +1656,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
         slope = numerator / denominator if denominator != 0 else 0
         intercept = y_mean - slope * x_mean
         
-        # Prognose für nächste 3 Runs
+        # Forecast for next 3 runs
         forecast = []
         for i in range(n, n + 3):
             predicted_speed = slope * i + intercept
@@ -1669,7 +1669,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
                 z = (speed - mean) / std_dev
                 z_scores.append(round(z, 2))
         
-        # Finde Anomalien (Z-Score > 2 oder < -2)
+        # Find anomalies (Z-score > 2 or < -2)
         anomalies = []
         for i, z in enumerate(z_scores):
             if abs(z) > 2:
@@ -1694,7 +1694,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
         else:
             alert = "⚪ STABLE"
         
-        logger.info(f"📈 Advanced Stats für {model_name}: σ={std_dev:.2f}, slope={slope:.4f}")
+        logger.info(f"📈 Advanced stats for {model_name}: σ={std_dev:.2f}, slope={slope:.4f}")
         
         return {
             "success": True,
@@ -1732,13 +1732,13 @@ async def get_advanced_statistics(model_name: str) -> dict:
             }
         }
     except Exception as e:
-        logger.error(f"❌ Advanced Statistics Fehler: {e}")
+        logger.error(f"❌ Advanced statistics error: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.get("/api/output")
 async def get_output() -> dict:
-    """Gibt aktuellen Output"""
+    """Returns current output"""
     return {
         "output": manager.current_output,
         "status": manager.status
@@ -1751,24 +1751,24 @@ async def get_output() -> dict:
 
 @app.post("/api/experiments/create")
 async def create_experiment(request: CreateExperimentRequest) -> dict:
-    """Erstellt ein neues A/B Testing Experiment"""
+    """Creates a new A/B testing experiment"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
     
     try:
         import uuid
         
         experiment_id = str(uuid.uuid4())[:8]
         
-        # Berechne Parameter-Hashes
+        # Calculate parameter hashes
         baseline_dict = request.baseline_params.dict(exclude_none=True)
         test_dict = request.test_params.dict(exclude_none=True)
         
         baseline_hash = calculate_hash(baseline_dict)
         test_hash = calculate_hash(test_dict)
         
-        logger.info(f"🧪 Experiment erstellt: {experiment_id}")
-        logger.info(f"   Modell: {request.model_name}")
+        logger.info(f"🧪 Experiment created: {experiment_id}")
+        logger.info(f"   Model: {request.model_name}")
         logger.info(f"   Baseline: {baseline_dict} (hash: {baseline_hash})")
         logger.info(f"   Test: {test_dict} (hash: {test_hash})")
         
@@ -1783,7 +1783,7 @@ async def create_experiment(request: CreateExperimentRequest) -> dict:
             "created_at": datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"❌ Experiment Creation Fehler: {e}")
+        logger.error(f"❌ Experiment creation error: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1796,9 +1796,9 @@ async def get_experiment_comparison(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> dict:
-    """Vergleicht zwei Parameter-Kombinationen für ein Modell"""
+    """Compares two parameter combinations for a model"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar", "comparison": {}}
+        return {"success": False, "error": "BenchmarkCache not available", "comparison": {}}
     
     try:
         from urllib.parse import unquote
@@ -1809,7 +1809,7 @@ async def get_experiment_comparison(
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         
-        # Baue Query mit optionalen Datum-Filtern
+        # Build query with optional date filters
         query = '''
             SELECT 
                 timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
@@ -1831,9 +1831,9 @@ async def get_experiment_comparison(
         conn.close()
         
         if not rows:
-            return {"success": False, "error": "Keine Daten für dieses Modell", "comparison": {}}
+            return {"success": False, "error": "No data for this model", "comparison": {}}
         
-        # Gruppiere Daten nach Parametern
+        # Group data by parameters
         baseline_data = []
         test_data = []
         
@@ -1868,7 +1868,7 @@ async def get_experiment_comparison(
                     "gen_time": gen_time
                 })
         
-        # Berechne Statistiken für beide Gruppen
+        # Calculate statistics for both groups
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
         test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
         
@@ -1898,26 +1898,26 @@ async def get_experiment_comparison(
             "data": test_data
         }
         
-        # Statistischer Test (t-test)
+        # Statistical test (t-test)
         test_result = perform_ttest(baseline_speeds, test_speeds)
         
         # Effect Size
         effect_size = calculate_effect_size(baseline_speeds, test_speeds)
         
-        # Bestimme Gewinner (robust gegen Division durch 0)
+        # Determine winner (robust against division by zero)
         baseline_mean = baseline_stats["mean"]
         test_mean = test_stats["mean"]
         if baseline_mean and baseline_mean != 0:
             delta_pct = ((test_mean - baseline_mean) / baseline_mean * 100)
         else:
-            # Wenn baseline_mean == 0, definiere Delta als Unterschied relativ zu 0
-            # und markiere Gewinner rein nach größerem Mittelwert
+            # If baseline_mean == 0, define delta as difference relative to 0
+            # and mark winner purely by larger mean
             delta_pct = None
-            logger.warning("⚠️ Baseline-Mean ist 0 – Delta% wird nicht berechnet")
+            logger.warning("⚠️ Baseline mean is 0 – Delta% will not be calculated")
         if test_result.get("significant"):
             winner = "test" if test_mean > baseline_mean else "baseline"
         else:
-            # Ohne Signifikanz: Gewinner nur bei eindeutig besserem Mittelwert
+            # Without significance: winner only if clearly better mean
             winner = "test" if test_mean > baseline_mean else ("baseline" if baseline_mean > test_mean else "tie")
         
         logger.info(f"🧪 Experiment {experiment_id}: {winner.upper()}")
@@ -1942,7 +1942,7 @@ async def get_experiment_comparison(
             }
         }
     except Exception as e:
-        logger.error(f"❌ Experiment Comparison Fehler: {e}")
+        logger.error(f"❌ Experiment comparison error: {e}")
         return {"success": False, "error": str(e), "comparison": {}}
 
 
@@ -1951,9 +1951,9 @@ async def post_experiment_comparison(
     experiment_id: str,
     request: Request
 ) -> dict:
-    """Vergleicht zwei Parameter-Sets für ein Modell (Payload enthält Params)"""
+    """Compares two parameter sets for a model (payload contains params)"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar", "comparison": {}}
+        return {"success": False, "error": "BenchmarkCache not available", "comparison": {}}
 
     try:
         payload = await request.json()
@@ -1964,13 +1964,13 @@ async def post_experiment_comparison(
         end_date = payload.get("end_date")
 
         if not model_name:
-            return {"success": False, "error": "model_name fehlt", "comparison": {}}
+            return {"success": False, "error": "model_name missing", "comparison": {}}
         
-        # Normalisiere model_name: Entferne Quantisierung (@q3_k_l etc)
+        # Normalize model_name: remove quantization (@q3_k_l etc.)
         if "@" in model_name:
             model_name = model_name.split("@")[0]
 
-        # DB Query mit optionalen Datum-Filtern
+        # DB query with optional date filters
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
 
@@ -1996,7 +1996,7 @@ async def post_experiment_comparison(
         conn.close()
 
         if not rows:
-            return {"success": False, "error": "Keine Daten für dieses Modell", "comparison": {}}
+            return {"success": False, "error": "No data for this model", "comparison": {}}
 
         baseline_data: List[Dict[str, Any]] = []
         test_data: List[Dict[str, Any]] = []
@@ -2064,7 +2064,7 @@ async def post_experiment_comparison(
         if baseline_mean and baseline_mean != 0:
             delta_pct = ((test_mean - baseline_mean) / baseline_mean * 100)
         else:
-            logger.warning("⚠️ Baseline-Mean ist 0 – Delta% wird nicht berechnet")
+            logger.warning("⚠️ Baseline mean is 0 – Delta% will not be calculated")
         if test_result.get("significant"):
             winner = "test" if test_mean > baseline_mean else "baseline"
         else:
@@ -2086,7 +2086,7 @@ async def post_experiment_comparison(
             }
         }
     except Exception as e:
-        logger.error(f"❌ Experiment Comparison Fehler: {e}")
+        logger.error(f"❌ Experiment comparison error: {e}")
         return {"success": False, "error": str(e), "comparison": {}}
 
 
@@ -2095,15 +2095,15 @@ async def export_experiment(
     experiment_id: str,
     request: Request
 ) -> dict:
-    """Exportiert Experiment-Ergebnisse als CSV/PDF"""
+    """Exports experiment results as CSV/PDF"""
     try:
         import csv
         from io import StringIO
         
         payload = await request.json()
-        export_format = payload.get("format", "csv")  # "csv" oder "pdf"
+        export_format = payload.get("format", "csv")  # "csv" or "pdf"
         
-        # Hole Experiment-Daten aus Payload
+        # Get experiment data from payload
         baseline_data = payload.get("baseline", {})
         test_data = payload.get("test", {})
         comparison = payload.get("comparison", {})
@@ -2167,7 +2167,7 @@ async def export_experiment(
             }
         
         else:  # PDF
-            # Einfaches Text-PDF (wie in comparison export)
+            # Simple text PDF (as in comparison export)
             lines = [
                 f"Experiment {experiment_id}",
                 f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -2189,7 +2189,7 @@ async def export_experiment(
                 f"  Performance Delta: {comparison.get('delta_pct', '-')}%"
             ]
             
-            # Generiere einfaches PDF
+            # Generate simple PDF
             def generate_simple_pdf(text_lines):
                 pdf_bytes = bytearray()
                 pdf_bytes.extend(b"%PDF-1.4\n")
@@ -2244,15 +2244,15 @@ async def export_experiment(
             }
     
     except Exception as e:
-        logger.error(f"❌ Experiment Export Fehler: {e}")
+        logger.error(f"❌ Experiment export error: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.post("/api/experiments/run")
 async def run_experiment(request: Request) -> dict:
-    """Führt A/B Experiment aktiv aus: zwei Benchmarks mit angegebenen Parametern"""
+    """Actively runs an A/B experiment: two benchmarks with specified parameters"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         payload = await request.json()
@@ -2262,31 +2262,31 @@ async def run_experiment(request: Request) -> dict:
         test_params = payload.get("test_params", {})
         runs = payload.get("runs", 3)
         context = payload.get("context", 2048)
-        prompt = payload.get("prompt", "Erkläre maschinelles Lernen in 3 Sätzen")
+        prompt = payload.get("prompt", "Explain machine learning in 3 sentences")
 
         if not model_name:
-            return {"success": False, "error": "model_name fehlt"}
+            return {"success": False, "error": "model_name missing"}
         
-        # Normalisiere model_name: Entferne Quantisierung (@q3_k_l etc)
-        # DB speichert nur "qwen/qwen2.5-vl-7b", nicht "qwen/qwen2.5-vl-7b@q3_k_l"
+        # Normalize model_name: remove quantization (@q3_k_l etc.)
+        # DB only stores "qwen/qwen2.5-vl-7b", not "qwen/qwen2.5-vl-7b@q3_k_l"
         if "@" in model_name:
             model_name = model_name.split("@")[0]
         
         logger.info(f"🎯 Normalized model_name: {model_name}")
         
-        # Entferne 'name' Feld aus params (wird nur fürs Frontend benötigt, nicht für Matching)
+        # Remove 'name' field from params (only needed for frontend, not for matching)
         baseline_params.pop("name", None)
         test_params.pop("name", None)
 
         def build_args(param_set: Dict[str, Any]) -> List[str]:
             args: List[str] = []
-            # Basis-Parameter
+            # Base parameters
             args.extend(["--runs", str(runs)])
             args.extend(["--context", str(context)])
-            args.extend(["--limit", "1"])  # nur dieses Modell
+            args.extend(["--limit", "1"])  # this model only
             args.extend(["--prompt", prompt])
             args.extend(["--include-models", model_name])
-            args.append("--retest")  # erzwinge neue Läufe statt Cache
+            args.append("--retest")  # force new runs instead of cache
             # Inference-Params (best guess mapping)
             if param_set.get("temperature") is not None:
                 args.extend(["--temperature", str(param_set["temperature"])])
@@ -2325,49 +2325,49 @@ async def run_experiment(request: Request) -> dict:
                 args.append("--use-mlock")
             if param_set.get("kv_cache_quant"):
                 args.extend(["--kv-cache-quant", param_set["kv_cache_quant"]])
-            # Profiling aktiv lassen
+            # Keep profiling active
             args.append("--enable-profiling")
             return args
 
         async def run_once(args: List[str]) -> bool:
             return await manager.start_benchmark(args)
 
-        # Baseline ausführen
+        # Run baseline
         baseline_args = build_args(baseline_params)
         logger.info(f"🎯 Baseline Args: {baseline_args}")
         baseline_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         baseline_ok = await run_once(baseline_args)
         if not baseline_ok:
-            return {"success": False, "error": "Konnte Baseline Benchmark nicht starten"}
+            return {"success": False, "error": "Could not start baseline benchmark"}
 
-        # Warte bis Benchmark fertig ist
+        # Wait until benchmark is done
         while manager.is_running():
             await asyncio.sleep(1.0)
-        # kurze Pufferzeit, damit Ergebnisse geschrieben sind
+        # brief buffer time so results are written
         await asyncio.sleep(2.0)
 
-        # Hole Baseline-Timestamp nach dem Lauf
+        # Get baseline timestamp after the run
         baseline_end_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Test ausführen
+        # Run test
         test_args = build_args(test_params)
         logger.info(f"🎯 Test Args: {test_args}")
         test_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         test_ok = await run_once(test_args)
         if not test_ok:
-            return {"success": False, "error": "Konnte Test Benchmark nicht starten"}
+            return {"success": False, "error": "Could not start test benchmark"}
 
         while manager.is_running():
             await asyncio.sleep(1.0)
         await asyncio.sleep(2.0)
 
-        # Ergebnisse aus DB lesen - NEUE STRATEGIE: Hole die neuesten Einträge
-        # Da jetzt 3 Einträge pro Benchmark existieren (run_index 0,1,2), 
-        # holen wir die letzten 20 Einträge und filtern dann nach Parametern
+        # Read results from DB - NEW STRATEGY: get the latest entries
+        # Since there are now 3 entries per benchmark (run_index 0,1,2),
+        # we get the last 20 entries and then filter by parameters
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
 
-        # Hole die neuesten 20 Einträge für dieses Modell (sollte 6 sein: 3 baseline + 3 test)
+        # Get the latest 20 entries for this model (should be 6: 3 baseline + 3 test)
         cursor.execute('''
             SELECT timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
                    temperature, top_k_sampling, top_p_sampling, min_p_sampling, 
@@ -2383,11 +2383,11 @@ async def run_experiment(request: Request) -> dict:
 
         conn.close()
 
-        # Filter by parameters - beide Listen aus all_rows extrahieren
+        # Filter by parameters - extract both lists from all_rows
         baseline_data: List[Dict[str, Any]] = []
         test_data: List[Dict[str, Any]] = []
 
-        logger.info(f"🔍 Gefundene Gesamt-Einträge: {len(all_rows)}")
+        logger.info(f"🔍 Total entries found: {len(all_rows)}")
 
         for row in all_rows:
             ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts, run_idx, \
@@ -2435,7 +2435,7 @@ async def run_experiment(request: Request) -> dict:
             else:
                 logger.info(f"❌ No Match: run_index={run_idx}, params={row_params}")
 
-        logger.info(f"🔍 Nach Filterung: Baseline={len(baseline_data)}, Test={len(test_data)}")
+        logger.info(f"🔍 After filtering: Baseline={len(baseline_data)}, Test={len(test_data)}")
 
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
         test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
@@ -2443,7 +2443,7 @@ async def run_experiment(request: Request) -> dict:
         if not baseline_speeds or not test_speeds:
             return {
                 "success": False,
-                "error": f"Unzureichend Daten nach Ausführung: Baseline={len(baseline_speeds)}, Test={len(test_speeds)}",
+                "error": f"Insufficient data after execution: Baseline={len(baseline_speeds)}, Test={len(test_speeds)}",
                 "baseline": {"count": len(baseline_speeds)},
                 "test": {"count": len(test_speeds)}
             }
@@ -2474,7 +2474,7 @@ async def run_experiment(request: Request) -> dict:
         if baseline_mean and baseline_mean != 0:
             delta_pct = ((test_mean - baseline_mean) / baseline_mean * 100)
         else:
-            logger.warning("⚠️ Baseline-Mean ist 0 – Delta% wird nicht berechnet (active run)")
+            logger.warning("⚠️ Baseline mean is 0 – Delta% will not be calculated (active run)")
         winner = "tie"
         if test_result.get("significant"):
             winner = "test" if test_mean > baseline_mean else "baseline"
@@ -2517,7 +2517,7 @@ async def run_experiment(request: Request) -> dict:
             json_file = results_dir / f"ab_test_results_{timestamp}.json"
             with open(json_file, 'w', encoding='utf-8') as f:
                 json.dump(results_data, f, indent=2, ensure_ascii=False)
-            logger.info(f"📄 A/B Test JSON gespeichert: {json_file}")
+            logger.info(f"📄 A/B test JSON saved: {json_file}")
             
             # CSV Export
             csv_file = results_dir / f"ab_test_results_{timestamp}.csv"
@@ -2535,7 +2535,7 @@ async def run_experiment(request: Request) -> dict:
                 f.write(f"Top-P,{baseline_params.get('top_p', 'N/A')},{test_params.get('top_p', 'N/A')},-\n")
                 f.write(f"Winner,-,-,{winner}\n")
                 f.write(f"Significant,-,-,{test_result.get('significant', False)}\n")
-            logger.info(f"📊 A/B Test CSV gespeichert: {csv_file}")
+            logger.info(f"📊 A/B test CSV saved: {csv_file}")
             
             # HTML Export (simple)
             html_file = results_dir / f"ab_test_results_{timestamp}.html"
@@ -2624,7 +2624,7 @@ async def run_experiment(request: Request) -> dict:
 </html>"""
             with open(html_file, 'w', encoding='utf-8') as f:
                 f.write(html_content)
-            logger.info(f"🌐 A/B Test HTML gespeichert: {html_file}")
+            logger.info(f"🌐 A/B test HTML saved: {html_file}")
             
             # PDF Export (if reportlab available)
             try:
@@ -2674,11 +2674,11 @@ async def run_experiment(request: Request) -> dict:
                 elements.append(Paragraph(f"<b>Significant:</b> {test_result.get('significant', False)}", styles['Normal']))
                 
                 doc.build(elements)
-                logger.info(f"📑 A/B Test PDF gespeichert: {pdf_file}")
+                logger.info(f"📑 A/B test PDF saved: {pdf_file}")
             except ImportError:
-                logger.warning("⚠️ reportlab nicht installiert - PDF Export übersprungen")
+                logger.warning("⚠️ reportlab not installed - PDF export skipped")
             except Exception as pdf_error:
-                logger.error(f"❌ PDF Export Fehler: {pdf_error}")
+                logger.error(f"❌ PDF export error: {pdf_error}")
             
             results_data['exports'] = {
                 'json': str(json_file),
@@ -2686,22 +2686,22 @@ async def run_experiment(request: Request) -> dict:
                 'html': str(html_file)
             }
         except Exception as export_error:
-            logger.error(f"❌ Export Fehler: {export_error}")
+            logger.error(f"❌ Export error: {export_error}")
             # Continue anyway - don't fail the entire request
         
         return results_data
         
     except Exception as e:
         import traceback
-        logger.error(f"❌ Experiment Run Fehler: {e}")
+        logger.error(f"❌ Experiment run error: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         return {"success": False, "error": str(e)}
 
 @app.get("/api/dashboard/stats")
 async def get_dashboard_stats() -> dict:
-    """Dashboard-Statistiken für Home-View"""
+    """Dashboard statistics for home view"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
     
     try:
         import platform
@@ -2714,7 +2714,7 @@ async def get_dashboard_stats() -> dict:
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
 
-        # Lade Capabilities aus model_metadata.db
+        # Load capabilities from model_metadata.db
         capabilities_by_model: Dict[str, List[str]] = {}
         distinct_capabilities: set[str] = set()
         try:
@@ -2733,14 +2733,14 @@ async def get_dashboard_stats() -> dict:
                         continue
                 mconn.close()
         except Exception as _meta_err:
-            # Nicht kritisch für Dashboard
+            # Not critical for dashboard
             pass
 
-        # LM Studio Healthcheck - ROBUST via HTTP API Ping
-        # Primär: HTTP GET auf LM Studio API (Port 1234 default)
-        # Fallback: CLI `lms status` mit "Server: OFF" Erkennung
+        # LM Studio health check - ROBUST via HTTP API ping
+        # Primary: HTTP GET on LM Studio API (port 1234 default)
+        # Fallback: CLI `lms status` with "Server: OFF" detection
         lmstudio_health = {"ok": False, "status": "offline"}
-        lmstudio_ports = LMSTUDIO_PORTS  # LM Studio Standard-Ports (NICHT 8080 - oft andere Services)
+        lmstudio_ports = LMSTUDIO_PORTS  # LM Studio default ports (NOT 8080 - often other services)
         
         # 1. HTTP API Check (schnellster und zuverlässigster Weg)
         for port in lmstudio_ports:
@@ -2753,15 +2753,15 @@ async def get_dashboard_stats() -> dict:
             except Exception:
                 continue
         
-        # 2. Fallback: CLI Check wenn HTTP fehlschlägt
+        # 2. Fallback: CLI check when HTTP fails
         if not lmstudio_health["ok"]:
             try:
                 result = subprocess.run(["lms", "status"], capture_output=True, text=True, timeout=2)
                 text = (result.stdout + result.stderr).lower()
-                # Explizite Offline-Marker (inkl. "server:  off" und "server: off")
+                # Explicit offline markers (incl. "server:  off" and "server: off")
                 offline_keywords = ["server:  off", "server: off", "off", "not running", "stopped", "offline", "no server", "not loaded", "error", "failed"]
                 is_offline = any(kw in text for kw in offline_keywords) or result.returncode != 0
-                # Explizite Online-Marker
+                # Explicit online markers
                 online_keywords = ["server:  on", "server: on", "running", "listening", "ready"]
                 is_online = any(kw in text for kw in online_keywords) and not is_offline
                 if is_online:
@@ -2769,9 +2769,9 @@ async def get_dashboard_stats() -> dict:
             except Exception:
                 pass
         
-        # Kein Prozess-Check mehr - zu unzuverlässig (Autostart-Scripte geben false positives)
+        # No more process check - too unreliable (autostart scripts give false positives)
         
-        # System-Info (erweitert mit besseren Details)
+        # System info (extended with better details)
         system_info = {
             "os": platform.system(),
             "os_version": platform.release(),  # Kernel-Version
@@ -2781,7 +2781,7 @@ async def get_dashboard_stats() -> dict:
             "ram_gb": round(psutil.virtual_memory().total / (1024**3), 2)
         }
         
-        # Versuche Linux-Distribution zu erkennen
+        # Try to detect Linux distribution
         if system_info["os"] == "Linux":
             try:
                 import distro
@@ -2790,7 +2790,7 @@ async def get_dashboard_stats() -> dict:
                 if distro_name:
                     system_info["os"] = f"{distro_name} {distro_version}".strip()
             except:
-                # Fallback: Versuche /etc/os-release zu lesen
+                # Fallback: try reading /etc/os-release
                 try:
                     with open('/etc/os-release', 'r') as f:
                         os_release = {}
@@ -2806,8 +2806,8 @@ async def get_dashboard_stats() -> dict:
                 except:
                     pass
         
-        # Besserer CPU-Namen via cpuinfo wenn verfügbar
-        cpu_gpu_series = None  # Für iGPU-Extraktion aus CPU-String
+        # Better CPU name via cpuinfo if available
+        cpu_gpu_series = None  # For iGPU extraction from CPU string
         try:
             import cpuinfo
             cpu_data = cpuinfo.get_cpu_info()
@@ -2815,7 +2815,7 @@ async def get_dashboard_stats() -> dict:
                 raw_cpu = cpu_data['brand_raw'].replace('®', '').replace('™', '').strip()
                 system_info["cpu"] = raw_cpu
  
-                # Extrahiere iGPU-Modell aus CPU-String (z.B. "w/ Radeon 890M")
+                # Extract iGPU model from CPU string (e.g. "w/ Radeon 890M")
                 if 'Radeon' in raw_cpu:
                     import re
                     radeon_match = re.search(r'Radeon\s+(\d+[A-Za-z]*)', raw_cpu)
@@ -2824,7 +2824,7 @@ async def get_dashboard_stats() -> dict:
         except:
             pass
 
-        # GPU-Info - Verbesserte Erkennung mit nvidia-smi/rocm-smi
+        # GPU info - improved detection with nvidia-smi/rocm-smi
         gpu_info = None
         try:
             import subprocess
@@ -2836,10 +2836,10 @@ async def get_dashboard_stats() -> dict:
             vram_total_gb = None
             gtt_total_gb = None
 
-            # GPU-Typ und GPU-Modell aus Results ermitteln (falls vorhanden)
-            # Die Benchmark-DB enthält jetzt vollständige GPU-Modellnamen ("AMD Radeon 890M" statt nur "AMD")
+            # Determine GPU type and model from results (if available)
+            # The benchmark DB now contains full GPU model names ("AMD Radeon 890M" instead of just "AMD")
             if results:
-                gpu_model = results[0].gpu_type  # Nutze vollständigen Namen aus DB
+                gpu_model = results[0].gpu_type  # Use full name from DB
                 # Extrahiere GPU-Typ (NVIDIA, AMD, Intel) aus Modellnamen
                 if "NVIDIA" in gpu_model or "GeForce" in gpu_model or "RTX" in gpu_model or "GTX" in gpu_model:
                     gpu_type = "NVIDIA"
@@ -2850,15 +2850,15 @@ async def get_dashboard_stats() -> dict:
                 else:
                     gpu_type = gpu_model
 
-            # NVIDIA GPU Erkennung
+            # NVIDIA GPU detection
             try:
-                # Hole VRAM-Größe
+                # Get VRAM size
                 output = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'], timeout=5)
                 vram_total_mb = int(output.decode().strip().split('\n')[0])
                 vram_total_gb = round(vram_total_mb / 1024, 2)
                 gpu_type = "NVIDIA"
 
-                # Hole GPU-Modell
+                # Get GPU model
                 try:
                     model_output = subprocess.check_output(['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'], timeout=5)
                     gpu_model = model_output.decode().strip().split('\n')[0]
@@ -2868,10 +2868,10 @@ async def get_dashboard_stats() -> dict:
             except (TimeoutExpired, FileNotFoundError, ValueError):
                 pass
 
-            # AMD GPU Erkennung mit rocm-smi
+            # AMD GPU detection with rocm-smi
             if not vram_total_gb:
                 try:
-                    # Suche rocm-smi in verschiedenen Pfaden
+                    # Search for rocm-smi in various paths
                     rocm_tool = None
                     for path in ['/usr/bin/rocm-smi', '/usr/local/bin/rocm-smi'] + glob.glob('/opt/rocm-*/bin/rocm-smi'):
                         if Path(path).exists():
@@ -2881,9 +2881,9 @@ async def get_dashboard_stats() -> dict:
                     if not rocm_tool:
                         rocm_tool = 'rocm-smi'  # Fallback auf PATH
 
-                    # AMD GPU-Kartenserie Mapping basierend auf Device ID
+                    # AMD GPU card series mapping based on device ID
                     amd_device_mapping = {
-                        '150e': 'Radeon Graphics',  # Generische iGPU - wird durch CPU-Info überschrieben
+                        '150e': 'Radeon Graphics',  # Generic iGPU - will be overridden by CPU info
                         '7340': 'Radeon RX 5700 XT',
                         '731f': 'Radeon RX 5700',
                         '7360': 'Radeon RX 6700 XT',
@@ -2898,12 +2898,12 @@ async def get_dashboard_stats() -> dict:
                         'gfx90a': 'MI250',
                     }
 
-                    # Hole GPU Device ID aus lspci oder sysfs
+                    # Get GPU device ID from lspci or sysfs
                     gpu_series = None
                     device_id = None
 
                     try:
-                        # Versuche Device ID aus lspci zu holen (für dedizierte GPUs)
+                        # Try to get device ID from lspci (for dedicated GPUs)
                         lspci_output = subprocess.run(
                             ['lspci', '-d', '1002::0300,1002::0380'],  # VGA/Display Controller
                             capture_output=True,
@@ -2914,10 +2914,10 @@ async def get_dashboard_stats() -> dict:
                             # Parse "c7:00.0 0380: 1002:150e (rev c1)"
                             for line in lspci_output.stdout.strip().split('\n'):
                                 if '1002:' in line:
-                                    # Extrahiere Device ID nach ':'
+                                    # Extract device ID after ':'
                                     parts = line.split('1002:')
                                     if len(parts) > 1:
-                                        dev_part = parts[1].split()[0]  # "150e" aus "150e (rev c1)"
+                                        dev_part = parts[1].split()[0]  # "150e" from "150e (rev c1)"
                                         device_id = dev_part.lower()
                                         # Versuche mit lspci -vv die echte Kartenserie zu holen
                                         lspci_slot = line.split()[0]  # "c7:00.0"
@@ -2930,9 +2930,9 @@ async def get_dashboard_stats() -> dict:
                                             )
                                             if detail_output.returncode == 0:
                                                 detail_text = detail_output.stdout
-                                                # Versuche Kartennamen zu extrahieren (z.B. aus Device Type Strings)
+                                                # Try to extract card name (e.g. from device type strings)
                                                 if 'Radeon' in detail_text:
-                                                    # Extrahiere Kartennamen wenn vorhanden
+                                                    # Extract card name if available
                                                     for detail_line in detail_text.split('\n'):
                                                         if 'Radeon' in detail_line:
                                                             gpu_series = detail_line.strip()
@@ -2943,7 +2943,7 @@ async def get_dashboard_stats() -> dict:
                     except (FileNotFoundError, TimeoutExpired):
                         pass
 
-                    # Fallback: Hole Device ID aus /sys
+                    # Fallback: get device ID from /sys
                     if not device_id:
                         try:
                             for gpu_path in Path('/sys/devices').glob('**/pci*/*/0000:c7:00.0/device'):
@@ -2954,7 +2954,7 @@ async def get_dashboard_stats() -> dict:
                         except:
                             pass
 
-                    # Hole gfx-Code von rocm-smi als Fallback
+                    # Get gfx code from rocm-smi as fallback
                     gfx_code = None
                     try:
                         result = subprocess.run(
@@ -2973,11 +2973,11 @@ async def get_dashboard_stats() -> dict:
                     except Exception:
                         pass
 
-                    # Zusammenstellen GPU-Modellname mit Fallback-Kette
-                    # 1. Höchste Priorität: GPU-Serie aus CPU-String extrahiert (z.B. "Radeon 890M" aus CPU-Name)
+                    # Assemble GPU model name with fallback chain
+                    # 1. Highest priority: GPU series extracted from CPU string (e.g. "Radeon 890M" from CPU name)
                     if cpu_gpu_series:
                         gpu_model = cpu_gpu_series
-                    # 2. lspci Kartenserie falls vorhanden
+                    # 2. lspci card series if available
                     elif gpu_series and 'Radeon' in gpu_series:
                         gpu_model = gpu_series
                     # 3. Device ID Mapping
@@ -2986,17 +2986,17 @@ async def get_dashboard_stats() -> dict:
                     # 4. GFX-Code Mapping
                     elif gfx_code and gfx_code in amd_device_mapping:
                         gpu_model = f"AMD {amd_device_mapping[gfx_code]}"
-                    # 5. Fallback: Device ID anzeigen
+                    # 5. Fallback: show device ID
                     elif device_id:
                         gpu_model = f"AMD GPU (Device: 1002:{device_id})"
                     # 6. Fallback: GFX-Code
                     elif gfx_code:
                         gpu_model = f"AMD {gfx_code}"
-                    # 7. Fallback: Generisch
+                    # 7. Fallback: generic
                     else:
                         gpu_model = "AMD GPU"
 
-                    # Hole VRAM-Größe
+                    # Get VRAM size
                     result = subprocess.run(
                         [rocm_tool, '--showmeminfo', 'vram'],
                         capture_output=True,
@@ -3015,7 +3015,7 @@ async def get_dashboard_stats() -> dict:
                                     gpu_type = "AMD"
                                     break
 
-                    # Hole GTT-Größe (AMD spezifisch)
+                    # Get GTT size (AMD specific)
                     if gpu_type == "AMD":
                         result = subprocess.run(
                             [rocm_tool, '--showmeminfo', 'gtt'],
@@ -3037,7 +3037,7 @@ async def get_dashboard_stats() -> dict:
                 except (TimeoutExpired, FileNotFoundError):
                     pass
 
-            # Zusammenstellen GPU-Info
+            # Assemble GPU info
             gpu_info = {
                 "type": gpu_type,
                 "model": gpu_model,
@@ -3054,14 +3054,14 @@ async def get_dashboard_stats() -> dict:
                 "total_gb": system_info["ram_gb"]
             }
 
-        # Cache-Statistiken
+        # Cache statistics
         cache_stats = {
             "total_models": len(results),
             "total_runs": len(results),
             "db_size_mb": round(DATABASE_FILE.stat().st_size / (1024 * 1024), 2) if DATABASE_FILE.exists() else 0
         }
 
-        # Performance-Statistiken
+        # Performance statistics
         perf_stats = {}
         if results:
             speeds = [r.avg_tokens_per_sec for r in results]
@@ -3071,7 +3071,7 @@ async def get_dashboard_stats() -> dict:
                 "min_speed": round(min(speeds), 2)
             }
 
-        # Top 5 Schnellste Modelle
+        # Top 5 fastest models
         top_models = []
         fastest_model = None
         if results:
@@ -3087,7 +3087,7 @@ async def get_dashboard_stats() -> dict:
                     "capabilities": capabilities_by_model.get(r.model_name, []),
                     "source_url": f"https://lmstudio.ai/models/{base_key}"
                 })
-                # Speichere schnellstes Modell
+                # Save fastest model
                 if i == 0:
                     fastest_model = {
                         "name": r.model_name,
@@ -3095,7 +3095,7 @@ async def get_dashboard_stats() -> dict:
                         "capabilities": capabilities_by_model.get(r.model_name, [])
                     }
 
-        # Letzte 10 Benchmark-Runs (mit Timestamp)
+        # Last 10 benchmark runs (with timestamp)
         recent_runs = []
         last_run_timestamp = None
         if results:
@@ -3111,7 +3111,7 @@ async def get_dashboard_stats() -> dict:
                     "capabilities": capabilities_by_model.get(r.model_name, []),
                     "source_url": f"https://lmstudio.ai/models/{base_key}"
                 })
-                # Speichere letzten Run Timestamp
+                # Save last run timestamp
                 if i == 0:
                     last_run_timestamp = r.timestamp
 
@@ -3129,7 +3129,7 @@ async def get_dashboard_stats() -> dict:
             "lmstudio": lmstudio_health
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Laden der Dashboard-Stats: {e}")
+        logger.error(f"❌ Error loading dashboard stats: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -3139,14 +3139,14 @@ async def get_dashboard_stats() -> dict:
 
 @app.websocket("/ws/benchmark")
 async def websocket_benchmark(websocket: WebSocket):
-    """WebSocket für Live-Streaming von Benchmark-Output"""
+    """WebSocket for live streaming of benchmark output"""
     await websocket.accept()
     manager.connected_clients.add(websocket)
 
     heartbeat_count = 0
 
     try:
-        logger.info(f"✅ WebSocket Client verbunden (Total: {len(manager.connected_clients)})")
+        logger.info(f"✅ WebSocket client connected (total: {len(manager.connected_clients)})")
 
         await websocket.send_json({
             "type": "status",
@@ -3161,7 +3161,7 @@ async def websocket_benchmark(websocket: WebSocket):
             except asyncio.TimeoutError:
                 pass
             except WebSocketDisconnect:
-                logger.info("⚠️ WebSocket Client hat Verbindung getrennt")
+                logger.info("⚠️ WebSocket client disconnected")
                 break
             except Exception as e:
                 logger.error(f"❌ WebSocket Receive Error: {e}")
@@ -3219,22 +3219,22 @@ async def websocket_benchmark(websocket: WebSocket):
                     try:
                         await websocket.send_json({
                             "type": "completed",
-                            "message": "✅ Benchmark abgeschlossen"
+                            "message": "✅ Benchmark completed"
                         })
                     except Exception as e:
-                        logger.warning(f"⚠️ Konnte Completion-Message nicht senden: {e}")
+                        logger.warning(f"⚠️ Could not send completion message: {e}")
                     finally:
                         manager.status = "idle"
 
                 await asyncio.sleep(0.5)
 
     except WebSocketDisconnect:
-        logger.info("ℹ️ WebSocket normaler Disconnect")
+        logger.info("ℹ️ WebSocket normal disconnect")
     except Exception as e:
         logger.error(f"❌ WebSocket Error: {e}")
     finally:
         manager.connected_clients.discard(websocket)
-        logger.info(f"❌ WebSocket Client getrennt (Total: {len(manager.connected_clients)})")
+        logger.info(f"❌ WebSocket client disconnected (total: {len(manager.connected_clients)})")
 
 
 # ============================================================================
@@ -3243,7 +3243,7 @@ async def websocket_benchmark(websocket: WebSocket):
 
 @app.get("/api/latest-results")
 async def get_latest_results() -> dict:
-    """Findet die neuesten Benchmark-Ergebnisse"""
+    """Finds the latest benchmark results"""
     try:
         results_dir = RESULTS_DIR
 
@@ -3256,7 +3256,7 @@ async def get_latest_results() -> dict:
 
         return {"latest": latest_file.name}
     except Exception as e:
-        logger.error(f"Fehler beim Finden der neuesten Ergebnisse: {e}")
+        logger.error(f"Error finding latest results: {e}")
         return {"latest": None}
 
 
@@ -3282,34 +3282,34 @@ if __name__ == "__main__":
     import uvicorn
     
     # ArgumentParser für Port-Option
-    parser = argparse.ArgumentParser(description="FastAPI Web-Dashboard für LM Studio Benchmark")
+    parser = argparse.ArgumentParser(description="FastAPI web dashboard for LM Studio Benchmark")
     parser.add_argument(
         "--port", "-p",
         type=int,
         default=None,
-        help="Port für Web-Dashboard (Standard: automatisch freien Port suchen)"
+        help="Port for web dashboard (default: automatically find a free port)"
     )
     args = parser.parse_args()
     
-    # Erstelle WebApp Startup Log-Datei
+    # Create WebApp startup log file
     webapp_log_file = setup_webapp_logger()
     
-    logger.info("🌐 Starte FastAPI Web-Dashboard...")
-    logger.info(f"📝 WebApp-Log: {webapp_log_file}")
-    logger.info(f"📁 Projekt-Root: {PROJECT_ROOT}")
-    logger.info(f"📄 Benchmark-Script: {BENCHMARK_SCRIPT}")
+    logger.info("🌐 Starting FastAPI web dashboard...")
+    logger.info(f"📝 WebApp log: {webapp_log_file}")
+    logger.info(f"📁 Project root: {PROJECT_ROOT}")
+    logger.info(f"📄 Benchmark script: {BENCHMARK_SCRIPT}")
     
     if not BENCHMARK_SCRIPT.exists():
-        logger.error(f"❌ Benchmark-Script nicht gefunden: {BENCHMARK_SCRIPT}")
+        logger.error(f"❌ Benchmark script not found: {BENCHMARK_SCRIPT}")
         sys.exit(1)
     
-    # Port bestimmen
+    # Determine port
     if args.port:
         port = args.port
-        logger.info(f"🔧 Verwende angegebenen Port: {port}")
+        logger.info(f"🔧 Using specified port: {port}")
     else:
         port = find_free_port()
-        logger.info(f"🎲 Nutze automatisch gefundenen freien Port: {port}")
+        logger.info(f"🎲 Using automatically found free port: {port}")
     
     dashboard_url = f"http://localhost:{port}"
     logger.info(f"🚀 Dashboard verfügbar auf {dashboard_url}")
