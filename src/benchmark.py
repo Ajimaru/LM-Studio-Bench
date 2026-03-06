@@ -196,6 +196,7 @@ class BenchmarkResult:
     intel_driver_version: Optional[str] = None
     context_length: Optional[int] = None
     model_key: Optional[str] = None
+    prompt_hash: Optional[str] = None
     params_hash: Optional[str] = None
     os_name: Optional[str] = None
     os_version: Optional[str] = None
