@@ -8,16 +8,16 @@ Scrape LM Studio model metadata into a dedicated SQLite database.
 """
 
 import argparse
+from datetime import datetime
+import html as htmllib
 import json
 import logging
+from pathlib import Path
+import re
+import shutil
 import sqlite3
 import subprocess
 import sys
-import shutil
-import re
-import html as htmllib
-from datetime import datetime
-from pathlib import Path
 from typing import Dict, List
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen

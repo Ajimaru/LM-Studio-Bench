@@ -434,11 +434,3 @@ rm .git/hooks/pre-commit
 ```
 
 ---
-
-## Other Scripts
-
-- `scrape_metadata.py`: Scrapes LLM model metadata
-
-```bash
-rm .git/hooks/pre-commit
-```

@@ -6,40 +6,41 @@ Automatically tests all locally installed LM Studio models and their
 quantizations. Measures token/s speed with a standardized prompt.
 """
 
-import subprocess
-import json
+import argparse
 import csv
+from dataclasses import asdict, dataclass
+from datetime import datetime
+import glob
+import hashlib
+import json
 import logging
 import os
-import time
-import shutil
-import argparse
-import sqlite3
-import hashlib
-import threading
-import psutil
-import glob
-import sys
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Any
-from dataclasses import dataclass, asdict
-from datetime import datetime
-from statistics import quantiles, mean, median
-from tqdm import tqdm
 import re
+import shutil
+import sqlite3
+from statistics import mean, median, quantiles
+import subprocess
+import sys
+import threading
+import time
+from typing import Any, Dict, List, Optional, Tuple
+
+import psutil
+from tqdm import tqdm
 
 try:
-    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import (
+        PageBreak,
+        Paragraph,
         SimpleDocTemplate,
+        Spacer,
         Table,
         TableStyle,
-        Paragraph,
-        Spacer,
-        PageBreak,
     )
     REPORTLAB_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
@@ -47,6 +48,7 @@ except (ImportError, ModuleNotFoundError):
 
 from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
 from rest_client import LMStudioRESTClient
+
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True

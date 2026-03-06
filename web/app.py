@@ -8,36 +8,36 @@ WebSocket.
 
 import argparse
 import asyncio
+from contextlib import asynccontextmanager
+import csv
+from datetime import datetime
+import hashlib
+from io import StringIO
 import json
 import logging
+import math
 import os
+from pathlib import Path
+import re
+import shutil
 import signal
 import socket
+import sqlite3
+import statistics
 import subprocess
 from subprocess import TimeoutExpired
 import sys
-import webbrowser
 import threading
 import time
-import shutil
-from datetime import datetime
-from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
-import sqlite3
-import math
-import statistics
-import csv
-import uuid
-from io import StringIO
-from contextlib import asynccontextmanager
-
-import re
-import hashlib
-import httpx
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import unquote
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+import uuid
+import webbrowser
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+import httpx
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
 
@@ -2744,10 +2744,16 @@ async def run_experiment(request: Request) -> dict:
             logger.info(f"🌐 A/B Test HTML gespeichert: {html_file}")
 
             try:
-                from reportlab.lib.pagesizes import A4, landscape
                 from reportlab.lib import colors
-                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+                from reportlab.lib.pagesizes import A4, landscape
                 from reportlab.lib.styles import getSampleStyleSheet
+                from reportlab.platypus import (
+                    Paragraph,
+                    SimpleDocTemplate,
+                    Spacer,
+                    Table,
+                    TableStyle,
+                )
 
                 pdf_file = results_dir / f"ab_test_results_{timestamp}.pdf"
                 doc = SimpleDocTemplate(str(pdf_file), pagesize=landscape(A4))
@@ -2823,12 +2829,13 @@ async def get_dashboard_stats() -> dict:
         return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
+        from datetime import datetime
+        import json
         import platform
         import sqlite3
-        import psutil
-        import json
         import subprocess
-        from datetime import datetime
+
+        import psutil
 
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
@@ -2935,9 +2942,9 @@ async def get_dashboard_stats() -> dict:
 
         gpu_info = None
         try:
-            import subprocess
             import glob
             import re
+            import subprocess
 
             gpu_type = "Unknown"
             gpu_model = "Unknown"

@@ -6,10 +6,10 @@ REST API (/api/v1/*) endpoints, including model management, chat,
 and capability detection.
 """
 
+from dataclasses import dataclass
 import json
 import logging
 import time
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 import httpx

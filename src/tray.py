@@ -4,23 +4,23 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
 import logging
-import threading
-import webbrowser
-from datetime import datetime
 from pathlib import Path
+import threading
 from typing import Optional
 from urllib import error as urllib_error
-from urllib import request as urllib_request
 from urllib.parse import urlparse
+from urllib import request as urllib_request
+import webbrowser
 
 try:
     import gi
 
     gi.require_version("Gtk", "3.0")
     gi.require_version("AppIndicator3", "0.1")
-    from gi.repository import Gtk, AppIndicator3
+    from gi.repository import AppIndicator3, Gtk
 except Exception as import_exc:
     gi = None
     Gtk = None
