@@ -11,14 +11,15 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "defaults.json"
 
-# Built-in fallbacks (used when JSON is missing or incomplete)
 BASE_DEFAULT_CONFIG: Dict[str, Any] = {
-    "prompt": "Erkläre maschinelles Lernen in 3 Sätzen",
+    "prompt": "Is the sky blue?",
     "context_length": 2048,
     "num_runs": 3,
     "lmstudio": {
         "host": "localhost",
         "ports": [1234, 1235],
+        "api_token": None,
+        "use_rest_api": True,
     },
     "inference": {
         "temperature": 0.1,
@@ -42,7 +43,9 @@ BASE_DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(
+    base: Dict[str, Any], override: Dict[str, Any]
+) -> Dict[str, Any]:
     """Recursively merge override into base without mutating base."""
     merged: Dict[str, Any] = dict(base)
     for key, value in override.items():
@@ -77,11 +80,10 @@ def load_default_config(config_path: Path | None = None) -> Dict[str, Any]:
             with path.open("r", encoding="utf-8") as f:
                 user_config = json.load(f)
             config = _deep_merge(config, user_config)
-            logger.info(f"Loaded defaults from {path}")
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(f"Failed to load defaults from {path}: {exc}")
+            logger.info("Loaded defaults from %s", path)
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to load defaults from %s: %s", path, exc)
 
-    # Normalize LM Studio ports (always ensure at least one port)
     lmstudio_cfg = config.get("lmstudio", {}) or {}
     lmstudio_cfg["ports"] = _normalize_ports(lmstudio_cfg.get("ports"))
     lmstudio_cfg.setdefault("host", BASE_DEFAULT_CONFIG["lmstudio"]["host"])

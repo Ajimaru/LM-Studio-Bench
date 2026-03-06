@@ -1,11 +1,12 @@
 lmstudio>=0.1.0
-tqdm>=4.66.0
+tqdm>=4.66.3
 psutil>=5.9.0
 reportlab>=4.0.0
 plotly>=5.0.0
 fastapi>=0.109.0
 uvicorn[standard]>=0.24.0
-jinja2>=3.1.2
+jinja2>=3.1.6
 httpx
 distro
 py-cpuinfo
+PyGObject>=3.48,<3.50
