@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import signal
 import socket
 import subprocess
@@ -1063,6 +1064,42 @@ async def stop_benchmark() -> dict:
         "success": success,
         "status": manager.status,
         "message": "⏹️ Beendet" if success else "❌ Fehler"
+    }
+
+
+@app.post("/api/system/shutdown")
+async def shutdown_system() -> dict:
+    """Shutdown the web application gracefully.
+
+    This endpoint allows clients (like the tray app) to request a graceful
+    shutdown of the entire dashboard. The benchmark is stopped first, then
+    the application exits via SIGTERM signal.
+    """
+    logger.info("🛑 Shutdown requested via API")
+
+    # Stop any running benchmark
+    try:
+        success = manager.stop_benchmark()
+        logger.info("✅ Benchmark stopped: %s", success)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Error stopping benchmark during shutdown: %s", exc)
+
+    # Schedule delayed shutdown to allow response to be sent
+    def _send_shutdown_signal() -> None:
+        """Send SIGTERM to self after brief delay to allow response."""
+        time.sleep(0.5)
+        logger.info("🛑 Sending SIGTERM to shutdown process...")
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    # Run signal in background thread to not block response
+    shutdown_thread = threading.Thread(
+        target=_send_shutdown_signal, daemon=True
+    )
+    shutdown_thread.start()
+
+    return {
+        "success": True,
+        "message": "🛑 Shutting down..."
     }
 
 

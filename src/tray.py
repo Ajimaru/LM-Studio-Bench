@@ -85,7 +85,10 @@ class TrayApp:
         self.api_base = f"{parsed.scheme}://{parsed.netloc}"
         self.debug = debug
         self.menu: Optional[Gtk.Menu] = None
+        self.start_item: Optional[Gtk.MenuItem] = None
         self.pause_item: Optional[Gtk.MenuItem] = None
+        self.stop_item: Optional[Gtk.MenuItem] = None
+        self._polling_timer_id: Optional[int] = None
 
     def _call_api(
         self,
@@ -120,14 +123,23 @@ class TrayApp:
             with urllib_request.urlopen(req, timeout=5.0) as response:
                 response_body = response.read().decode("utf-8")
             data = json.loads(response_body) if response_body else {}
-            LOGGER.debug("API response: %s", data)
+            LOGGER.debug("API response (%s): %s", endpoint, data)
             return data
         except (
             urllib_error.URLError,
             ValueError,
             json.JSONDecodeError,
+            TimeoutError,
         ) as exc:
-            LOGGER.warning("API call failed for %s: %s", url, exc)
+            exc_type = type(exc).__name__
+            LOGGER.warning(
+                "API %s %s failed (%s): %s", method, endpoint, exc_type, exc
+            )
+            return None
+        except Exception as exc:  # pragma: no cover
+            LOGGER.error(
+                "Unexpected error on API %s %s: %s", method, endpoint, exc
+            )
             return None
 
     def _show_info_dialog(self, title: str, message: str) -> None:
@@ -143,40 +155,62 @@ class TrayApp:
         dialog.run()
         dialog.destroy()
 
-    def _refresh_pause_label(self) -> None:
-        """Refresh pause menu item label based on benchmark status."""
-        if self.pause_item is None:
-            return
+    def _refresh_menu_buttons(self) -> None:
+        """Refresh menu button states based on benchmark status.
 
+        Button states:
+        - Idle/Unknown/Error: Start enabled, Pause disabled, Stop disabled
+        - Running: Start disabled, Pause enabled, Stop enabled
+        - Paused: Start disabled, Resume enabled, Stop enabled
+
+        Design: Start acts as fallback recovery button when benchmark
+        is in error state or API is unreachable.
+        """
         status_data = self._call_api("/api/status")
         if not status_data:
-            self.pause_item.set_label("Pause")
-            self.pause_item.set_sensitive(False)
-            return
-
-        status = str(status_data.get("status", "")).lower()
-        if status == "running":
-            self.pause_item.set_label("Pause")
-            self.pause_item.set_sensitive(True)
-        elif status == "paused":
-            self.pause_item.set_label("Resume")
-            self.pause_item.set_sensitive(True)
+            status = "idle"
+            LOGGER.warning("API unreachable, treating as idle state")
         else:
-            self.pause_item.set_label("Pause")
-            self.pause_item.set_sensitive(False)
+            status = str(status_data.get("status", "idle")).lower()
+
+        LOGGER.debug(
+            "Updating menu buttons: status=%s, data=%s", status, status_data
+        )
+
+        # Update Start button: Enabled for idle/error states & fallback
+        # This allows user to recover if benchmark crashes
+        is_running_or_paused = status in ("running", "paused")
+        if self.start_item:
+            self.start_item.set_sensitive(not is_running_or_paused)
+
+        # Update Pause/Resume button
+        if self.pause_item:
+            if status == "running":
+                self.pause_item.set_label("Pause")
+                self.pause_item.set_sensitive(True)
+            elif status == "paused":
+                self.pause_item.set_label("Resume")
+                self.pause_item.set_sensitive(True)
+            else:
+                self.pause_item.set_label("Pause")
+                self.pause_item.set_sensitive(False)
+
+        # Update Stop button: Only enabled for active states
+        if self.stop_item:
+            self.stop_item.set_sensitive(is_running_or_paused)
 
     def _on_start(self, _item: Gtk.MenuItem) -> None:
         """Start benchmark from tray."""
         result = self._call_api("/api/benchmark/start", "POST", payload={})
         if result:
             LOGGER.info("Start action: %s", result.get("message", "ok"))
-        self._refresh_pause_label()
+        self._refresh_menu_buttons()
 
     def _on_pause_resume(self, _item: Gtk.MenuItem) -> None:
         """Pause or resume benchmark based on current status."""
         status_data = self._call_api("/api/status")
         if not status_data:
-            self._refresh_pause_label()
+            self._refresh_menu_buttons()
             return
 
         status = str(status_data.get("status", "")).lower()
@@ -188,14 +222,14 @@ class TrayApp:
             result = self._call_api("/api/benchmark/resume", "POST")
             if result:
                 LOGGER.info("Resume action: %s", result.get("message", "ok"))
-        self._refresh_pause_label()
+        self._refresh_menu_buttons()
 
     def _on_stop(self, _item: Gtk.MenuItem) -> None:
         """Stop benchmark from tray."""
         result = self._call_api("/api/benchmark/stop", "POST")
         if result:
             LOGGER.info("Stop action: %s", result.get("message", "ok"))
-        self._refresh_pause_label()
+        self._refresh_menu_buttons()
 
     def _on_status(self, _item: Gtk.MenuItem) -> None:
         """Show current benchmark status."""
@@ -216,16 +250,102 @@ class TrayApp:
             f"Connected Clients: {clients}"
         )
         self._show_info_dialog("Benchmark Status", message)
-        self._refresh_pause_label()
+        self._refresh_menu_buttons()
+
+    def _on_polling_tick(self) -> bool:
+        """Periodic status update callback for GLib timeout.
+
+        This ensures button states are refreshed every few seconds,
+        allowing recovery when benchmark crashes or API becomes
+        unavailable and then recovers.
+
+        Returns:
+            True to keep the timer running, False to stop it.
+        """
+        try:
+            self._refresh_menu_buttons()
+        except Exception:  # pragma: no cover
+            LOGGER.exception("Error during status polling")
+        return True  # Keep timer running
+
+    def _start_status_polling(self) -> None:
+        """Start periodic status polling with 3-second interval.
+
+        This allows the tray to detect status changes without waiting
+        for user interaction, and helps recover from benchmark crashes.
+        """
+        if self._polling_timer_id is not None:
+            return  # Already running
+
+        try:
+            from gi.repository import GLib
+        except ImportError:  # pragma: no cover
+            LOGGER.warning("GLib not available, status polling disabled")
+            return
+
+        # 3000 milliseconds = 3 seconds
+        self._polling_timer_id = GLib.timeout_add(
+            3000, self._on_polling_tick
+        )
+        LOGGER.debug("Started status polling (interval: 3s)")
 
     def _on_open_webapp(self, _item: Gtk.MenuItem) -> None:
         """Open dashboard URL in default browser."""
         LOGGER.info("Opening webapp: %s", self.dashboard_url)
         webbrowser.open(self.dashboard_url)
 
-    @staticmethod
-    def _on_quit(_item: Gtk.MenuItem) -> None:
-        """Quit tray application."""
+    def _stop_status_polling(self) -> None:
+        """Stop any active status polling timer.
+
+        Cleanup method called before quitting.
+        """
+        if self._polling_timer_id is not None:
+            try:
+                from gi.repository import GLib
+
+                GLib.source_remove(self._polling_timer_id)
+                self._polling_timer_id = None
+                LOGGER.debug("Stopped status polling")
+            except Exception as exc:  # pragma: no cover
+                LOGGER.warning("Failed to stop polling timer: %s", exc)
+
+    def _on_quit(self, _item: Gtk.MenuItem) -> None:
+        """Stop benchmark and shutdown web dashboard.
+
+        This cleanup handler ensures the benchmark is stopped and the
+        web dashboard is shut down gracefully before the tray app exits,
+        preventing orphaned processes.
+        """
+        LOGGER.info("Quit action triggered, initiating shutdown...")
+
+        # Stop polling timer first
+        self._stop_status_polling()
+
+        # Stop any running benchmark and shutdown dashboard
+        try:
+            # Try to shutdown via API (stops benchmark + closes app)
+            LOGGER.info("Calling WebApp shutdown endpoint...")
+            result = self._call_api("/api/system/shutdown", "POST")
+            if result:
+                LOGGER.info(
+                    "Shutdown response: %s", result.get("message", "ok")
+                )
+            else:
+                # Fallback: At least try to stop the benchmark
+                LOGGER.warning(
+                    "Shutdown endpoint failed, trying stop only..."
+                )
+                status_data = self._call_api("/api/status")
+                if status_data:
+                    status = str(status_data.get("status", "")).lower()
+                    if status in ("running", "paused"):
+                        LOGGER.info("Stopping benchmark...")
+                        self._call_api("/api/benchmark/stop", "POST")
+        except Exception as exc:  # pragma: no cover
+            LOGGER.warning("Error during shutdown: %s", exc)
+
+        # Quit tray application
+        LOGGER.info("Benchmark Tray exiting")
         Gtk.main_quit()
 
     def _build_menu(self) -> Gtk.Menu:
@@ -236,17 +356,17 @@ class TrayApp:
         heading.set_sensitive(False)
         menu.append(heading)
 
-        start_item = Gtk.MenuItem(label="Start")
-        start_item.connect("activate", self._on_start)
-        menu.append(start_item)
+        self.start_item = Gtk.MenuItem(label="Start")
+        self.start_item.connect("activate", self._on_start)
+        menu.append(self.start_item)
 
         self.pause_item = Gtk.MenuItem(label="Pause")
         self.pause_item.connect("activate", self._on_pause_resume)
         menu.append(self.pause_item)
 
-        stop_item = Gtk.MenuItem(label="Stop")
-        stop_item.connect("activate", self._on_stop)
-        menu.append(stop_item)
+        self.stop_item = Gtk.MenuItem(label="Stop")
+        self.stop_item.connect("activate", self._on_stop)
+        menu.append(self.stop_item)
 
         menu.append(Gtk.SeparatorMenuItem())
 
@@ -282,12 +402,17 @@ class TrayApp:
 
         self.menu = self._build_menu()
         appindicator.set_menu(self.menu)
-        self._refresh_pause_label()
+        self._refresh_menu_buttons()
 
         LOGGER.info(
             "AppIndicator3 tray started for dashboard: %s",
             self.dashboard_url,
         )
+
+        # Start periodic status polling to detect changes without user
+        # interaction and allow recovery from benchmark crashes
+        self._start_status_polling()
+
         Gtk.main()
 
 
