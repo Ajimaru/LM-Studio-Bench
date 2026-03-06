@@ -1015,7 +1015,7 @@ async def get_cache_stats() -> dict:
         fastest = max(results, key=lambda r: r.avg_tokens_per_sec)
         slowest = min(results, key=lambda r: r.avg_tokens_per_sec)
         
-        # DB-Größe
+        # DB size
         db_size_mb = DATABASE_FILE.stat().st_size / (1024 * 1024) if DATABASE_FILE.exists() else 0
         
         return {
@@ -1641,7 +1641,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
         variance = statistics.variance(speeds) if len(speeds) > 1 else 0
         std_dev = math.sqrt(variance)
         
-        # Volatilität (Coefficient of Variation)
+        # Volatility (Coefficient of Variation)
         volatility = (std_dev / mean * 100) if mean > 0 else 0
         
         # Linear Regression (y = mx + b)
@@ -1662,7 +1662,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
             predicted_speed = slope * i + intercept
             forecast.append(round(max(0, predicted_speed), 2))
         
-        # Z-Score für Anomaly Detection
+        # Z-Score for Anomaly Detection
         z_scores = []
         if std_dev > 0:
             for speed in speeds:
@@ -1852,7 +1852,7 @@ async def get_experiment_comparison(
             
             current_hash = calculate_hash(params_dict)
             
-            # Vergleiche mit baseline_hash und test_hash (Substring-Match für Toleranz)
+            # Compare with baseline_hash and test_hash (substring match for tolerance)
             if current_hash.startswith(baseline_hash[:8]) or baseline_hash.startswith(current_hash[:8]):
                 baseline_data.append({
                     "timestamp": ts,
@@ -2742,7 +2742,7 @@ async def get_dashboard_stats() -> dict:
         lmstudio_health = {"ok": False, "status": "offline"}
         lmstudio_ports = LMSTUDIO_PORTS  # LM Studio default ports (NOT 8080 - often other services)
         
-        # 1. HTTP API Check (schnellster und zuverlässigster Weg)
+        # 1. HTTP API Check (fastest and most reliable method)
         for port in lmstudio_ports:
             try:
                 with httpx.Client(timeout=1.5) as client:
@@ -3281,7 +3281,7 @@ async def health_check() -> dict:
 if __name__ == "__main__":
     import uvicorn
     
-    # ArgumentParser für Port-Option
+    # ArgumentParser for port option
     parser = argparse.ArgumentParser(description="FastAPI web dashboard for LM Studio Benchmark")
     parser.add_argument(
         "--port", "-p",
@@ -3312,17 +3312,17 @@ if __name__ == "__main__":
         logger.info(f"🎲 Using automatically found free port: {port}")
     
     dashboard_url = f"http://localhost:{port}"
-    logger.info(f"🚀 Dashboard verfügbar auf {dashboard_url}")
+    logger.info(f"🚀 Dashboard available at {dashboard_url}")
     logger.info(f"📊 API Docs: {dashboard_url}/docs")
-    
-    # Öffne Browser in separatem Thread nach kurzer Verzögerung
+
+    # Open browser in separate thread after a short delay
     def open_browser():
-        time.sleep(1.5)  # Warte bis Server bereit ist
+        time.sleep(1.5)  # Wait until server is ready
         try:
-            logger.info(f"🌐 Öffne Browser: {dashboard_url}")
+            logger.info(f"🌐 Opening browser: {dashboard_url}")
             webbrowser.open(dashboard_url)
         except Exception as e:
-            logger.warning(f"⚠️ Konnte Browser nicht öffnen: {e}")
+            logger.warning(f"⚠️ Could not open browser: {e}")
     
     browser_thread = threading.Thread(target=open_browser, daemon=True)
     browser_thread.start()
