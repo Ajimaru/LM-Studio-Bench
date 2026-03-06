@@ -79,12 +79,27 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
   cd LM-Studio-Bench
   ```
 
-**2. Create and activate a virtual environment**:
+**2. Prepare your system with `setup.sh` (recommended)**:
 
   ```bash
-  # Create virtual environment
-  python3 -m venv .venv
+  # Preview what setup would do (no changes)
+  ./setup.sh --dry-run
 
+  # Interactive setup (recommended)
+  ./setup.sh
+  ```
+
+The setup script checks and prepares:
+
+- Linux system dependencies (package-manager aware)
+- GPU tooling (`nvidia-smi`, `rocm-smi`, `intel_gpu_top` when available)
+- LM Studio / llmster availability
+- Python virtual environment (`.venv`)
+- Python dependencies from `requirements.txt`
+
+**3. Activate the virtual environment**:
+
+  ```bash
   # Activate (Linux/macOS)
   source .venv/bin/activate
 
@@ -92,7 +107,9 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
   .venv\Scripts\activate.bat
   ```
 
-**3. Install system dependencies** (Linux only, for tray icon support):
+**4. Manual fallback (if you skip `setup.sh`)**:
+
+Install system dependencies (Linux, tray support):
 
   ```bash
   # Ubuntu/Debian
@@ -105,9 +122,11 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
   sudo pacman -S python gobject-introspection cairo pkgconf
   ```
 
-**4. Install Python dependencies**:
+Install Python dependencies:
 
   ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
   pip install -r requirements.txt
   ```
 
@@ -497,6 +516,76 @@ The script will automatically try lower GPU offload levels. With ~12GB VRAM:
 - ✅ 7B models with Q4_K_M
 - ⚠️ 13B models with Q3_K_M (possible)
 - ❌ 32B+ models (not recommended)
+
+</details>
+
+### Log Files and Output
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
+
+The benchmark tool generates separate log files for each component:
+
+**Log Locations**:
+
+```text
+logs/
+├── benchmark_YYYYMMDD_HHMMSS.log    # Benchmark execution logs
+└── webapp_YYYYMMDD_HHMMSS.log       # Web dashboard logs
+```
+
+**Log Format**:
+
+```bash
+2026-03-06 10:15:30,123 - INFO - Starting benchmark...
+YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message
+```
+
+**Log Levels**:
+
+- `INFO`: General information, progress updates, hardware metrics
+- `WARNING`: Non-fatal issues (GPU tool missing, falling back to CLI)
+- `ERROR`: Runtime errors (model load failure, API unavailable)
+
+**Third-Party Logging**:
+
+The following libraries have suppressed debug output for clarity:
+
+- `httpx` - HTTP client (set to WARNING)
+- `lmstudio` - LM Studio SDK (set to WARNING)
+- `urllib3` - HTTP library (set to WARNING)
+- `websockets` - WebSocket protocol (set to WARNING)
+
+**Viewing Logs**:
+
+```bash
+# View latest benchmark log (real-time)
+tail -f logs/benchmark_*.log
+
+# View latest webapp log
+tail -f logs/webapp_*.log
+
+# Search for errors
+grep ERROR logs/benchmark_*.log
+
+# Check hardware metrics in logs
+grep "💾\|🌡️\|⚡" logs/benchmark_*.log
+```
+
+**Hardware Metrics in Logs**:
+
+Hardware monitoring data is logged with emoji indicators:
+
+```text
+🌡️ GPU Temp: 42°C
+⚡ GPU Power: 125W
+💾 GPU VRAM: 8.2GB
+🧠 GPU GTT: 0.0GB
+🖥️ CPU: 35.2%
+💾 RAM: 18.5GB
+```
 
 </details>
 

@@ -142,6 +142,19 @@ match = re.search(r'[\d.]+\s*$', line.strip())
 **Problem**: hardware data did not appear in log files
 **Solution**: `print()` → `logger.info()` for stdout + file
 
+All hardware metrics are logged using Python's standard `logging` module:
+
+```python
+logger.info(f"🌡️ GPU Temp: {temp:.1f}°C")
+logger.info(f"💾 Memory: {vram_mb:.1f}MB VRAM + {gtt_mb:.1f}MB GTT")
+```
+
+This ensures metrics appear in both:
+
+- **stdout** - Real-time display in terminal
+- **log files** - `logs/benchmark_YYYYMMDD_HHMMSS.log` for permanent record
+- **WebApp** - Streamed via WebSocket to dashboard
+
 ### Fix 3: WebApp Output Streaming
 
 **Problem**: WebApp showed only 10% of the hardware data

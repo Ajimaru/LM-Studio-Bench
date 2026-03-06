@@ -4,6 +4,22 @@
 
 ```bash
 cd ~/LM-Studio-Bench
+
+# 1) Preview setup (no changes)
+./setup.sh --dry-run
+
+# 2) Prepare system + Python environment (recommended)
+./setup.sh
+
+# 3) Activate virtual environment
+source .venv/bin/activate
+```
+
+If you skip `setup.sh`, use this manual fallback:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -76,6 +92,20 @@ http://192.168.1.100:8080
 ✅ Tests all installed models with 3 runs each (~1-2 hours)
 ✅ Automatically caches results - reruns are instant!
 ✅ Clean output with emoji icons and formatted model lists
+✅ Detailed logs saved to `logs/benchmark_YYYYMMDD_HHMMSS.log`
+
+#### Monitor Logs in Real-Time
+
+```bash
+# Watch benchmark execution
+tail -f logs/benchmark_*.log
+
+# Watch web dashboard
+tail -f logs/webapp_*.log
+
+# Search for errors
+grep ERROR logs/benchmark_*.log
+```
 
 ### Quick Test (3 NEW Models)
 

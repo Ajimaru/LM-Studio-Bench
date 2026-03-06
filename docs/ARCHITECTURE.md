@@ -12,6 +12,7 @@
   - [Table of Contents](#table-of-contents)
   - [System Architecture Overview](#system-architecture-overview)
   - [Startup Flow](#startup-flow)
+  - [Setup Flow (Installation & Configuration)](#setup-flow-installation--configuration)
   - [Tray Control Flow (Linux)](#tray-control-flow-linux)
   - [Tray Quit Sequence (Linux)](#tray-quit-sequence-linux)
   - [Configuration Loading](#configuration-loading)
@@ -115,6 +116,119 @@ flowchart TD
    local port
 3. **Benchmark Mode** (default): Launches tray + benchmark.py with all CLI
    arguments
+
+---
+
+## Setup Flow (Installation & Configuration)
+
+```mermaid
+flowchart TD
+    Start([./setup.sh args]) --> ParseArgs{Parse Arguments}
+    
+    ParseArgs -->|--help| ShowHelp["Show Usage Info<br/>+ Exit 0"]
+    ParseArgs -->|--dry-run| DryMode["Set DRY_RUN=1<br/>Set INTERACTIVE=0"]
+    ParseArgs -->|--yes| AutoMode["Set INTERACTIVE=0<br/>Auto-answer 'no'"]
+    ParseArgs -->|--interactive| InterMode["Set INTERACTIVE=1<br/>Force Interactive"]
+    
+    DryMode --> LogSetup["Setup Logging<br/>logs/setup_YYYYMMDD_HHMMSS.log"]
+    AutoMode --> LogSetup
+    InterMode --> LogSetup
+    
+    LogSetup --> CheckLinux{OS = Linux?}
+    CheckLinux -->|No| ErrorOS["❌ Error:<br/>Not Linux"]
+    CheckLinux -->|Yes| DetectPKG["✅ Detect Package Manager<br/>apt/dnf/pacman/zypper/apk"]
+    
+    ErrorOS --> Exit1([Exit 1])
+    
+    DetectPKG --> CoreDeps["🔧 Check Core Dependencies<br/>Python3, Git, curl, pkg-config"]
+    CoreDeps --> SysLibs["📦 Check System Libraries<br/>gobject-introspection, cairo, PyGObject"]
+    
+    SysLibs --> CheckLMS["🔍 Check LM Studio Stack<br/>lms CLI / llmster-headless"]
+    CheckLMS -->|Found| LMSFound["✅ LM Studio/llmster<br/>detected"]
+    CheckLMS -->|Not Found| LMSMissing["⚠️ LM Studio missing<br/>Offer download link"]
+    
+    LMSFound --> GPUDetect["🎮 Detect GPU<br/>lspci → NVIDIA/AMD/Intel"]
+    LMSMissing --> GPUDetect
+    
+    GPUDetect --> GPUTools{GPU Found?}
+    GPUTools -->|NVIDIA| NVIDIACheck["Check nvidia-smi<br/>+ Install if needed"]
+    GPUTools -->|AMD| AMDCheck["Check rocm-smi<br/>+ AMD Driver Check"]
+    GPUTools -->|Intel| IntelCheck["Check intel_gpu_top<br/>+ Install if needed"]
+    GPUTools -->|None| NoGPU["⚠️ No GPU detected"]
+    
+    NVIDIACheck --> CreateVenv["🐍 Create Python venv<br/>python3 -m venv .venv"]
+    AMDCheck --> AMDDriver["🔍 Check AMD Drivers<br/>amdgpu, libdrm, ROCm"]
+    IntelCheck --> CreateVenv
+    NoGPU --> CreateVenv
+    AMDDriver --> CreateVenv
+    
+    CreateVenv -->|venv already exists| RecreatChoice{"Recreate .venv?"}
+    CreateVenv -->|New venv| VenvOK["✅ venv created<br/>.venv/"]
+    
+    RecreatChoice -->|Yes| VenvOK
+    RecreatChoice -->|No| UseExisting["Use existing .venv"]
+    
+    VenvOK --> InstallReqs["📥 Install Requirements<br/>pip install -r requirements.txt"]
+    UseExisting --> InstallReqs
+    
+    InstallReqs --> CheckConflict["Check pip conflicts<br/>pip check"]
+    CheckConflict --> Summary["📋 Print Summary<br/>Next steps (activation, run, etc)"]
+    
+    Summary --> LogExit["📄 Save log file<br/>logs/setup_latest.log → symlink"]
+    LogExit --> Exit0([Exit 0])
+    
+    ShowHelp --> Exit0
+    
+    style Start fill:#e1f5ff
+    style LogSetup fill:#fff4e1
+    style DetectPKG fill:#e1ffe1
+    style CoreDeps fill:#e1ffe1
+    style CreateVenv fill:#ffe1e1
+    style InstallReqs fill:#ffe1e1
+    style Summary fill:#f0e1ff
+    style ErrorOS fill:#ffcccc
+    style LMSMissing fill:#fff9e1
+```
+
+**Setup Flow Summary:**
+
+1. **Parse Arguments**: Handle `--help`, `--dry-run`, `--yes`, `--interactive` flags
+2. **Logging Setup**: Create timestamped log file in `logs/setup_YYYYMMDD_HHMMSS.log`
+3. **Environment Checks**:
+   - Verify Linux OS
+   - Detect package manager (apt/dnf/pacman/zypper/apk)
+   - Check core dependencies (Python 3, Git, curl, pkg-config)
+   - Verify system libraries (gobject-introspection, cairo, PyGObject for tray support)
+
+4. **LM Studio Stack**:
+   - Check for `lms` CLI or `llmster` headless binary
+   - Offer download link if missing
+
+5. **GPU & Monitoring Tools**:
+   - Detect GPU type via `lspci` (NVIDIA, AMD, Intel)
+   - Install/check GPU-specific tools (`nvidia-smi`, `rocm-smi`, `intel_gpu_top`)
+   - For AMD: Check drivers, ROCm, libdrm, X.Org AMDGPU driver
+
+6. **Python Environment**:
+   - Create virtual environment (`.venv/`)
+   - Install Python dependencies from `requirements.txt`
+   - Check for pip conflicts
+
+7. **Summary**:
+   - Print next steps for user:
+     - Activate venv: `source .venv/bin/activate`
+     - Run webapp: `python run.py --webapp`
+     - Run CLI: `python run.py`
+   - Log file symlink: `logs/setup_latest.log`
+
+**Modes:**
+
+| Mode | Behavior |
+| ---- | -------- |
+| `--help` | Show usage and exit |
+| `--dry-run` | Preview all actions (no changes) |
+| `--yes` | Non-interactive (auto-answer 'no' to optional prompts) |
+| `--interactive` | Force interactive mode (default if TTY detected) |
 
 ---
 

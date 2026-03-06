@@ -736,6 +736,92 @@ When VRAM is limited:
 
 ---
 
+## Logging Configuration
+
+The benchmark tool generates timestamped log files for debugging and monitoring.
+
+### Log File Locations
+
+```text
+logs/
+├── benchmark_YYYYMMDD_HHMMSS.log    # Benchmark execution logs
+└── webapp_YYYYMMDD_HHMMSS.log       # Web dashboard logs
+```
+
+### Log Format
+
+Each log entry follows this format:
+
+```bash
+YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message
+2026-03-06 10:15:30,123 - INFO - Starting benchmark...
+```
+
+### Log Levels
+
+The tool uses standard Python logging levels:
+
+| Level | Usage | Examples |
+| ----- | ----- | --------- |
+| `INFO` | General information and progress | Model loading, benchmark completion, hardware metrics |
+| `WARNING` | Non-fatal issues and fallbacks | GPU tool missing, using CLI fallback, skipped models |
+| `ERROR` | Runtime errors requiring attention | Model load failure, API unavailable, VRAM exceeded |
+
+### Hardware Metrics in Logs
+
+When hardware profiling is enabled (`--enable-profiling`), metrics appear with emoji indicators:
+
+```text
+🌡️ GPU Temp: 42°C
+⚡ GPU Power: 125W
+💾 GPU VRAM: 8.2GB
+🧠 GPU GTT: 0.0GB
+🖥️ CPU: 35.2%
+💾 RAM: 18.5GB
+```
+
+### Third-Party Library Logging
+
+The following libraries have suppressed debug output for cleaner logs:
+
+| Library | Level | Reason |
+| ------- | ------- | ------------------- |
+| `httpx` | WARNING | HTTP client noise |
+| `lmstudio` | WARNING | SDK debug output |
+| `urllib3` | WARNING | HTTP library noise |
+| `websockets` | WARNING | WebSocket protocol noise |
+
+### Viewing Logs
+
+**Real-time monitoring:**
+
+```bash
+# Watch benchmark execution
+tail -f logs/benchmark_*.log
+
+# Watch web dashboard
+tail -f logs/webapp_*.log
+```
+
+**Search and filter:**
+
+```bash
+# Find errors
+grep ERROR logs/benchmark_*.log
+
+# Find warnings
+grep WARNING logs/benchmark_*.log
+
+# Find specific model errors
+grep "model_name_pattern" logs/benchmark_*.log
+
+# Count log entries by level
+grep -c INFO logs/benchmark_*.log
+grep -c ERROR logs/benchmark_*.log
+```
+
+---
+
 ## See Also
 
 - [QUICKSTART.md](QUICKSTART.md) - Quick start guide
