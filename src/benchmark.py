@@ -362,7 +362,7 @@ class HardwareMonitor:
         logger.info("🛑 Hardware monitor thread stopped")
     
     def _get_temperature(self) -> Optional[float]:
-        """Liest aktuelle GPU-Temperatur"""
+        """Reads current GPU temperature"""
         try:
             if not self.gpu_tool:
                 return None
@@ -1161,7 +1161,7 @@ class GPUMonitor:
                 # Parse first line for GPU model
                 line = result.stdout.strip().split('\n')[0]
                 if 'Intel' in line:
-                    # Extrahiere Teil nach "VGA compatible controller: "
+                    # Extract part after "VGA compatible controller: "
                     parts = line.split(': ')
                     if len(parts) > 1:
                         return parts[1].split('[')[0].strip()
@@ -1232,7 +1232,7 @@ class LMStudioServerManager:
                 text=True,
                 timeout=10
             )
-            # Server gibt Ausgabe in stderr aus (nicht stdout!)
+            # Server outputs to stderr (not stdout!)
             output = result.stdout + result.stderr
             return result.returncode == 0 and ('running' in output.lower() or 'port' in output.lower())
         except Exception as e:
@@ -1241,7 +1241,7 @@ class LMStudioServerManager:
     
     @staticmethod
     def start_server():
-        """Startet LM Studio Server"""
+        """Starts LM Studio server"""
         try:
             logger.info("🚀 Starting LM Studio server...")
             subprocess.Popen(
@@ -1262,7 +1262,7 @@ class LMStudioServerManager:
             return False
         
         except Exception as e:
-            logger.error(f"❌ Fehler beim Starten des Servers: {e}")
+            logger.error(f"❌ Error starting server: {e}")
             return False
     
     @staticmethod
@@ -1305,14 +1305,14 @@ class ModelDiscovery:
                                 'has_tools': model_data.get('trainedForToolUse', False),
                             }
             except Exception as e:
-                logger.warning(f"⚠️ Fehler beim Laden von Metadaten-Cache: {e}")
+                logger.warning(f"⚠️ Error loading metadata cache: {e}")
         return ModelDiscovery._metadata_cache
     
     @staticmethod
     def get_model_metadata(model_key: str) -> Dict:
         """Fetches metadata for a specific model"""
         cache = ModelDiscovery._get_metadata_cache()
-        # Extrahiere Model-Name (vor @)
+        # Extract model name (before @)
         base_model = model_key.split('@')[0] if '@' in model_key else model_key
         return cache.get(base_model, {
             'architecture': 'unknown',
@@ -1325,7 +1325,7 @@ class ModelDiscovery:
 
     @staticmethod
     def get_scraped_metadata(model_key: str) -> Dict:
-        """Liest optionale, gescrapete Metadaten aus model_metadata.db."""
+        """Reads optional scraped metadata from model_metadata.db."""
         if not METADATA_DATABASE_FILE.exists():
             return {}
         base_key = model_key.split('@')[0] if '@' in model_key else model_key
@@ -1340,7 +1340,7 @@ class ModelDiscovery:
             conn.close()
             return dict(row) if row else {}
         except Exception as e:
-            logger.warning(f"⚠️ Konnte gescrapete Metadaten nicht lesen: {e}")
+            logger.warning(f"⚠️ Could not read scraped metadata: {e}")
             return {}
     
     @staticmethod
@@ -1476,7 +1476,7 @@ class LMStudioBenchmark:
     
     @staticmethod
     def get_lmstudio_version() -> Optional[str]:
-        """Ruft LM Studio Version ab"""
+        """Fetches LM Studio version"""
         try:
             result = subprocess.run(['lms', 'version'], capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
@@ -1488,7 +1488,7 @@ class LMStudioBenchmark:
                         for part in parts:
                             if part.startswith('v') and len(part) > 1:
                                 return part
-                # Fallback: erste Zeile
+                # Fallback: first line
                 first_line = result.stdout.strip().split('\n')[0]
                 return first_line if first_line else None
         except Exception as e:
@@ -1497,7 +1497,7 @@ class LMStudioBenchmark:
     
     @staticmethod
     def get_nvidia_driver_version() -> Optional[str]:
-        """Ruft NVIDIA Driver Version ab"""
+        """Fetches NVIDIA driver version"""
         try:
             result = subprocess.run(
                 ['nvidia-smi', '--query-gpu=driver_version', '--format=csv,noheader'],
@@ -1603,7 +1603,7 @@ class LMStudioBenchmark:
     
     @staticmethod
     def get_python_version() -> Optional[str]:
-        """Ruft Python-Version ab"""
+        """Fetches Python version"""
         try:
             import sys
             return f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
@@ -1672,7 +1672,7 @@ class LMStudioBenchmark:
             'use_gtt': use_gtt,
         }
         
-        # Erfasse Versions-Informationen einmalig bei Benchmark-Start
+        # Capture version information once at benchmark start
         self.system_versions = {
             'lmstudio_version': self.get_lmstudio_version(),
             'nvidia_driver_version': self.get_nvidia_driver_version(),
@@ -1824,10 +1824,10 @@ class LMStudioBenchmark:
             logger.info(f"📊 VRAM prediction: {available_vram:.1f}GB available, "
                        f"{estimated_vram:.1f}GB estimated → offload {optimal_offload:.2f}")
             
-            return round(optimal_offload, 1)  # Runde auf 1 Dezimalstelle
+            return round(optimal_offload, 1)  # Round to 1 decimal place
         
         except Exception as e:
-            logger.debug(f"Offload-Prediction fehlgeschlagen: {e}")
+            logger.debug(f"Offload prediction failed: {e}")
             return 1.0
     
     def _get_cached_optimal_offload(self, model_key: str, model_size_gb: float) -> Optional[float]:
@@ -2046,7 +2046,7 @@ class LMStudioBenchmark:
         except Exception as e:
             logger.warning(f"⚠️ Error unloading all models: {e}")
         
-        # Parse Model-Name und Quantisierung
+        # Parse model name and quantization
         if '@' in model_key:
             model_name, quantization = model_key.split('@', 1)
         else:
@@ -2158,7 +2158,7 @@ class LMStudioBenchmark:
                             gpu_type=result.gpu_type,
                             gpu_offload=used_offload,
                             vram_mb=vram_after,
-                            avg_tokens_per_sec=measurement['tokens_per_second'],  # Dieser Run, nicht Durchschnitt
+                            avg_tokens_per_sec=measurement['tokens_per_second'],  # This run, not average
                             avg_ttft=measurement['time_to_first_token'],
                             avg_gen_time=measurement['generation_time'],
                             prompt_tokens=measurement['prompt_tokens'],
@@ -2182,8 +2182,8 @@ class LMStudioBenchmark:
                             min_p_sampling=result.min_p_sampling,
                             repeat_penalty=result.repeat_penalty,
                             max_tokens=result.max_tokens,
-                            num_runs=1,  # Dieser ist 1 Run
-                            runs_averaged_from=len(measurements),  # Aus N Runs
+                            num_runs=1,  # This is 1 run
+                            runs_averaged_from=len(measurements),  # From N runs
                             warmup_runs=NUM_WARMUP_RUNS,
                             run_index=run_idx,  # Index: 0, 1, 2
                             model_key=model_key,
@@ -2220,7 +2220,7 @@ class LMStudioBenchmark:
                 return None
                 
         except Exception as e:
-            logger.error(f"❌ Fehler beim Benchmarking von {model_key}: {e}")
+            logger.error(f"❌ Error benchmarking {model_key}: {e}")
             error_count += 1
             return None
     
@@ -2243,7 +2243,7 @@ class LMStudioBenchmark:
             return result.returncode == 0
         
         except Exception as e:
-            logger.error(f"❌ Fehler beim Laden von {model_key}: {e}")
+            logger.error(f"❌ Error loading {model_key}: {e}")
             return False
     
     def _unload_model(self, model_key: str):
@@ -2255,7 +2255,7 @@ class LMStudioBenchmark:
                 timeout=30
             )
         except Exception as e:
-            logger.warning(f"⚠️ Fehler beim Entladen von {model_key}: {e}")
+            logger.warning(f"⚠️ Error unloading {model_key}: {e}")
     
     def _run_inference(self, model_key: str) -> Optional[Dict]:
         """Performs inference and returns stats"""
@@ -2277,7 +2277,7 @@ class LMStudioBenchmark:
             if use_mmap is not None and isinstance(use_mmap, bool):
                 load_config_params['try_mmap'] = use_mmap
             
-            # KV-Cache Quantisierung (beide Typen K und V) - string literal type
+            # KV-Cache quantization (both K and V types) - string literal type
             kv_quant = self.load_params.get('kv_cache_quant')
             if kv_quant and isinstance(kv_quant, str) and kv_quant in ['f32', 'f16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1']:
                 load_config_params['llama_k_cache_quantization_type'] = kv_quant
@@ -2328,7 +2328,7 @@ class LMStudioBenchmark:
             
             generation_time = end_time - start_time
             
-            # Extrahiere Stats
+            # Extract stats
             stats = result.stats
             
             tokens_per_sec = 0.0
@@ -2344,7 +2344,7 @@ class LMStudioBenchmark:
             }
         
         except Exception as e:
-            logger.error(f"❌ Fehler bei Inferenz mit {model_key}: {e}")
+            logger.error(f"❌ Error during inference with {model_key}: {e}")
             return None
     
     def _calculate_averages(
@@ -2405,11 +2405,11 @@ class LMStudioBenchmark:
             has_tools=metadata.get('has_tools', False),
             tokens_per_sec_per_gb=tokens_per_sec_per_gb,
             tokens_per_sec_per_billion_params=tokens_per_sec_per_billion_params,
-            # GTT-Informationen (AMD GPUs)
+            # GTT information (AMD GPUs)
             gtt_enabled=self.use_gtt if self._gtt_info else None,
             gtt_total_gb=round(self._gtt_info.get('total', 0), 2) if self._gtt_info else None,
             gtt_used_gb=round(self._gtt_info.get('used', 0), 2) if self._gtt_info else None,
-            # Inference-Parameter (aus Benchmark-Konfiguration)
+            # Inference parameters (from benchmark configuration)
             temperature=self.inference_params.get('temperature'),
             top_k_sampling=self.inference_params.get('top_k_sampling'),
             top_p_sampling=self.inference_params.get('top_p_sampling'),
@@ -2420,7 +2420,7 @@ class LMStudioBenchmark:
             num_runs=self.num_measurement_runs,
             runs_averaged_from=len(measurements),
             warmup_runs=NUM_WARMUP_RUNS,
-            # Versions-Informationen (erfasst beim Start des Benchmarks)
+            # Version information (captured at benchmark start)
             lmstudio_version=self.system_versions.get('lmstudio_version'),
             nvidia_driver_version=self.system_versions.get('nvidia_driver_version'),
             rocm_driver_version=self.system_versions.get('rocm_driver_version'),
@@ -2439,7 +2439,7 @@ class LMStudioBenchmark:
         """Performs benchmarks for all available models"""
         # Ensure server is running
         if not LMStudioServerManager.ensure_server_running():
-            logger.error("❌ Server konnte nicht gestartet werden, breche ab")
+            logger.error("❌ Server could not be started, aborting")
             return
         
         # Initialize metadata cache early
@@ -2718,7 +2718,7 @@ class LMStudioBenchmark:
         return comparison
     
     def _generate_best_practices(self) -> List[str]:
-        """Generiert Best-Practice-Empfehlungen basierend auf Hardware und Benchmark-Ergebnissen"""
+        """Generates best-practice recommendations based on hardware and benchmark results"""
         recommendations = []
         
         if not self.results:
@@ -2792,7 +2792,7 @@ class LMStudioBenchmark:
         
         recommendations.append("")
         
-        # VRAM-basierte Empfehlungen
+        # VRAM-based recommendations
         vram_info = []
         for result in sorted(self.results, key=lambda x: x.model_size_gb)[:3]:
             if result.model_size_gb <= 4:
@@ -2828,7 +2828,7 @@ class LMStudioBenchmark:
                     if key not in trends:
                         trends[key] = []
                     
-                    # Extrahiere Datum aus Timestamp
+                    # Extract date from timestamp
                     timestamp_str = item.get('timestamp', '2026-01-01 00:00:00')
                     trends[key].append({
                         'timestamp': timestamp_str,
@@ -2837,7 +2837,7 @@ class LMStudioBenchmark:
                         'vram': item.get('vram_mb', 0)
                     })
             except Exception as e:
-                logger.debug(f"Fehler beim Laden von {json_file}: {e}")
+                logger.debug(f"Error loading {json_file}: {e}")
         
         return trends
     

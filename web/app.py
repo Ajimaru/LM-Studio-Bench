@@ -59,7 +59,7 @@ def setup_webapp_logger():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     log_file = logs_dir / f"webapp_{timestamp}.log"
 
-    # File Handler hinzufügen
+    # Add file handler
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setFormatter(logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -165,7 +165,7 @@ class BenchmarkManager:
                     )
 
                     if not line:
-                        # EOF erreicht - Prozess ist fertig
+                        # EOF reached - process is done
                         break
 
                     # Write immediately to log file
@@ -217,7 +217,7 @@ class BenchmarkManager:
     async def start_benchmark(self, args: list) -> bool:
         """Starts a new benchmark process"""
         if self.is_running():
-            logger.warning("Benchmark läuft bereits")
+            logger.warning("Benchmark already running")
             return False
 
         try:
@@ -248,8 +248,8 @@ class BenchmarkManager:
             # Start background task for continuous output reading
             self.output_task = asyncio.create_task(self._consume_output())
 
-            logger.info("✅ Benchmark gestartet mit PID %s", self.process.pid)
-            logger.info("📝 Benchmark-Log: %s", self.benchmark_log_file)
+            logger.info("✅ Benchmark started with PID %s", self.process.pid)
+            logger.info("📝 Benchmark log: %s", self.benchmark_log_file)
             return True
         except Exception as e:
             logger.error(f"❌ Error starting benchmark: {e}")
@@ -264,7 +264,7 @@ class BenchmarkManager:
         try:
             self.process.send_signal(signal.SIGSTOP)
             self.status = "paused"
-            logger.info("⏸️ Benchmark pausiert")
+            logger.info("⏸️ Benchmark paused")
             return True
         except Exception as e:
             logger.error(f"❌ Error pausing: {e}")
@@ -278,7 +278,7 @@ class BenchmarkManager:
         try:
             self.process.send_signal(signal.SIGCONT)
             self.status = "running"
-            logger.info("▶️ Benchmark fortgesetzt")
+            logger.info("▶️ Benchmark resumed")
             return True
         except Exception as e:
             logger.error(f"❌ Error resuming: {e}")
@@ -297,7 +297,7 @@ class BenchmarkManager:
                 self.process.wait(timeout=5)
                 logger.info("⏹️ Benchmark stopped (SIGTERM)")
             except TimeoutExpired:
-                # Fallback zu SIGKILL
+                # Fallback to SIGKILL
                 self.process.kill()
                 self.process.wait()
                 logger.warning("⏹️ Benchmark forcefully stopped (SIGKILL)")
@@ -417,7 +417,7 @@ class BenchmarkManager:
                     if output:
                         lines.append(output)
                     else:
-                        # Keine weitere Zeile verfügbar
+                        # No further line available
                         break
                 except asyncio.TimeoutError:
                     # Timeout bedeutet keine weiteren Zeilen verfügbar
