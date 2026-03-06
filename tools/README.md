@@ -7,13 +7,14 @@ This directory contains development tools and scripts for LM-Studio-Bench.
 ### Pre-commit Hook
 
 The pre-commit hook runs automatic code quality checks before each commit.
+Fixable issues are corrected automatically and re-staged.
 
 **Checks performed:**
 
-- **Python**: `isort` (import sorting), `flake8` (linting), `pylint` (code quality, optional)
+- **Python**: `isort` (import sorting with auto-fix), `flake8` (linting), `pylint` (code quality, optional)
 - **Shell**: `shellcheck` (bash/shell linting)
 - **Markdown**: `markdownlint` (markdown linting)
-- **HTML/Jinja**: `djlint` (template linting and formatting)
+- **HTML/Jinja**: `djlint` (template linting with auto-fix formatting)
 
 ### Installation
 
@@ -74,8 +75,8 @@ git commit -m "Your commit message"
 
 **If checks fail:**
 
-1. Fix the reported issues
-2. Stage the fixed files: `git add <files>`
+1. The hook auto-fixes `isort` and `djlint` issues and re-stages changes
+2. Fix remaining reported issues manually
 3. Commit again: `git commit -m "Your message"`
 
 **To skip the hook (not recommended):**
