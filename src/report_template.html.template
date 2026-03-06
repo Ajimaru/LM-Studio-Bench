@@ -223,10 +223,10 @@
         <h2>Performance Rankings</h2>
         <div class="chart" id="bar-chart"></div>
         
-        <h2>Modellgröße vs Performance</h2>
+        <h2>Model Size vs Performance</h2>
         <div class="chart" id="scatter-chart"></div>
         
-        <h2>Effizienz-Analyse</h2>
+        <h2>Efficiency Analysis</h2>
         <div class="chart" id="efficiency-chart"></div>
         
         {{TREND_SECTION}}

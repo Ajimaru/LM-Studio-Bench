@@ -1,0 +1,48 @@
+# Pylint Configuration for LM-Studio-Bench
+# See: https://pylint.readthedocs.io/
+
+[MASTER]
+# Load plugins
+load-plugins = pylint.extensions.docparams
+
+# Ignore patterns (test files and generated code)
+ignore-patterns = test_.*?\.py
+
+# Exclude directories (must match .flake8 and pyproject.toml)
+exclude-dirs = .git,__pycache__,.venv,venv,env,build,dist,.tox,.pytest_cache,.mypy_cache,node_modules,book
+
+[MESSAGES CONTROL]
+# Disable certain warnings
+disable=
+    too-many-arguments,
+    too-many-locals,
+    too-many-branches,
+    too-many-statements,
+
+[FORMAT]
+# Maximum line length (must match other tools)
+max-line-length = 88
+
+# McCabe complexity (1-10 very simple, 11-20 complex, 21+ very complex)
+max-locals = 15
+max-branches = 12
+max-statements = 50
+
+[BASIC]
+# Good variable names which should always be accepted, separated by a comma
+good-names=i,j,k,ex,Run,_
+
+[DESIGN]
+# Maximum number of attributes for class
+max-attributes=7
+
+# Maximum number of public methods
+max-public-methods=20
+
+[LOGGING]
+# Logging format style
+logging-format-style=new
+
+[SIMILARITIES]
+# Minimum lines number of a similarity (ignore-similarities=python)
+min-similarity-lines=5

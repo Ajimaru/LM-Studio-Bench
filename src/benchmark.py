@@ -70,7 +70,7 @@ class NoJSONFilter(logging.Filter):
 
 
 class AutoFlushStream:
-    """Wrapper der bei jedem write() automatisch flusht"""
+    """Wrapper that automatically flushes on every write()"""
     def __init__(self, stream):
         self.stream = stream
     
@@ -105,7 +105,7 @@ logging.getLogger("lmstudio").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("websockets").setLevel(logging.WARNING)
 
-BASE_STANDARD_PROMPT = "Erkläre maschinelles Lernen in 3 Sätzen"
+BASE_STANDARD_PROMPT = "Explain machine learning in 3 sentences"
 BASE_CONTEXT_LENGTH = 2048
 BASE_NUM_MEASUREMENT_RUNS = 3
 GPU_OFFLOAD_LEVELS = [1.0, 0.7, 0.5, 0.3]
@@ -142,7 +142,7 @@ DEFAULT_LOAD_PARAMS = {
 
 @dataclass
 class BenchmarkResult:
-    """Ergebnisse eines einzelnen Benchmark-Durchlaufs"""
+    """Results of a single benchmark run"""
     model_name: str
     quantization: str
     gpu_type: str
@@ -210,7 +210,7 @@ class BenchmarkResult:
 
 
 class HardwareMonitor:
-    """Echtzeit-Monitoring von GPU-Temperatur und Power-Draw"""
+    """Real-time monitoring of GPU temperature and power draw"""
     
     def __init__(self, gpu_type: Optional[str], gpu_tool: Optional[str], enabled: bool = False):
         self.gpu_type = gpu_type
@@ -238,7 +238,7 @@ class HardwareMonitor:
             self._init_amd_sysfs_paths()
     
     def _init_amd_sysfs_paths(self):
-        """Initialisiert AMD sysfs-Pfade beim Start"""
+        """Initializes AMD sysfs paths at startup"""
         try:
             for cardpath in glob.glob('/sys/class/drm/card*/device'):
                 vendor_file = Path(cardpath) / 'vendor'
@@ -258,16 +258,16 @@ class HardwareMonitor:
             pass
     
     def start(self):
-        """Starte Background-Monitoring"""
+        """Start background monitoring"""
         if not self.enabled:
-            logger.info("⚠️ Hardware-Monitoring deaktiviert (--enable-profiling nicht gesetzt)")
+            logger.info("⚠️ Hardware monitoring disabled (--enable-profiling not set)")
             return
         
         if not self.gpu_tool:
-            logger.warning("⚠️ Keine GPU-Tools gefunden - Hardware-Monitoring nicht verfügbar")
+            logger.warning("⚠️ No GPU tools found - hardware monitoring not available")
             return
         
-        logger.info(f"🔥 Starte Hardware-Monitoring (GPU: {self.gpu_type}, Tool: {self.gpu_tool})")
+        logger.info(f"🔥 Starting Hardware-Monitoring (GPU: {self.gpu_type}, Tool: {self.gpu_tool})")
         self.monitoring = True
         self.temps.clear()
         self.powers.clear()
@@ -275,7 +275,7 @@ class HardwareMonitor:
         self.thread.start()
     
     def stop(self) -> Dict[str, Optional[float]]:
-        """Stoppe Monitoring und gebe Statistiken zurück"""
+        """Stop monitoring and return statistics"""
         self.monitoring = False
         if self.thread:
             self.thread.join(timeout=2)
@@ -311,8 +311,8 @@ class HardwareMonitor:
         return stats
     
     def _monitor_loop(self):
-        """Background-Thread für kontinuierliche Messungen"""
-        logger.info("🔍 Hardware-Monitor-Thread gestartet")
+        """Background thread for continuous measurements"""
+        logger.info("🔍 Hardware-Monitor thread started")
         while self.monitoring:
             try:
                 temp = self._get_temperature()
@@ -327,25 +327,25 @@ class HardwareMonitor:
                         self.temps.append(temp)
                         logger.info(f"🌡️ GPU Temp: {temp:.1f}°C")
                     else:
-                        logger.debug(f"⚠️ Keine Temperatur gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
+                        logger.debug(f"⚠️ No temperature read (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
                     
                     if power is not None:
                         self.powers.append(power)
                         logger.info(f"⚡ GPU Power: {power:.1f}W")
                     else:
-                        logger.debug(f"⚠️ Keine Power gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
+                        logger.debug(f"⚠️ No power read (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
                     
                     if vram is not None:
                         self.vrams.append(vram)
                         logger.info(f"💾 GPU VRAM: {vram:.1f}GB")
                     else:
-                        logger.debug(f"⚠️ Keine VRAM gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
+                        logger.debug(f"⚠️ No VRAM read (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
                     
                     if gtt is not None:
                         self.gtts.append(gtt)
                         logger.info(f"🧠 GPU GTT: {gtt:.1f}GB")
                     else:
-                        logger.debug(f"⚠️ Keine GTT gelesen (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
+                        logger.debug(f"⚠️ No GTT read (gpu_type={self.gpu_type}, tool={self.gpu_tool})")
                     
                     if cpu is not None:
                         self.cpus.append(cpu)
@@ -357,9 +357,9 @@ class HardwareMonitor:
                 
                 time.sleep(1)
             except Exception as e:
-                logger.debug(f"Monitoring-Fehler: {e}")
+                logger.debug(f"Monitoring error: {e}")
                 time.sleep(2)
-        logger.info("🛑 Hardware-Monitor-Thread gestoppt")
+        logger.info("🛑 Hardware-Monitor thread stopped")
     
     def _get_temperature(self) -> Optional[float]:
         """Liest aktuelle GPU-Temperatur"""
@@ -456,7 +456,7 @@ class HardwareMonitor:
         return None
     
     def _get_vram_usage(self) -> Optional[float]:
-        """Liest GPU VRAM-Nutzung in GB"""
+        """Reads GPU VRAM usage in GB"""
         try:
             if not self.gpu_tool:
                 return None
@@ -498,7 +498,7 @@ class HardwareMonitor:
         return None
     
     def _get_gtt_usage(self) -> Optional[float]:
-        """Liest GTT-Nutzung in GB (System RAM für AMD GPUs)"""
+        """Reads GTT usage in GB (System RAM for AMD GPUs)"""
         try:
             if self.gpu_type != "AMD" or not self.gpu_tool:
                 return None
@@ -528,14 +528,14 @@ class HardwareMonitor:
         return None
     
     def _get_cpu_usage(self) -> Optional[float]:
-        """Liest System CPU-Auslastung in %"""
+        """Reads system CPU utilization in %"""
         try:
             return psutil.cpu_percent(interval=0.1)
         except Exception:
             return None
     
     def _get_ram_usage(self) -> Optional[float]:
-        """Liest System RAM-Nutzung in GB mit Smoothing (gleitendes Mittel über 7 Messungen)"""
+        """Reads system RAM usage in GB with smoothing (moving average over 7 measurements)"""
         try:
             mem = psutil.virtual_memory()
             current_ram = mem.used / (1024**3)
@@ -550,7 +550,7 @@ class HardwareMonitor:
 
 
 class BenchmarkCache:
-    """SQLite-Cache für Benchmark-Ergebnisse"""
+    """SQLite cache for benchmark results"""
     
     def __init__(self, db_path: Path = DATABASE_FILE):
         self.db_path = db_path
@@ -558,7 +558,7 @@ class BenchmarkCache:
         self._init_db()
     
     def _init_db(self):
-        """Erstellt Datenbank-Schema"""
+        """Creates database schema"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -632,10 +632,10 @@ class BenchmarkCache:
         try:
             cursor.execute("SELECT run_index FROM benchmark_results LIMIT 1")
         except sqlite3.OperationalError:
-            logger.info("📦 Migration: Füge run_index Spalte hinzu...")
+            logger.info("📦 Migration: Adding run_index column...")
             cursor.execute("ALTER TABLE benchmark_results ADD COLUMN run_index INTEGER")
             conn.commit()
-            logger.info("✅ Migration erfolgreich")
+            logger.info("✅ Migration successful")
         
         new_columns = [
             ("n_gpu_layers", "INTEGER"),
@@ -652,7 +652,7 @@ class BenchmarkCache:
             try:
                 cursor.execute(f"SELECT {col_name} FROM benchmark_results LIMIT 1")
             except sqlite3.OperationalError:
-                logger.info(f"📦 Migration: Füge {col_name} Spalte hinzu...")
+                logger.info(f"📦 Migration: Adding {col_name} column...")
                 cursor.execute(f"ALTER TABLE benchmark_results ADD COLUMN {col_name} {col_type}")
                 conn.commit()
         
@@ -661,7 +661,7 @@ class BenchmarkCache:
     
     @staticmethod
     def compute_params_hash(prompt: str, context_length: int, inference_params: dict, load_params: Optional[dict] = None) -> str:
-        """Berechnet Hash aus allen relevanten Parametern"""
+        """Calculates hash from all relevant parameters"""
         params_dict = {
             'prompt': prompt,
             'context_length': context_length,
@@ -673,7 +673,7 @@ class BenchmarkCache:
         return hashlib.md5(hash_input.encode()).hexdigest()[:8]
     
     def get_cached_result(self, model_key: str, params_hash: str) -> Optional[BenchmarkResult]:
-        """Holt gecachtes Ergebnis aus Datenbank"""
+        """Retrieves cached result from database"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -741,7 +741,7 @@ class BenchmarkCache:
     
     def save_result(self, result: BenchmarkResult, model_key: str, params_hash: str, 
                    prompt: str, context_length: int):
-        """Speichert Benchmark-Ergebnis in Datenbank"""
+        """Saves benchmark result to database"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -770,7 +770,7 @@ class BenchmarkCache:
                 result.kv_cache_quant
             )
             
-            logger.debug(f"📊 INSERT: {len(values)} Werte für 56 Spalten")
+            logger.debug(f"📊 INSERT: {len(values)} values for 56 columns")
 
             placeholders = ", ".join("?" for _ in values)
 
@@ -794,12 +794,12 @@ class BenchmarkCache:
             
             conn.commit()
         except Exception as e:
-            logger.error(f"❌ Fehler beim Speichern in Cache: {e}")
+            logger.error(f"❌ Error saving to cache: {e}")
         finally:
             conn.close()
     
     def get_all_results(self) -> List[BenchmarkResult]:
-        """Lädt alle Benchmark-Ergebnisse aus der Datenbank"""
+        """Loads all benchmark results from the database"""
         conn = sqlite3.connect(self.db_path)
         try:
             cursor = conn.cursor()
@@ -921,13 +921,13 @@ class BenchmarkCache:
             
             return results
         except Exception as e:
-            logger.error(f"❌ Fehler beim Laden aller Ergebnisse: {e}")
+            logger.error(f"❌ Error loading all results: {e}")
             return []
         finally:
             conn.close()
     
     def list_cached_models(self) -> List[Dict]:
-        """Gibt alle gecachten Modelle zurück"""
+        """Returns all cached models"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -954,7 +954,7 @@ class BenchmarkCache:
         return results
     
     def export_to_json(self, output_file: Path):
-        """Exportiert Cache als JSON"""
+        """Exports cache as JSON"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -974,11 +974,11 @@ class BenchmarkCache:
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
         
-        logger.info(f"💾 Cache exportiert: {output_file}")
+        logger.info(f"💾 Cache exported: {output_file}")
 
 
 class GPUMonitor:
-    """Erkennt GPU-Typ und misst VRAM-Nutzung"""
+    """Detects GPU type and measures VRAM usage"""
     
     def __init__(self):
         self.gpu_type: Optional[str] = None
@@ -987,7 +987,7 @@ class GPUMonitor:
         self._detect_gpu()
     
     def _find_tool(self, tool_name: str, search_paths: List[str]) -> Optional[str]:
-        """Sucht Tool in PATH und spezifischen Pfaden"""
+        """Searches for tool in PATH and specific paths"""
         if shutil.which(tool_name):
             return tool_name
         
@@ -999,7 +999,7 @@ class GPUMonitor:
         return None
     
     def _find_amd_sysfs_path(self) -> Optional[str]:
-        """Findet AMD GPU sysfs-Pfad für direktes Monitoring"""
+        """Finds AMD GPU sysfs path for direct monitoring"""
         try:
             result = subprocess.run(
                 ['lspci', '-d', '1002:', '-n'],
@@ -1024,7 +1024,7 @@ class GPUMonitor:
             return None
     
     def _detect_gpu(self):
-        """Erkennt GPU-Typ und findet entsprechendes Monitoring-Tool"""
+        """Detects GPU type and finds corresponding monitoring tool"""
         nvidia_paths = ['/usr/bin', '/usr/local/bin', '/usr/local/cuda/bin']
         nvidia_tool = self._find_tool('nvidia-smi', nvidia_paths)
         if nvidia_tool:
@@ -1043,7 +1043,7 @@ class GPUMonitor:
                     self.gpu_model = "NVIDIA GPU"
             except Exception:
                 self.gpu_model = "NVIDIA GPU"
-            logger.info(f"🟢 NVIDIA GPU erkannt: {self.gpu_model}, Tool: {nvidia_tool}")
+            logger.info(f"🟢 NVIDIA GPU detected: {self.gpu_model}, Tool: {nvidia_tool}")
             return
         
         amd_paths = ['/usr/bin', '/usr/local/bin', '/opt/rocm/bin']
@@ -1056,7 +1056,7 @@ class GPUMonitor:
             self.gpu_type = "AMD"
             self.gpu_tool = amd_tool
             self.gpu_model = self._detect_amd_gpu_model()
-            logger.info(f"🔴 AMD GPU erkannt: {self.gpu_model}, Tool: {amd_tool}")
+            logger.info(f"🔴 AMD GPU detected: {self.gpu_model}, Tool: {amd_tool}")
             return
         
         amd_sysfs = self._find_amd_sysfs_path()
@@ -1065,7 +1065,7 @@ class GPUMonitor:
             self.gpu_tool = "sysfs"
             self.gpu_model = self._detect_amd_gpu_model()
             logger.info(
-                f"🔴 AMD GPU erkannt (sysfs): {self.gpu_model}, "
+                f"🔴 AMD GPU detected (sysfs): {self.gpu_model}, "
                 f"Path: {amd_sysfs}"
             )
             return
@@ -1076,15 +1076,15 @@ class GPUMonitor:
             self.gpu_type = "Intel"
             self.gpu_tool = intel_tool
             self.gpu_model = self._detect_intel_gpu_model()
-            logger.info(f"🔵 Intel GPU erkannt: {self.gpu_model}, Tool: {intel_tool}")
+            logger.info(f"🔵 Intel GPU detected: {self.gpu_model}, Tool: {intel_tool}")
             return
         
-        logger.warning("⚠️ Keine GPU-Monitoring-Tools gefunden. VRAM-Messung nicht verfügbar.")
+        logger.warning("⚠️ No GPU monitoring tools found. VRAM measurement not available.")
         self.gpu_type = "Unknown"
         self.gpu_model = "Unknown"
     
     def _detect_amd_gpu_model(self) -> str:
-        """Erkennt AMD GPU-Modellnamen mit Fallback-Kette"""
+        """Detects AMD GPU model name with fallback chain"""
         amd_device_mapping = {
             '150e': 'Radeon Graphics',
             '7340': 'Radeon RX 5700 XT',
@@ -1156,7 +1156,7 @@ class GPUMonitor:
         return "AMD GPU"
     
     def _detect_intel_gpu_model(self) -> str:
-        """Erkennt Intel GPU-Modellnamen"""
+        """Detects Intel GPU model name"""
         try:
             result = subprocess.run(
                 ['lspci', '-d', '8086::0300'],
@@ -1175,7 +1175,7 @@ class GPUMonitor:
         return "Intel GPU"
     
     def get_vram_usage(self) -> str:
-        """Misst aktuelle VRAM-Nutzung"""
+        """Measures current VRAM usage"""
         if not self.gpu_tool:
             return "N/A"
         
@@ -1222,17 +1222,17 @@ class GPUMonitor:
                 return "N/A"
         
         except (subprocess.TimeoutExpired, Exception) as e:
-            logger.warning(f"⚠️ VRAM-Messung fehlgeschlagen: {e}")
+            logger.warning(f"⚠️ VRAM measurement failed: {e}")
         
         return "N/A"
 
 
 class LMStudioServerManager:
-    """Verwaltet LM Studio Server-Lifecycle"""
+    """Manages LM Studio Server lifecycle"""
     
     @staticmethod
     def is_server_running() -> bool:
-        """Prüft ob LM Studio Server läuft"""
+        """Checks if LM Studio Server is running"""
         try:
             result = subprocess.run(
                 ['lms', 'server', 'status'],
@@ -1243,14 +1243,14 @@ class LMStudioServerManager:
             output = result.stdout + result.stderr
             return result.returncode == 0 and ('running' in output.lower() or 'port' in output.lower())
         except Exception as e:
-            logger.error(f"❌ Fehler bei Server-Status-Prüfung: {e}")
+            logger.error(f"❌ Error checking server status: {e}")
             return False
     
     @staticmethod
     def start_server():
         """Startet LM Studio Server"""
         try:
-            logger.info("🚀 Starte LM Studio Server...")
+            logger.info("🚀 Starting LM Studio Server...")
             subprocess.Popen(
                 ['lms', 'server', 'start'],
                 stdout=subprocess.PIPE,
@@ -1261,34 +1261,34 @@ class LMStudioServerManager:
             for i in range(max_retries):
                 time.sleep(2)
                 if LMStudioServerManager.is_server_running():
-                    logger.info("✅ LM Studio Server erfolgreich gestartet")
+                    logger.info("✅ LM Studio Server started successfully")
                     return True
             
-            logger.error("❌ Server-StartTimeout nach 60 Sekunden")
+            logger.error("❌ Server start timeout after 60 seconds")
             return False
         
         except Exception as e:
-            logger.error(f"❌ Fehler beim Starten des Servers: {e}")
+            logger.error(f"❌ Error starting server: {e}")
             return False
     
     @staticmethod
     def ensure_server_running():
-        """Stellt sicher dass Server läuft"""
+        """Ensures that server is running"""
         if not LMStudioServerManager.is_server_running():
-            logger.info("⚠️ Server läuft nicht, starte Server...")
+            logger.info("⚠️ Server not running, starting server...")
             return LMStudioServerManager.start_server()
-        logger.info("✅ Server läuft bereits")
+        logger.info("✅ Server already running")
         return True
 
 
 class ModelDiscovery:
-    """Findet alle lokal installierten Modelle"""
+    """Finds all locally installed models"""
     
     _metadata_cache: Dict[str, Dict] = {}
     
     @staticmethod
     def _get_metadata_cache() -> Dict[str, Dict]:
-        """Cache für Modell-Metadaten (geladen einmal am Anfang)"""
+        """Cache for model metadata (loaded once at startup)"""
         if not ModelDiscovery._metadata_cache:
             try:
                 result = subprocess.run(
@@ -1311,12 +1311,12 @@ class ModelDiscovery:
                                 'has_tools': model_data.get('trainedForToolUse', False),
                             }
             except Exception as e:
-                logger.warning(f"⚠️ Fehler beim Laden von Metadaten-Cache: {e}")
+                logger.warning(f"⚠️ Error loading metadata cache: {e}")
         return ModelDiscovery._metadata_cache
     
     @staticmethod
     def get_model_metadata(model_key: str) -> Dict:
-        """Hole Metadaten für ein bestimmtes Modell"""
+        """Get metadata for a specific model"""
         cache = ModelDiscovery._get_metadata_cache()
         base_model = model_key.split('@')[0] if '@' in model_key else model_key
         return cache.get(base_model, {
@@ -1330,7 +1330,7 @@ class ModelDiscovery:
 
     @staticmethod
     def get_scraped_metadata(model_key: str) -> Dict:
-        """Liest optionale, gescrapete Metadaten aus model_metadata.db."""
+        """Reads optional, scraped metadata from model_metadata.db."""
         if not METADATA_DATABASE_FILE.exists():
             return {}
         base_key = model_key.split('@')[0] if '@' in model_key else model_key
@@ -1345,12 +1345,12 @@ class ModelDiscovery:
             conn.close()
             return dict(row) if row else {}
         except Exception as e:
-            logger.warning(f"⚠️ Konnte gescrapete Metadaten nicht lesen: {e}")
+            logger.warning(f"⚠️ Could not read scraped metadata: {e}")
             return {}
     
     @staticmethod
     def get_installed_models() -> List[str]:
-        """Listet alle lokal installierten Modelle und Quantisierungen auf"""
+        """Lists all locally installed models and quantizations"""
         try:
             result = subprocess.run(
                 ['lms', 'ls', '--json'],
@@ -1360,7 +1360,7 @@ class ModelDiscovery:
             )
             
             if result.returncode != 0:
-                logger.error(f"❌ Fehler bei 'lms ls': {result.stderr}")
+                logger.error(f"❌ Error with 'lms ls': {result.stderr}")
                 return []
             
             models = []
@@ -1375,20 +1375,20 @@ class ModelDiscovery:
                     else:
                         models.append(model_data.get('modelKey'))
             
-            logger.info(f"🔍 {len(models)} Modelle gefunden")
+            logger.info(f"🔍 {len(models)} models found")
             if models:
-                logger.info("📋 Erste 5 Modelle:")
+                logger.info("📋 First 5 models:")
                 for model in models[:5]:
                     logger.info(f"  • {model}")
             return models
         
         except Exception as e:
-            logger.error(f"❌ Fehler beim Abrufen der Modelle: {e}")
+            logger.error(f"❌ Error fetching models: {e}")
             return []
     
     @staticmethod
     def filter_models(models: List[str], filter_args: Dict) -> List[str]:
-        """Filtert Modelle basierend auf CLI-Argumenten"""
+        """Filters models based on CLI arguments"""
         if not filter_args:
             return models
         
@@ -1402,14 +1402,14 @@ class ModelDiscovery:
             try:
                 include_pattern = re.compile(filter_args['include_models'], re.IGNORECASE)
             except re.error as e:
-                logger.error(f"❌ Ungültiges include-models Pattern: {e}")
+                logger.error(f"❌ Invalid include-models pattern: {e}")
                 return []
         
         if filter_args.get('exclude_models'):
             try:
                 exclude_pattern = re.compile(filter_args['exclude_models'], re.IGNORECASE)
             except re.error as e:
-                logger.error(f"❌ Ungültiges exclude-models Pattern: {e}")
+                logger.error(f"❌ Invalid exclude-models pattern: {e}")
                 return []
         
         for model_key in models:
@@ -1453,16 +1453,16 @@ class ModelDiscovery:
             
             filtered.append(model_key)
         
-        logger.info(f"✔️ Nach Filterung: {len(filtered)}/{len(models)} Modelle übrig")
+        logger.info(f"✔️ After filtering: {len(filtered)}/{len(models)} models remaining")
         return filtered
 
 
 class LMStudioBenchmark:
-    """Haupt-Benchmark-Klasse"""
+    """Main benchmark class"""
     
     @staticmethod
     def get_lmstudio_version() -> Optional[str]:
-        """Ruft LM Studio Version ab"""
+        """Retrieves LM Studio version"""
         try:
             result = subprocess.run(['lms', 'version'], capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
@@ -1486,12 +1486,12 @@ class LMStudioBenchmark:
                 first_line = stdout.split('\n')[0] if stdout else None
                 return first_line if first_line else None
         except Exception as e:
-            logger.debug(f"Fehler beim Abrufen der LM Studio Version: {e}")
+            logger.debug(f"Error fetching LM Studio version: {e}")
         return None
     
     @staticmethod
     def get_nvidia_driver_version() -> Optional[str]:
-        """Ruft NVIDIA Driver Version ab"""
+        """Retrieves NVIDIA Driver version"""
         try:
             result = subprocess.run(
                 ['nvidia-smi', '--query-gpu=driver_version', '--format=csv,noheader'],
@@ -1501,12 +1501,12 @@ class LMStudioBenchmark:
                 version = result.stdout.strip()
                 return version if version else None
         except Exception:
-            logger.debug("NVIDIA Driver nicht verfügbar")
+            logger.debug("NVIDIA driver not available")
         return None
     
     @staticmethod
     def get_rocm_driver_version() -> Optional[str]:
-        """Ruft AMD ROCm/Driver Version ab"""
+        """Retrieves AMD ROCm/Driver version"""
         try:
             rocm_paths = ['/usr/bin/rocm-smi', '/usr/local/bin/rocm-smi']
             rocm_paths.extend(glob.glob('/opt/rocm-*/bin/rocm-smi'))
@@ -1560,12 +1560,12 @@ class LMStudioBenchmark:
                 pass
                     
         except Exception:
-            logger.debug("ROCm Driver nicht verfügbar")
+            logger.debug("ROCm driver not available")
         return None
     
     @staticmethod
     def get_intel_driver_version() -> Optional[str]:
-        """Ruft Intel GPU Driver Version ab"""
+        """Retrieves Intel GPU Driver version"""
         try:
             result = subprocess.run(
                 ['intel_gpu_top', '--help'],
@@ -1579,12 +1579,12 @@ class LMStudioBenchmark:
                             return parts[i + 1]
                     return line.strip()
         except Exception:
-            logger.debug("Intel GPU Driver nicht verfügbar")
+            logger.debug("Intel GPU driver not available")
         return None
     
     @staticmethod
     def get_os_info() -> Tuple[Optional[str], Optional[str]]:
-        """Ruft Betriebssystem und Kernel-Version ab"""
+        """Retrieves operating system and kernel version"""
         try:
             import platform
             os_system = platform.system()
@@ -1604,29 +1604,29 @@ class LMStudioBenchmark:
                 os_version = platform.release()
                 return os_name, os_version
         except Exception:
-            logger.debug("OS-Info nicht verfügbar")
+            logger.debug("OS info not available")
         return None, None
     
     @staticmethod
     def get_cpu_model() -> Optional[str]:
-        """Ruft CPU-Modell ab"""
+        """Retrieves CPU model"""
         try:
             import cpuinfo
             cpu = cpuinfo.get_cpu_info()
             brand = cpu.get('brand_raw', '')
             return brand if brand else None
         except Exception:
-            logger.debug("CPU-Info nicht verfügbar")
+            logger.debug("CPU info not available")
         return None
     
     @staticmethod
     def get_python_version() -> Optional[str]:
-        """Ruft Python-Version ab"""
+        """Retrieves Python version"""
         try:
             import sys
             return f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         except Exception:
-            logger.debug("Python-Version nicht verfügbar")
+            logger.debug("Python version not available")
         return None
     
     def __init__(self, num_runs: int = NUM_MEASUREMENT_RUNS, context_length: int = CONTEXT_LENGTH, prompt: str = STANDARD_PROMPT, model_limit: Optional[int] = None, filter_args: Optional[Dict] = None, compare_with: Optional[str] = None, rank_by: str = 'speed', use_cache: bool = True, enable_profiling: bool = False, max_temp: Optional[float] = None, max_power: Optional[float] = None, use_gtt: bool = True, inference_overrides: Optional[Dict] = None, load_params: Optional[Dict] = None, use_rest_api: Optional[bool] = None):
@@ -1654,9 +1654,9 @@ class LMStudioBenchmark:
             base_url = f"http://{lmstudio_config.get('host', 'localhost')}:{lmstudio_config.get('ports', [1234])[0]}"
             api_token = lmstudio_config.get('api_token')
             self.rest_client = LMStudioRESTClient(base_url=base_url, api_token=api_token)
-            logger.info(f"🌐 REST API Modus aktiviert: {base_url}")
+            logger.info(f"🌐 REST API mode enabled: {base_url}")
         else:
-            logger.info("🔧 SDK/CLI Modus aktiviert")
+            logger.info("🔧 SDK/CLI mode enabled")
         
         self.load_params = dict(DEFAULT_LOAD_PARAMS)
         if load_params:
@@ -1741,7 +1741,7 @@ class LMStudioBenchmark:
                 pass
     
     def _get_available_vram_gb(self) -> Optional[float]:
-        """Ermittelt verfügbares VRAM in GB (inkl. GTT wenn aktiviert)"""
+        """Determines available VRAM in GB (incl. GTT if enabled)"""
         try:
             gpu_type = self.gpu_monitor.gpu_type
             gpu_model = self.gpu_monitor.gpu_model or self.gpu_monitor.gpu_type
@@ -1795,7 +1795,7 @@ class LMStudioBenchmark:
                         logger.info(f"💾 Memory: {vram_free:.1f}GB VRAM + {gtt_free:.1f}GB GTT = {total_available:.1f}GB total")
                         return total_available
                     else:
-                        logger.info(f"💾 Memory: {vram_free:.1f}GB VRAM (GTT deaktiviert)")
+                        logger.info(f"💾 Memory: {vram_free:.1f}GB VRAM (GTT disabled)")
                         return vram_free
             
             elif gpu_type == "Intel":
@@ -1804,16 +1804,16 @@ class LMStudioBenchmark:
             return None
         
         except Exception as e:
-            logger.debug(f"VRAM-Abfrage fehlgeschlagen: {e}")
+            logger.debug(f"VRAM query failed: {e}")
             return None
     
     def _predict_optimal_offload(self, model_size_gb: float) -> float:
-        """Berechnet optimalen GPU-Offload basierend auf VRAM und Modellgröße"""
+        """Calculates optimal GPU offload based on VRAM and model size"""
         try:
             available_vram = self._get_available_vram_gb()
             
             if available_vram is None:
-                logger.debug("VRAM nicht verfügbar, verwende Standard-Levels")
+                logger.debug("VRAM not available, using default levels")
                 return 1.0
 
             estimated_vram = model_size_gb * 1.2
@@ -1823,7 +1823,7 @@ class LMStudioBenchmark:
             safe_vram = available_vram - VRAM_SAFETY_HEADROOM_GB
             
             if safe_vram <= 0:
-                logger.warning(f"⚠️ Zu wenig VRAM verfügbar: {available_vram:.1f}GB")
+                logger.warning(f"⚠️ Too little VRAM available: {available_vram:.1f}GB")
                 return 0.3
             
             if estimated_vram <= safe_vram:
@@ -1832,8 +1832,8 @@ class LMStudioBenchmark:
                 optimal_offload = safe_vram / estimated_vram
                 optimal_offload = max(0.3, min(1.0, optimal_offload))
             
-            logger.info(f"📊 VRAM-Prediction: {available_vram:.1f}GB verfügbar, "
-                       f"{estimated_vram:.1f}GB geschätzt → Offload {optimal_offload:.2f}")
+            logger.info(f"📊 VRAM prediction: {available_vram:.1f}GB available, "
+                       f"{estimated_vram:.1f}GB estimated → Offload {optimal_offload:.2f}")
             
             return round(optimal_offload, 1)
         
@@ -1842,7 +1842,7 @@ class LMStudioBenchmark:
             return 1.0
     
     def _get_cached_optimal_offload(self, model_key: str, model_size_gb: float) -> Optional[float]:
-        """Holt optimalen Offload aus Cache für ähnliche Modelle"""
+        """Gets optimal offload from cache for similar models"""
         if not self.cache:
             return None
         
@@ -1873,7 +1873,7 @@ class LMStudioBenchmark:
                 offloads = [r[0] for r in results]
                 avg_offload = sum(offloads) / len(offloads)
                 logger.info(f"📚 Cache-Hit: Verwende durchschn. Offload {avg_offload:.2f} "
-                           f"für {architecture} (~{model_size_gb:.1f}GB)")
+                           f"for {architecture} (~{model_size_gb:.1f}GB)")
                 return round(avg_offload, 1)
             
             return None
@@ -1883,7 +1883,7 @@ class LMStudioBenchmark:
             return None
     
     def _get_smart_offload_levels(self, model_key: str, model_size_gb: float) -> List[float]:
-        """Generiert intelligente GPU-Offload-Levels basierend auf Vorhersage und Cache"""
+        """Generates intelligent GPU offload levels based on prediction and cache"""
         cached_offload = self._get_cached_optimal_offload(model_key, model_size_gb)
         if cached_offload:
             levels = [cached_offload]
@@ -1907,7 +1907,7 @@ class LMStudioBenchmark:
         return sorted(set(levels), reverse=True)
     
     def _load_previous_results(self):
-        """Lädt frühere Benchmark-Ergebnisse zum Vergleich"""
+        """Loads previous benchmark results for comparison"""
         try:
             if not self.compare_with:
                 return
@@ -1918,26 +1918,26 @@ class LMStudioBenchmark:
                 if self.compare_with.lower() == "latest":
                     json_files = sorted(RESULTS_DIR.glob('benchmark_results_*.json'))
                     if not json_files:
-                        logger.warning("⚠️ Keine früheren Benchmark-Dateien gefunden")
+                        logger.warning("⚠️ No previous benchmark files found")
                         return
                     json_file = json_files[-1]
                 else:
                     json_file = RESULTS_DIR / f"benchmark_results_{self.compare_with}.json"
             
             if not json_file.exists():
-                logger.warning(f"⚠️ Datei nicht gefunden: {json_file}")
+                logger.warning(f"⚠️ File not found: {json_file}")
                 return
             
             with open(json_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 self.previous_results = [BenchmarkResult(**item) for item in data]
             
-            logger.info(f"✓ {len(self.previous_results)} frühere Ergebnisse geladen aus {json_file.name}")
+            logger.info(f"✓ {len(self.previous_results)} previous results loaded from {json_file.name}")
         except Exception as e:
-            logger.error(f"❌ Fehler beim Laden von frühen Ergebnissen: {e}")
+            logger.error(f"❌ Error loading previous results: {e}")
     
     def _matches_filters(self, result: BenchmarkResult) -> bool:
-        """Prüft ob ein BenchmarkResult die aktiven Filter erfüllt"""
+        """Checks if a BenchmarkResult passes the active filters"""
         if self.filter_args.get('only_vision') and not result.has_vision:
             return False
         
@@ -1990,7 +1990,7 @@ class LMStudioBenchmark:
         return True
     
     def _calculate_delta(self, current: BenchmarkResult) -> Optional[Dict]:
-        """Berechnet Delta zu früherem Benchmark für selbes Modell+Quantisierung"""
+        """Calculates delta to previous benchmark for same model+quantization"""
         if not self.previous_results:
             return None
         
@@ -2010,8 +2010,8 @@ class LMStudioBenchmark:
         return None
     
     def benchmark_model(self, model_key: str) -> Optional[BenchmarkResult]:
-        """Führt Benchmark für ein spezifisches Modell durch"""
-        logger.info(f"🎯 Starte Benchmark für {model_key}")
+        """Performs benchmark for a specific model"""
+        logger.info(f"🎯 Starting benchmark for {model_key}")
         
         benchmark_start_time = time.time()
         error_count = 0
@@ -2022,10 +2022,10 @@ class LMStudioBenchmark:
                 for model in models:
                     for instance in model.loaded_instances:
                         self._unload_model_rest(instance.instance_id)
-                logger.info("🧹 Alle Modelle via REST entladen")
+                logger.info("🧹 All models unloaded via REST")
                 time.sleep(1)
             except Exception as e:
-                logger.warning(f"⚠️ REST Fehler beim Entladen: {e}")
+                logger.warning(f"⚠️ REST error unloading: {e}")
         else:
             try:
                 subprocess.run(
@@ -2034,10 +2034,10 @@ class LMStudioBenchmark:
                     text=True,
                     timeout=30
                 )
-                logger.info("🧹 Alle Modelle entladen")
+                logger.info("🧹 All models unloaded")
                 time.sleep(1)
             except Exception as e:
-                logger.warning(f"⚠️ Fehler beim Entladen aller Modelle: {e}")
+                logger.warning(f"⚠️ Error unloading all models: {e}")
         
         if '@' in model_key:
             model_name, quantization = model_key.split('@', 1)
@@ -2058,7 +2058,7 @@ class LMStudioBenchmark:
             try:
                 instance_id = self._load_model_rest(model_key, used_offload)
                 if not instance_id:
-                    logger.info(f"⬇️ Modell nicht geladen; starte Download für {model_key}")
+                    logger.info(f"⬇️ Model not loaded; starting download for {model_key}")
                     try:
                         self.rest_client.download_model(model_key)
                         time.sleep(3)
@@ -2073,16 +2073,16 @@ class LMStudioBenchmark:
                 logger.warning(f"⚠️ REST error while loading model: {e}")
         
         try:
-            logger.info(f"🔥 Warmup für {model_key}...")
+            logger.info(f"🔥 Warmup for {model_key}...")
             for _ in range(NUM_WARMUP_RUNS):
                 warmup_result = self._run_inference(model_key, instance_id)
                 if not warmup_result:
-                    logger.error(f"❌ Warmup für {model_key} fehlgeschlagen")
+                    logger.error(f"❌ Warmup for {model_key} failed")
                     return None
             
             self.hardware_monitor.start()
             
-            logger.info(f"📊 Führe {self.num_measurement_runs} Messungen durch...")
+            logger.info(f"📊 Performing {self.num_measurement_runs} measurements...")
             measurements = []
             vram_after = "N/A"
             for run in range(self.num_measurement_runs):
@@ -2117,10 +2117,10 @@ class LMStudioBenchmark:
                     result.power_watts_avg = profiling_stats.get('power_watts_avg')
                     
                     if self.max_temp and result.temp_celsius_max and result.temp_celsius_max > self.max_temp:
-                        logger.warning(f"⚠️ Max. Temperatur überschritten: {result.temp_celsius_max:.1f}°C > {self.max_temp}°C")
+                        logger.warning(f"⚠️ Max. temperature exceeded: {result.temp_celsius_max:.1f}°C > {self.max_temp}°C")
                     
                     if self.max_power and result.power_watts_max and result.power_watts_max > self.max_power:
-                        logger.warning(f"⚠️ Max. Power überschritten: {result.power_watts_max:.1f}W > {self.max_power}W")
+                        logger.warning(f"⚠️ Max. power exceeded: {result.power_watts_max:.1f}W > {self.max_power}W")
                 
                 benchmark_end_time = time.time()
                 result.benchmark_duration_seconds = round(benchmark_end_time - benchmark_start_time, 2)
@@ -2209,16 +2209,16 @@ class LMStudioBenchmark:
 
                 return result
             else:
-                logger.error(f"❌ Keine erfolgreichen Messungen für {model_key}")
+                logger.error(f"❌ No successful measurements for {model_key}")
                 return None
                 
         except Exception as e:
-            logger.error(f"❌ Fehler beim Benchmarking von {model_key}: {e}")
+            logger.error(f"❌ Error benchmarking {model_key}: {e}")
             error_count += 1
             return None
     
     def _load_model(self, model_key: str, gpu_offload: float) -> bool:
-        """Lädt ein Modell in den Speicher"""
+        """Loads a model into memory"""
         try:
             cmd = [
                 'lms', 'load', model_key,
@@ -2236,11 +2236,11 @@ class LMStudioBenchmark:
             return result.returncode == 0
         
         except Exception as e:
-            logger.error(f"❌ Fehler beim Laden von {model_key}: {e}")
+            logger.error(f"❌ Error loading {model_key}: {e}")
             return False
     
     def _unload_model(self, model_key: str):
-        """Entlädt ein Modell aus dem Speicher"""
+        """Unloads a model from memory"""
         try:
             subprocess.run(
                 ['lms', 'unload', model_key],
@@ -2248,17 +2248,17 @@ class LMStudioBenchmark:
                 timeout=30
             )
         except Exception as e:
-            logger.warning(f"⚠️ Fehler beim Entladen von {model_key}: {e}")
+            logger.warning(f"⚠️ Error unloading {model_key}: {e}")
     
     def _run_inference(self, model_key: str, instance_id: Optional[str] = None) -> Optional[Dict]:
-        """Führt Inferenz durch und gibt Stats zurück (dispatcher)."""
+        """Performs inference and returns stats (dispatcher)."""
         if self.use_rest_api:
             return self._run_inference_rest(model_key, instance_id)
         else:
             return self._run_inference_sdk(model_key)
     
     def _run_inference_sdk(self, model_key: str) -> Optional[Dict]:
-        """Führt Inferenz via SDK durch und gibt Stats zurück."""
+        """Performs inference via SDK and returns stats."""
         try:
             import lmstudio as lms
             
@@ -2330,13 +2330,13 @@ class LMStudioBenchmark:
             }
         
         except Exception as e:
-            logger.error(f"❌ Fehler bei Inferenz mit {model_key}: {e}")
+            logger.error(f"❌ Error during inference with {model_key}: {e}")
             return None
     
     def _run_inference_rest(self, model_key: str, instance_id: Optional[str] = None) -> Optional[Dict]:
-        """Führt Inferenz via REST API durch und gibt Stats zurück."""
+        """Performs inference via REST API and returns stats."""
         if not self.rest_client:
-            logger.error("❌ REST Client nicht initialisiert")
+            logger.error("❌ REST Client not initialized")
             return None
         
         try:
@@ -2352,7 +2352,7 @@ class LMStudioBenchmark:
             
             stats = result.get('stats')
             if not stats:
-                logger.warning("⚠️ Keine Stats in REST Response")
+                logger.warning("⚠️ No stats in REST response")
                 return None
             
             tokens_per_sec = stats.tokens_per_second
@@ -2370,11 +2370,11 @@ class LMStudioBenchmark:
             }
         
         except Exception as e:
-            logger.error(f"❌ REST Fehler bei Inferenz mit {model_key}: {e}")
+            logger.error(f"❌ REST error during inference with {model_key}: {e}")
             return None
     
     def _load_model_rest(self, model_key: str, gpu_offload: Optional[float] = None) -> Optional[str]:
-        """Lädt ein Modell via REST API."""
+        """Loads a model via REST API."""
         if not self.rest_client:
             return None
         
@@ -2390,24 +2390,24 @@ class LMStudioBenchmark:
                 gpu_offload=gpu_offload,
             )
             
-            logger.info(f"✓ Modell via REST geladen: {instance_id}")
+            logger.info(f"✓ Model loaded via REST: {instance_id}")
             return instance_id
         
         except Exception as e:
-            logger.error(f"❌ REST Fehler beim Laden von {model_key}: {e}")
+            logger.error(f"❌ REST error loading {model_key}: {e}")
             return None
     
     def _unload_model_rest(self, instance_id: str) -> bool:
-        """Entlädt ein Modell via REST API."""
+        """Unloads a model via REST API."""
         if not self.rest_client:
             return False
         
         try:
             self.rest_client.unload_model(instance_id)
-            logger.info(f"✓ Modell via REST entladen: {instance_id}")
+            logger.info(f"✓ Model unloaded via REST: {instance_id}")
             return True
         except Exception as e:
-            logger.warning(f"⚠️ REST Fehler beim Entladen: {e}")
+            logger.warning(f"⚠️ REST error unloading: {e}")
             return False
     
     def _calculate_averages(
@@ -2419,7 +2419,7 @@ class LMStudioBenchmark:
         measurements: List[Dict],
         model_key: str
     ) -> BenchmarkResult:
-        """Berechnet Durchschnittswerte aus Messungen"""
+        """Calculates average values from measurements"""
         avg_tokens_per_sec = sum(m['tokens_per_second'] for m in measurements) / len(measurements)
         avg_ttft = sum(m['time_to_first_token'] for m in measurements) / len(measurements)
         avg_gen_time = sum(m['generation_time'] for m in measurements) / len(measurements)
@@ -2485,21 +2485,21 @@ class LMStudioBenchmark:
         return result
     
     def run_all_benchmarks(self):
-        """Führt Benchmarks für alle verfügbaren Modelle durch"""
+        """Performs benchmarks for all available models"""
         if not LMStudioServerManager.ensure_server_running():
-            logger.error("❌ Server konnte nicht gestartet werden, breche ab")
+            logger.error("❌ Server could not be started, aborting")
             return
         
         ModelDiscovery._get_metadata_cache()
         
         models = ModelDiscovery.get_installed_models()
         if not models:
-            logger.error("❌ Keine Modelle gefunden")
+            logger.error("❌ No models found")
             return
         
         models = ModelDiscovery.filter_models(models, self.filter_args)
         if not models:
-            logger.error("❌ Keine Modelle nach Filterung übrig")
+            logger.error("❌ No models remaining after filtering")
             return
         
         newly_tested_models = []
@@ -2515,37 +2515,37 @@ class LMStudioBenchmark:
                     new_models.append(model_key)
             
             if self.model_limit and self.model_limit < len(new_models):
-                logger.info(f"⚙️ Modell-Limit gesetzt: Testet max. {self.model_limit} neue Modelle (+ {len(cached_models)} gecachte)")
+                logger.info(f"⚙️ Model limit set: Testing max. {self.model_limit} new models (+ {len(cached_models)} cached)")
                 new_models = new_models[:self.model_limit]
             elif self.model_limit:
-                logger.info(f"⚙️ Modell-Limit: {len(new_models)} neue Modelle + {len(cached_models)} gecachte = {len(new_models) + len(cached_models)} gesamt")
+                logger.info(f"⚙️ Model limit: {len(new_models)} new models + {len(cached_models)} cached = {len(new_models) + len(cached_models)} total")
             
             if cached_models:
                 logger.info("")
-                logger.info("📦 === Gecachte Modelle ===")
-                logger.info(f"💾 {len(cached_models)} Modelle bereits getestet (werden aus Cache geladen):")
+                logger.info("📦 === Cached Models ===")
+                logger.info(f"💾 {len(cached_models)} models already tested (will be loaded from cache):")
                 for model_key, cached in cached_models[:10]:
                     date_part = cached.timestamp.split('T')[0] if 'T' in cached.timestamp else cached.timestamp[:10]
                     logger.info(f"  • {model_key}: {cached.avg_tokens_per_sec:.2f} tok/s (zuletzt: {date_part})")
                 if len(cached_models) > 10:
-                    logger.info(f"  ... und {len(cached_models) - 10} weitere")
+                    logger.info(f"  ... and {len(cached_models) - 10} more")
                 logger.info("")
 
                 for model_key, cached in cached_models:
                     self.results.append(cached)
             
             if new_models:
-                logger.info(f"🚀 Starte Benchmark für {len(new_models)} neue Modelle...")
+                logger.info(f"🚀 Starting benchmark for {len(new_models)} new models...")
                 models = new_models
             else:
-                logger.info("✅ Alle Modelle bereits gecacht - keine neuen Tests notwendig")
-                logger.info("📝 Reports werden übersprungen (keine neuen Daten)")
+                logger.info("✅ All models already cached - no new tests necessary")
+                logger.info("📝 Reports will be skipped (no new data)")
                 return
         else:
             if self.model_limit and self.model_limit < len(models):
-                logger.info(f"⚙️ Modell-Limit gesetzt: Testet nur erste {self.model_limit} von {len(models)} Modellen")
+                logger.info(f"⚙️ Model limit set: Testing only first {self.model_limit} of {len(models)} models")
                 models = models[:self.model_limit]
-            logger.info(f"🚀 Starte Benchmark für {len(models)} Modelle...")
+            logger.info(f"🚀 Starting benchmark for {len(models)} models...")
         
         for model_key in tqdm(models, desc="Benchmarking Modelle"):
             result = self.benchmark_model(model_key)
@@ -2554,10 +2554,10 @@ class LMStudioBenchmark:
                 newly_tested_models.append(result)
         
         if newly_tested_models:
-            logger.info(f"📊 Exportiere Reports für {len(newly_tested_models)} neu getestete Modelle...")
+            logger.info(f"📊 Exporting reports for {len(newly_tested_models)} newly tested models...")
             self._export_results_to_files(newly_tested_models)
         else:
-            logger.warning("⚠️ Keine neuen Modelle getestet - keine Reports generiert")
+            logger.warning("⚠️ No new models tested - no reports generated")
         
         try:
             subprocess.run(
@@ -2566,15 +2566,15 @@ class LMStudioBenchmark:
                 text=True,
                 timeout=30
             )
-            logger.info("🧹 Alle Modelle entladen (Cleanup)")
+            logger.info("🧹 All models unloaded (cleanup)")
             time.sleep(1)
         except Exception as e:
-            logger.warning(f"⚠️ Fehler beim Entladen aller Modelle: {e}")
+            logger.warning(f"⚠️ Error unloading all models: {e}")
         
-        logger.info(f"✅ Benchmark abgeschlossen. {len(newly_tested_models)}/{len(models)} Modelle erfolgreich getestet")
+        logger.info(f"✅ Benchmark completed. {len(newly_tested_models)}/{len(models)} models successfully tested")
     
     def _analyze_best_quantizations(self) -> Dict[str, Dict]:
-        """Analysiert beste Quantisierung pro Modell nach verschiedenen Kriterien"""
+        """Analyzes best quantization per model based on different criteria"""
         best_by_model = {}
         
         for result in self.results:
@@ -2605,7 +2605,7 @@ class LMStudioBenchmark:
         return best_by_model
     
     def sort_results(self, rank_by: str = 'speed') -> List[BenchmarkResult]:
-        """Sortiert Ergebnisse nach verschiedenen Kriterien"""
+        """Sorts results by different criteria"""
         if rank_by == 'speed':
             return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
         elif rank_by == 'efficiency':
@@ -2623,7 +2623,7 @@ class LMStudioBenchmark:
             return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
     
     def calculate_percentile_stats(self) -> Dict[str, Dict]:
-        """Berechnet P50, P95, P99 Statistiken für Benchmark-Metriken"""
+        """Calculates P50, P95, P99 statistics for benchmark metrics"""
         if not self.results or len(self.results) < 3:
             return {}
         
@@ -2678,7 +2678,7 @@ class LMStudioBenchmark:
         return stats
     
     def generate_quantization_comparison(self) -> Dict[str, Dict]:
-        """Generiert Vergleichstabelle Q4 vs Q5 vs Q6 pro Modell"""
+        """Generates comparison table Q4 vs Q5 vs Q6 vs Q8 per model"""
         if not self.results:
             return {}
         
@@ -2715,7 +2715,7 @@ class LMStudioBenchmark:
         return comparison
     
     def _generate_best_practices(self) -> List[str]:
-        """Generiert Best-Practice-Empfehlungen basierend auf Hardware und Benchmark-Ergebnissen"""
+        """Generates best-practice recommendations based on hardware and benchmark results"""
         recommendations = []
         
         if not self.results:
@@ -2729,20 +2729,20 @@ class LMStudioBenchmark:
         
         best_balance = max(self.results, key=lambda x: x.avg_tokens_per_sec * 0.6 + x.tokens_per_sec_per_gb * 0.4)
         
-        recommendations.append(f"🖥️  Hardware: {gpu_model} erkannt")
+        recommendations.append(f"🖥️  Hardware: {gpu_model} detected")
         recommendations.append("")
-        recommendations.append(f"⚡ Schnellstes Modell:")
+        recommendations.append(f"⚡ Fastest model:")
         recommendations.append(f"   → {best_speed.model_name} ({best_speed.quantization})")
         recommendations.append(f"   → {best_speed.avg_tokens_per_sec:.2f} tokens/s")
         recommendations.append("")
-        recommendations.append(f"💎 Effizientestes Modell (tokens/s pro GB):")
+        recommendations.append(f"💎 Most efficient model (tokens/s per GB):")
         recommendations.append(f"   → {best_efficiency.model_name} ({best_efficiency.quantization})")
         recommendations.append(f"   → {best_efficiency.tokens_per_sec_per_gb:.2f} tokens/s/GB")
-        recommendations.append(f"   → Größe: {best_efficiency.model_size_gb:.2f} GB")
+        recommendations.append(f"   → Size: {best_efficiency.model_size_gb:.2f} GB")
         recommendations.append("")
         recommendations.append(f"🚀 Schnellste Reaktionszeit (TTFT):")
         recommendations.append(f"   → {best_ttft.model_name} ({best_ttft.quantization})")
-        recommendations.append(f"   → {best_ttft.avg_ttft*1000:.0f} ms bis zum ersten Token")
+        recommendations.append(f"   → {best_ttft.avg_ttft*1000:.0f} ms until first token")
         recommendations.append("")
         recommendations.append(f"⚖️  Beste Balance (Speed + Effizienz):")
         recommendations.append(f"   → {best_balance.model_name} ({best_balance.quantization})")
@@ -2757,8 +2757,8 @@ class LMStudioBenchmark:
             avg_q6_speed = sum(r.avg_tokens_per_sec for r in q6_models) / len(q6_models)
             speed_diff = ((avg_q4_speed - avg_q6_speed) / avg_q6_speed) * 100
             
-            recommendations.append(f"   → Q4 ist im Durchschnitt {abs(speed_diff):.0f}% {'schneller' if speed_diff > 0 else 'langsamer'} als Q6")
-            recommendations.append(f"   → Q4: Schneller, weniger Qualität | Q6: Langsamer, bessere Qualität")
+            recommendations.append(f"   → Q4 is on average {abs(speed_diff):.0f}% {'faster' if speed_diff > 0 else 'slower'} than Q6")
+            recommendations.append(f"   → Q4: Faster, less quality | Q6: Slower, better quality")
         
         recommendations.append("")
         
@@ -2782,7 +2782,7 @@ class LMStudioBenchmark:
         return recommendations
     
     def load_all_historical_data(self) -> Dict[str, List[Dict]]:
-        """Lädt alle historischen Benchmark-Ergebnisse und gruppiert nach Modell+Quantisierung"""
+        """Loads all historical benchmark results and groups by model+quantization"""
         trends = {}
         results_dir = RESULTS_DIR
         
@@ -2804,12 +2804,12 @@ class LMStudioBenchmark:
                         'vram': item.get('vram_mb', 0)
                     })
             except Exception as e:
-                logger.debug(f"Fehler beim Laden von {json_file}: {e}")
+                logger.debug(f"Error loading {json_file}: {e}")
         
         return trends
     
     def generate_trend_chart(self) -> Optional[str]:
-        """Generiert Plotly Line-Chart für Performance-Trends über Zeit"""
+        """Generates Plotly line chart for performance trends over time"""
         if not PLOTLY_AVAILABLE or not self.previous_results or go is None:
             return None
         
@@ -2847,7 +2847,7 @@ class LMStudioBenchmark:
                 color_idx += 1
             
             fig.update_layout(
-                title="Performance-Trends über Zeit",
+                title="Performance trends over time",
                 xaxis_title="Datum",
                 yaxis_title="Tokens/s",
                 hovermode='x unified',
@@ -2861,13 +2861,13 @@ class LMStudioBenchmark:
             })
         
         except Exception as e:
-            logger.debug(f"Fehler beim Erstellen von Trend-Chart: {e}")
+            logger.debug(f"Error creating trend chart: {e}")
             return None
     
     def _export_results_to_files(self, results_to_export):
-        """Exportiert gegebene Ergebnisse als JSON, CSV, PDF und HTML"""
+        """Exports given results as JSON, CSV, PDF and HTML"""
         if not results_to_export:
-            logger.warning("⚠️ Keine Ergebnisse zum Exportieren")
+            logger.warning("⚠️ No results to export")
             return
         
         timestamp = time.strftime('%Y%m%d_%H%M%S')
@@ -2875,7 +2875,7 @@ class LMStudioBenchmark:
         json_file = RESULTS_DIR / f"benchmark_results_{timestamp}.json"
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump([asdict(r) for r in results_to_export], f, indent=2, ensure_ascii=False)
-        logger.info(f"📄 JSON-Ergebnisse gespeichert: {json_file}")
+        logger.info(f"📄 JSON results saved: {json_file}")
         
         csv_file = RESULTS_DIR / f"benchmark_results_{timestamp}.csv"
         with open(csv_file, 'w', newline='', encoding='utf-8') as f:
@@ -2884,7 +2884,7 @@ class LMStudioBenchmark:
                 writer.writeheader()
                 for result in results_to_export:
                     writer.writerow(asdict(result))
-        logger.info(f"📊 CSV-Ergebnisse gespeichert: {csv_file}")
+        logger.info(f"📊 CSV results saved: {csv_file}")
         
         self._export_pdf(timestamp, results_to_export)
         
@@ -2892,11 +2892,11 @@ class LMStudioBenchmark:
             self._export_html(timestamp, results_to_export)
     
     def export_results(self):
-        """Legacy-Wrapper für direkte Aufrufe (z.B. --export-only)"""
+        """Legacy wrapper for direct calls (e.g. --export-only)"""
         self._export_results_to_files(self.results)
     
     def _export_pdf(self, timestamp: str, results_to_export):
-        """Exportiert gegebene Benchmark-Ergebnisse als PDF-Report"""
+        """Exports given benchmark results as PDF report"""
         try:
             results = results_to_export
             
@@ -2935,7 +2935,7 @@ class LMStudioBenchmark:
             elements.append(Paragraph("LM Studio Model Benchmark Report", title_style))
             elements.append(Spacer(1, 12))
             timestamp_display = time.strftime('%d.%m.%Y %H:%M:%S')
-            elements.append(Paragraph(f"<font size=10>Generiert: {timestamp_display}</font>", styles['Normal']))
+            elements.append(Paragraph(f"<font size=10>Generated: {timestamp_display}</font>", styles['Normal']))
             elements.append(Spacer(1, 20))
             elements.append(Paragraph("Benchmark Summary", heading_style))
             vision_count = sum(1 for r in results if r.has_vision)
@@ -2944,14 +2944,14 @@ class LMStudioBenchmark:
             avg_tokens_per_sec = sum(r.avg_tokens_per_sec for r in results) / len(results) if self.results else 0
             
             summary_data = [
-                ['Metrik', 'Wert'],
-                ['Anzahl Modelle getestet', str(len(results))],
-                ['Messungen pro Modell', str(self.num_measurement_runs)],
-                ['Standard-Prompt', self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt],
-                ['Vision-Modelle', f"{vision_count} ({vision_count*100//len(results) if self.results else 0}%)"],
-                ['Tool-fähige Modelle', f"{tools_count} ({tools_count*100//len(results) if self.results else 0}%)"],
-                ['Ø Modellgröße', f"{avg_size_gb:.2f} GB"],
-                ['Ø Geschwindigkeit', f"{avg_tokens_per_sec:.2f} tokens/s"],
+                ['Metric', 'Value'],
+                ['Models tested', str(len(results))],
+                ['Measurements per model', str(self.num_measurement_runs)],
+                ['Standard Prompt', self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt],
+                ['Vision Models', f"{vision_count} ({vision_count*100//len(results) if self.results else 0}%)"],
+                ['Tool-capable Models', f"{tools_count} ({tools_count*100//len(results) if self.results else 0}%)"],
+                ['Ø Model Size', f"{avg_size_gb:.2f} GB"],
+                ['Ø Speed', f"{avg_tokens_per_sec:.2f} tokens/s"],
             ]
             summary_table = Table(summary_data, colWidths=[3*inch, 3*inch])
             summary_table.setStyle(TableStyle([
@@ -2968,11 +2968,11 @@ class LMStudioBenchmark:
             ]))
             elements.append(summary_table)
             elements.append(Spacer(1, 20))
-            elements.append(Paragraph("Benchmark Parameter", heading_style))
+            elements.append(Paragraph("Benchmark Parameters", heading_style))
             
             params_data = [
-                ['Parameter', 'Wert'],
-                ['Messungen pro Modell', f"{self.num_measurement_runs}"],
+                ['Parameter', 'Value'],
+                ['Measurements per model', f"{self.num_measurement_runs}"],
                 ['Context Length', f"{self.context_length} Tokens"],
                 ['Temperature', str(OPTIMIZED_INFERENCE_PARAMS['temperature'])],
                 ['Top-K Sampling', str(OPTIMIZED_INFERENCE_PARAMS['top_k_sampling'])],
@@ -2986,27 +2986,27 @@ class LMStudioBenchmark:
             if self._gtt_info and self._gtt_info.get('total', 0) > 0:
                 gtt_total = self._gtt_info['total']
                 gtt_used = self._gtt_info['used']
-                gtt_status = "Aktiviert" if self.use_gtt else "Deaktiviert"
-                params_data.append(['GTT (Shared System RAM)', f"{gtt_status} ({gtt_total:.1f}GB total, {gtt_used:.1f}GB benutzt)"])
+                gtt_status = "Enabled" if self.use_gtt else "Disabled"
+                params_data.append(['GTT (Shared System RAM)', f"{gtt_status} ({gtt_total:.1f}GB total, {gtt_used:.1f}GB used)"])
             
             if self.cli_args.get('limit'):
-                params_data.append(['Modell-Limit', str(self.cli_args['limit'])])
+                params_data.append(['Model limit', str(self.cli_args['limit'])])
             if self.cli_args.get('retest'):
-                params_data.append(['Cache ignoriert', 'Ja (--retest)'])
+                params_data.append(['Cache ignored', 'Yes (--retest)'])
             if self.cli_args.get('only_vision'):
-                params_data.append(['Filter', 'Nur Vision-Modelle'])
+                params_data.append(['Filter', 'Vision models only'])
             if self.cli_args.get('only_tools'):
-                params_data.append(['Filter', 'Nur Tool-fähige Modelle'])
+                params_data.append(['Filter', 'Tool-capable models only'])
             if self.cli_args.get('include_models'):
                 params_data.append(['Include-Pattern', self.cli_args['include_models'][:30]])
             if self.cli_args.get('exclude_models'):
                 params_data.append(['Exclude-Pattern', self.cli_args['exclude_models'][:30]])
             if self.cli_args.get('enable_profiling'):
-                params_data.append(['Hardware-Profiling', 'Ja (--enable-profiling)'])
+                params_data.append(['Hardware Profiling', 'Yes (--enable-profiling)'])
                 if self.cli_args.get('max_temp'):
-                    params_data.append(['Max. Temperatur', f"{self.cli_args['max_temp']}°C"])
+                    params_data.append(['Max. Temperature', f"{self.cli_args['max_temp']}°C"])
                 if self.cli_args.get('max_power'):
-                    params_data.append(['Max. Power-Draw', f"{self.cli_args['max_power']}W"])
+                    params_data.append(['Max. Power Draw', f"{self.cli_args['max_power']}W"])
             
             params_table = Table(params_data, colWidths=[3*inch, 3*inch])
             params_table.setStyle(TableStyle([
@@ -3024,7 +3024,7 @@ class LMStudioBenchmark:
             elements.append(params_table)
             elements.append(Spacer(1, 20))
             
-            elements.append(Paragraph("Detaillierte Ergebnisse", heading_style))
+            elements.append(Paragraph("Detailed Results", heading_style))
             
             if self.rank_by == 'speed':
                 sorted_results = sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
@@ -3043,15 +3043,15 @@ class LMStudioBenchmark:
                 sorted_results = sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
             
             rank_labels = {
-                'speed': 'Geschwindigkeit (Tokens/s)',
-                'efficiency': 'Effizienz (Tokens/s pro GB)',
+                'speed': 'Speed (Tokens/s)',
+                'efficiency': 'Efficiency (Tokens/s per GB)',
                 'ttft': 'Time to First Token (ms)',
-                'vram': 'VRAM-Nutzung (MB)'
+                'vram': 'VRAM Usage (MB)'
             }
-            elements.append(Paragraph(f"<font size=9>Sortiert nach: <b>{rank_labels.get(self.rank_by, 'Speed')}</b></font>", styles['Normal']))
+            elements.append(Paragraph(f"<font size=9>Sorted by: <b>{rank_labels.get(self.rank_by, 'Speed')}</b></font>", styles['Normal']))
             elements.append(Spacer(1, 10))
             
-            table_data = [['Modell', 'Param', 'Arch', 'Size(GB)', 'Vision', 'Tools', 'Quant.', 'GPU', 'GPU Off.', 'Tokens/s', 'Δ%', 'TTFT (ms)', 'Gen.Zeit (s)']]
+            table_data = [['Model', 'Param', 'Arch', 'Size(GB)', 'Vision', 'Tools', 'Quant.', 'GPU', 'GPU Off.', 'Tokens/s', 'Δ%', 'TTFT (ms)', 'Gen.Time (s)']]
             for result in sorted_results:
                 vision_icon = '👁' if result.has_vision else ''
                 tools_icon = '🔧' if result.has_tools else ''
@@ -3114,7 +3114,7 @@ class LMStudioBenchmark:
                        result.avg_ttft < best_by_model[result.model_name]['best_ttft'].avg_ttft:
                         best_by_model[result.model_name]['best_ttft'] = result
             
-            quant_data = [['Modell', 'Best Speed', 'Best Effizienz', 'Best TTFT']]
+            quant_data = [['Model', 'Best Speed', 'Best Efficiency', 'Best TTFT']]
             for model_name, analysis in sorted(best_by_model.items()):
                 speed_q = analysis['best_speed'].quantization if analysis['best_speed'] else '-'
                 efficiency_q = analysis['best_efficiency'].quantization if analysis['best_efficiency'] else '-'
@@ -3174,7 +3174,7 @@ class LMStudioBenchmark:
             if comp_data:
                 elements.append(Paragraph("Quantisierungs-Vergleich (Q4 vs Q5 vs Q6)", heading_style))
                 
-                comp_table_data = [['Modell', 'Q4 (t/s)', 'Q5 (t/s)', 'Q6 (t/s)', 'Q8 (t/s)']]
+                comp_table_data = [['Model', 'Q4 (t/s)', 'Q5 (t/s)', 'Q6 (t/s)', 'Q8 (t/s)']]
                 for model_name, q_variants in sorted(comp_data.items()):
                     row = [model_name[:15]]
                     for q_level in ['q4', 'q5', 'q6', 'q8']:
@@ -3214,8 +3214,8 @@ class LMStudioBenchmark:
             
             stats_data = [
                 ['Statistik', 'Wert'],
-                ['Schnellstes Modell', f"{max_tps_result.model_name} ({max_tps_result.avg_tokens_per_sec:.2f} tokens/s)"],
-                ['Langsamstes Modell', f"{min_tps_result.model_name} ({min_tps_result.avg_tokens_per_sec:.2f} tokens/s)"],
+                ['Fastest Model', f"{max_tps_result.model_name} ({max_tps_result.avg_tokens_per_sec:.2f} tokens/s)"],
+                ['Slowest Model', f"{min_tps_result.model_name} ({min_tps_result.avg_tokens_per_sec:.2f} tokens/s)"],
                 ['Durchschnitt Tokens/s', f"{avg_tps:.2f}"],
             ]
             
@@ -3262,12 +3262,12 @@ class LMStudioBenchmark:
                 elements.append(PageBreak())
                 elements.append(Paragraph("👁️  Vision-Modelle (Multimodal)", title_style))
                 elements.append(Spacer(1, 12))
-                elements.append(Paragraph(f"<font size=10>{len(vision_models)} Vision-fähige Modelle gefunden</font>", styles['Normal']))
+                elements.append(Paragraph(f"<font size=10>{len(vision_models)} Vision-capable models found</font>", styles['Normal']))
                 elements.append(Spacer(1, 15))
 
                 vision_sorted = sorted(vision_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
                 
-                vision_data = [['Modell', 'Param', 'Size(GB)', 'Quant.', 'Tokens/s', 'TTFT (ms)', 'Effizienz']]
+                vision_data = [['Model', 'Param', 'Size(GB)', 'Quant.', 'Tokens/s', 'TTFT (ms)', 'Effizienz']]
                 for r in vision_sorted:
                     vision_data.append([
                         r.model_name[:25],
@@ -3307,12 +3307,12 @@ class LMStudioBenchmark:
                 elements.append(PageBreak())
                 elements.append(Paragraph("🔧 Tool-Calling Modelle", title_style))
                 elements.append(Spacer(1, 12))
-                elements.append(Paragraph(f"<font size=10>{len(tool_models)} Tool-fähige Modelle gefunden</font>", styles['Normal']))
+                elements.append(Paragraph(f"<font size=10>{len(tool_models)} Tool-capable models found</font>", styles['Normal']))
                 elements.append(Spacer(1, 15))
                 
                 tool_sorted = sorted(tool_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
                 
-                tool_data = [['Modell', 'Param', 'Size(GB)', 'Quant.', 'Tokens/s', 'TTFT (ms)', 'Effizienz']]
+                tool_data = [['Model', 'Param', 'Size(GB)', 'Quant.', 'Tokens/s', 'TTFT (ms)', 'Effizienz']]
                 for r in tool_sorted:
                     tool_data.append([
                         r.model_name[:25],
@@ -3358,7 +3358,7 @@ class LMStudioBenchmark:
             
             if major_archs:
                 elements.append(PageBreak())
-                elements.append(Paragraph("🏗️  Modelle nach Architektur", title_style))
+                elements.append(Paragraph("🏗️  Models by Architecture", title_style))
                 elements.append(Spacer(1, 12))
                 
                 for arch_name, arch_models in sorted(major_archs.items(), key=lambda x: -len(x[1])):
@@ -3367,7 +3367,7 @@ class LMStudioBenchmark:
                     elements.append(Paragraph(f"<b>{arch_name.upper()}</b> ({len(arch_models)} Modelle)", heading_style))
                     elements.append(Spacer(1, 8))
                     
-                    arch_data = [['Modell', 'Param', 'Quant.', 'Tokens/s', 'Size(GB)']]
+                    arch_data = [['Model', 'Param', 'Quant.', 'Tokens/s', 'Size(GB)']]
                     for r in arch_sorted[:5]:
                         arch_data.append([
                             r.model_name[:30],
@@ -3396,7 +3396,7 @@ class LMStudioBenchmark:
                 elements.append(PageBreak())
                 elements.append(Paragraph("🌡️ Hardware-Profiling Report", title_style))
                 elements.append(Spacer(1, 12))
-                elements.append(Paragraph("Temperatur- und Power-Analyse", heading_style))
+                elements.append(Paragraph("Temperature and Power Analysis", heading_style))
                 
                 temps_avg = [r.temp_celsius_avg for r in results if r.temp_celsius_avg]
                 powers_avg = [r.power_watts_avg for r in results if r.power_watts_avg]
@@ -3434,9 +3434,9 @@ class LMStudioBenchmark:
                 ]))
                 elements.append(profile_table)
                 elements.append(Spacer(1, 15))
-                elements.append(Paragraph("Profiling pro Modell", heading_style))
+                elements.append(Paragraph("Profiling per Model", heading_style))
                 
-                profile_data = [['Modell', 'Quant.', 'Temp Min', 'Temp Max', 'Temp Ø (°C)', 'Power Min', 'Power Max', 'Power Ø (W)']]
+                profile_data = [['Model', 'Quant.', 'Temp Min', 'Temp Max', 'Temp Ø (°C)', 'Power Min', 'Power Max', 'Power Ø (W)']]
                 for r in sorted(results, key=lambda x: x.temp_celsius_avg or 0, reverse=True):
                     if r.temp_celsius_avg or r.power_watts_avg:
                         temp_min = f"{r.temp_celsius_min:.1f}" if r.temp_celsius_min else "-"
@@ -3473,15 +3473,15 @@ class LMStudioBenchmark:
                     elements.append(prof_table)
             
             doc.build(elements)
-            logger.info(f"📑 PDF-Ergebnisse gespeichert: {pdf_file}")
+            logger.info(f"📑 PDF results saved: {pdf_file}")
         
         except Exception as e:
-            logger.error(f"❌ Fehler beim Erstellen der PDF: {e}")
+            logger.error(f"❌ Error creating PDF: {e}")
     
     def _export_html(self, timestamp: str, results_to_export):
-        """Exportiert gegebene Benchmark-Ergebnisse als interaktiven HTML-Report mit Plotly Charts"""
+        """Exports given benchmark results as interactive HTML report with Plotly charts"""
         if not PLOTLY_AVAILABLE or go is None:
-            logger.warning("⚠️ Plotly nicht verfügbar, überspringe HTML-Export")
+            logger.warning("⚠️ Plotly not available, skipping HTML export")
             return
         
         try:
@@ -3507,7 +3507,7 @@ class LMStudioBenchmark:
             ])
             fig_bar.update_layout(
                 title="Top 10 schnellste Modelle",
-                xaxis_title="Modell + Quantisierung",
+                xaxis_title="Model + Quantization",
                 yaxis_title="Tokens/s",
                 hovermode='x unified',
                 height=500
@@ -3530,8 +3530,8 @@ class LMStudioBenchmark:
                 )
             ])
             fig_scatter.update_layout(
-                title="Modellgröße vs Performance (Größe der Bubble = Speed)",
-                xaxis_title="Modellgröße (GB)",
+                title="Model Size vs Performance (Bubble size = Speed)",
+                xaxis_title="Model Size (GB)",
                 yaxis_title="Tokens/s",
                 height=500,
                 hovermode='closest'
@@ -3567,14 +3567,14 @@ class LMStudioBenchmark:
             
             summary_stats = {
                 'Anzahl Modelle': len(results),
-                'Messungen pro Modell': self.num_measurement_runs,
-                'Standard-Prompt': self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt,
-                'Schnellstes': f"{sorted_results[0].model_name[:20]} ({sorted_results[0].avg_tokens_per_sec:.2f} t/s)",
-                'Langsamster': f"{sorted_results[-1].model_name[:20]} ({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)",
-                'Ø Geschwindigkeit': f"{avg_tokens_per_sec:.2f} t/s",
-                'Vision-Modelle': f"{vision_count} ({vision_count*100//len(results) if self.results else 0}%)",
-                'Tool-fähige Modelle': f"{tools_count} ({tools_count*100//len(results) if self.results else 0}%)",
-                'Ø Modellgröße': f"{avg_size_gb:.2f} GB",
+                'Measurements per Model': self.num_measurement_runs,
+                'Standard Prompt': self.prompt[:50] + '...' if len(self.prompt) > 50 else self.prompt,
+                'Fastest': f"{sorted_results[0].model_name[:20]} ({sorted_results[0].avg_tokens_per_sec:.2f} t/s)",
+                'Slowest': f"{sorted_results[-1].model_name[:20]} ({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)",
+                'Ø Speed': f"{avg_tokens_per_sec:.2f} t/s",
+                'Vision Models': f"{vision_count} ({vision_count*100//len(results) if self.results else 0}%)",
+                'Tool-capable Models': f"{tools_count} ({tools_count*100//len(results) if self.results else 0}%)",
+                'Ø Model Size': f"{avg_size_gb:.2f} GB",
             }
             
             summary_boxes = ""
@@ -3599,49 +3599,49 @@ class LMStudioBenchmark:
             benchmark_params.append(f"<strong>GPU-Offload Levels:</strong> {', '.join(map(str, GPU_OFFLOAD_LEVELS))}")
             
             cli_params = []
-            cli_params.append(f"<strong>Messungen pro Modell:</strong> {self.cli_args['runs']}")
+            cli_params.append(f"<strong>Measurements per Model:</strong> {self.cli_args['runs']}")
             
             if self._gtt_info and self._gtt_info.get('total', 0) > 0:
                 gtt_total = self._gtt_info['total']
                 gtt_used = self._gtt_info['used']
-                gtt_status = "✅ Aktiviert" if self.use_gtt else "❌ Deaktiviert"
-                cli_params.append(f"<strong>GTT (Shared System RAM):</strong> {gtt_status} ({gtt_total:.1f}GB total, {gtt_used:.1f}GB benutzt)")
+                gtt_status = "✅ Enabled" if self.use_gtt else "❌ Disabled"
+                cli_params.append(f"<strong>GTT (Shared System RAM):</strong> {gtt_status} ({gtt_total:.1f}GB total, {gtt_used:.1f}GB used)")
             
             if self.cli_args.get('limit'):
-                cli_params.append(f"<strong>Modell-Limit:</strong> {self.cli_args['limit']}")
+                cli_params.append(f"<strong>Model Limit:</strong> {self.cli_args['limit']}")
             if self.cli_args.get('retest'):
-                cli_params.append(f"<strong>Cache:</strong> Ignoriert (--retest)")
+                cli_params.append(f"<strong>Cache:</strong> Ignored (--retest)")
             if self.cli_args.get('only_vision'):
-                cli_params.append(f"<strong>Filter:</strong> Nur Vision-Modelle")
+                cli_params.append(f"<strong>Filter:</strong> Vision models only")
             if self.cli_args.get('only_tools'):
-                cli_params.append(f"<strong>Filter:</strong> Nur Tool-fähige Modelle")
+                cli_params.append(f"<strong>Filter:</strong> Tool-capable models only")
             if self.cli_args.get('include_models'):
                 cli_params.append(f"<strong>Include-Pattern:</strong> {self.cli_args['include_models'][:40]}")
             if self.cli_args.get('exclude_models'):
                 cli_params.append(f"<strong>Exclude-Pattern:</strong> {self.cli_args['exclude_models'][:40]}")
             if self.cli_args.get('enable_profiling'):
-                cli_params.append(f"<strong>Hardware-Profiling:</strong> Ja (--enable-profiling)")
+                cli_params.append(f"<strong>Hardware Profiling:</strong> Yes (--enable-profiling)")
                 if self.cli_args.get('max_temp'):
-                    cli_params.append(f"<strong>Max. Temperatur:</strong> {self.cli_args['max_temp']}°C")
+                    cli_params.append(f"<strong>Max. Temperature:</strong> {self.cli_args['max_temp']}°C")
                 if self.cli_args.get('max_power'):
-                    cli_params.append(f"<strong>Max. Power-Draw:</strong> {self.cli_args['max_power']}W")
+                    cli_params.append(f"<strong>Max. Power Draw:</strong> {self.cli_args['max_power']}W")
             
             cli_section = f"""
-            <h2>⚙️ Benchmark Parameter</h2>
-            <h3>Inference-Parameter</h3>
+            <h2>⚙️ Benchmark Parameters</h2>
+            <h3>Inference Parameters</h3>
             <p style="line-height: 1.8; color: var(--text-secondary); font-size: 14px;">
                 {" | ".join(benchmark_params)}
             </p>
-            <h3>CLI-Argumente</h3>
+            <h3>CLI Arguments</h3>
             <p style="line-height: 1.8; color: var(--text-secondary); font-size: 14px;">
-                {" | ".join(cli_params) if cli_params else "Keine zusätzlichen Argumente"}
+                {" | ".join(cli_params) if cli_params else "No additional arguments"}
             </p>
 """
             
             trend_json = self.generate_trend_chart()
             if trend_json:
                 trend_section = """
-        <h2>📈 Performance-Trends über Zeit</h2>
+        <h2>📈 Performance Trends Over Time</h2>
         <div class="chart" id="trend-chart"></div>
 """
                 trend_data = json.loads(trend_json)
@@ -3651,7 +3651,7 @@ class LMStudioBenchmark:
                 trend_script = ""
             
             recommendations = self._generate_best_practices()
-            best_practices_html = "\n".join(recommendations) if recommendations else "Keine Empfehlungen verfügbar"
+            best_practices_html = "\n".join(recommendations) if recommendations else "No recommendations available"
             
             vision_models = [r for r in results if r.has_vision]
             if vision_models:
@@ -3670,18 +3670,18 @@ class LMStudioBenchmark:
                     </tr>"""
                 
                 vision_section = f"""
-        <h2>👁️ Vision-Modelle (Multimodal)</h2>
-        <p>{len(vision_models)} Vision-fähige Modelle gefunden</p>
+        <h2>👁️ Vision Models (Multimodal)</h2>
+        <p>{len(vision_models)} Vision-capable models found</p>
         <table class="category-table">
             <thead class="vision">
                 <tr>
-                    <th>Modell</th>
+                    <th>Model</th>
                     <th>Parameter</th>
-                    <th>Größe</th>
-                    <th>Quantisierung</th>
+                    <th>Size</th>
+                    <th>Quantization</th>
                     <th>Tokens/s</th>
                     <th>TTFT</th>
-                    <th>Effizienz</th>
+                    <th>Efficiency</th>
                 </tr>
             </thead>
             <tbody>
@@ -3715,18 +3715,18 @@ class LMStudioBenchmark:
                     </tr>"""
                 
                 tools_section = f"""
-        <h2>🔧 Tool-Calling Modelle</h2>
-        <p>{len(tool_models)} Tool-fähige Modelle gefunden</p>
+        <h2>🔧 Tool-Calling Models</h2>
+        <p>{len(tool_models)} Tool-capable models found</p>
         <table class="category-table">
             <thead class="tools">
                 <tr>
-                    <th>Modell</th>
+                    <th>Model</th>
                     <th>Parameter</th>
-                    <th>Größe</th>
-                    <th>Quantisierung</th>
+                    <th>Size</th>
+                    <th>Quantization</th>
                     <th>Tokens/s</th>
                     <th>TTFT</th>
-                    <th>Effizienz</th>
+                    <th>Efficiency</th>
                 </tr>
             </thead>
             <tbody>
@@ -3754,12 +3754,12 @@ class LMStudioBenchmark:
             
             if major_archs:
                 arch_section = """
-        <h2>🏗️ Modelle nach Architektur</h2>"""
+        <h2>🏗️ Models by Architecture</h2>"""
                 
                 for arch_name, arch_models in sorted(major_archs.items(), key=lambda x: -len(x[1])):
                     arch_sorted = sorted(arch_models, key=lambda x: x.avg_tokens_per_sec, reverse=True)
                     arch_rows = ""
-                    for r in arch_sorted[:5]:  # Top 5 pro Architektur
+                    for r in arch_sorted[:5]:  # Top 5 per architecture
                         arch_rows += f"""
                         <tr>
                             <td>{r.model_name}</td>
@@ -3774,11 +3774,11 @@ class LMStudioBenchmark:
         <table class="category-table">
             <thead class="arch">
                 <tr>
-                    <th>Modell</th>
+                    <th>Model</th>
                     <th>Parameter</th>
-                    <th>Quantisierung</th>
+                    <th>Quantization</th>
                     <th>Tokens/s</th>
-                    <th>Größe</th>
+                    <th>Size</th>
                 </tr>
             </thead>
             <tbody>
@@ -3838,7 +3838,7 @@ class LMStudioBenchmark:
             <table class="results-table">
                 <thead>
                     <tr>
-                        <th>Modell</th>
+                        <th>Model</th>
                         <th>Quant.</th>
                         <th>Temp Min</th>
                         <th>Temp Max</th>
@@ -3873,14 +3873,14 @@ class LMStudioBenchmark:
             with open(html_file, 'w', encoding='utf-8') as f:
                 f.write(html_output)
             
-            logger.info(f"🌐 HTML-Ergebnisse gespeichert: {html_file}")
+            logger.info(f"🌐 HTML results saved: {html_file}")
         
         except Exception as e:
-            logger.error(f"❌ Fehler beim Erstellen der HTML: {e}")
+            logger.error(f"❌ Error creating HTML: {e}")
 
 
 def main():
-    """Hauptfunktion mit CLI-Argumenten"""
+    """Main function with CLI arguments"""
     global log_filename
 
     import psutil
@@ -3905,23 +3905,23 @@ def main():
         logging.root.addHandler(file_handler)
         logger.info(f"📝 Benchmark-Log: {log_filename}")
     else:
-        logger.info("📝 Benchmark läuft als WebApp-Subprocess - Logging via WebApp")
+        logger.info("📝 Benchmark running as WebApp subprocess - Logging via WebApp")
     
     latest_link = LOGS_DIR / "benchmark_latest.log"
     latest_link.unlink(missing_ok=True)
     latest_link.symlink_to(log_filename.name)
     
     parser = argparse.ArgumentParser(
-        description="LM Studio Model Benchmark - Testet alle lokal installierten LLM-Modelle",
+        description="LM Studio Model Benchmark - Tests all locally installed LLM models",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Beispiele:
-  python benchmark.py                                   # Standard: alle Modelle, 3 Messungen
-  python benchmark.py --runs 1                          # Schnell: alle Modelle, 1 Messung
-  python benchmark.py --limit 3 --runs 1                # Test 3 Modelle mit 1 Messung
-  python benchmark.py --limit 1 --runs 1                # Test 1 Modell mit 1 Messung
-  python benchmark.py --runs 2 --context 4096           # 2 Messungen, 4096 Token Context
-  python benchmark.py --limit 5 --runs 2 --context 4096 # Test 5 Modelle, weitere Optionen
+Examples:
+  python benchmark.py                                   # Standard: all models, 3 measurements
+  python benchmark.py --runs 1                          # Fast: all models, 1 measurement
+  python benchmark.py --limit 3 --runs 1                # Test 3 models with 1 measurement
+  python benchmark.py --limit 1 --runs 1                # Test 1 model with 1 measurement
+  python benchmark.py --runs 2 --context 4096           # 2 measurements, 4096 token context
+  python benchmark.py --limit 5 --runs 2 --context 4096 # Test 5 models, more options
         """
     )
     
@@ -3929,96 +3929,96 @@ Beispiele:
         '--runs', '-r',
         type=int,
         default=NUM_MEASUREMENT_RUNS,
-        help=f'Anzahl der Messungen pro Modell-Quantisierung (Standard: {NUM_MEASUREMENT_RUNS})'
+        help=f'Number of measurements per model quantization (default: {NUM_MEASUREMENT_RUNS})'
     )
     
     parser.add_argument(
         '--context', '-c',
         type=int,
         default=CONTEXT_LENGTH,
-        help=f'Kontextlänge in Tokens (Standard: {CONTEXT_LENGTH})'
+        help=f'Context length in tokens (default: {CONTEXT_LENGTH})'
     )
     
     parser.add_argument(
         '--prompt', '-p',
         type=str,
         default=STANDARD_PROMPT,
-        help=f'Standard-Test-Prompt (Standard: "{STANDARD_PROMPT}")'
+        help=f'Standard test prompt (default: "{STANDARD_PROMPT}")'
     )
     
     parser.add_argument(
         '--limit', '-l',
         type=int,
         default=None,
-        help='Maximale Anzahl von Modellen zum Testen (z.B. 3 testet nur die ersten 3 Modelle)'
+        help='Maximum number of models to test (e.g. 3 tests only the first 3 models)'
     )
     
     parser.add_argument(
         '--only-vision',
         action='store_true',
-        help='Nur Modelle mit Vision-Fähigkeit (Multimodal) testen'
+        help='Only test models with vision capability (multimodal)'
     )
     
     parser.add_argument(
         '--only-tools',
         action='store_true',
-        help='Nur Modelle mit Tool-Calling-Support testen'
+        help='Only test models with tool-calling support'
     )
     
     parser.add_argument(
         '--quants',
         type=str,
         default=None,
-        help='Nur bestimmte Quantisierungen testen (z.B. "q4,q5,q6")'
+        help='Only test specific quantizations (e.g. "q4,q5,q6")'
     )
     
     parser.add_argument(
         '--arch',
         type=str,
         default=None,
-        help='Nur bestimmte Architekturen testen (z.B. "llama,mistral,gemma")'
+        help='Only test specific architectures (e.g. "llama,mistral,gemma")'
     )
     
     parser.add_argument(
         '--params',
         type=str,
         default=None,
-        help='Nur bestimmte Parametergrößen testen (z.B. "3B,7B,8B")'
+        help='Only test specific parameter sizes (e.g. "3B,7B,8B")'
     )
     
     parser.add_argument(
         '--min-context',
         type=int,
         default=None,
-        help='Minimale Context-Length in Tokens (z.B. 32000)'
+        help='Minimum context length in tokens (e.g. 32000)'
     )
     
     parser.add_argument(
         '--max-size',
         type=float,
         default=None,
-        help='Maximale Modellgröße in GB (z.B. 10.0)'
+        help='Maximum model size in GB (e.g. 10.0)'
     )
     
     parser.add_argument(
         '--include-models',
         type=str,
         default=None,
-        help='Nur Modelle die dem Regex-Pattern entsprechen (z.B. "llama.*7b" oder "qwen|phi")'
+        help='Only models matching the regex pattern (e.g. "llama.*7b" or "qwen|phi")'
     )
     
     parser.add_argument(
         '--exclude-models',
         type=str,
         default=None,
-        help='Schließe Modelle aus die dem Regex-Pattern entsprechen (z.B. ".*uncensored.*" oder "test|experimental")'
+        help='Exclude models matching the regex pattern (e.g. ".*uncensored.*" or "test|experimental")'
     )
     
     parser.add_argument(
         '--compare-with',
         type=str,
         default=None,
-        help='Vergleiche mit früheren Ergebnissen (z.B. "20260104_172200.json" oder "latest")'
+        help='Compare with previous results (e.g. "20260104_172200.json" or "latest")'
     )
     
     parser.add_argument(
@@ -4026,25 +4026,25 @@ Beispiele:
         type=str,
         choices=['speed', 'efficiency', 'ttft', 'vram'],
         default='speed',
-        help='Sortiere Ergebnisse nach: speed (tokens/s), efficiency (tokens/s pro GB), ttft (Time to First Token), vram (VRAM-Nutzung)'
+        help='Sort results by: speed (tokens/s), efficiency (tokens/s per GB), ttft (Time to First Token), vram (VRAM usage)'
     )
     
     parser.add_argument(
         '--retest',
         action='store_true',
-        help='Ignoriere Cache und teste alle Modelle neu (überschreibt alte Ergebnisse in der Datenbank)'
+        help='Ignore cache and retest all models (overwrites old results in database)'
     )
     
     parser.add_argument(
         '--dev-mode',
         action='store_true',
-        help='Entwicklungs-Modus: Testet automatisch das kleinste verfügbare Modell mit -l 1 -r 1'
+        help='Development mode: Automatically tests the smallest available model with -l 1 -r 1'
     )
     
     parser.add_argument(
         '--list-cache',
         action='store_true',
-        help='Zeige alle gecachten Modelle und beendet'
+        help='Show all cached models and exit'
     )
     
     parser.add_argument(
@@ -4052,66 +4052,66 @@ Beispiele:
         type=str,
         default=None,
         metavar='FILE',
-        help='Exportiere Cache-Inhalte als JSON (z.B. "cache_export.json") und beendet'
+        help='Export cache contents as JSON (e.g. "cache_export.json") and exit'
     )
     
     parser.add_argument(
         '--enable-profiling',
         action='store_true',
-        help='Aktiviere Hardware-Profiling: Misst Temperatur und Power-Draw während Benchmark'
+        help='Enable hardware profiling: Measures temperature and power draw during benchmark'
     )
     
     parser.add_argument(
         '--max-temp',
         type=float,
         default=None,
-        help='Maximale GPU-Temperatur in °C (Warnung wenn überschritten, z.B. 80.0)'
+        help='Maximum GPU temperature in °C (warning if exceeded, e.g. 80.0)'
     )
     
     parser.add_argument(
         '--max-power',
         type=float,
         default=None,
-        help='Maximaler GPU Power-Draw in Watts (Warnung wenn überschritten, z.B. 400.0)'
+        help='Maximum GPU power draw in watts (warning if exceeded, e.g. 400.0)'
     )
     
     parser.add_argument(
         '--disable-gtt',
         action='store_true',
-        help='Deaktiviere GTT (Shared System RAM) bei AMD GPUs - nutze nur dediziertes VRAM'
+        help='Disable GTT (Shared System RAM) on AMD GPUs - use only dedicated VRAM'
     )
     
     parser.add_argument(
         '--export-only',
         action='store_true',
-        help='Generiere Reports (JSON/CSV/PDF/HTML) aus allen Ergebnissen in der Datenbank ohne neue Tests durchzuführen'
+        help='Generate reports (JSON/CSV/PDF/HTML) from all results in database without running new tests'
     )
 
     parser.add_argument(
         '--debug', '-d',
         action='store_true',
-        help='Aktiviere DEBUG-Logging für detaillierte Ausgaben'
+        help='Enable DEBUG logging for detailed output'
     )
 
     parser.add_argument(
         '--temperature',
         type=float,
         default=None,
-        help='Override: Sampling-Temperatur (z.B. 0.7)'
+        help='Override: Sampling temperature (e.g. 0.7)'
     )
     parser.add_argument(
         '--top-k', '--top-k-sampling',
         dest='top_k_sampling',
         type=int,
         default=None,
-        help='Override: Top-K Sampling (z.B. 50)'
+        help='Override: Top-K sampling (e.g. 50)'
     )
     parser.add_argument(
         '--top-p', '--top-p-sampling',
         dest='top_p_sampling',
         type=float,
         default=None,
-        help='Override: Top-P (Nucleus Sampling, z.B. 0.95)'
+        help='Override: Top-P (nucleus sampling, e.g. 0.95)'
     )
     parser.add_argument(
         '--min-p', '--min-p-sampling',
@@ -4124,105 +4124,105 @@ Beispiele:
         '--repeat-penalty',
         type=float,
         default=None,
-        help='Override: Repeat-Penalty (z.B. 1.2)'
+        help='Override: Repeat penalty (e.g. 1.2)'
     )
     parser.add_argument(
         '--max-tokens',
         type=int,
         default=None,
-        help='Override: Max Output-Tokens (z.B. 256)'
+        help='Override: Max output tokens (e.g. 256)'
     )
     
     parser.add_argument(
         '--n-gpu-layers',
         type=int,
         default=DEFAULT_LOAD_PARAMS.get('n_gpu_layers', -1),
-        help=f"Anzahl GPU-Layers (-1=auto/alle, 0=nur CPU, >0=spezifische Anzahl, Standard: {DEFAULT_LOAD_PARAMS.get('n_gpu_layers', -1)})"
+        help=f"Number of GPU layers (-1=auto/all, 0=CPU only, >0=specific count, default: {DEFAULT_LOAD_PARAMS.get('n_gpu_layers', -1)})"
     )
     parser.add_argument(
         '--n-batch',
         type=int,
         default=DEFAULT_LOAD_PARAMS.get('n_batch', 512),
-        help=f"Batch-Größe für Prompt-Verarbeitung (Standard: {DEFAULT_LOAD_PARAMS.get('n_batch', 512)})"
+        help=f"Batch size for prompt processing (default: {DEFAULT_LOAD_PARAMS.get('n_batch', 512)})"
     )
     parser.add_argument(
         '--n-threads',
         type=int,
         default=DEFAULT_LOAD_PARAMS.get('n_threads', -1),
-        help=f"Anzahl CPU-Threads (-1=auto/alle, Standard: {DEFAULT_LOAD_PARAMS.get('n_threads', -1)})"
+        help=f"Number of CPU threads (-1=auto/all, default: {DEFAULT_LOAD_PARAMS.get('n_threads', -1)})"
     )
     parser.add_argument(
         '--flash-attention',
         action='store_true',
         default=DEFAULT_LOAD_PARAMS.get('flash_attention', True),
-        help=f"Flash Attention aktivieren (schnellere Attention-Berechnung, Standard: {'aktiviert' if DEFAULT_LOAD_PARAMS.get('flash_attention', True) else 'deaktiviert'})"
+        help=f"Enable Flash Attention (faster attention computation, default: {'enabled' if DEFAULT_LOAD_PARAMS.get('flash_attention', True) else 'disabled'})"
     )
     parser.add_argument(
         '--no-flash-attention',
         action='store_false',
         dest='flash_attention',
-        help='Flash Attention deaktivieren'
+        help='Disable Flash Attention'
     )
     parser.add_argument(
         '--rope-freq-base',
         type=float,
         default=DEFAULT_LOAD_PARAMS.get('rope_freq_base'),
-        help='RoPE Frequenz-Basis (None=Model-Default, z.B. 10000.0)'
+        help='RoPE frequency base (None=model default, e.g. 10000.0)'
     )
     parser.add_argument(
         '--rope-freq-scale',
         type=float,
         default=DEFAULT_LOAD_PARAMS.get('rope_freq_scale'),
-        help='RoPE Frequenz-Skalierung (None=Model-Default, z.B. 1.0)'
+        help='RoPE frequency scaling (None=model default, e.g. 1.0)'
     )
     parser.add_argument(
         '--use-mmap',
         action='store_true',
         default=DEFAULT_LOAD_PARAMS.get('use_mmap', True),
-        help=f"Memory-Mapping aktivieren (schnellerer Model-Load, Standard: {'aktiviert' if DEFAULT_LOAD_PARAMS.get('use_mmap', True) else 'deaktiviert'})"
+        help=f"Enable memory-mapping (faster model load, default: {'enabled' if DEFAULT_LOAD_PARAMS.get('use_mmap', True) else 'disabled'})"
     )
     parser.add_argument(
         '--no-mmap',
         action='store_false',
         dest='use_mmap',
-        help='Memory-Mapping deaktivieren'
+        help='Disable memory-mapping'
     )
     parser.add_argument(
         '--use-mlock',
         action='store_true',
         default=DEFAULT_LOAD_PARAMS.get('use_mlock', False),
-        help=f"Memory-Locking aktivieren (verhindert Swapping, Standard: {'aktiviert' if DEFAULT_LOAD_PARAMS.get('use_mlock', False) else 'deaktiviert'})"
+        help=f"Enable memory-locking (prevents swapping, default: {'enabled' if DEFAULT_LOAD_PARAMS.get('use_mlock', False) else 'disabled'})"
     )
     parser.add_argument(
         '--kv-cache-quant',
         type=str,
         choices=['f32', 'f16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1'],
         default=DEFAULT_LOAD_PARAMS.get('kv_cache_quant'),
-        help='KV-Cache Quantisierung (reduziert VRAM, kann Performance beeinflussen, None=Model-Default)'
+        help='KV-Cache quantization (reduces VRAM, may affect performance, None=model default)'
     )
     
     parser.add_argument(
         '--use-rest-api',
         action='store_true',
-        help='Nutze LM Studio REST API v1 anstatt Python SDK/CLI (ermöglicht erweiterte Features wie stateful chats, parallel requests)'
+        help='Use LM Studio REST API v1 instead of Python SDK/CLI (enables advanced features like stateful chats, parallel requests)'
     )
     parser.add_argument(
         '--api-token',
         type=str,
         default=None,
-        help='LM Studio API Permission Token für REST API Authentifizierung'
+        help='LM Studio API permission token for REST API authentication'
     )
     parser.add_argument(
         '--n-parallel',
         type=int,
         default=None,
-        help='Max. parallele Predictions pro Modell (nur REST API, Standard: 4, erfordert continuous batching support)'
+        help='Max. parallel predictions per model (REST API only, default: 4, requires continuous batching support)'
     )
     parser.add_argument(
         '--unified-kv-cache',
         action='store_true',
         default=None,
-        help='Unified KV Cache aktivieren (nur REST API, optimiert VRAM bei parallelen Requests)'
+        help='Enable unified KV cache (REST API only, optimizes VRAM for parallel requests)'
     )
     
     args = parser.parse_args()
@@ -4235,40 +4235,40 @@ Beispiele:
         logging.getLogger("lmstudio").setLevel(logging.DEBUG)
         logging.getLogger("urllib3").setLevel(logging.DEBUG)
         logging.getLogger("websockets").setLevel(logging.DEBUG)
-        logger.debug("🐛 DEBUG-Modus aktiviert")
+        logger.debug("🐛 DEBUG mode enabled")
     
     if args.list_cache:
         cache = BenchmarkCache()
         cached = cache.list_cached_models()
         if cached:
-            print("\n=== Gecachte Benchmark-Ergebnisse ===")
-            print(f"{'Modell':<50} {'Quant':<10} {'Params':<8} {'tok/s':<10} {'Datum':<12} {'Hash':<10}")
+            print("\n=== Cached Benchmark Results ===")
+            print(f"{'Model':<50} {'Quant':<10} {'Params':<8} {'tok/s':<10} {'Date':<12} {'Hash':<10}")
             print("-" * 110)
             for entry in cached:
                 print(f"{entry['model_name']:<50} {entry['quantization']:<10} {entry['params_size']:<8} "
                       f"{entry['avg_tokens_per_sec']:<10.2f} {entry['timestamp'][:10]:<12} {entry['params_hash']:<10}")
-            print(f"\nGesamt: {len(cached)} Einträge")
+            print(f"\nTotal: {len(cached)} entries")
         else:
-            print("Cache ist leer - keine Ergebnisse gespeichert")
+            print("Cache is empty - no results saved")
         return
     
     if args.export_cache:
         cache = BenchmarkCache()
         output_file = RESULTS_DIR / args.export_cache
         cache.export_to_json(output_file)
-        print(f"Cache exportiert nach: {output_file}")
+        print(f"Cache exported to: {output_file}")
         return
     
     if args.export_only:
-        logger.info("🔄 === Report-Regenerierung aus Datenbank ===")
+        logger.info("🔄 === Report Regeneration from Database ===")
         cache = BenchmarkCache()
         cached_results = cache.get_all_results()
         
         if not cached_results:
-            logger.error("❌ Keine Ergebnisse in der Datenbank gefunden. Führe zuerst einen Benchmark durch.")
+            logger.error("❌ No results found in database. Run a benchmark first.")
             return
         
-        logger.info(f"📥 Lade {len(cached_results)} Ergebnisse aus Datenbank...")
+        logger.info(f"📥 Loading {len(cached_results)} results from database...")
         
         filter_args = {
             'only_vision': args.only_vision,
@@ -4300,22 +4300,22 @@ Beispiele:
         if any(filter_args.values()):
             original_count = len(benchmark.results)
             benchmark.results = [r for r in benchmark.results if benchmark._matches_filters(r)]
-            logger.info(f"✔️ Nach Filterung: {len(benchmark.results)}/{original_count} Modelle")
+            logger.info(f"✔️ After filtering: {len(benchmark.results)}/{original_count} models")
         
         if not benchmark.results:
-            logger.error("❌ Keine Ergebnisse nach Filterung übrig")
+            logger.error("❌ No results remaining after filtering")
             return
         
         if args.compare_with:
             benchmark._load_previous_results()
         
-        logger.info(f"⚙️ Generiere Reports für {len(benchmark.results)} Modelle...")
+        logger.info(f"⚙️ Generating reports for {len(benchmark.results)} models...")
         benchmark.export_results()
         logger.info("✅ Reports erfolgreich generiert!")
         return
     
     if args.dev_mode:
-        logger.info("🧪 === Entwicklungs-Modus aktiviert ===")
+        logger.info("🧪 === Development mode enabled ===")
         args.runs = 1
         args.limit = 1
         all_models = ModelDiscovery.get_installed_models()
@@ -4327,21 +4327,21 @@ Beispiele:
             
             model_sizes.sort(key=lambda x: x[1])
             smallest = model_sizes[0][0]
-            logger.info(f"✅ Kleinstes Modell ausgewählt: {smallest} ({model_sizes[0][1]:.2f} GB)")
-            logger.info(f"⚙️ Konfiguration: 1 Messung, Context {args.context}")
+            logger.info(f"✅ Smallest model selected: {smallest} ({model_sizes[0][1]:.2f} GB)")
+            logger.info(f"⚙️ Configuration: 1 measurement, context {args.context}")
             logger.info("")
         else:
-            logger.error("❌ Keine Modelle gefunden für Dev-Mode")
+            logger.error("❌ No models found for dev-mode")
             return
     
     if args.runs < 1:
-        parser.error('--runs muss >= 1 sein')
+        parser.error('--runs must be >= 1')
     if args.context < 256:
-        parser.error('--context muss >= 256 sein')
+        parser.error('--context must be >= 256')
     if len(args.prompt.strip()) == 0:
-        parser.error('--prompt darf nicht leer sein')
+        parser.error('--prompt must not be empty')
     if args.limit is not None and args.limit < 1:
-        parser.error('--limit muss >= 1 sein')
+        parser.error('--limit must be >= 1')
     
     filter_args = {
         'only_vision': args.only_vision,
@@ -4358,18 +4358,18 @@ Beispiele:
     logger.info("🚀 === LM Studio Model Benchmark ===")
     logger.info(f"💬 Prompt: '{args.prompt}'")
     logger.info(f"📏 Context Length: {args.context} Tokens")
-    logger.info(f"🔢 Messungen pro Modell: {args.runs} (+ {NUM_WARMUP_RUNS} Warmup)")
+    logger.info(f"🔢 Measurements per Model: {args.runs} (+ {NUM_WARMUP_RUNS} Warmup)")
     if args.limit:
-        logger.info(f"📌 Modell-Limit: Testet max. {args.limit} Modelle")
+        logger.info(f"📌 Model Limit: Testet max. {args.limit} Modelle")
     
     active_filters = [k for k, v in filter_args.items() if v]
     if active_filters:
         logger.info(f"🔎 Aktive Filter: {', '.join(active_filters)}")
     
     if args.compare_with:
-        logger.info(f"📈 Historischer Vergleich: {args.compare_with}")
+        logger.info(f"📈 Historical comparison: {args.compare_with}")
     
-    logger.info(f"⏱️ Geschätzte Gesamtzeit: ~{int(args.runs * 45 * (args.limit or 9) / 9)} Minuten")
+    logger.info(f"⏱️ Estimated total time: ~{int(args.runs * 45 * (args.limit or 9) / 9)} minutes")
     logger.info("")
     
     inference_overrides = {

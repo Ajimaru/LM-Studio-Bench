@@ -1,0 +1,14 @@
+# ShellCheck Configuration
+# See: https://www.shellcheck.net/
+
+# Disable a specific error
+# disable=SC1000
+
+# Allow following of sources
+follow=true
+
+# Allow external sources
+external-sources=true
+
+# Severity level: error, warning, info, style
+severity=warning

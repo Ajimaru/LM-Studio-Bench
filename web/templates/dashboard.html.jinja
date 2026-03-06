@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,7 +8,7 @@
     <!-- Favicon - Bar Chart Design -->
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%233b82f6' rx='16'/><rect x='15' y='60' width='15' height='35' fill='%2310b981' rx='2'/><rect x='40' y='35' width='15' height='60' fill='%2310b981' rx='2'/><rect x='65' y='20' width='15' height='75' fill='%2310b981' rx='2'/></svg>">
     
-    <!-- Plotly.js für Hardware-Monitoring Charts -->
+    <!-- Plotly.js for Hardware-Monitoring Charts -->
     <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
     
     <style>
@@ -1108,8 +1108,8 @@
         <div id="view-home" class="view-container">
             <!-- Welcome Banner -->
             <div class="card" style="background: linear-gradient(135deg, var(--primary) 0%, #1e40af 100%); color: white; margin-bottom: 2rem;">
-                <h2 style="color: white;">🚀 Willkommen zum LM Studio Benchmark Dashboard</h2>
-                <p style="opacity: 0.9; margin: 0.5rem 0;">Teste und vergleiche deine LLM-Modelle mit präzisen Performance-Metriken</p>
+                <h2 style="color: white;">🚀 Welcome to LM Studio Benchmark Dashboard</h2>
+                <p style="opacity: 0.9; margin: 0.5rem 0;">Test and compare your LLM models with precise performance metrics</p>
             </div>
 
             <!-- Cache & Performance Stats -->
@@ -1124,40 +1124,40 @@
                                 <div><span style="color: var(--text); font-weight: 500;">OS:</span> <span id="home-os">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">Kernel:</span> <span id="home-kernel">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">CPU:</span> <span id="home-cpu">--</span></div>
-                                <div><span style="color: var(--text); font-weight: 500;">Kerne:</span> <span id="home-cores">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Cores:</span> <span id="home-cores">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">RAM:</span> <span id="home-ram">--</span></div>
                             </div>
                             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); color: var(--text-light); line-height: 1.8;">
-                                <div><span style="color: var(--text); font-weight: 500;">GPU Modell:</span> <span id="home-gpu-model">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">GPU Model:</span> <span id="home-gpu-model">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">GPU VRAM:</span> <span id="home-gpu-vram">--</span></div>
                                 <div><span style="color: var(--text); font-weight: 500;">System RAM (GTT):</span> <span id="home-gpu-gtt">--</span></div>
-                                <div><span style="color: var(--text); font-weight: 500;">Verfügbar:</span> <span id="home-gpu-total">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Available:</span> <span id="home-gpu-total">--</span></div>
                             </div>
                             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); color: var(--text-light); line-height: 1.8;">
                                 <div><span style="color: var(--text); font-weight: 500;">LM Studio:</span> <span id="home-lmstudio-version">--</span></div>
-                                <div><span style="color: var(--text); font-weight: 500;">Modus:</span> <span id="home-lmstudio-mode">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Mode:</span> <span id="home-lmstudio-mode">--</span></div>
                             </div>
                         </div>
 
-                        <!-- RIGHT COLUMN: BENCHMARK (mit zusätzlichen Details) -->
+                        <!-- RIGHT COLUMN: BENCHMARK (with additional details) -->
                         <div>
                             <div style="color: #e74c3c; font-weight: 600; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e74c3c;">📊 BENCHMARK</div>
                             <div style="color: var(--text-light); line-height: 1.8;">
-                                <div><span style="color: var(--text); font-weight: 500;">Gecachte Modelle:</span> <span id="home-cached-models">--</span></div>
-                                <div><span style="color: var(--text); font-weight: 500;">Ø Geschwindigkeit:</span> <span id="home-benchmark-avg-speed">--</span></div>
-                                <div><span style="color: var(--text); font-weight: 500;">Cache Größe:</span> <span id="home-cache-size">--</span></div>
-                                <div><span style="color: var(--text); font-weight: 500;">Letzter Durchlauf:</span> <span id="home-last-run">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Cached Models:</span> <span id="home-cached-models">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Avg Speed:</span> <span id="home-benchmark-avg-speed">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Cache Size:</span> <span id="home-cache-size">--</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">Last Run:</span> <span id="home-last-run">--</span></div>
                             </div>
                             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); color: var(--text-light); line-height: 1.8;">
-                                <div><span style="color: var(--text); font-weight: 500;">🏆 Schnellstes Modell:</span></div>
+                                <div><span style="color: var(--text); font-weight: 500;">🏆 Fastest Model:</span></div>
                                 <div style="margin-left: 1rem; margin-top: 0.5rem;">
                                     <div><span style="color: var(--text); font-weight: 500;">Name:</span> <span id="home-fastest-model">--</span></div>
-                                    <div><span style="color: var(--text); font-weight: 500;">Geschwindigkeit:</span> <span id="home-fastest-speed">--</span></div>
+                                    <div><span style="color: var(--text); font-weight: 500;">Speed:</span> <span id="home-fastest-speed">--</span></div>
                                 </div>
                             </div>
                             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 0.75rem;">
-                                <button onclick="showView('benchmark')" style="padding: 0.5rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">⚡ Benchmark starten</button>
-                                <button onclick="showView('results')" style="padding: 0.5rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">📊 Ergebnisse</button>
+                                <button onclick="showView('benchmark')" style="padding: 0.5rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">⚡ Start Benchmark</button>
+                                <button onclick="showView('results')" style="padding: 0.5rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 500; transition: opacity 0.2s;">📊 Results</button>
                             </div>
                         </div>
                     </div>
@@ -1166,20 +1166,20 @@
 
             <!-- Top Models -->
             <div class="section">
-                <h3>🏆 Top 5 Schnellste Modelle</h3>
+                <h3>🏆 Top 5 Fastest Models</h3>
                 <div id="home-capability-filters" style="margin: 0.5rem 0 0.75rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
                 <div class="card">
                     <table style="width: 100%; border-collapse: collapse;" id="home-top-models-table">
                         <thead>
                             <tr style="background: rgba(0,0,0,0.1); border-bottom: 2px solid rgba(0,0,0,0.2);">
-                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Modell</th>
-                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Quantisierung</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Model</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Quantization</th>
                                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Tokens/s</th>
                                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">VRAM (MB)</th>
                             </tr>
                         </thead>
                         <tbody id="home-top-models">
-                            <tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Lade Daten...</td></tr>
+                            <tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Loading data...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1187,19 +1187,19 @@
 
             <!-- Recent Runs -->
             <div class="section">
-                <h3>🕐 Letzte Benchmark-Runs</h3>
+                <h3>🕐 Recent Benchmark Runs</h3>
                 <div class="card">
                     <table style="width: 100%; border-collapse: collapse;" id="home-recent-runs-table">
                         <thead>
                             <tr style="background: rgba(0,0,0,0.1); border-bottom: 2px solid rgba(0,0,0,0.2);">
-                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Modell</th>
-                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Quantisierung</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Model</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Quantization</th>
                                 <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Tokens/s</th>
-                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Zeitstempel</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Timestamp</th>
                             </tr>
                         </thead>
                         <tbody id="home-recent-runs">
-                            <tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Lade Daten...</td></tr>
+                            <tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Loading data...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1213,11 +1213,11 @@
             <div class="card">
                 <h2>Status</h2>
                 <div class="status-badge" id="statusBadge" class="status-idle">
-                    ⏸️ Untätig
+                    ⏸️ Idle
                 </div>
                 <div class="info-grid" style="margin-top: 1rem;">
                     <div class="info-item">
-                        <div class="info-label">Laufzeit</div>
+                        <div class="info-label">Runtime</div>
                         <div class="info-value" id="uptime">--:--</div>
                     </div>
                     <div class="info-item">
@@ -1227,11 +1227,11 @@
                 </div>
             </div>
 
-            <!-- Control Panel Container (Steuerung + Export zusammen) -->
+            <!-- Control Panel Container (Control + Export together) -->
             <div style="display: flex; flex-direction: column; gap: 1rem; max-height: calc(100% - 20px);">
-                <!-- Steuerung Card -->
+                <!-- Control Card -->
                 <div class="card" style="flex: 0 0 auto;">
-                    <h2>Steuerung</h2>
+                    <h2>Control</h2>
                     <div class="controls">
                         <button class="btn-primary" id="btnStart" onclick="toggleStartModal()" title="Shortcut: S">
                             ▶️ Start <span style="opacity: 0.7; font-size: 0.8em;">(S)</span>
@@ -1240,17 +1240,17 @@
                             ⏸️ Pause
                         </button>
                         <button class="btn-success" id="btnResume" onclick="resumeBenchmark()" disabled>
-                            ▶️ Fortsetzen
+                            ▶️ Resume
                         </button>
                         <button class="btn-danger" id="btnStop" onclick="stopBenchmark()" disabled title="Shortcut: Q">
-                            ⏹️ Stopp <span style="opacity: 0.7; font-size: 0.8em;">(Q)</span>
+                            ⏹️ Stop <span style="opacity: 0.7; font-size: 0.8em;">(Q)</span>
                         </button>
                     </div>
                 </div>
 
                 <!-- Export Card -->
                 <div class="card" style="flex: 0 0 auto;">
-                    <h2>📥 Ergebnisse</h2>
+                    <h2>📥 Results</h2>
                     <div class="controls">
                         <a href="#" id="exportHTML" class="btn-primary" style="text-decoration: none;">
                             🌐 HTML
@@ -1271,81 +1271,81 @@
 
         <!-- Start Modal -->
         <div id="startModal" class="card hidden" style="margin-bottom: 2rem; border: 2px solid var(--primary);">
-            <h2>Benchmark Starten</h2>
+            <h2>Start Benchmark</h2>
             
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                <!-- Linke Spalte: Basis-Parameter -->
+                <!-- Left Column: Basic Parameters -->
                 <div>
-                    <h3 style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem; text-transform: uppercase;">📋 Basis-Parameter</h3>
+                    <h3 style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem; text-transform: uppercase;">📋 Basic Parameters</h3>
                     
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Anzahl Test-Durchläufe pro Modell">?</span> Runs</label>
+                        <label><span class="tooltip-icon" data-tooltip="Number of test runs per model">?</span> Runs</label>
                         <input type="number" id="paramRuns" value="3" min="1" max="10">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Eingabe-Kontextlänge in Tokens">?</span> Context Length</label>
+                        <label><span class="tooltip-icon" data-tooltip="Input context length in tokens">?</span> Context Length</label>
                         <input type="number" id="paramContext" value="2048" min="512" max="32768">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Max. Anzahl Modelle zum Testen">?</span> Modell-Limit</label>
-                        <input type="number" id="paramLimit" placeholder="Leer = alle Modelle" min="1">
+                        <label><span class="tooltip-icon" data-tooltip="Max. number of models to test">?</span> Model Limit</label>
+                        <input type="number" id="paramLimit" placeholder="Empty = all models" min="1">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Minimale Context-Länge des Modells">?</span> Min. Context</label>
-                        <input type="number" id="paramMinContext" placeholder="z.B. 32000" min="512">
+                        <label><span class="tooltip-icon" data-tooltip="Minimum context length of the model">?</span> Min. Context</label>
+                        <input type="number" id="paramMinContext" placeholder="e.g. 32000" min="512">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Größenlimit für Modelle in GB">?</span> Max. Größe</label>
-                        <input type="number" id="paramMaxSize" placeholder="z.B. 10.0" min="0.1" step="0.1">
+                        <label><span class="tooltip-icon" data-tooltip="Size limit for models in GB">?</span> Max. Size</label>
+                        <input type="number" id="paramMaxSize" placeholder="e.g. 10.0" min="0.1" step="0.1">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Eigener Test-Prompt statt Standard">?</span> Custom Prompt</label>
-                        <input type="text" id="paramPrompt" placeholder="Leer = Standard">
+                        <label><span class="tooltip-icon" data-tooltip="Custom test prompt instead of default">?</span> Custom Prompt</label>
+                        <input type="text" id="paramPrompt" placeholder="Empty = default">
                     </div>
                 </div>
 
-                <!-- Rechte Spalte: Filter & Optionen -->
+                <!-- Right Column: Filter & Options -->
                 <div>
-                    <h3 style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem; text-transform: uppercase;">🔍 Filter & Optionen</h3>
+                    <h3 style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 1rem; text-transform: uppercase;">🔍 Filter & Options</h3>
                     
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Regex: nur Modelle die dem Pattern entsprechen">?</span> Include Pattern</label>
-                        <input type="text" id="paramInclude" placeholder="z.B. mistral|llama">
+                        <label><span class="tooltip-icon" data-tooltip="Regex: only models matching the pattern">?</span> Include Pattern</label>
+                        <input type="text" id="paramInclude" placeholder="e.g. mistral|llama">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Regex: Modelle ausschließen die dem Pattern entsprechen">?</span> Exclude Pattern</label>
-                        <input type="text" id="paramExclude" placeholder="z.B. gpt|claude">
+                        <label><span class="tooltip-icon" data-tooltip="Regex: exclude models matching the pattern">?</span> Exclude Pattern</label>
+                        <input type="text" id="paramExclude" placeholder="e.g. gpt|claude">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Nur bestimmte Quantisierungen (z.B. q4,q5)">?</span> Quantisierungen</label>
-                        <input type="text" id="paramQuants" placeholder="z.B. q4,q5,q6">
+                        <label><span class="tooltip-icon" data-tooltip="Only specific quantizations (e.g. q4,q5)">?</span> Quantizations</label>
+                        <input type="text" id="paramQuants" placeholder="e.g. q4,q5,q6">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Nur bestimmte Architekturen (z.B. llama,mistral)">?</span> Architekturen</label>
-                        <input type="text" id="paramArch" placeholder="z.B. llama,mistral">
+                        <label><span class="tooltip-icon" data-tooltip="Only specific architectures (e.g. llama,mistral)">?</span> Architectures</label>
+                        <input type="text" id="paramArch" placeholder="e.g. llama,mistral">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Nur bestimmte Parametergrößen (z.B. 3B,7B)">?</span> Parametergrößen</label>
-                        <input type="text" id="paramParams" placeholder="z.B. 3B,7B">
+                        <label><span class="tooltip-icon" data-tooltip="Only specific parameter sizes (e.g. 3B,7B)">?</span> Parameter Sizes</label>
+                        <input type="text" id="paramParams" placeholder="e.g. 3B,7B">
                     </div>
 
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Sortierung der Ergebnisse">?</span> Rangieren nach</label>
+                        <label><span class="tooltip-icon" data-tooltip="Sorting of results">?</span> Rank By</label>
                         <select id="paramRankBy" style="padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.25rem; font-size: 0.9rem;">
-                            <option value="">Standard (Namen)</option>
-                            <option value="speed">⚡ Geschwindigkeit (Tokens/s)</option>
-                            <option value="efficiency">📊 Effizienz (Tokens/GB)</option>
+                            <option value="">Default (Names)</option>
+                            <option value="speed">⚡ Speed (Tokens/s)</option>
+                            <option value="efficiency">📊 Efficiency (Tokens/GB)</option>
                             <option value="ttft">⏱️ Time to First Token</option>
-                            <option value="vram">💾 VRAM-Nutzung</option>
+                            <option value="vram">💾 VRAM Usage</option>
                         </select>
                     </div>
                 </div>
@@ -1357,68 +1357,68 @@
                 <div class="checkbox-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramVisionOnly">
-                        <label for="paramVisionOnly"><span class="tooltip-icon" data-tooltip="Nur multimodale Modelle (mit Bild-Unterstützung)">?</span> Vision-Modelle</label>
+                        <label for="paramVisionOnly"><span class="tooltip-icon" data-tooltip="Only multimodal models (with image support)">?</span> Vision Models</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramDisableGTT">
-                        <label for="paramDisableGTT"><span class="tooltip-icon" data-tooltip="Deaktiviere Shared System RAM (GTT), nutze nur VRAM">?</span> GTT deaktivieren</label>
+                        <label for="paramDisableGTT"><span class="tooltip-icon" data-tooltip="Disable shared system RAM (GTT), use only VRAM">?</span> Disable GTT</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramToolsOnly">
-                        <label for="paramToolsOnly"><span class="tooltip-icon" data-tooltip="Nur Modelle mit Function-Calling/Tool-Support">?</span> Tool-Modelle</label>
+                        <label for="paramToolsOnly"><span class="tooltip-icon" data-tooltip="Only models with function calling/tool support">?</span> Tool Models</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramDevMode">
-                        <label for="paramDevMode"><span class="tooltip-icon" data-tooltip="Schnell: kleinstes Modell, 1 Durchlauf">?</span> Dev-Mode</label>
+                        <label for="paramDevMode"><span class="tooltip-icon" data-tooltip="Fast: smallest model, 1 run">?</span> Dev Mode</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramRetest">
-                        <label for="paramRetest"><span class="tooltip-icon" data-tooltip="Gecachte Modelle erneut testen (überschreibe Ergebnisse)">?</span> Neu testen</label>
+                        <label for="paramRetest"><span class="tooltip-icon" data-tooltip="Re-test cached models (overwrite results)">?</span> Re-test</label>
                     </div>
                     <div class="checkbox-item">
                         <input type="checkbox" id="paramEnableProfiling" checked>
-                        <label for="paramEnableProfiling"><span class="tooltip-icon" data-tooltip="Messe GPU-Temperatur und Stromverbrauch während Benchmark">?</span> Profiling</label>
+                        <label for="paramEnableProfiling"><span class="tooltip-icon" data-tooltip="Measure GPU temperature and power consumption during benchmark">?</span> Profiling</label>
                     </div>
                 </div>
 
-                <!-- Load-Config Parameter (Performance Tuning) -->
+                <!-- Load-Config Parameters (Performance Tuning) -->
                 <details style="margin-top: 1rem;">
-                    <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 4px;">⚙️ Erweiterte Load-Optionen (Performance-Tuning)</summary>
+                    <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 4px;">⚙️ Advanced Load Options (Performance Tuning)</summary>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 4px;">
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="GPU-Layers bestimmen wie viele Modell-Schichten auf der GPU laufen. -1=automatisch (nutzt alle verfügbaren Layers basierend auf VRAM), 0=nur CPU (sehr langsam, für große Modelle ohne GPU), >0=spezifische Anzahl (z.B. 32 für teilweises Offloading bei VRAM-Mangel). Standard: -1 für beste Performance.">?</span> GPU-Layers</label>
+                            <label><span class="tooltip-icon" data-tooltip="GPU-Layers determine how many model layers run on GPU. -1=automatic (uses all available layers based on VRAM), 0=CPU only (very slow, for large models without GPU), >0=specific number (e.g. 32 for partial offloading with VRAM shortage). Default: -1 for best performance.">?</span> GPU-Layers</label>
                             <input type="number" id="paramNGpuLayers" value="-1" min="-1" max="100">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Batch-Größe kontrolliert wie viele Tokens parallel beim Prompt-Processing verarbeitet werden. Höher=schnellerer Prompt-Verarbeitung aber mehr VRAM. 512=Standard (ausgewogen), 256=weniger VRAM, 1024+=schneller bei viel VRAM. Beeinflusst nur Prompt-Phase, nicht Generation.">?</span> Batch-Size</label>
+                            <label><span class="tooltip-icon" data-tooltip="Batch size controls how many tokens are processed in parallel during prompt processing. Higher=faster prompt processing but more VRAM. 512=default (balanced), 256=less VRAM, 1024+=faster with lots of VRAM. Only affects prompt phase, not generation.">?</span> Batch Size</label>
                             <input type="number" id="paramNBatch" value="512" min="1" max="2048" step="128">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="CPU-Threads für nicht-GPU Berechnungen (z.B. wenn Layers auf CPU laufen oder bei Multi-GPU-Setup). -1=automatisch (nutzt alle CPU-Kerne), 4-8=reduziert CPU-Last für andere Tasks. Nur relevant wenn n_gpu_layers < Gesamt-Layers. Standard: -1.">?</span> CPU-Threads</label>
+                            <label><span class="tooltip-icon" data-tooltip="CPU threads for non-GPU computations (e.g. when layers run on CPU or with multi-GPU setup). -1=automatic (uses all CPU cores), 4-8=reduces CPU load for other tasks. Only relevant if n_gpu_layers < total layers. Default: -1.">?</span> CPU Threads</label>
                             <input type="number" id="paramNThreads" value="-1" min="-1" max="64">
                         </div>
                         <div class="checkbox-item" style="grid-column: span 1;">
                             <input type="checkbox" id="paramFlashAttention" checked>
-                            <label for="paramFlashAttention"><span class="tooltip-icon" data-tooltip="Flash Attention ist eine optimierte Implementierung des Attention-Mechanismus die 20-30% schneller ist und weniger VRAM nutzt (bei gleicher Qualität). Aktiviert=schneller+effizienter. Deaktiviert=langsamere Standard-Implementation. Nur bei kompatiblen Modellen aktiv. Standard: AN (empfohlen).">?</span> Flash Attention</label>
+                            <label for="paramFlashAttention"><span class="tooltip-icon" data-tooltip="Flash Attention is an optimized implementation of the attention mechanism that is 20-30% faster and uses less VRAM (with same quality). Enabled=faster+more efficient. Disabled=slower standard implementation. Only active with compatible models. Default: ON (recommended).">?</span> Flash Attention</label>
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="RoPE (Rotary Position Embedding) Frequenz-Basis kontrolliert wie Positionen kodiert werden. Höhere Werte (z.B. 500000) erlauben längere Context-Windows. Nur ändern wenn Modell für erweiterten Context trainiert wurde (z.B. Code Llama mit 100k Context). Falsche Werte → schlechtere Qualität. Leer=Model-Default (empfohlen).">?</span> RoPE Freq Base</label>
-                            <input type="number" id="paramRopeFreqBase" placeholder="z.B. 10000.0" min="0" step="1000">
+                            <label><span class="tooltip-icon" data-tooltip="RoPE (Rotary Position Embedding) frequency base controls how positions are encoded. Higher values (e.g. 500000) allow longer context windows. Only change if model was trained for extended context (e.g. Code Llama with 100k context). Wrong values → worse quality. Empty=model default (recommended).">?</span> RoPE Freq Base</label>
+                            <input type="number" id="paramRopeFreqBase" placeholder="e.g. 10000.0" min="0" step="1000">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="RoPE Frequenz-Skalierung für Context-Verlängerung. <1.0=komprimiert Positionen für längere Contexts (z.B. 0.5 für doppelten Context), >1.0=expandiert (selten). Ermöglicht größere Contexts als Modell-Training, mit Qualitätsverlust. Nur für experimentelle Context-Extension. Leer=1.0 (Model-Default, empfohlen).">?</span> RoPE Freq Scale</label>
-                            <input type="number" id="paramRopeFreqScale" placeholder="z.B. 1.0" min="0" step="0.1">
+                            <label><span class="tooltip-icon" data-tooltip="RoPE frequency scaling for context extension. <1.0=compresses positions for longer contexts (e.g. 0.5 for double context), >1.0=expands (rare). Enables larger contexts than model training, with quality loss. Only for experimental context extension. Empty=1.0 (model default, recommended).">?</span> RoPE Freq Scale</label>
+                            <input type="number" id="paramRopeFreqScale" placeholder="e.g. 1.0" min="0" step="0.1">
                         </div>
                         <div class="checkbox-item">
                             <input type="checkbox" id="paramUseMmap" checked>
-                            <label for="paramUseMmap"><span class="tooltip-icon" data-tooltip="Memory-Mapping (mmap) lädt Modell-Dateien direkt von Disk statt in RAM zu kopieren. Vorteile: schnellerer Load-Start, geringerer RAM-Peak. Nachteil: erster Zugriff auf neue Layers langsamer (von SSD). Aktiviert=empfohlen (besonders bei großen Modellen). Deaktiviert=lädt alles in RAM (schneller nach Load, braucht viel RAM).">?</span> Use Memory-Mapping</label>
+                            <label for="paramUseMmap"><span class="tooltip-icon" data-tooltip="Memory-Mapping (mmap) loads model files directly from disk instead of copying to RAM. Advantages: faster load start, lower RAM peak. Disadvantage: first access to new layers slower (from SSD). Enabled=recommended (especially for large models). Disabled=loads everything into RAM (faster after load, needs lots of RAM).">?</span> Use Memory-Mapping</label>
                         </div>
                         <div class="checkbox-item">
                             <input type="checkbox" id="paramUseMlock">
-                            <label for="paramUseMlock"><span class="tooltip-icon" data-tooltip="Memory-Locking (mlock) pinnt Modell-Gewichte im RAM fest und verhindert Swapping auf Disk. Vorteil: konsistente Performance (kein Swap-Slowdown). Nachteil: blockiert RAM dauerhaft, System kann instabil werden bei RAM-Mangel. Nur aktivieren wenn genug RAM vorhanden. Standard: AUS (sicherer).">?</span> Use Memory-Locking</label>
+                            <label for="paramUseMlock"><span class="tooltip-icon" data-tooltip="Memory-Locking (mlock) pins model weights in RAM and prevents swapping to disk. Advantage: consistent performance (no swap slowdown). Disadvantage: permanently blocks RAM, system can become unstable with RAM shortage. Only enable if enough RAM available. Default: OFF (safer).">?</span> Use Memory-Locking</label>
                         </div>
                         <div class="form-group" style="grid-column: span 2;">
-                            <label><span class="tooltip-icon" data-tooltip="KV-Cache Quantisierung komprimiert Key-Value Cache im Speicher um VRAM zu sparen. f32/f16=volle Qualität (viel VRAM), q8_0=8-bit (geringer Qualitätsverlust, -50% VRAM), q4_0/q4_1=4-bit (spürbarer Verlust, -75% VRAM). Empfohlen: leer (Model-Default) oder f16 bei VRAM-Problemen. Bei langen Contexts kann VRAM-Einsparung kritisch sein.">?</span> KV-Cache Quantisierung</label>
+                            <label><span class="tooltip-icon" data-tooltip="KV-Cache quantization compresses key-value cache in memory to save VRAM. f32/f16=full quality (lots of VRAM), q8_0=8-bit (minor quality loss, -50% VRAM), q4_0/q4_1=4-bit (noticeable loss, -75% VRAM). Recommended: empty (model default) or f16 with VRAM issues. For long contexts, VRAM savings can be critical.">?</span> KV-Cache Quantization</label>
                             <select id="paramKvCacheQuant">
                                 <option value="">Model-Default</option>
                                 <option value="f32">f32 (Full Precision)</option>
@@ -1434,32 +1434,32 @@
                     </div>
                 </details>
 
-                <!-- Inference-Parameter (Spezielle Parameter) -->
+                <!-- Inference Parameters (Special Parameters) -->
                 <details style="margin-top: 1rem;">
-                    <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 4px;">🎯 Inference-Parameter (Sonderparameter)</summary>
+                    <summary style="cursor: pointer; font-weight: bold; padding: 0.5rem; background: rgba(255,255,255,0.05); border-radius: 4px;">🎯 Inference Parameters (Special Parameters)</summary>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 4px;">
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Steuert Zufälligkeit der Ausgabe. Niedrig (0.1-0.3) = vorhersehbarer/fokussierter. Hoch (0.7-1.0) = kreativer/diverser. Standard: 0.7">?</span> Temperature</label>
+                            <label><span class="tooltip-icon" data-tooltip="Controls randomness of output. Low (0.1-0.3) = more predictable/focused. High (0.7-1.0) = more creative/diverse. Default: 0.7">?</span> Temperature</label>
                             <input type="number" id="paramTemperature" placeholder="0.7" step="0.1" min="0" max="2">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Begrenzt Auswahl auf die K wahrscheinlichsten Tokens. Niedrig (10-20) = konservativer. Hoch (50-100) = variabler. Standard: 40">?</span> Top-K</label>
+                            <label><span class="tooltip-icon" data-tooltip="Limits selection to K most likely tokens. Low (10-20) = more conservative. High (50-100) = more variable. Default: 40">?</span> Top-K</label>
                             <input type="number" id="paramTopK" placeholder="40" step="1" min="1">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Nucleus Sampling: wählt kleinste Token-Menge deren Wahrscheinlichkeit >= P. Niedrig (0.5-0.7) = präziser. Hoch (0.9-0.95) = abwechslungsreicher. Standard: 0.9">?</span> Top-P</label>
+                            <label><span class="tooltip-icon" data-tooltip="Nucleus Sampling: selects smallest token set with probability >= P. Low (0.5-0.7) = more precise. High (0.9-0.95) = more diverse. Default: 0.9">?</span> Top-P</label>
                             <input type="number" id="paramTopP" placeholder="0.9" step="0.05" min="0" max="1">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Min-P Sampling: verwirft Tokens mit p < min_p * p_max. Alternative zu Top-P mit dynamischer Schwelle. Niedrig (0.01-0.03) = diverse. Hoch (0.1-0.2) = fokussiert. Standard: 0.05">?</span> Min-P</label>
+                            <label><span class="tooltip-icon" data-tooltip="Min-P Sampling: discards tokens with p < min_p * p_max. Alternative to Top-P with dynamic threshold. Low (0.01-0.03) = diverse. High (0.1-0.2) = focused. Default: 0.05">?</span> Min-P</label>
                             <input type="number" id="paramMinP" placeholder="0.05" step="0.01" min="0" max="1">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Repeat Penalty: bestraft wiederholte Tokens. Niedrig (1.0-1.1) = natürlicher, mehr Wiederholungen. Hoch (1.3-1.5) = weniger Wiederholungen. Standard: 1.2">?</span> Repeat Penalty</label>
+                            <label><span class="tooltip-icon" data-tooltip="Repeat Penalty: penalizes repeated tokens. Low (1.0-1.1) = more natural, more repetitions. High (1.3-1.5) = fewer repetitions. Default: 1.2">?</span> Repeat Penalty</label>
                             <input type="number" id="paramRepeatPenalty" placeholder="1.2" step="0.1" min="1" max="2">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Max Tokens: Maximale Anzahl generierter Tokens. Niedrig (128-256) = kurze Antworten, schneller. Hoch (512-2048) = ausführliche Antworten, langsamer. Standard: 256">?</span> Max Tokens</label>
+                            <label><span class="tooltip-icon" data-tooltip="Max Tokens: Maximum number of generated tokens. Low (128-256) = short answers, faster. High (512-2048) = detailed answers, slower. Default: 256">?</span> Max Tokens</label>
                             <input type="number" id="paramMaxTokens" placeholder="256" step="64" min="1">
                         </div>
                     </div>
@@ -1467,28 +1467,28 @@
 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Warnung wenn GPU-Temperatur überschritten wird">?</span> Max. GPU-Temp</label>
-                        <input type="number" id="paramMaxTemp" placeholder="z.B. 85.0" min="30" max="120" step="0.1">
+                        <label><span class="tooltip-icon" data-tooltip="Warning when GPU temperature is exceeded">?</span> Max. GPU Temp</label>
+                        <input type="number" id="paramMaxTemp" placeholder="e.g. 85.0" min="30" max="120" step="0.1">
                     </div>
                     <div class="form-group">
-                        <label><span class="tooltip-icon" data-tooltip="Warnung wenn GPU-Stromverbrauch überschritten wird">?</span> Max. GPU Power</label>
+                        <label><span class="tooltip-icon" data-tooltip="Warning when GPU power consumption is exceeded">?</span> Max. GPU Power</label>
                         <input type="number" id="paramMaxPower" placeholder="z.B. 400.0" min="50" max="1000" step="0.1">
                     </div>
                 </div>
             </div>
 
             <div class="controls" style="gap: 1rem; margin-top: 1rem;">
-                <button class="btn-success" onclick="startBenchmark()">✅ Benchmark Starten</button>
-                <button class="btn-primary" onclick="toggleStartModal()">❌ Abbrechen</button>
+                <button class="btn-success" onclick="startBenchmark()">✅ Start Benchmark</button>
+                <button class="btn-primary" onclick="toggleStartModal()">❌ Cancel</button>
             </div>
         </div>
 
         <!-- Hardware Monitoring Charts -->
         <div class="section">
-            <h3>💻 Hardware-Monitoring (Live)</h3>
+            <h3>💻 Hardware Monitoring (Live)</h3>
             <div class="hardware-charts-container">
                 <div class="chart-card">
-                    <h4>🌡️ GPU-Temperatur</h4>
+                    <h4>🌡️ GPU Temperature</h4>
                     <div id="chart-temperature" style="height: 300px;"></div>
                     <div class="chart-stats">
                         <div class="chart-stat">
@@ -1619,34 +1619,34 @@
         <!-- RESULTS VIEW -->
         <div id="view-results" class="view-container hidden" style="min-height: 500px;">
             <div class="section" style="min-height: 400px;">
-                <h3>📊 Benchmark-Ergebnisse</h3>
+                <h3>📊 Benchmark Results</h3>
                 <div class="card" style="padding: 1rem; min-height: 300px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <div>
-                            <span id="cache-stats-text-results" style="font-size: 0.9rem; opacity: 0.8;">Lade Cache-Statistiken...</span>
+                            <span id="cache-stats-text-results" style="font-size: 0.9rem; opacity: 0.8;">Loading cache stats...</span>
                         </div>
                         <div style="display: flex; gap: 0.5rem;">
-                            <button class="btn-primary" onclick="loadResults()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" title="Shortcut: R">🔄 Aktualisieren <span style="opacity: 0.7;">(R)</span></button>
-                            <button class="btn-danger" onclick="clearCache()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">🗑️ Cache Löschen</button>
+                            <button class="btn-primary" onclick="loadResults()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;" title="Shortcut: R">🔄 Refresh <span style="opacity: 0.7;">(R)</span></button>
+                            <button class="btn-danger" onclick="clearCache()" style="padding: 0.4rem 0.8rem; font-size: 0.85rem;">🗑️ Clear Cache</button>
                         </div>
                     </div>
                     <div style="overflow-x: auto;">
                         <table id="results-table" style="width: 100%; border-collapse: collapse;">
                             <thead>
                                 <tr style="background: rgba(255,255,255,0.05); border-bottom: 2px solid rgba(255,255,255,0.12);">
-                                    <th onclick="sortTable(0)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 700;">Modell ⇅</th>
-                                    <th onclick="sortTable(1)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 700;">Quantisierung ⇅</th>
+                                    <th onclick="sortTable(0)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 700;">Model ⇅</th>
+                                    <th onclick="sortTable(1)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 700;">Quantization ⇅</th>
                                     <th onclick="sortTable(2)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 700;">Tokens/s ⇅</th>
                                     <th onclick="sortTable(3)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 700;">VRAM (MB) ⇅</th>
                                     <th onclick="sortTable(4)" style="cursor: pointer; padding: 0.75rem; text-align: right; font-weight: 700;">GPU-Offload ⇅</th>
-                                    <th onclick="sortTable(5)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 700;">GPU-Typ ⇅</th>
-                                    <th style="padding: 0.75rem; text-align: center; font-weight: 700;">Aktionen</th>
+                                    <th onclick="sortTable(5)" style="cursor: pointer; padding: 0.75rem; text-align: left; font-weight: 700;">GPU Type ⇅</th>
+                                    <th style="padding: 0.75rem; text-align: center; font-weight: 700;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="results-tbody">
                                 <tr>
                                     <td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">
-                                        Keine Ergebnisse im Cache. Starte einen Benchmark!
+                                        No results in cache. Start a benchmark!
                                     </td>
                                 </tr>
                             </tbody>
@@ -1665,9 +1665,9 @@
                     <h3 style="color: var(--text); margin-bottom: 1rem;">🔍 Filter</h3>
                     
                     <div style="margin-bottom: 1rem;">
-                        <label style="color: var(--text); font-weight: 500; display: block; margin-bottom: 0.5rem;">Modell:</label>
+                        <label style="color: var(--text); font-weight: 500; display: block; margin-bottom: 0.5rem;">Model:</label>
                         <select id="comparison-model-select" onchange="loadModelHistory(this.value)" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
-                            <option value="">Modell auswählen...</option>
+                            <option value="">Select model...</option>
                         </select>
                     </div>
                     
@@ -1733,7 +1733,7 @@
                                             <th style="padding: 0.75rem; text-align: right;">Speed (tok/s)</th>
                                             <th style="padding: 0.75rem; text-align: right;">TTFT (ms)</th>
                                             <th style="padding: 0.75rem; text-align: right;">Gen-Time (ms)</th>
-                                            <th style="padding: 0.75rem; text-align: right;">Quantisierung</th>
+                                            <th style="padding: 0.75rem; text-align: right;">Quantization</th>
                                             <th style="padding: 0.75rem; text-align: right;">GPU-Offload</th>
                                             <th style="padding: 0.75rem; text-align: right;">VRAM (MB)</th>
                                         </tr>
@@ -1760,7 +1760,7 @@
                                         <div id="stat-std-dev" style="color: var(--text); font-weight: 600; font-size: 1.2rem;">--</div>
                                     </div>
                                     <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem;">
-                                        <div style="color: var(--text-light); font-size: 0.9rem;">Volatilität</div>
+                                        <div style="color: var(--text-light); font-size: 0.9rem;">Volatility</div>
                                         <div id="stat-volatility" style="color: var(--text); font-weight: 600; font-size: 1.2rem;">--</div>
                                     </div>
                                     <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem;">
@@ -1771,7 +1771,7 @@
                                 
                                 <!-- Trend Forecast -->
                                 <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
-                                    <div style="color: var(--text); font-weight: 600; margin-bottom: 0.5rem;">📊 Vorhersage nächste 3 Runs:</div>
+                                    <div style="color: var(--text); font-weight: 600; margin-bottom: 0.5rem;">📊 Forecast next 3 runs:</div>
                                     <div id="forecast-values" style="display: flex; gap: 1rem; color: var(--text);">
                                         <div>Run+1: <span id="forecast-1">--</span> tok/s</div>
                                         <div>Run+2: <span id="forecast-2">--</span> tok/s</div>
@@ -1781,20 +1781,20 @@
                                 
                                 <!-- Anomalies -->
                                 <div style="background: var(--bg); padding: 1rem; border-radius: 0.5rem;">
-                                    <div style="color: var(--text); font-weight: 600; margin-bottom: 0.5rem;">🔍 Anomalien:</div>
+                                    <div style="color: var(--text); font-weight: 600; margin-bottom: 0.5rem;">🔍 Anomalies:</div>
                                     <div id="anomalies-list" style="color: var(--text); font-size: 0.9rem;">
-                                        <div>Keine Anomalien erkannt</div>
+                                        <div>No anomalies detected</div>
                                     </div>
                                 </div>
                             </div>
                             <div id="advanced-stats-placeholder" style="color: var(--text-light); text-align: center;">
-                                Laden von erweiterten Statistiken...
+                                Loading extended statistics...
                             </div>
                         </div>
                         
                         <!-- Export & Actions -->
                         <div style="background: var(--card); padding: 1.5rem; border-radius: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                            <h3 style="color: var(--text); margin-bottom: 1rem;">💾 Export & Aktionen</h3>
+                            <h3 style="color: var(--text); margin-bottom: 1rem;">💾 Export & Actions</h3>
                             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
                                 <button onclick="exportComparison('csv')" style="padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📥 CSV Export</button>
                                 <button onclick="downloadComparisonChartsPNG()" style="padding: 0.75rem; background: var(--success); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600;">📸 Charts als PNG</button>
@@ -1804,7 +1804,7 @@
                     </div>
                     
                     <div id="comparison-placeholder" style="background: var(--card); padding: 2rem; border-radius: 0.75rem; text-align: center; color: var(--text-light);">
-                        <p style="font-size: 1.1rem;">📈 Modell auswählen um Vergleichsdaten anzuzeigen...</p>
+                        <p style="font-size: 1.1rem;">📈 Select model to display comparison data...</p>
                     </div>
                 </div>
             </div>
@@ -1824,41 +1824,41 @@
                     </div>
                     
                     <div class="form-group">
-                        <label style="color: var(--text); font-weight: 500;">Modell:</label>
+                        <label style="color: var(--text); font-weight: 500;">Model:</label>
                         <select id="ab-model-select" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
-                            <option value="">Modell auswählen...</option>
+                            <option value="">Select model...</option>
                         </select>
                     </div>
                     <div class="form-group" style="display:flex; align-items:center; gap:0.5rem;">
                         <input type="checkbox" id="ab-active-run-toggle" />
-                        <label for="ab-active-run-toggle" style="margin:0;">Aktiv ausführen (2 Benchmarks starten)</label>
+                        <label for="ab-active-run-toggle" style="margin:0;">Execute actively (start 2 benchmarks)</label>
                     </div>
                     
                     <div style="border-top: 1px solid var(--border); margin: 1rem 0; padding-top: 1rem;">
                         <h4 style="color: var(--success); margin-bottom: 0.75rem; font-size: 0.95rem;">📊 Baseline Params</h4>
                         
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Steuert Zufälligkeit der Ausgabe. Niedrig (0.1-0.3) = vorhersehbarer/fokussierter. Hoch (0.7-1.0) = kreativer/diverser. Standard: 0.7">?</span> Temperature:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Controls output randomness. Low (0.1-0.3) = more predictable/focused. High (0.7-1.0) = more creative/diverse. Default: 0.7">?</span> Temperature:</label>
                             <input type="number" id="ab-baseline-temp" placeholder="0.1" value="0.1" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Begrenzt Auswahl auf die K wahrscheinlichsten Tokens. Niedrig (10-20) = konservativer. Hoch (50-100) = variabler. Standard: 40">?</span> Top-K:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Limits selection to the K most likely tokens. Low (10-20) = more conservative. High (50-100) = more variable. Default: 40">?</span> Top-K:</label>
                             <input type="number" id="ab-baseline-topk" placeholder="40" value="40" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Nucleus Sampling: wählt kleinste Token-Menge deren Wahrscheinlichkeit >= P. Niedrig (0.5-0.7) = präziser. Hoch (0.9-0.95) = abwechslungsreicher. Standard: 0.9">?</span> Top-P:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Nucleus Sampling: selects smallest token set with cumulative probability >= P. Low (0.5-0.7) = more precise. High (0.9-0.95) = more varied. Default: 0.9">?</span> Top-P:</label>
                             <input type="number" id="ab-baseline-topp" placeholder="0.9" value="0.9" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Min-P Sampling: verwirft Tokens mit p < min_p * p_max. Alternative zu Top-P mit dynamischer Schwelle. Niedrig (0.01-0.03) = diverse. Hoch (0.1-0.2) = fokussiert. Standard: 0.05">?</span> Min-P:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Min-P Sampling: discards tokens with p < min_p * p_max. Alternative to Top-P with dynamic threshold. Low (0.01-0.03) = diverse. High (0.1-0.2) = focused. Default: 0.05">?</span> Min-P:</label>
                             <input type="number" id="ab-baseline-minp" placeholder="0.05" value="0.05" step="0.01" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Repeat Penalty: bestraft wiederholte Tokens. Niedrig (1.0-1.1) = natürlicher, mehr Wiederholungen. Hoch (1.3-1.5) = weniger Wiederholungen. Standard: 1.2">?</span> Repeat Penalty:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Repeat Penalty: penalizes repeated tokens. Low (1.0-1.1) = more natural, more repetition. High (1.3-1.5) = less repetition. Default: 1.2">?</span> Repeat Penalty:</label>
                             <input type="number" id="ab-baseline-penalty" placeholder="1.2" value="1.2" step="0.1" min="1" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Max Tokens: Maximale Anzahl generierter Tokens. Niedrig (128-256) = kurze Antworten, schneller. Hoch (512-2048) = ausführliche Antworten, langsamer. Standard: 256">?</span> Max Tokens:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Max Tokens: Maximum number of generated tokens. Low (128-256) = short answers, faster. High (512-2048) = detailed answers, slower. Default: 256">?</span> Max Tokens:</label>
                             <input type="number" id="ab-baseline-maxtokens" placeholder="256" value="256" step="64" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         
@@ -1866,39 +1866,39 @@
                             <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-light);">⚙️ Load-Config</summary>
                             <div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(255,255,255,0.02); border-radius: 4px;">
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="GPU-Layers: -1=auto (alle verfügbaren Layers auf GPU), 0=nur CPU, >0=spezifische Anzahl. Wichtig für A/B Tests mit unterschiedlichem VRAM-Verbrauch.">?</span> GPU-Layers:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="GPU-Layers: -1=auto (all available layers on GPU), 0=CPU only, >0=specific number. Important for A/B tests with different VRAM usage.">?</span> GPU-Layers:</label>
                                     <input type="number" id="ab-baseline-gpu-layers" value="-1" min="-1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="Batch-Size für Prompt-Verarbeitung. Höher=schneller, mehr VRAM. Teste z.B. 256 vs 1024 für VRAM/Speed Trade-off.">?</span> Batch:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="Batch size for prompt processing. Higher=faster, more VRAM. Test e.g. 256 vs 1024 for VRAM/Speed trade-off.">?</span> Batch:</label>
                                     <input type="number" id="ab-baseline-batch" value="512" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
                                     <input type="checkbox" id="ab-baseline-flash" checked />
-                                    <label for="ab-baseline-flash" style="margin:0;"><span class="tooltip-icon" data-tooltip="Flash Attention: 20-30% Speed-Up. Ideal für A/B Tests um Flash ON vs OFF Performance-Unterschied zu messen.">?</span> Flash Attention</label>
+                                    <label for="ab-baseline-flash" style="margin:0;"><span class="tooltip-icon" data-tooltip="Flash Attention: 20-30% speed-up. Ideal for A/B tests to measure Flash ON vs OFF performance difference.">?</span> Flash Attention</label>
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="CPU-Threads: -1=auto (alle Kerne), 0=Standard, >0=spezifisch. Teste z.B. 4 vs 8 für CPU-gebundene Workloads.">?</span> Threads:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="CPU-Threads: -1=auto (all cores), 0=default, >0=specific. Test e.g. 4 vs 8 for CPU-bound workloads.">?</span> Threads:</label>
                                     <input type="number" id="ab-baseline-threads" value="-1" min="-1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="RoPE Freq Base: Basis-Frequenz für Positional Encoding. Standard: None (model default). Nur ändern für längere Kontexte (z.B. 10000 → 32000).">?</span> RoPE Freq Base:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="RoPE Freq Base: Base frequency for positional encoding. Default: None (model default). Only change for longer contexts (e.g. 10000 → 32000).">?</span> RoPE Freq Base:</label>
                                     <input type="number" id="ab-baseline-rope-base" placeholder="None" min="0" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="RoPE Freq Scale: Skalierungsfaktor für RoPE. Standard: None. Teste z.B. 0.5 vs 1.0 für unterschiedliche Context-Längen.">?</span> RoPE Freq Scale:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="RoPE Freq Scale: Scaling factor for RoPE. Default: None. Test e.g. 0.5 vs 1.0 for different context lengths.">?</span> RoPE Freq Scale:</label>
                                     <input type="number" id="ab-baseline-rope-scale" placeholder="None" step="0.1" min="0" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
                                     <input type="checkbox" id="ab-baseline-mmap" checked />
-                                    <label for="ab-baseline-mmap" style="margin:0;"><span class="tooltip-icon" data-tooltip="Memory Mapping: lädt Model über mmap statt in RAM. True = weniger RAM-Verbrauch, False = schneller aber mehr RAM.">?</span> Use mmap</label>
+                                    <label for="ab-baseline-mmap" style="margin:0;"><span class="tooltip-icon" data-tooltip="Memory Mapping: loads model via mmap instead of RAM. True = less RAM usage, False = faster but more RAM.">?</span> Use mmap</label>
                                 </div>
                                 <div class="form-group">
                                     <input type="checkbox" id="ab-baseline-mlock" />
-                                    <label for="ab-baseline-mlock" style="margin:0;"><span class="tooltip-icon" data-tooltip="Memory Locking: verhindert Model-Swapping. True = konstante Latenz, False = kann bei Low-RAM swappen.">?</span> Use mlock</label>
+                                    <label for="ab-baseline-mlock" style="margin:0;"><span class="tooltip-icon" data-tooltip="Memory Locking: prevents model swapping. True = constant latency, False = may swap with low RAM.">?</span> Use mlock</label>
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="KV-Cache Quantization: reduziert VRAM für Key/Value Cache. None=FP16, q8_0=8-bit, q4_0=4-bit. Teste q8_0 vs None für VRAM-Einsparung.">?</span> KV Cache Quant:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="KV-Cache Quantization: reduces VRAM for Key/Value cache. None=FP16, q8_0=8-bit, q4_0=4-bit. Test q8_0 vs None for VRAM savings.">?</span> KV Cache Quant:</label>
                                     <select id="ab-baseline-kv-quant" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                         <option value="">None</option>
                                         <option value="q8_0">q8_0</option>
@@ -1913,27 +1913,27 @@
                         <h4 style="color: var(--warning); margin-bottom: 0.75rem; font-size: 0.95rem;">⚡ Test Params</h4>
                         
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Steuert Zufälligkeit der Ausgabe. Niedrig (0.1-0.3) = vorhersehbarer/fokussierter. Hoch (0.7-1.0) = kreativer/diverser. Standard: 0.7">?</span> Temperature:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Controls output randomness. Low (0.1-0.3) = more predictable/focused. High (0.7-1.0) = more creative/diverse. Default: 0.7">?</span> Temperature:</label>
                             <input type="number" id="ab-test-temp" placeholder="0.7" value="0.7" step="0.1" min="0" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Begrenzt Auswahl auf die K wahrscheinlichsten Tokens. Niedrig (10-20) = konservativer. Hoch (50-100) = variabler. Standard: 40">?</span> Top-K:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Limits selection to the K most likely tokens. Low (10-20) = more conservative. High (50-100) = more variable. Default: 40">?</span> Top-K:</label>
                             <input type="number" id="ab-test-topk" placeholder="50" value="50" step="1" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Nucleus Sampling: wählt kleinste Token-Menge deren Wahrscheinlichkeit >= P. Niedrig (0.5-0.7) = präziser. Hoch (0.9-0.95) = abwechslungsreicher. Standard: 0.9">?</span> Top-P:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Nucleus Sampling: selects smallest token set with cumulative probability >= P. Low (0.5-0.7) = more precise. High (0.9-0.95) = more varied. Default: 0.9">?</span> Top-P:</label>
                             <input type="number" id="ab-test-topp" placeholder="0.95" value="0.95" step="0.05" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Min-P Sampling: verwirft Tokens mit p < min_p * p_max. Alternative zu Top-P mit dynamischer Schwelle. Niedrig (0.01-0.03) = diverse. Hoch (0.1-0.2) = fokussiert. Standard: 0.05">?</span> Min-P:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Min-P Sampling: discards tokens with p < min_p * p_max. Alternative to Top-P with dynamic threshold. Low (0.01-0.03) = diverse. High (0.1-0.2) = focused. Default: 0.05">?</span> Min-P:</label>
                             <input type="number" id="ab-test-minp" placeholder="0.05" value="0.05" step="0.01" min="0" max="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Repeat Penalty: bestraft wiederholte Tokens. Niedrig (1.0-1.1) = natürlicher, mehr Wiederholungen. Hoch (1.3-1.5) = weniger Wiederholungen. Standard: 1.2">?</span> Repeat Penalty:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Repeat Penalty: penalizes repeated tokens. Low (1.0-1.1) = more natural, more repetition. High (1.3-1.5) = less repetition. Default: 1.2">?</span> Repeat Penalty:</label>
                             <input type="number" id="ab-test-penalty" placeholder="1.2" value="1.2" step="0.1" min="1" max="2" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         <div class="form-group">
-                            <label><span class="tooltip-icon" data-tooltip="Max Tokens: Maximale Anzahl generierter Tokens. Niedrig (128-256) = kurze Antworten, schneller. Hoch (512-2048) = ausführliche Antworten, langsamer. Standard: 256">?</span> Max Tokens:</label>
+                            <label><span class="tooltip-icon" data-tooltip="Max Tokens: Maximum number of generated tokens. Low (128-256) = short answers, faster. High (512-2048) = detailed answers, slower. Default: 256">?</span> Max Tokens:</label>
                             <input type="number" id="ab-test-maxtokens" placeholder="256" value="256" step="64" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                         </div>
                         
@@ -1941,39 +1941,39 @@
                             <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-light);">⚙️ Load-Config</summary>
                             <div style="margin-top: 0.5rem; padding: 0.5rem; background: rgba(255,255,255,0.02); border-radius: 4px;">
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="GPU-Layers: -1=auto (alle verfügbaren Layers auf GPU), 0=nur CPU, >0=spezifische Anzahl. Wichtig für A/B Tests mit unterschiedlichem VRAM-Verbrauch.">?</span> GPU-Layers:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="GPU-Layers: -1=auto (all available layers on GPU), 0=CPU only, >0=specific number. Important for A/B tests with different VRAM usage.">?</span> GPU-Layers:</label>
                                     <input type="number" id="ab-test-gpu-layers" value="-1" min="-1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="Batch-Size für Prompt-Verarbeitung. Höher=schneller, mehr VRAM. Teste z.B. 256 vs 1024 für VRAM/Speed Trade-off.">?</span> Batch:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="Batch size for prompt processing. Higher=faster, more VRAM. Test e.g. 256 vs 1024 for VRAM/Speed trade-off.">?</span> Batch:</label>
                                     <input type="number" id="ab-test-batch" value="512" min="1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
                                     <input type="checkbox" id="ab-test-flash" checked />
-                                    <label for="ab-test-flash" style="margin:0;"><span class="tooltip-icon" data-tooltip="Flash Attention: 20-30% Speed-Up. Ideal für A/B Tests um Flash ON vs OFF Performance-Unterschied zu messen.">?</span> Flash Attention</label>
+                                    <label for="ab-test-flash" style="margin:0;"><span class="tooltip-icon" data-tooltip="Flash Attention: 20-30% speed-up. Ideal for A/B tests to measure Flash ON vs OFF performance difference.">?</span> Flash Attention</label>
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="CPU-Threads: -1=auto (alle Kerne), 0=Standard, >0=spezifisch. Teste z.B. 4 vs 8 für CPU-gebundene Workloads.">?</span> Threads:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="CPU-Threads: -1=auto (all cores), 0=default, >0=specific. Test e.g. 4 vs 8 for CPU-bound workloads.">?</span> Threads:</label>
                                     <input type="number" id="ab-test-threads" value="-1" min="-1" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="RoPE Freq Base: Basis-Frequenz für Positional Encoding. Standard: None (model default). Nur ändern für längere Kontexte (z.B. 10000 → 32000).">?</span> RoPE Freq Base:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="RoPE Freq Base: Base frequency for positional encoding. Default: None (model default). Only change for longer contexts (e.g. 10000 → 32000).">?</span> RoPE Freq Base:</label>
                                     <input type="number" id="ab-test-rope-base" placeholder="None" min="0" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="RoPE Freq Scale: Skalierungsfaktor für RoPE. Standard: None. Teste z.B. 0.5 vs 1.0 für unterschiedliche Context-Längen.">?</span> RoPE Freq Scale:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="RoPE Freq Scale: Scaling factor for RoPE. Default: None. Test e.g. 0.5 vs 1.0 for different context lengths.">?</span> RoPE Freq Scale:</label>
                                     <input type="number" id="ab-test-rope-scale" placeholder="None" step="0.1" min="0" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                 </div>
                                 <div class="form-group">
                                     <input type="checkbox" id="ab-test-mmap" checked />
-                                    <label for="ab-test-mmap" style="margin:0;"><span class="tooltip-icon" data-tooltip="Memory Mapping: lädt Model über mmap statt in RAM. True = weniger RAM-Verbrauch, False = schneller aber mehr RAM.">?</span> Use mmap</label>
+                                    <label for="ab-test-mmap" style="margin:0;"><span class="tooltip-icon" data-tooltip="Memory Mapping: loads model via mmap instead of RAM. True = less RAM usage, False = faster but more RAM.">?</span> Use mmap</label>
                                 </div>
                                 <div class="form-group">
                                     <input type="checkbox" id="ab-test-mlock" />
-                                    <label for="ab-test-mlock" style="margin:0;"><span class="tooltip-icon" data-tooltip="Memory Locking: verhindert Model-Swapping. True = konstante Latenz, False = kann bei Low-RAM swappen.">?</span> Use mlock</label>
+                                    <label for="ab-test-mlock" style="margin:0;"><span class="tooltip-icon" data-tooltip="Memory Locking: prevents model swapping. True = constant latency, False = may swap with low RAM.">?</span> Use mlock</label>
                                 </div>
                                 <div class="form-group">
-                                    <label><span class="tooltip-icon" data-tooltip="KV-Cache Quantization: reduziert VRAM für Key/Value Cache. None=FP16, q8_0=8-bit, q4_0=4-bit. Teste q8_0 vs None für VRAM-Einsparung.">?</span> KV Cache Quant:</label>
+                                    <label><span class="tooltip-icon" data-tooltip="KV-Cache Quantization: reduces VRAM for Key/Value cache. None=FP16, q8_0=8-bit, q4_0=4-bit. Test q8_0 vs None for VRAM savings.">?</span> KV Cache Quant:</label>
                                     <select id="ab-test-kv-quant" style="padding: 0.65rem; border: 1px solid var(--border); border-radius: 0.5rem; background: var(--bg); color: var(--text);">
                                         <option value="">None</option>
                                         <option value="q8_0">q8_0</option>
@@ -1984,7 +1984,7 @@
                         </details>
                     </div>
                     
-                    <button id="ab-experiment-btn" onclick="handleABExperiment()" style="width: 100%; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600; margin-top: 1rem;">🚀 Experiment starten</button>
+                    <button id="ab-experiment-btn" onclick="handleABExperiment()" style="width: 100%; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-weight: 600; margin-top: 1rem;">🚀 Start Experiment</button>
                 </div>
                 
                 <!-- Results Panel -->
@@ -2066,7 +2066,7 @@
                     </div>
                     
                     <div id="ab-placeholder" style="background: var(--card); padding: 2rem; border-radius: 0.75rem; text-align: center; color: var(--text-light);">
-                        <p style="font-size: 1.1rem;">🧪 Experiment Builder nutzen um einen A/B Test zu starten...</p>
+                        <p style="font-size: 1.1rem;">🧪 Use Experiment Builder to start an A/B test...</p>
                     </div>
                 </div>
             </div>
@@ -2177,7 +2177,7 @@
 
         // ===== Theme Switching =====
         function switchTheme(themeName) {
-            // Entferne alle Theme-Klassen
+            // Remove all theme classes
             const allThemes = [
                 'dark-mode',
                 'theme-ocean', 'theme-slate', 'theme-mint', 'theme-speed', 'theme-neon',
@@ -2212,29 +2212,29 @@
         // ===== Update Export Links =====
         async function updateExportLinks() {
             try {
-                // Hole die neuesten Benchmark-Ergebnisse vom Server
+                // Fetch the latest benchmark results from the server
                 const response = await fetch('/api/latest-results');
                 const data = await response.json();
                 
                 if (data.latest) {
-                    // data.latest enthält nur den Dateinamen (z.B. "benchmark_results_20260105_195003.json")
+                    // data.latest contains only the filename (e.g. "benchmark_results_20260105_195003.json")
                     const baseFileName = data.latest.replace(/\.\w+$/, '');
                     
-                    // Aktualisiere die Links
+                    // Update the links
                     document.getElementById('exportHTML').href = `/results/${baseFileName}.html`;
                     document.getElementById('exportPDF').href = `/results/${baseFileName}.pdf`;
                     document.getElementById('exportJSON').href = `/results/${baseFileName}.json`;
                     document.getElementById('exportCSV').href = `/results/${baseFileName}.csv`;
                 } else {
-                    // Fallback: Alle Links auf resultsverzeichnis
+                    // Fallback: All links to results directory
                     const links = ['exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
                     links.forEach(id => {
                         document.getElementById(id).href = '/results/';
                     });
                 }
             } catch (error) {
-                console.error('Fehler beim Laden der Export-Links:', error);
-                // Fallback: Alle Links auf results-verzeichnis
+                console.error('Error loading export links:', error);
+                // Fallback: All links to results directory
                 const links = ['exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
                 links.forEach(id => {
                     document.getElementById(id).href = '/results/';
@@ -2242,8 +2242,8 @@
             }
         }
 
-        // Theme auf Laden einrichten
-        // Results beim Laden initialisieren
+        // Set up theme on load
+        // Initialize results on load
         // WebSocket & Timers starten
         window.addEventListener('DOMContentLoaded', () => {
             applyConfigDefaults();
@@ -2266,7 +2266,7 @@
             
             statusCheckInterval = setInterval(updateStatus, 2000);
             uptimeInterval = setInterval(updateUptime, 1000);
-            lmstudioHealthInterval = setInterval(checkLMStudioHealth, 5000);  // LM Studio Health alle 5s
+            lmstudioHealthInterval = setInterval(checkLMStudioHealth, 5000);  // LM Studio Health every 5s
 
             // Stelle sicher, dass eine View sichtbar ist (Home als Default)
             showView('home');
@@ -2320,7 +2320,7 @@
             
             const titles = {
                 success: title || 'Erfolg',
-                error: title || 'Fehler',
+                error: title || 'Error',
                 warning: title || 'Warnung',
                 info: title || 'Info'
             };
@@ -2371,7 +2371,7 @@
                     break;
                 case 'q':
                     e.preventDefault();
-                    if (confirm('Benchmark wirklich stoppen?')) {
+                    if (confirm('Really stop benchmark?')) {
                         stopBenchmark();
                     }
                     break;
@@ -2379,7 +2379,7 @@
                     e.preventDefault();
                     if (document.getElementById('view-results').classList.contains('hidden') === false) {
                         loadResults();
-                        showToast('Ergebnisse aktualisiert', 'success');
+                        showToast('Results updated', 'success');
                     }
                     break;
                 case 'escape':
@@ -2447,11 +2447,11 @@
                 // GPU Info
                 if (data.gpu_info) {
                     document.getElementById('home-gpu-model').textContent = data.gpu_info.model || data.gpu_info.type || '--';
-                    document.getElementById('home-gpu-vram').textContent = data.gpu_info.vram_gb ? `${data.gpu_info.vram_gb} GB` : 'Nicht erkannt';
+                    document.getElementById('home-gpu-vram').textContent = data.gpu_info.vram_gb ? `${data.gpu_info.vram_gb} GB` : 'Not detected';
                     document.getElementById('home-gpu-gtt').textContent = data.gpu_info.gtt_gb ? `${data.gpu_info.gtt_gb} GB` : '--';
                     document.getElementById('home-gpu-total').textContent = data.gpu_info.total_gb ? `${data.gpu_info.total_gb} GB` : '--';
                 } else {
-                    document.getElementById('home-gpu-model').textContent = 'Nicht erkannt';
+                    document.getElementById('home-gpu-model').textContent = 'Not detected';
                     document.getElementById('home-gpu-vram').textContent = '--';
                     document.getElementById('home-gpu-gtt').textContent = '--';
                     document.getElementById('home-gpu-total').textContent = '--';
@@ -2473,8 +2473,8 @@
                     document.getElementById('home-benchmark-avg-speed').textContent = avg;
                     document.getElementById('home-cache-size').textContent = `${data.cache_stats.db_size_mb} MB`;
                 } else {
-                    document.getElementById('home-benchmark-avg-speed').textContent = 'Keine Daten';
-                    document.getElementById('home-cache-size').textContent = 'Keine Daten';
+                    document.getElementById('home-benchmark-avg-speed').textContent = 'No data';
+                    document.getElementById('home-cache-size').textContent = 'No data';
                 }
                 
                 // Last Run
@@ -2565,7 +2565,7 @@
                         </tr>`;
                     }).join('');
                 } else {
-                    topModelsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Keine Daten verfügbar</td></tr>';
+                    topModelsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">No data available</td></tr>';
                 }
                 
                 // Recent Runs Table
@@ -2588,12 +2588,12 @@
                         </tr>`;
                     }).join('');
                 } else {
-                    recentRunsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Keine Daten verfügbar</td></tr>';
+                    recentRunsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">No data available</td></tr>';
                 }
                 
             } catch (error) {
                 console.error('Error loading dashboard stats:', error);
-                showToast('Fehler beim Laden der Dashboard-Statistiken', 'error');
+                showToast('Error loading dashboard statistics', 'error');
             }
         }
 
@@ -2650,7 +2650,7 @@
                     startTime = new Date(data.start_time);
                 }
             } catch (error) {
-                console.error('Status-Update Fehler:', error);
+                console.error('Status-Update Error:', error);
             }
         }
 
@@ -2664,11 +2664,11 @@
             badge.className = `status-badge status-${status}`;
             
             const icons = {
-                idle: '⏸️ Untätig',
-                running: '🔄 Läuft',
-                paused: '⏸️ Pausiert',
-                completed: '✅ Abgeschlossen',
-                stopped: '⏹️ Gestoppt'
+                idle: '⏸️ Idle',
+                running: '🔄 Running',
+                paused: '⏸️ Paused',
+                completed: '✅ Completed',
+                stopped: '⏹️ Stopped'
             };
             
             badge.textContent = icons[status] || status;
@@ -2724,7 +2724,7 @@
                         clearInterval(uptimeInterval);
                         uptimeInterval = null;
                     }
-                    // Aktualisiere Export-Links mit neuen Ergebnissen
+                    // Update export links with new results
                     updateExportLinks();
                     // Lade Results neu
                     setTimeout(() => {
@@ -2737,8 +2737,8 @@
             };
 
             websocket.onerror = (error) => {
-                console.error('❌ WebSocket Fehler:', error);
-                addAlert('⚠️ WebSocket-Fehler (versuche neu zu verbinden...)', 'warning');
+                console.error('❌ WebSocket Error:', error);
+                addAlert('⚠️ WebSocket Error (trying to reconnect...)', 'warning');
                 // Versuche Reconnect nach 3 Sekunden
                 setTimeout(() => {
                     console.log('🔄 Versuche WebSocket Reconnect...');
@@ -2748,10 +2748,10 @@
 
             websocket.onclose = () => {
                 console.log('❌ WebSocket getrennt');
-                // Wenn Benchmark noch läuft, versuche automatisch zu reconnecten
+                // If benchmark is still running, try to reconnect automatically
                 updateStatus().then(() => {
                     if (document.getElementById('statusBadge').classList.contains('status-running')) {
-                        console.log('🔄 Benchmark läuft noch - versuche WebSocket Reconnect...');
+                        console.log('🔄 Benchmark still running - attempting WebSocket reconnect...');
                         setTimeout(() => setupWebSocket(), 3000);
                     }
                 });
@@ -2841,14 +2841,14 @@
                 
                 const data = await response.json();
                 if (data.success) {
-                    showToast('Benchmark wurde gestartet', 'success');
+                    showToast('Benchmark started', 'success');
                     toggleStartModal();
                     updateStatus();
                 } else {
-                    showToast(data.message || 'Fehler beim Starten', 'error');
+                    showToast(data.message || 'Error starting', 'error');
                 }
             } catch (error) {
-                showToast(`Fehler: ${error.message}`, 'error');
+                showToast(`Error: ${error.message}`, 'error');
             }
         }
 
@@ -2856,10 +2856,10 @@
             try {
                 const response = await fetch('/api/benchmark/pause', { method: 'POST' });
                 const data = await response.json();
-                showToast(data.message || 'Pausiert', data.success ? 'success' : 'error');
+                showToast(data.message || 'Paused', data.success ? 'success' : 'error');
                 updateStatus();
             } catch (error) {
-                showToast(`Fehler: ${error.message}`, 'error');
+                showToast(`Error: ${error.message}`, 'error');
             }
         }
 
@@ -2867,20 +2867,20 @@
             try {
                 const response = await fetch('/api/benchmark/resume', { method: 'POST' });
                 const data = await response.json();
-                showToast(data.message || 'Fortgesetzt', data.success ? 'success' : 'error');
+                showToast(data.message || 'Resumed', data.success ? 'success' : 'error');
                 updateStatus();
             } catch (error) {
-                showToast(`Fehler: ${error.message}`, 'error');
+                showToast(`Error: ${error.message}`, 'error');
             }
         }
 
         async function stopBenchmark() {
-            if (!confirm('Benchmark wirklich beenden?')) return;
+            if (!confirm('Really stop benchmark?')) return;
             
             try {
                 const response = await fetch('/api/benchmark/stop', { method: 'POST' });
                 const data = await response.json();
-                showToast(data.message || 'Gestoppt', data.success ? 'success' : 'error');
+                showToast(data.message || 'Stopped', data.success ? 'success' : 'error');
                 updateStatus();
                 startTime = null;
                 // Stop uptime counter
@@ -2889,7 +2889,7 @@
                     uptimeInterval = null;
                 }
             } catch (error) {
-                showToast(`Fehler: ${error.message}`, 'error');
+                showToast(`Error: ${error.message}`, 'error');
             }
         }
 
@@ -2905,13 +2905,13 @@
                 const data = await response.json();
                 console.log('📊 API Response:', data);
                 resultsData = data.results || [];
-                console.log(`✅ ${resultsData.length} Ergebnisse geladen:`, resultsData);
+                console.log(`✅ ${resultsData.length} results loaded:`, resultsData);
                 renderResults();
                 updateCacheStats();
-                addAlert(`✅ ${resultsData.length} Ergebnisse geladen`, 'success');
+                addAlert(`✅ ${resultsData.length} results loaded`, 'success');
             } catch (error) {
-                console.error('❌ Fehler beim Laden:', error);
-                addAlert(`Fehler beim Laden: ${error.message}`, 'error');
+                console.error('❌ Error loading:', error);
+                addAlert(`Error loading: ${error.message}`, 'error');
             }
         }
 
@@ -2922,16 +2922,16 @@
                 if (data.success && data.stats) {
                     const stats = data.stats;
                     const statsText = 
-                        `📦 ${stats.total_entries} Einträge | ⚡ Ø ${stats.avg_tokens_per_sec.toFixed(1)} tok/s | ` +
-                        `🏆 Schnellste: ${stats.fastest_model} (${stats.fastest_speed.toFixed(1)} tok/s) | ` +
+                        `📦 ${stats.total_entries} Entries | ⚡ Ø ${stats.avg_tokens_per_sec.toFixed(1)} tok/s | ` +
+                        `🏆 Fastest: ${stats.fastest_model} (${stats.fastest_speed.toFixed(1)} tok/s) | ` +
                         `💾 ${stats.db_size_mb.toFixed(2)} MB`;
                     
-                    // Update both IDs (für Results-View)
+                    // Update both IDs (for Results-View)
                     const elem = document.getElementById('cache-stats-text-results');
                     if (elem) elem.innerHTML = statsText;
                 }
             } catch (error) {
-                console.error('Cache-Statistiken laden fehlgeschlagen:', error);
+                console.error('Loading cache statistics failed:', error);
             }
         }
 
@@ -2943,7 +2943,7 @@
             }
 
             if (!Array.isArray(resultsData) || resultsData.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">Keine Ergebnisse im Cache. Starte einen Benchmark!</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">No results in cache. Start a benchmark!</td></tr>';
                 return;
             }
 
@@ -3010,8 +3010,8 @@
                 viewResults.style.minHeight = 'auto';
                 console.log('After reflow - view-results height:', viewResults.offsetHeight);
             } catch (err) {
-                console.error('renderResults Fehler:', err, sorted[0]);
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">Fehler beim Rendern. Siehe Konsole.</td></tr>';
+                console.error('renderResults error:', err, sorted[0]);
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">Rendering error. See console.</td></tr>';
             }
         }
 
@@ -3026,35 +3026,35 @@
         }
 
         async function deleteResult(modelKey) {
-            if (!confirm(`Cache-Eintrag für "${modelKey}" wirklich löschen?`)) return;
+            if (!confirm(`Really delete cache entry for "${modelKey}"?`)) return;
             
             try {
                 const response = await fetch(`/api/cache/${encodeURIComponent(modelKey)}`, { method: 'DELETE' });
                 const data = await response.json();
-                showToast(data.message || 'Eintrag gelöscht', data.success ? 'success' : 'error');
+                showToast(data.message || 'Entry deleted', data.success ? 'success' : 'error');
                 if (data.success) {
                     await loadResults();
                     await loadDashboardStats();
                 }
             } catch (error) {
-                showToast(`Fehler: ${error.message}`, 'error');
+                showToast(`Error: ${error.message}`, 'error');
             }
         }
 
         async function clearCache() {
-            // Doppelte Bestätigung mit Detailinformation
+            // Double confirmation with detailed information
             const confirmClear = confirm(
-                '⚠️ WARNUNG: ALLE Benchmark-Ergebnisse werden gelöscht!\n\n' +
-                'Diese Aktion:\n' +
-                '• Löscht alle gecachten Ergebnisse\n' +
-                '• Kann NICHT rückgängig gemacht werden\n' +
-                '• Ein automatisches Backup wird erstellt\n\n' +
-                'Sicher fortfahren?'
+                '⚠️ WARNING: ALL benchmark results will be deleted!\n\n' +
+                'This action:\n' +
+                '• Deletes all cached results\n' +
+                '• CANNOT be undone\n' +
+                '• An automatic backup will be created\n\n' +
+                'Proceed anyway?'
             );
             if (!confirmClear) return;
             
-            // Zweite Bestätigung
-            const finalConfirm = confirm('✋ LETZTE CHANCE!\n\nBin ich mir wirklich sicher? (Ja = Cache wird gelöscht)');
+            // Second confirmation
+            const finalConfirm = confirm('✋ LAST CHANCE!\n\nAre you really sure? (Yes = Cache will be deleted)');
             if (!finalConfirm) return;
             
             try {
@@ -3062,18 +3062,18 @@
                 const data = await response.json();
                 if (data.success) {
                     const backupMsg = data.backup_file ? ` - Backup: ${data.backup_file}` : '';
-                    showToast(`Cache gelöscht: ${data.deleted_count} Einträge${backupMsg}`, 'success', 'Cache geleert', 6000);
+                    showToast(`Cache cleared: ${data.deleted_count} entries${backupMsg}`, 'success', 'Cache cleared', 6000);
                     await loadResults();
                     await loadDashboardStats();
                 } else {
-                    showToast(data.message || 'Fehler beim Löschen', 'error');
+                    showToast(data.message || 'Error deleting', 'error');
                 }
             } catch (error) {
-                showToast(`Fehler: ${error.message}`, 'error');
+                showToast(`Error: ${error.message}`, 'error');
             }
         }
 
-        // ===== UI Hilfsfunktionen =====
+        // ===== UI Helper Functions =====
         function toggleStartModal() {
             document.getElementById('startModal').classList.toggle('hidden');
         }
@@ -3357,27 +3357,27 @@
         }
 
         async function loadComparisonData() {
-            // Lädt alle Modelle mit Historie
+            // Loads all models with history
             try {
                 const response = await fetch('/api/comparison/models');
                 const data = await response.json();
                 if (data.success && data.models.length > 0) {
                     const select = document.getElementById('comparison-model-select');
-                    select.innerHTML = '<option value="">Modell auswählen...</option>';
+                    select.innerHTML = '<option value="">Select model...</option>';
                     data.models.forEach(model => {
                         const option = document.createElement('option');
                         option.value = model.model_name;
-                        option.textContent = `${model.model_name} (${model.entry_count} Läufe)`;
+                        option.textContent = `${model.model_name} (${model.entry_count} runs)`;
                         select.appendChild(option);
                     });
                 }
             } catch (error) {
-                console.error('Fehler beim Laden der Vergleichsdaten:', error);
+                console.error('Error loading comparison data:', error);
             }
         }
 
         async function loadModelHistory(modelName) {
-            // Lädt Historie + Advanced Stats und rendert
+            // Loads history + advanced stats and renders
             if (!modelName) {
                 document.getElementById('comparison-charts-container').style.display = 'none';
                 document.getElementById('comparison-placeholder').style.display = 'block';
@@ -3385,7 +3385,7 @@
                 document.getElementById('advanced-stats-container').style.display = 'none';
                 const placeholder = document.getElementById('advanced-stats-placeholder');
                 placeholder.style.display = 'block';
-                placeholder.textContent = 'Bitte Modell auswählen';
+                placeholder.textContent = 'Please select a model';
                 return;
             }
 
@@ -3407,17 +3407,17 @@
                     document.getElementById('advanced-stats-container').style.display = 'none';
                     const placeholder = document.getElementById('advanced-stats-placeholder');
                     placeholder.style.display = 'block';
-                    placeholder.textContent = 'Keine Daten gefunden';
+                    placeholder.textContent = 'No data gefunden';
                 }
             } catch (error) {
-                console.error('Fehler beim Laden der Modell-Historie:', error);
+                console.error('Error loading model history:', error);
                 document.getElementById('comparison-charts-container').style.display = 'none';
                 document.getElementById('comparison-placeholder').style.display = 'block';
                 comparisonAdvancedStats = null;
                 document.getElementById('advanced-stats-container').style.display = 'none';
                 const placeholder = document.getElementById('advanced-stats-placeholder');
                 placeholder.style.display = 'block';
-                placeholder.textContent = 'Fehler beim Laden der Daten';
+                placeholder.textContent = 'Error loading data';
             }
         }
 
@@ -3444,11 +3444,11 @@
         async function applyComparisonFilters() {
             const selectedModel = document.getElementById('comparison-model-select').value;
             if (!selectedModel) {
-                alert('Bitte zuerst ein Modell auswählen');
+                alert('Please select a model first');
                 return;
             }
             if (!comparisonHistory || comparisonHistory.length === 0) {
-                // Falls Historie noch nicht geladen wurde, lade sie jetzt
+                // If history not yet loaded, load it now
                 await loadModelHistory(selectedModel);
                 return; // loadModelHistory ruft renderComparisonData auf
             }
@@ -3477,11 +3477,11 @@
             if (filtered.length === 0) {
                 document.getElementById('comparison-charts-container').style.display = 'none';
                 document.getElementById('comparison-placeholder').style.display = 'block';
-                document.getElementById('comparison-placeholder').querySelector('p').textContent = '📈 Keine Daten für diesen Filter...';
+                document.getElementById('comparison-placeholder').querySelector('p').textContent = '📈 No data for this filter...';
                 document.getElementById('advanced-stats-container').style.display = 'none';
                 const placeholder = document.getElementById('advanced-stats-placeholder');
                 placeholder.style.display = 'block';
-                placeholder.textContent = 'Keine Daten für diesen Filter';
+                placeholder.textContent = 'No data for this filter';
                 return;
             }
 
@@ -3543,7 +3543,7 @@
                 checkbox.addEventListener('change', renderComparisonData);
 
                 const text = document.createElement('span');
-                text.textContent = q === '__none__' ? 'Keine Quantisierung' : q;
+                text.textContent = q === '__none__' ? 'No quantization' : q;
 
                 label.appendChild(checkbox);
                 label.appendChild(text);
@@ -3627,14 +3627,14 @@
                     comparisonAdvancedStats = data;
                     displayAdvancedStatistics(data);
                 } else {
-                    document.getElementById('advanced-stats-placeholder').textContent = 'Fehler beim Laden der Statistiken';
+                    document.getElementById('advanced-stats-placeholder').textContent = 'Error loading statistics';
                     document.getElementById('advanced-stats-container').style.display = 'none';
                 }
             } catch (error) {
-                console.error('Fehler beim Abrufen erweit. Statistiken:', error);
+                console.error('Error fetching extended statistics:', error);
                 const placeholder = document.getElementById('advanced-stats-placeholder');
                 placeholder.style.display = 'block';
-                placeholder.textContent = 'Fehler beim Laden der Statistiken';
+                placeholder.textContent = 'Error loading statistics';
                 document.getElementById('advanced-stats-container').style.display = 'none';
             }
         }
@@ -3667,14 +3667,14 @@
                     anomalyList.appendChild(div);
                 });
             } else {
-                anomalyList.innerHTML = '<div>Keine Anomalien erkannt</div>';
+                anomalyList.innerHTML = '<div>No anomalies detected</div>';
             }
         }
 
         async function exportComparison(format) {
             const modelName = document.getElementById('comparison-model-select').value;
             if (!modelName) {
-                alert('Bitte zuerst ein Modell auswählen');
+                alert('Please select a model first');
                 return;
             }
 
@@ -3698,18 +3698,18 @@
                 if (data.success && data.url) {
                     window.open(data.url, '_blank');
                 } else {
-                    alert(`❌ Export Fehler: ${data.error || 'Unbekannter Fehler'}`);
+                    alert(`❌ Export Error: ${data.error || 'Unknown error'}`);
                 }
             } catch (error) {
-                console.error('Export Fehler:', error);
-                alert('Fehler beim Export');
+                console.error('Export Error:', error);
+                alert('Export error');
             }
         }
 
         function downloadComparisonChartsPNG() {
             const modelName = document.getElementById('comparison-model-select').value;
             if (!modelName) {
-                alert('Bitte zuerst ein Modell auswählen');
+                alert('Please select a model first');
                 return;
             }
             Plotly.downloadImage('comparison-speed-chart', { format: 'png', width: 1000, height: 600, filename: `${modelName}_speed` });
@@ -3726,16 +3726,16 @@
                 const data = await response.json();
                 if (data.success && data.models.length > 0) {
                     const select = document.getElementById('ab-model-select');
-                    select.innerHTML = '<option value="">Modell auswählen...</option>';
+                    select.innerHTML = '<option value="">Select model...</option>';
                     data.models.forEach(model => {
                         const option = document.createElement('option');
-                        option.value = model.name;  // voller Name inkl. Quantisierung (z.B. qwen/qwen2.5-vl-7b@q3_k_l)
+                        option.value = model.name;  // full name incl. quantization (e.g. qwen/qwen2.5-vl-7b@q3_k_l)
                         option.textContent = `${model.name} (${model.params}, ${model.size})`;
                         select.appendChild(option);
                     });
                 }
             } catch (error) {
-                console.error('Fehler beim Laden von A/B Modellen:', error);
+                console.error('Error loading A/B models:', error);
             }
         }
 
@@ -3758,14 +3758,14 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    showToast('⏹️ Experiment gestoppt', 'info', 'A/B Test');
+                    showToast('⏹️ Experiment stopped', 'info', 'A/B Test');
                     updateABButton('start');
                     abExperimentRunning = false;
                 } else {
-                    showToast('❌ Fehler beim Stoppen', 'error', 'A/B Test');
+                    showToast('❌ Error stopping', 'error', 'A/B Test');
                 }
             } catch (error) {
-                console.error('Fehler beim Stoppen:', error);
+                console.error('Error stopping:', error);
             }
         }
 
@@ -3804,7 +3804,7 @@
             console.log('🚀 startABExperiment called');
             const modelName = document.getElementById('ab-model-select').value;
             if (!modelName) {
-                alert('Bitte ein Modell auswählen');
+                alert('Please select a model');
                 return;
             }
 
@@ -3815,7 +3815,7 @@
             abExperimentRunning = true;
             updateABButton('running');
 
-            // Hilfsfunktion: Konvertiert Komma zu Punkt für Dezimalzahlen
+            // Helper function: Converts comma to dot for decimal numbers
             const parseGermanFloat = (value) => {
                 if (typeof value === 'string') {
                     value = value.replace(',', '.');
@@ -3823,7 +3823,7 @@
                 return parseFloat(value);
             };
 
-            // Baseline Params (ohne 'name' - wird nur für Anzeige benötigt)
+            // Baseline Params (without 'name' - only needed for display)
             const baselineParams = {
                 temperature: parseGermanFloat(document.getElementById('ab-baseline-temp').value),
                 top_k: parseInt(document.getElementById('ab-baseline-topk').value),
@@ -3843,7 +3843,7 @@
                 kv_cache_quant: document.getElementById('ab-baseline-kv-quant').value || null
             };
 
-            // Test Params (ohne 'name' - wird nur für Anzeige benötigt)
+            // Test Params (without 'name' - only needed for display)
             const testParams = {
                 temperature: parseGermanFloat(document.getElementById('ab-test-temp').value),
                 top_k: parseInt(document.getElementById('ab-test-topk').value),
@@ -3888,7 +3888,7 @@
                     comparisonData = await runResponse.json();
                     console.log('✅ Results received:', comparisonData);
                     if (!comparisonData.success) {
-                        alert(`Fehler beim aktiven A/B Lauf: ${comparisonData.error}`);
+                        alert(`Error during active A/B run: ${comparisonData.error}`);
                         updateABButton('start');
                         abExperimentRunning = false;
                         return;
@@ -3901,7 +3901,7 @@
                         test_params: testParams,
                         ...comparisonData
                     };
-                    showToast(`✅ Aktiv ausgeführt: "${expName}"`, 'success', 'A/B Lauf');
+                    showToast(`✅ Actively executed: "${expName}"`, 'success', 'A/B Run');
                 } else {
                     // 1. Create Experiment
                     const createResponse = await fetch('/api/experiments/create', {
@@ -3916,7 +3916,7 @@
                     });
                     const createData = await createResponse.json();
                     if (!createData.success) {
-                        alert(`Fehler: ${createData.error}`);
+                        alert(`Error: ${createData.error}`);
                         return;
                     }
                     const expId = createData.experiment_id;
@@ -3932,7 +3932,7 @@
                     });
                     comparisonData = await comparisonResponse.json();
                     if (!comparisonData.success) {
-                        alert(`Fehler beim Abrufen von Daten: ${comparisonData.error}`);
+                        alert(`Error fetching data: ${comparisonData.error}`);
                         return;
                     }
                     abExperimentData = {
@@ -3956,8 +3956,8 @@
                 abExperimentRunning = false;
                 
             } catch (error) {
-                console.error('❌ A/B Experiment Fehler:', error);
-                alert('Fehler beim A/B Experiment');
+                console.error('❌ A/B Experiment Error:', error);
+                alert('Error in A/B experiment');
                 updateABButton('start');
                 abExperimentRunning = false;
             }
@@ -4067,7 +4067,7 @@
 
         async function exportABResults(format) {
             if (!abExperimentData) {
-                alert('Bitte zuerst ein Experiment ausführen');
+                alert('Please run an experiment first');
                 return;
             }
 
@@ -4091,15 +4091,15 @@
                     window.open(data.url, '_blank');
                     showToast(`✅ ${format.toUpperCase()} exportiert`, 'success');
                 } else {
-                    alert(`Fehler: ${data.error}`);
+                    alert(`Error: ${data.error}`);
                 }
             } catch (error) {
-                console.error('Export Fehler:', error);
-                alert('Fehler beim Export');
+                console.error('Export Error:', error);
+                alert('Error during export');
             }
         }
 
-        // Lade Vergleichsdaten beim Laden der Seite
+        // Load comparison data on page load
         window.addEventListener('load', () => {
             loadComparisonData();
             loadABModels();

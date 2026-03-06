@@ -298,8 +298,8 @@ class BenchmarkManager:
             self.benchmark_log_file = logs_dir / filename
             self.output_task = asyncio.create_task(self._consume_output())
 
-            logger.info("✅ Benchmark gestartet mit PID %s", self.process.pid)
-            logger.info("📝 Benchmark-Log: %s", self.benchmark_log_file)
+            logger.info(f"✅ Benchmark started with PID %s", self.process.pid)
+            logger.info("📝 Benchmark log: %s", self.benchmark_log_file)
             return True
         except Exception as e:
             logger.error(f"❌ Error starting benchmark: {e}")
@@ -314,7 +314,7 @@ class BenchmarkManager:
         try:
             self.process.send_signal(signal.SIGSTOP)
             self.status = "paused"
-            logger.info("⏸️ Benchmark pausiert")
+            logger.info("⏸️ Benchmark paused")
             return True
         except Exception as e:
             logger.error(f"❌ Error pausing: {e}")
@@ -328,7 +328,7 @@ class BenchmarkManager:
         try:
             self.process.send_signal(signal.SIGCONT)
             self.status = "running"
-            logger.info("▶️ Benchmark fortgesetzt")
+            logger.info("▶️ Benchmark resumed")
             return True
         except Exception as e:
             logger.error(f"❌ Error resuming: {e}")
@@ -469,7 +469,7 @@ class BenchmarkManager:
 
             return ""
         except Exception as e:
-            logger.error(f"❌ Fehler beim Lesen des Outputs: {e}")
+            logger.error(f"❌ Error reading output: {e}")
             return ""
 
 
@@ -479,7 +479,7 @@ manager = BenchmarkManager()
 async def run_metadata_scraper():
     """Runs the metadata scraper script best-effort."""
     if not SCRAPER_SCRIPT.exists():
-        logger.warning(f"⚠️ Scraper-Skript nicht gefunden: {SCRAPER_SCRIPT}")
+        logger.warning(f"⚠️ Scraper script not found: {SCRAPER_SCRIPT}")
         return
     try:
         await asyncio.to_thread(
@@ -490,13 +490,13 @@ async def run_metadata_scraper():
             text=True,
             timeout=300,
         )
-        logger.info("📝 Metadata-Scraper ausgeführt (nur fehlende Modelle)")
+        logger.info("📝 Metadata scraper executed (missing models only)")
     except subprocess.TimeoutExpired:
-        logger.warning("⚠️ Scraper Ablaufzeit erreicht (>=300s), abbrechen")
+        logger.warning("⚠️ Scraper timeout reached (>=300s), aborting")
     except subprocess.CalledProcessError as scrape_err:
-        logger.warning(f"⚠️ Scraper Fehler: {scrape_err.stderr or scrape_err}")
+        logger.warning(f"⚠️ Scraper error: {scrape_err.stderr or scrape_err}")
     except Exception as scrape_exc:
-        logger.warning(f"⚠️ Scraper Ausführung fehlgeschlagen: {scrape_exc}")
+        logger.warning(f"⚠️ Scraper execution failed: {scrape_exc}")
 
 
 @asynccontextmanager
@@ -507,14 +507,14 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         if manager.is_running():
-            logger.info("🛑 Benchmark bei Shutdown beenden...")
+            logger.info("🛑 Stopping benchmark on shutdown...")
             manager.stop_benchmark()
             await asyncio.sleep(1)
 
 app = FastAPI(
     title="LM Studio Benchmark Dashboard",
     description=(
-        "Web-Dashboard zur Steuerung und Überwachung von LM Studio Benchmarks"
+        "Web dashboard for controlling and monitoring LM Studio benchmarks"
     ),
     lifespan=lifespan
 )
@@ -527,7 +527,7 @@ app.mount("/results", StaticFiles(directory=str(RESULTS_DIR)), name="results")
 # ============================================================================
 
 class BenchmarkParams(BaseModel):
-    """Parameter für Benchmark-Start"""
+    """Parameters for benchmark start"""
     runs: Optional[int] = None
     context: Optional[int] = None
     limit: Optional[int] = None
@@ -572,7 +572,7 @@ class BenchmarkParams(BaseModel):
 
 
 class InferenceParamSet(BaseModel):
-    """Satz von Inference-Parametern für A/B Test"""
+    """Set of inference parameters for A/B test"""
     name: str
     temperature: Optional[float] = None
     top_k: Optional[int] = None
@@ -626,14 +626,14 @@ def perform_ttest(
     baseline_speeds: List[float],
     test_speeds: List[float],
 ) -> Dict[str, Any]:
-    """Führe Independent Samples t-test durch"""
+    """Perform independent samples t-test"""
     if len(baseline_speeds) < 2 or len(test_speeds) < 2:
         return {
             "test_name": "t-test",
             "p_value": None,
             "t_statistic": None,
             "significant": False,
-            "reason": "Unzureichend Daten (min. 2 Proben pro Gruppe)"
+            "reason": "Insufficient data (min. 2 Proben pro Gruppe)"
         }
 
     try:
@@ -668,7 +668,7 @@ def perform_ttest(
                 "test_name": "t-test",
                 "p_value": None,
                 "significant": False,
-                "reason": "Keine Varianz"
+                "reason": "No variance"
             }
 
         t_stat = (baseline_mean - test_mean) / se
@@ -684,7 +684,7 @@ def perform_ttest(
         }
 
     except Exception as e:
-        logger.error(f"Fehler bei t-test: {e}")
+        logger.error(f"Error in t-test: {e}")
         return {
             "test_name": "t-test",
             "error": str(e),
@@ -697,8 +697,8 @@ def match_parameters(
     target_params: Dict[str, Any]
 ) -> bool:
     """
-    Prüft, ob die Parameter eines DB-Eintrags den Ziel-Parametern
-    entsprechen; None-Werte in target_params werden ignoriert.
+    Checks if the parameters of a DB entry match the target parameters;
+    None-values in target_params will be ignored.
     """
     for key, target_value in target_params.items():
         if target_value is None:
@@ -745,7 +745,7 @@ def calculate_effect_size(
         return {
             "cohens_d": 0.0,
             "effect_magnitude": "negligible",
-            "reason": "Unzureichend Daten für Effektgröße"
+            "reason": "Insufficient data for effect size"
         }
 
     pooled_var = ((n1 - 1) * baseline_var + (n2 - 1) * test_var) / denom
@@ -949,7 +949,7 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
                 params.enable_profiling, params.disable_gtt)
 
     success = await manager.start_benchmark(args)
-    message = "✅ Benchmark gestartet" if success else "❌ Fehler beim Starten"
+    message = "✅ Benchmark started" if success else "❌ Error starting"
     return {
         "success": success,
         "status": manager.status,
@@ -959,23 +959,23 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
 
 @app.post("/api/benchmark/pause")
 async def pause_benchmark() -> dict:
-    """Pausiert laufenden Benchmark"""
+    """Pauses running benchmark"""
     success = manager.pause_benchmark()
     return {
         "success": success,
         "status": manager.status,
-        "message": "⏸️ Pausiert" if success else "❌ Fehler"
+        "message": "⏸️ Paused" if success else "❌ Error"
     }
 
 
 @app.post("/api/benchmark/resume")
 async def resume_benchmark() -> dict:
-    """Setzt pausiertes Benchmark fort"""
+    """Resumes paused benchmark"""
     success = manager.resume_benchmark()
     return {
         "success": success,
         "status": manager.status,
-        "message": "▶️ Fortgesetzt" if success else "❌ Fehler"
+        "message": "▶️ Resumed" if success else "❌ Error"
     }
 
 
@@ -986,7 +986,7 @@ async def stop_benchmark() -> dict:
     return {
         "success": success,
         "status": manager.status,
-        "message": "⏹️ Beendet" if success else "❌ Fehler"
+        "message": "⏹️ Stopped" if success else "❌ Error"
     }
 
 
@@ -1025,11 +1025,11 @@ async def shutdown_system() -> dict:
 
 @app.get("/api/results")
 async def get_results() -> dict:
-    """Gibt alle gecachten Benchmark-Ergebnisse zurück"""
+    """Returns all cached benchmark results"""
     if not BenchmarkCache:
         return {
             "success": False,
-            "error": "BenchmarkCache nicht verfügbar",
+            "error": "BenchmarkCache not available",
             "results": []
         }
 
@@ -1082,7 +1082,7 @@ async def get_results() -> dict:
             "results": results_data
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Laden der Ergebnisse: {e}")
+        logger.error(f"❌ Error loading results: {e}")
         return {
             "success": False,
             "error": str(e),
@@ -1092,9 +1092,9 @@ async def get_results() -> dict:
 
 @app.get("/api/cache/stats")
 async def get_cache_stats() -> dict:
-    """Gibt Cache-Statistiken zurück"""
+    """Returns cache statistics"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         cache = BenchmarkCache(DATABASE_FILE)
@@ -1106,9 +1106,9 @@ async def get_cache_stats() -> dict:
                 "stats": {
                     "total_entries": 0,
                     "avg_tokens_per_sec": 0,
-                    "fastest_model": "Keine Daten",
+                    "fastest_model": "No data",
                     "fastest_speed": 0,
-                    "slowest_model": "Keine Daten",
+                    "slowest_model": "No data",
                     "slowest_speed": 0,
                     "db_size_mb": 0
                 }
@@ -1138,17 +1138,17 @@ async def get_cache_stats() -> dict:
             }
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen von Cache-Statistiken: {e}")
+        logger.error(f"❌ Error fetching cache statistics: {e}")
         return {"success": False, "error": str(e)}
-        logger.error(f"❌ Fehler beim Laden der Cache-Stats: {e}")
+        logger.error(f"❌ Error loading cache stats: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.delete("/api/cache/{model_key}")
 async def delete_cache_entry(model_key: str) -> dict:
-    """Löscht einen einzelnen Cache-Eintrag"""
+    """Deletes a single cache entry"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         conn = sqlite3.connect(DATABASE_FILE)
@@ -1176,14 +1176,14 @@ async def delete_cache_entry(model_key: str) -> dict:
         deleted_count = cursor.rowcount
         conn.close()
 
-        logger.info(f"🗑️ Cache-Eintrag gelöscht: {model_key}")
+        logger.info(f"🗑️ Cache entry deleted: {model_key}")
         return {
             "success": True,
-            "message": f"✅ {deleted_count} Eintrag(e) gelöscht",
+            "message": f"✅ {deleted_count} entry(ies) deleted",
             "model_key": model_key
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Löschen des Cache-Eintrags: {e}")
+        logger.error(f"❌ Error deleting cache entry: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1191,7 +1191,7 @@ async def delete_cache_entry(model_key: str) -> dict:
 async def clear_cache() -> dict:
     """Leert den gesamten Cache mit Backup"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         backup_dir = RESULTS_DIR / "backups"
@@ -1207,7 +1207,7 @@ async def clear_cache() -> dict:
             logger.info("💾 Backup erstellt: %s", backup_file)
         except (shutil.Error, OSError) as backup_error:
             logger.warning(
-                "⚠️ Backup-Fehler beim Kopieren (wird trotzdem geleert): %s",
+                "⚠️ Backup error during copy (will still be cleared): %s",
                 backup_error
             )
             backup_file = None
@@ -1220,23 +1220,23 @@ async def clear_cache() -> dict:
         conn.commit()
         conn.close()
 
-        logger.warning("⚠️ Cache geleert: %d Einträge", count_before)
-        logger.warning("💾 Backup verfügbar unter: %s", backup_file)
+        logger.warning("⚠️ Cache cleared: %d entries", count_before)
+        logger.warning("💾 Backup available at: %s", backup_file)
 
         return {
             "success": True,
-            "message": f"✅ Cache geleert: {count_before} Einträge gelöscht",
+            "message": f"✅ Cache cleared: {count_before} entries deleted",
             "deleted_count": count_before,
             "backup_file": str(backup_file) if backup_file else None
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Leeren des Cache: {e}")
+        logger.error(f"❌ Error clearing cache: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.get("/api/lmstudio/models")
 async def get_lmstudio_models() -> dict:
-    """Gibt lokale LM Studio Modelle zurück."""
+    """Returns local LM Studio models."""
     try:
         result = subprocess.run(
             ["lms", "ls"],
@@ -1249,7 +1249,7 @@ async def get_lmstudio_models() -> dict:
         if result.returncode != 0:
             return {
                 "success": False,
-                "error": f"LM Studio CLI Fehler: {result.stderr}",
+                "error": f"LM Studio CLI error: {result.stderr}",
                 "models": [],
             }
 
@@ -1287,17 +1287,17 @@ async def get_lmstudio_models() -> dict:
             "models": []
         }
     except Exception as e:
-        logger.error("❌ Fehler beim Holen der LM Studio Modelle: %s", e)
+        logger.error("❌ Error fetching LM Studio models: %s", e)
         return {"success": False, "error": str(e), "models": []}
 
 
 @app.get("/api/comparison/models")
 async def get_comparison_models() -> dict:
-    """Gibt alle Modelle mit historischen Daten zurück"""
+    """Returns all models with historical data"""
     if not BenchmarkCache:
         return {
             "success": False,
-            "error": "BenchmarkCache nicht verfügbar",
+            "error": "BenchmarkCache not available",
             "models": []
         }
 
@@ -1347,19 +1347,19 @@ async def get_comparison_models() -> dict:
         conn.close()
         return {"success": True, "models": models}
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen von Vergleichs-Modellen: {e}")
+        logger.error(f"❌ Error fetching comparison models: {e}")
         return {"success": False, "error": str(e), "models": []}
 
 
 @app.get("/api/comparison/{model_name:path}")
 async def get_model_history(model_name: str) -> dict:
-    """Gibt Verlauf für ein bestimmtes Modell zurück"""
+    """Returns history for a specific model"""
     model_name = unquote(model_name)
 
     if not BenchmarkCache:
         return {
             "success": False,
-            "error": "BenchmarkCache nicht verfügbar",
+            "error": "BenchmarkCache not available",
             "history": []
         }
 
@@ -1428,7 +1428,7 @@ async def get_model_history(model_name: str) -> dict:
             "stats": stats
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Abrufen des Modell-Verlaufs: {e}")
+        logger.error(f"❌ Error fetching model history: {e}")
         return {"success": False, "error": str(e), "history": []}
 
 
@@ -1439,9 +1439,9 @@ async def export_comparison_csv(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> dict:
-    """Exportiert Vergleichsdaten als CSV mit optionalen Filtern"""
+    """Exports comparison data as CSV mit optionalen Filtern"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         payload = {}
@@ -1490,7 +1490,7 @@ async def export_comparison_csv(
         conn.close()
 
         if not rows:
-            return {"success": False, "error": "Keine Daten gefunden"}
+            return {"success": False, "error": "No data gefunden"}
 
         def safe_round(value, digits):
             try:
@@ -1554,7 +1554,7 @@ async def export_comparison_csv(
 
         return {
             "success": True,
-            "message": f"CSV exportiert: {len(rows)} Einträge",
+            "message": f"CSV exported: {len(rows)} entries",
             "file": str(export_file),
             "url": f"/results/{export_file.name}",
             "rows": len(rows),
@@ -1567,15 +1567,15 @@ async def export_comparison_csv(
             "csv_preview": csv_content.split('\n')[:5]
         }
     except Exception as e:
-        logger.error(f"❌ CSV Export Fehler: {e}")
+        logger.error(f"❌ CSV Export Error: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.post("/api/comparison/export/pdf")
 async def export_comparison_pdf(request: Request) -> dict:
-    """Exportiert Vergleichsdaten als einfache PDF-Zusammenfassung"""
+    """Exports comparison data as simple PDF summary"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         payload = {}
@@ -1623,7 +1623,7 @@ async def export_comparison_pdf(request: Request) -> dict:
         conn.close()
 
         if not rows:
-            return {"success": False, "error": "Keine Daten gefunden"}
+            return {"success": False, "error": "No data gefunden"}
 
         speeds = [row[3] for row in rows if row[3] is not None]
         stats = {
@@ -1694,22 +1694,22 @@ async def export_comparison_pdf(request: Request) -> dict:
             pdf_bytes.extend(b"%%EOF")
             return bytes(pdf_bytes)
 
-        quant_str = ', '.join(quant_filters) if quant_filters else 'Alle'
+        quant_str = ', '.join(quant_filters) if quant_filters else 'All'
         min_spd = stats['min_speed']
         max_spd = stats['max_speed']
         avg_spd = stats['avg_speed']
         header_lines = [
             "Historical Comparison Export",
             f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"Model: {model_filter or 'Alle Modelle'}",
+            f"Model: {model_filter or 'All models'}",
             f"Zeitraum: {start_filter or '---'} bis {end_filter or '---'}",
-            f"Quantisierung: {quant_str}",
+            f"Quantization: {quant_str}",
             "",
             "Statistiken:",
             f"  Min Speed: {min_spd if min_spd is not None else '-'} tok/s",
             f"  Max Speed: {max_spd if max_spd is not None else '-'} tok/s",
             f"  Avg Speed: {avg_spd if avg_spd is not None else '-'} tok/s",
-            f"  Läufe: {stats['entries']}",
+            f"  Runs: {stats['entries']}",
             "",
             "Top 50 Runs:"
         ]
@@ -1733,7 +1733,7 @@ async def export_comparison_pdf(request: Request) -> dict:
 
         return {
             "success": True,
-            "message": f"PDF exportiert: {len(rows)} Einträge",
+            "message": f"PDF exported: {len(rows)} entries",
             "file": str(export_file),
             "url": f"/results/{export_file.name}",
             "rows": len(rows),
@@ -1746,7 +1746,7 @@ async def export_comparison_pdf(request: Request) -> dict:
             }
         }
     except Exception as e:
-        logger.error(f"❌ PDF Export Fehler: {e}")
+        logger.error(f"❌ PDF Export Error: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1756,7 +1756,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
     model_name = unquote(model_name)
 
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         conn = sqlite3.connect(DATABASE_FILE)
@@ -1774,7 +1774,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
         if not data or len(data) < 2:
             return {
                 "success": False,
-                "error": "Unzureichend Daten für statistische Analyse"
+                "error": "Insufficient data for statistical analysis"
             }
 
         speeds = [row[1] for row in data]
@@ -1846,7 +1846,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
             alert = "⚪ STABLE"
 
         logger.info(
-            "📈 Advanced Stats für %s: σ=%.2f, slope=%.4f",
+            "📈 Advanced stats for %s: σ=%.2f, slope=%.4f",
             model_name,
             std_dev,
             slope
@@ -1888,7 +1888,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
             }
         }
     except Exception as e:
-        logger.error(f"❌ Advanced Statistics Fehler: {e}")
+        logger.error(f"❌ Advanced Statistics Error: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1909,7 +1909,7 @@ async def get_output() -> dict:
 async def create_experiment(request: CreateExperimentRequest) -> dict:
     """Erstellt ein neues A/B Testing Experiment"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         experiment_id = str(uuid.uuid4())[:8]
@@ -1921,7 +1921,7 @@ async def create_experiment(request: CreateExperimentRequest) -> dict:
         test_hash = calculate_hash(test_dict)
 
         logger.info(f"🧪 Experiment erstellt: {experiment_id}")
-        logger.info(f"   Modell: {request.model_name}")
+        logger.info(f"   Model: {request.model_name}")
         logger.info(f"   Baseline: {baseline_dict} (hash: {baseline_hash})")
         logger.info(f"   Test: {test_dict} (hash: {test_hash})")
 
@@ -1936,7 +1936,7 @@ async def create_experiment(request: CreateExperimentRequest) -> dict:
             "created_at": datetime.now().isoformat()
         }
     except Exception as e:
-        logger.error(f"❌ Experiment Creation Fehler: {e}")
+        logger.error(f"❌ Experiment Creation Error: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -1949,11 +1949,11 @@ async def get_experiment_comparison(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None
 ) -> dict:
-    """Vergleicht zwei Parameter-Kombinationen für ein Modell"""
+    """Compares two parameter combinations for a model"""
     if not BenchmarkCache:
         return {
             "success": False,
-            "error": "BenchmarkCache nicht verfügbar",
+            "error": "BenchmarkCache not available",
             "comparison": {}
         }
 
@@ -1984,7 +1984,7 @@ async def get_experiment_comparison(
         conn.close()
 
         if not rows:
-            return {"success": False, "error": "Keine Daten für dieses Modell", "comparison": {}}
+            return {"success": False, "error": "No data for this model", "comparison": {}}
 
         baseline_data = []
         test_data = []
@@ -2024,7 +2024,7 @@ async def get_experiment_comparison(
         if not baseline_speeds or not test_speeds:
             return {
                 "success": False,
-                "error": f"Unzureichend Daten: Baseline={len(baseline_speeds)} entries, Test={len(test_speeds)} entries",
+                "error": f"Insufficient data: Baseline={len(baseline_speeds)} entries, Test={len(test_speeds)} entries",
                 "comparison": {}
             }
 
@@ -2054,7 +2054,7 @@ async def get_experiment_comparison(
             delta_pct = ((test_mean - baseline_mean) / baseline_mean * 100)
         else:
             delta_pct = None
-            logger.warning("⚠️ Baseline-Mean ist 0 – Delta% wird nicht berechnet")
+            logger.warning("⚠️ Baseline-Mean is 0 – Delta% will not be calculated")
         if test_result.get("significant"):
             winner = "test" if test_mean > baseline_mean else "baseline"
         else:
@@ -2082,7 +2082,7 @@ async def get_experiment_comparison(
             }
         }
     except Exception as e:
-        logger.error(f"❌ Experiment Comparison Fehler: {e}")
+        logger.error(f"❌ Experiment Comparison Error: {e}")
         return {"success": False, "error": str(e), "comparison": {}}
 
 
@@ -2091,9 +2091,9 @@ async def post_experiment_comparison(
     experiment_id: str,
     request: Request
 ) -> dict:
-    """Vergleicht zwei Parameter-Sets für ein Modell (Payload enthält Params)"""
+    """Compares two parameter sets for a model (payload contains params)"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar", "comparison": {}}
+        return {"success": False, "error": "BenchmarkCache not available", "comparison": {}}
 
     try:
         payload = await request.json()
@@ -2134,7 +2134,7 @@ async def post_experiment_comparison(
         conn.close()
 
         if not rows:
-            return {"success": False, "error": "Keine Daten für dieses Modell", "comparison": {}}
+            return {"success": False, "error": "No data for this model", "comparison": {}}
 
         baseline_data: List[Dict[str, Any]] = []
         test_data: List[Dict[str, Any]] = []
@@ -2184,7 +2184,7 @@ async def post_experiment_comparison(
         if not baseline_speeds or not test_speeds:
             return {
                 "success": False,
-                "error": f"Unzureichend Daten: Baseline={len(baseline_speeds)} entries, Test={len(test_speeds)} entries",
+                "error": f"Insufficient data: Baseline={len(baseline_speeds)} entries, Test={len(test_speeds)} entries",
                 "comparison": {}
             }
 
@@ -2215,7 +2215,7 @@ async def post_experiment_comparison(
         if baseline_mean and baseline_mean != 0:
             delta_pct = ((test_mean - baseline_mean) / baseline_mean * 100)
         else:
-            logger.warning("⚠️ Baseline-Mean ist 0 – Delta% wird nicht berechnet")
+            logger.warning("⚠️ Baseline-Mean is 0 – Delta% will not be calculated")
         if test_result.get("significant"):
             winner = "test" if test_mean > baseline_mean else "baseline"
         else:
@@ -2237,7 +2237,7 @@ async def post_experiment_comparison(
             }
         }
     except Exception as e:
-        logger.error(f"❌ Experiment Comparison Fehler: {e}")
+        logger.error(f"❌ Experiment Comparison Error: {e}")
         return {"success": False, "error": str(e), "comparison": {}}
 
 
@@ -2386,15 +2386,15 @@ async def export_experiment(
             }
 
     except Exception as e:
-        logger.error(f"❌ Experiment Export Fehler: {e}")
+        logger.error(f"❌ Experiment Export Error: {e}")
         return {"success": False, "error": str(e)}
 
 
 @app.post("/api/experiments/run")
 async def run_experiment(request: Request) -> dict:
-    """Führt A/B Experiment aktiv aus: zwei Benchmarks mit angegebenen Parametern"""
+    """Actively runs A/B experiment: two benchmarks with specified parameters"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         payload = await request.json()
@@ -2404,7 +2404,7 @@ async def run_experiment(request: Request) -> dict:
         test_params = payload.get("test_params", {})
         runs = payload.get("runs", 3)
         context = payload.get("context", 2048)
-        prompt = payload.get("prompt", "Erkläre maschinelles Lernen in 3 Sätzen")
+        prompt = payload.get("prompt", "Explain machine learning in 3 sentences")
 
         if not model_name:
             return {"success": False, "error": "model_name fehlt"}
@@ -2512,7 +2512,7 @@ async def run_experiment(request: Request) -> dict:
         baseline_data: List[Dict[str, Any]] = []
         test_data: List[Dict[str, Any]] = []
 
-        logger.info(f"🔍 Gefundene Gesamt-Einträge: {len(all_rows)}")
+        logger.info(f"🔍 Found total entries: {len(all_rows)}")
 
         for row in all_rows:
             ts, speed, ttft, gen_time, temp, topk, topp, minp, penalty, maxts, run_idx, \
@@ -2565,7 +2565,7 @@ async def run_experiment(request: Request) -> dict:
         if not baseline_speeds or not test_speeds:
             return {
                 "success": False,
-                "error": f"Unzureichend Daten nach Ausführung: Baseline={len(baseline_speeds)}, Test={len(test_speeds)}",
+                "error": f"Insufficient data after execution: Baseline={len(baseline_speeds)}, Test={len(test_speeds)}",
                 "baseline": {"count": len(baseline_speeds)},
                 "test": {"count": len(test_speeds)}
             }
@@ -2596,7 +2596,7 @@ async def run_experiment(request: Request) -> dict:
         if baseline_mean and baseline_mean != 0:
             delta_pct = ((test_mean - baseline_mean) / baseline_mean * 100)
         else:
-            logger.warning("⚠️ Baseline-Mean ist 0 – Delta% wird nicht berechnet (active run)")
+            logger.warning("⚠️ Baseline-Mean is 0 – Delta% will not be calculated (active run)")
         winner = "tie"
         if test_result.get("significant"):
             winner = "test" if test_mean > baseline_mean else "baseline"
@@ -2788,9 +2788,9 @@ async def run_experiment(request: Request) -> dict:
                 doc.build(elements)
                 logger.info(f"📑 A/B Test PDF gespeichert: {pdf_file}")
             except ImportError:
-                logger.warning("⚠️ reportlab nicht installiert - PDF Export übersprungen")
+                logger.warning("⚠️ reportlab not installed - PDF export skipped")
             except Exception as pdf_error:
-                logger.error(f"❌ PDF Export Fehler: {pdf_error}")
+                logger.error(f"❌ PDF Export Error: {pdf_error}")
 
             results_data['exports'] = {
                 'json': str(json_file),
@@ -2798,7 +2798,7 @@ async def run_experiment(request: Request) -> dict:
                 'html': str(html_file)
             }
         except Exception as export_error:
-            logger.error(f"❌ Export Fehler: {export_error}")
+            logger.error(f"❌ Export Error: {export_error}")
 
         return results_data
 
@@ -2812,15 +2812,15 @@ async def run_experiment(request: Request) -> dict:
         sqlite3.Error,
     ) as e:
         import traceback
-        logger.error(f"❌ Experiment Run Fehler: {e}")
+        logger.error(f"❌ Experiment Run Error: {e}")
         logger.error(f"Traceback: {traceback.format_exc()}")
         return {"success": False, "error": str(e)}
 
 @app.get("/api/dashboard/stats")
 async def get_dashboard_stats() -> dict:
-    """Dashboard-Statistiken für Home-View"""
+    """Dashboard statistics for Home view"""
     if not BenchmarkCache:
-        return {"success": False, "error": "BenchmarkCache nicht verfügbar"}
+        return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
         import platform
@@ -3200,7 +3200,7 @@ async def get_dashboard_stats() -> dict:
             "lmstudio": lmstudio_health
         }
     except Exception as e:
-        logger.error(f"❌ Fehler beim Laden der Dashboard-Stats: {e}")
+        logger.error(f"❌ Error loading dashboard stats: {e}")
         return {"success": False, "error": str(e)}
 
 
@@ -3210,7 +3210,7 @@ async def get_dashboard_stats() -> dict:
 
 @app.websocket("/ws/benchmark")
 async def websocket_benchmark(websocket: WebSocket):
-    """WebSocket für Live-Streaming von Benchmark-Output"""
+    """WebSocket for live-streaming of benchmark output"""
     await websocket.accept()
     manager.connected_clients.add(websocket)
 
@@ -3373,7 +3373,7 @@ async def get_latest_results() -> dict:
 
         return {"latest": latest_file.name}
     except Exception as e:
-        logger.error(f"Fehler beim Finden der neuesten Ergebnisse: {e}")
+        logger.error(f"Error finding latest results: {e}")
         return {"latest": None}
 
 
@@ -3399,21 +3399,21 @@ if __name__ == "__main__":
     import uvicorn
 
     parser = argparse.ArgumentParser(
-        description="FastAPI Web-Dashboard für LM Studio Benchmark"
+        description="FastAPI Web Dashboard for LM Studio Benchmark"
     )
     parser.add_argument(
         "--port", "-p",
         type=int,
         default=None,
         help=(
-            "Port für Web-Dashboard "
-            "(Standard: automatisch freien Port suchen)"
+            "Port for web dashboard "
+            "(default: automatically search for a free port)"
         )
     )
     parser.add_argument(
         '--debug', '-d',
         action='store_true',
-        help='Aktiviere DEBUG-Logging für detaillierte Ausgaben'
+        help='Enable DEBUG logging for detailed output'
     )
     args = parser.parse_args()
 
@@ -3433,7 +3433,7 @@ if __name__ == "__main__":
     logger.info(f"📄 Benchmark-Script: {BENCHMARK_SCRIPT}")
 
     if not BENCHMARK_SCRIPT.exists():
-        logger.error(f"❌ Benchmark-Script nicht gefunden: {BENCHMARK_SCRIPT}")
+        logger.error(f"❌ Benchmark script not found: {BENCHMARK_SCRIPT}")
         sys.exit(1)
 
     if args.port:
@@ -3444,16 +3444,16 @@ if __name__ == "__main__":
         logger.info(f"🎲 Nutze automatisch gefundenen freien Port: {port}")
 
     dashboard_url = f"http://localhost:{port}"
-    logger.info(f"🚀 Dashboard verfügbar auf {dashboard_url}")
+    logger.info(f"🚀 Dashboard available at {dashboard_url}")
     logger.info(f"📊 API Docs: {dashboard_url}/docs")
 
     def open_browser():
         time.sleep(1.5)
         try:
-            logger.info(f"🌐 Öffne Browser: {dashboard_url}")
+            logger.info(f"🌐 Opening browser: {dashboard_url}")
             webbrowser.open(dashboard_url)
         except Exception as e:
-            logger.warning(f"⚠️ Konnte Browser nicht öffnen: {e}")
+            logger.warning(f"⚠️ Could not open browser: {e}")
 
     browser_thread = threading.Thread(target=open_browser, daemon=True)
     browser_thread.start()

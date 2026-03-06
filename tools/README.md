@@ -1,0 +1,375 @@
+# Tools Directory
+
+This directory contains development tools and scripts for LM-Studio-Bench.
+
+## Git Hooks
+
+### Pre-commit Hook
+
+The pre-commit hook runs automatic code quality checks before each commit.
+
+**Checks performed:**
+
+- **Python**: `isort` (import sorting), `flake8` (linting), `pylint` (code quality, optional)
+- **Shell**: `shellcheck` (bash/shell linting)
+- **Markdown**: `markdownlint` (markdown linting)
+- **HTML/Jinja**: `djlint` (template linting and formatting)
+
+### Installation
+
+```bash
+# Install the git hooks
+./tools/install-hooks.sh
+
+# Install required Python tools
+pip install flake8 isort pylint djlint markdownlint-cli2
+
+# Install system tools
+# On Ubuntu/Debian:
+sudo apt-get install shellcheck
+
+# On macOS:
+brew install shellcheck
+```
+
+### Skip pylint (optional)
+
+Pylint runs by default on `src/` and `web/` files with a 10-second timeout. To skip it:
+
+```bash
+SKIP_PYLINT=1 git commit -m "Your message"
+```
+
+Or to disable only on timeout:
+
+- Timeout takes 10 seconds max, then continues
+- If pylint is very slow, you can skip it entirely
+
+### Usage
+
+The pre-commit hook runs automatically when you commit:
+
+```bash
+git commit -m "Your commit message"
+```
+
+**If checks fail:**
+
+1. Fix the reported issues
+2. Stage the fixed files: `git add <files>`
+3. Commit again: `git commit -m "Your message"`
+
+**To skip the hook (not recommended):**
+
+```bash
+git commit --no-verify -m "Your message"
+```
+
+**To skip only pylint (optional):**
+
+```bash
+SKIP_PYLINT=1 git commit -m "Your message"
+```
+
+---
+
+## Code Quality Tools
+
+### Python Tools
+
+#### isort - Import Sorting
+
+Sort and organize Python imports automatically.
+
+```bash
+# Check imports without modifying files
+isort --check-only --diff src/ web/ tools/
+
+# Apply changes
+isort src/ web/ tools/
+
+# Check specific file
+isort --check-only src/benchmark.py
+isort src/benchmark.py  # Apply changes
+```
+
+**Configuration:** `pyproject.toml` → `[tool.isort]`
+
+#### flake8 - Python Linter
+
+Check Python code for style and errors (PEP 8, errors, complexity).
+
+```bash
+# Check all Python files
+flake8 src/ web/ tools/
+
+# Check specific file
+flake8 src/benchmark.py
+```
+
+**Configuration:** `.flake8`
+
+**Common errors:**
+
+- `E501`: Line too long (max 88 chars in config)
+- `F401`: Import not used
+- `W293`: Blank line contains whitespace
+- `E302`: Expected 2 blank lines
+
+#### pylint - Code Quality Checker
+
+Advanced Python code analysis (complexity, maintainability, conventions).
+
+```bash
+# Check specific file
+pylint src/benchmark.py
+
+# Check with specific options
+pylint --disable=fixme src/
+
+# Check src/ and web/ directories
+pylint src/ web/
+```
+
+**Configuration:** `.pylintrc`
+
+**In pre-commit:**
+
+- Runs on `src/` and `web/` directories only (not on `tools/`)
+- Has 10-second timeout (prevents slowdown)
+- Optional: `SKIP_PYLINT=1 git commit`
+
+**Common issues:**
+
+- `C0103`: Invalid name
+- `C0114`: Missing module docstring
+- `R0903`: Too few public methods
+- `R0913`: Too many arguments
+
+### Shell Tools
+
+#### shellcheck - Bash/Shell Linter
+
+Lint shell scripts for errors and best practices.
+
+```bash
+# Check specific script
+shellcheck tools/install-hooks.sh
+
+# Check multiple scripts
+shellcheck setup.sh tools/*.sh
+
+# Fix issues (some can be auto-fixed)
+shellcheck -format=json tools/install-hooks.sh
+```
+
+**Common issues:**
+
+- `SC2086`: Quote variables
+- `SC2048`: Use "$@" instead of $*
+- `SC2046`: Quote to prevent word splitting
+
+### Markdown Tools
+
+#### markdownlint - Markdown Linter
+
+Check Markdown files for style consistency.
+
+```bash
+# Check specific file
+markdownlint docs/README.md
+
+# Check all markdown files
+markdownlint docs/**/*.md
+
+# Check with detailed output
+markdownlint -d relaxed README.md
+```
+
+**Configuration:** `.markdownlintrc.json`
+
+**Common rules:**
+
+- `MD001`: Heading levels should increase by one
+- `MD003`: Heading style consistency
+- `MD013`: Line length (100 chars in config)
+
+### HTML/Jinja Tools
+
+#### djlint - HTML/Jinja Template Linter
+
+Lint and format HTML and Jinja2 templates.
+
+```bash
+# Check templates
+djlint --check web/templates/
+
+# Check specific file
+djlint --check web/templates/dashboard.html.jinja
+
+# Auto-format templates
+djlint --reformat web/templates/
+
+# Check with detailed output
+djlint --check --verbose web/templates/
+
+# Format specific file
+djlint --reformat web/templates/dashboard.html.jinja
+```
+
+**Configuration:** `pyproject.toml` → `[tool.djlint]`
+
+**Options:**
+
+- `--check`: Check only, don't modify
+- `--reformat`: Auto-format files
+- `--profile jinja`: Use Jinja profile
+- `--format`: Output format (default is text)
+
+---
+
+## Configuration Files
+
+| File | Purpose |
+| ------ | --------- |
+| `.flake8` | Flake8 style configuration |
+| `.pylintrc` | Pylint configuration |
+| `.markdownlintrc.json` | Markdown lint rules |
+| `.shellcheckrc` | Shellcheck configuration |
+| `pyproject.toml` | isort and djlint configuration |
+| `tools/pre-commit` | Git pre-commit hook |
+| `tools/install-hooks.sh` | Installation script |
+
+---
+
+## Usage Examples
+
+### Before committing
+
+```bash
+# Run all checks manually
+isort --check-only src/ web/ tools/
+flake8 src/ web/ tools/
+pylint src/ web/                    # Code quality (optional)
+shellcheck tools/*.sh
+markdownlint docs/**/*.md
+djlint --check web/templates/
+
+# Or use the hook automatically in git commit
+```
+
+### Fix all files
+
+```bash
+# Fix import order
+isort src/ web/ tools/
+
+# Auto-format templates
+djlint --reformat web/templates/
+
+# Fix flake8/shellcheck/markdownlint issues manually
+```
+
+### Disable specific checks inline
+
+**Python:**
+
+```python
+import os, sys  # noqa: E401 (flake8)
+result = function()  # noqa: E501 (flake8)
+
+# pylint: disable=line-too-long  (entire section)
+def very_long_function_name_that_exceeds_line_length():
+    pass
+# pylint: enable=line-too-long
+
+# Single line pylint disable
+value = some_long_value  # pylint: disable=unused-variable
+```
+
+**Shell:**
+
+```bash
+# shellcheck disable=SC2086
+result=$var
+```
+
+**Markdown:**
+
+```markdown
+<!-- markdownlint-disable MD013 -->
+This is a very long line that exceeds the normal limit for documentation purposes
+<!-- markdownlint-enable MD013 -->
+```
+
+**HTML/Jinja:**
+
+```jinja
+{# djlint-disable #}
+<div>
+  Some unformatted HTML
+</div>
+{# djlint-enable #}
+```
+
+---
+
+## Troubleshooting
+
+### Virtual environment not activated
+
+The pre-commit hook tries to auto-activate `.venv/bin/activate`.
+If using a different environment:
+
+```bash
+source /path/to/your/venv/bin/activate
+```
+
+### Missing tools
+
+Install all required tools:
+
+```bash
+# Python tools (pylint is optional)
+pip install flake8 isort pylint djlint markdownlint-cli2
+
+# System tools
+sudo apt-get install shellcheck     # Ubuntu/Debian
+brew install shellcheck              # macOS
+```
+
+### Pylint is slow
+
+Pylint has a 10-second timeout in the pre-commit hook. If it's still timing out:
+
+```bash
+# Skip pylint for this commit
+SKIP_PYLINT=1 git commit -m "Your message"
+
+# Run pylint manually later on specific files
+pylint src/benchmark.py
+```
+
+### Hook doesn't run
+
+Make sure it's executable:
+
+```bash
+chmod +x .git/hooks/pre-commit
+```
+
+### Remove the hook
+
+```bash
+rm .git/hooks/pre-commit
+```
+
+---
+
+## Other Scripts
+
+- `scrape_metadata.py`: Scrapes LLM model metadata
+
+```bash
+rm .git/hooks/pre-commit
+```
