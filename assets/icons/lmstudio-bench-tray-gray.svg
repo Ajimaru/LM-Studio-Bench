@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="#4A90E2" stroke="#2E5C8A" stroke-width="2"/>
+  
+  <!-- LM letters -->
+  <text x="24" y="32" font-family="Arial, sans-serif" font-size="20" font-weight="bold" 
+        fill="white" text-anchor="middle">LM</text>
+  
+  <!-- Small gear icon to indicate benchmark -->
+  <circle cx="38" cy="10" r="6" fill="#8c8c8c" stroke="#4d4d4d" stroke-width="1"/>
+  <path d="M 38 7 L 38 13 M 35 10 L 41 10" stroke="#4d4d4d" stroke-width="1.5"/>
+</svg>

@@ -40,8 +40,8 @@ jobs:
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5
-      - name: Build with mdBook
-        run: mdbook build
+      - name: Build with mdBook (from docs/)
+        run: mdbook build docs
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
