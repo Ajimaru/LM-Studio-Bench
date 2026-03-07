@@ -320,6 +320,196 @@ class TrayApp:
         LOGGER.info("Opening webapp: %s", self.dashboard_url)
         webbrowser.open(self.dashboard_url)
 
+    def _create_info_tab(self) -> Gtk.Box:
+        """Create the Info tab with icon, title, version, etc."""
+        box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=15
+        )
+        box.set_margin_top(30)
+        box.set_margin_bottom(30)
+        box.set_margin_start(40)
+        box.set_margin_end(40)
+
+        project_root = Path(__file__).resolve().parent.parent
+
+        icon_path = (
+            project_root / "assets" / "icons" / "lmstudio-bench.svg"
+        )
+        if icon_path.exists():
+            image = Gtk.Image()
+            image.set_from_file(str(icon_path))
+            image.set_pixel_size(120)
+            box.pack_start(image, False, False, 5)
+
+        title_label = Gtk.Label()
+        title_label.set_markup(
+            '<span size="large" weight="bold">'
+            'LM Studio Model Benchmark</span>'
+        )
+        title_label.set_justify(Gtk.Justification.CENTER)
+        box.pack_start(title_label, False, False, 0)
+
+        version_file = project_root / "VERSION"
+        version = "v0.1.0"
+        if version_file.exists():
+            version = version_file.read_text().strip()
+        version_label = Gtk.Label()
+        version_label.set_markup(
+            f'<span foreground="#888888">{version}</span>'
+        )
+        version_label.set_justify(Gtk.Justification.CENTER)
+        box.pack_start(version_label, False, False, 5)
+
+        desc_label = Gtk.Label()
+        desc_label.set_text(
+            "Automatic benchmarking tool for all locally installed "
+            "LM Studio models. Systematically tests different models "
+            "and quantizations to measure and compare "
+            "tokens-per-second performance."
+        )
+        desc_label.set_line_wrap(True)
+        desc_label.set_max_width_chars(50)
+        desc_label.set_justify(Gtk.Justification.CENTER)
+        box.pack_start(desc_label, False, False, 10)
+
+        links_box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=5
+        )
+
+        doc_link = Gtk.LinkButton(
+            uri="https://ajimaru.github.io/LM-Studio-Bench",
+            label="Documentation",
+        )
+        doc_link.set_halign(Gtk.Align.CENTER)
+        links_box.pack_start(doc_link, False, False, 0)
+
+        github_link = Gtk.LinkButton(
+            uri="https://github.com/Ajimaru/LM-Studio-Bench",
+            label="GitHub Repository",
+        )
+        github_link.set_halign(Gtk.Align.CENTER)
+        links_box.pack_start(github_link, False, False, 0)
+
+        box.pack_start(links_box, False, False, 0)
+
+        copyright_label = Gtk.Label()
+        copyright_label.set_markup(
+            '<span foreground="#888888">© 2026 Ajimaru</span>'
+        )
+        copyright_label.set_justify(Gtk.Justification.CENTER)
+        box.pack_start(copyright_label, False, False, 5)
+
+        box.show_all()
+        return box
+
+    def _create_contributors_tab(self) -> Gtk.Box:
+        """Create the Contributors tab with list of contributors."""
+        box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=12
+        )
+        box.set_margin_top(30)
+        box.set_margin_bottom(30)
+        box.set_margin_start(40)
+        box.set_margin_end(40)
+
+        project_root = Path(__file__).resolve().parent.parent
+
+        header_label = Gtk.Label()
+        header_label.set_markup(
+            '<span size="large" weight="bold">Contributors</span>'
+        )
+        header_label.set_justify(Gtk.Justification.CENTER)
+        box.pack_start(header_label, False, False, 10)
+
+        ajimaru_label = Gtk.Label()
+        ajimaru_label.set_markup(
+            '<b>Ajimaru</b> (<a href="https://github.com/Ajimaru">'
+            '@Ajimaru</a>)\n'
+            '<span foreground="#888888">Project creator and maintainer</span>'
+        )
+        ajimaru_label.set_line_wrap(True)
+        ajimaru_label.set_justify(Gtk.Justification.CENTER)
+        box.pack_start(ajimaru_label, False, False, 5)
+
+        authors_file = project_root / "AUTHORS"
+        if authors_file.exists():
+            content = authors_file.read_text()
+            lines = content.split("\n")
+            for line in lines:
+                line = line.strip()
+                if (
+                    not line
+                    or line.startswith("#")
+                    or line.startswith("<!-- Add")
+                    or line == "---"
+                    or line.startswith("This file lists")
+                    or line.startswith("## ")
+                    or line == "If you contribute"
+                ):
+                    continue
+                if "Ajimaru" in line and "@Ajimaru" in line:
+                    continue
+                if line.startswith("- "):
+                    contrib = line[2:].strip()
+                    if "(@" in contrib:
+                        name, handle_part = contrib.split(" ")
+                        handle = (
+                            handle_part.replace("(@", "")
+                            .replace(")", "")
+                            .strip()
+                        )
+                        contrib_label = Gtk.Label()
+                        contrib_label.set_markup(
+                            f'{name} (<a href="'
+                            f'https://github.com/{handle}">'
+                            f'@{handle}</a>)'
+                        )
+                        contrib_label.set_line_wrap(True)
+                        contrib_label.set_justify(Gtk.Justification.CENTER)
+                        box.pack_start(contrib_label, False, False, 5)
+                    else:
+                        contrib_label = Gtk.Label(label=contrib)
+                        contrib_label.set_line_wrap(True)
+                        contrib_label.set_justify(Gtk.Justification.CENTER)
+                        box.pack_start(contrib_label, False, False, 5)
+
+        box.show_all()
+        return box
+
+    def _on_about(self, _item: Gtk.MenuItem) -> None:
+        """Show about dialog with two tabs (Info, Contributors)."""
+        dialog = Gtk.Dialog(
+            title="About LM Studio Benchmark",
+            parent=None,
+            modal=True,
+            type=Gtk.WindowType.TOPLEVEL,
+        )
+        dialog.set_default_size(550, 520)
+        dialog.set_resizable(False)
+        dialog.set_border_width(0)
+
+        notebook = Gtk.Notebook()
+
+        info_box = self._create_info_tab()
+        info_label = Gtk.Label(label="Info")
+        info_label.show()
+        notebook.append_page(info_box, info_label)
+
+        contributors_box = self._create_contributors_tab()
+        contributors_label = Gtk.Label(label="Contributors")
+        contributors_label.show()
+        notebook.append_page(contributors_box, contributors_label)
+
+        content_area = dialog.get_content_area()
+        content_area.add(notebook)
+
+        dialog.add_button("OK", Gtk.ResponseType.OK)
+
+        notebook.show_all()
+
+        dialog.run()
+        dialog.destroy()
+
     def _stop_status_polling(self) -> None:
         """Stop any active status polling timer.
 
@@ -398,6 +588,12 @@ class TrayApp:
         open_item = Gtk.MenuItem(label="Go to WebApp")
         open_item.connect("activate", self._on_open_webapp)
         menu.append(open_item)
+
+        menu.append(Gtk.SeparatorMenuItem())
+
+        about_item = Gtk.MenuItem(label="About")
+        about_item.connect("activate", self._on_about)
+        menu.append(about_item)
 
         menu.append(Gtk.SeparatorMenuItem())
 
