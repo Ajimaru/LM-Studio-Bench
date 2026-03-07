@@ -39,5 +39,6 @@ Security reports are especially relevant for:
 - Command execution and process control in `src/benchmark.py`
 - Web endpoints and WebSocket handling in `web/app.py`
 - Metadata scraping and subprocess calls in `tools/scrape_metadata.py`
-- Cache and results handling under `results/`
+- Cache and results handling under `~/.local/share/lm-studio-bench/`
+- Configuration handling in `~/.config/lm-studio-bench/`
 - CI/CD and GitHub Actions workflow security

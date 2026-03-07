@@ -7,7 +7,7 @@ Complete documentation of all CLI arguments and configuration options for the LM
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Configuration File (`config/defaults.json`)](#configuration-file-configdefaultsjson)
+2. [Configuration Files](#configuration-files)
 3. [CLI Arguments](#cli-arguments)
    - [Basic Options](#basic-options)
    - [Filter Options](#filter-options)
@@ -22,18 +22,41 @@ Complete documentation of all CLI arguments and configuration options for the LM
 
 ## Overview
 
-The benchmark tool can be configured in two ways:
+The benchmark tool can be configured in three ways:
 
-1. **Persistent Configuration**: `config/defaults.json` → Automatically loaded
-2. **CLI Arguments**: Override values from the config file
+1. **Project Defaults**: `config/defaults.json` (in Git)
+2. **User Configuration**: `~/.config/lm-studio-bench/defaults.json` (optional overrides)
+3. **CLI Arguments**: Override all config values
 
-**Priority**: CLI Arguments > config/defaults.json > Hard-coded Defaults
+**Priority**: CLI Arguments > User Config > Project Defaults > Hard-coded Defaults
 
----
+## Configuration Files
 
-## Configuration File (`config/defaults.json`)
+### Project Configuration (`config/defaults.json`)
 
-The JSON file `config/defaults.json` contains all default settings for the benchmark.
+The project configuration file contains all default settings for the benchmark. This file is shipped with the
+project and tracked in Git.
+
+**Location**: `<project_root>/config/defaults.json`
+
+### User Configuration (`~/.config/lm-studio-bench/defaults.json`)
+
+Optional user-specific configuration overrides. Only specify fields you want to customize.
+
+**Location**: `~/.config/lm-studio-bench/defaults.json`
+
+**Example** (minimal user config):
+
+```json
+{
+  "num_runs": 5,
+  "lmstudio": {
+    "use_rest_api": true
+  }
+}
+```
+
+This overrides only `num_runs` and `use_rest_api`, all other values come from project defaults.
 
 ### Complete Structure
 
@@ -118,7 +141,7 @@ The JSON file `config/defaults.json` contains all default settings for the bench
 
 ## CLI Arguments
 
-All CLI arguments override the corresponding values from `config/defaults.json`.
+All CLI arguments override the corresponding values from both config files.
 
 ### Basic Options
 
@@ -437,7 +460,7 @@ Disable GTT (Shared System RAM) for AMD GPUs.
 
 ### Inference Parameters
 
-All override values from `config/defaults.json`:
+All override values from config files:
 
 #### `--temperature` (float)
 
@@ -480,7 +503,7 @@ All override values from `config/defaults.json`:
 
 ### Load Config (Performance Tuning)
 
-All override values from `config/defaults.json`:
+All override values from config files:
 
 #### `--n-gpu-layers` (integer)
 
@@ -672,15 +695,17 @@ Enable unified KV cache (REST API only).
 ## Configuration Priority
 
 1. **CLI Arguments** (highest priority)
-2. **`config/defaults.json`**
-3. **Hard-coded Defaults** (in code)
+2. **User Config** (`~/.config/lm-studio-bench/defaults.json`)
+3. **Project Config** (`config/defaults.json`)
+4. **Hard-coded Defaults** (in code)
 
 **Example**:
 
 ```bash
-# config/defaults.json has "num_runs": 3
-./run.py --runs 1     # → uses 1 (CLI overrides config)
-./run.py              # → uses 3 (from config)
+# User config has "num_runs": 5
+# Project config has "num_runs": 3
+./run.py --runs 1     # → uses 1 (CLI overrides)
+./run.py              # → uses 5 (from user config)
 ```
 
 ---

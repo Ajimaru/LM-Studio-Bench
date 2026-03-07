@@ -50,8 +50,10 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Benchmark Results
-results/
+# User Data (Symlinks to ~/.local/share and ~/.config)
+results/                      # Symlink to user results directory
+
+# Logs
 *.log
 errors.log
 

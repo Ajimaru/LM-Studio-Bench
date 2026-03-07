@@ -2,7 +2,8 @@
 
 ![alt text](assets/logo.svg)
 
-Automatic benchmarking tool for all locally installed LM Studio models. Systematically tests different models and quantizations to measure and compare tokens-per-second performance.
+Automatic benchmarking tool for all locally installed LM Studio models. Systematically tests different models and
+quantizations to measure and compare tokens-per-second performance.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -47,9 +48,11 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
   - NVIDIA: GPU model via `nvidia-smi --query-gpu=name`
   - AMD: GPU series via `lspci` device-ID mapping, `rocm-smi`, or gfx code
   - iGPU extraction from CPU string (e.g. "Radeon 890M")
-- 📊 **Live Hardware Monitoring**: 6 interactive charts (GPU temp, power, VRAM, GTT, CPU, system RAM) with stats
+- 📊 **Live Hardware Monitoring**: 6 interactive charts (GPU temp, power, VRAM, GTT, CPU, system RAM) with
+  stats
   - 💾 **VRAM Monitoring**: Measures VRAM usage during benchmarks
-  - 🧠 **GTT Support (AMD)**: Uses shared system RAM in addition to VRAM (e.g. 2GB VRAM + 46GB GTT = 48GB)
+  - 🧠 **GTT Support (AMD)**: Uses shared system RAM in addition to VRAM (e.g. 2GB VRAM + 46GB GTT =
+    48GB)
   - 🖥️ **System Profiling**: CPU and RAM usage with `--enable-profiling`
   - 🌡️ **Hardware Profiling**: Optional monitoring of GPU temperature and power draw (NVIDIA/AMD/Intel)
   - 📥 **Export Buttons**: Quick access to the latest HTML/PDF/JSON/CSV benchmark results
@@ -59,16 +62,20 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
 - 📈 **Statistical Evaluation**: Warmup + multiple measurements for accurate results
 - 🗄️ **SQLite Cache**: Automatically caches benchmark results (skips already-tested models)
 - ⚡ **Dev Mode**: Picks the smallest model for quick tests during development
-- 🧹 **Clean Logging**: Emojis, formatted model lists, filtered third-party debug logs, separate log files for webapp and benchmarks
+- 🧹 **Clean Logging**: Emojis, formatted model lists, filtered third-party debug logs, separate log files for
+  webapp and benchmarks
 - 🏷️ **Extensive Metadata**: parameter size, architecture, context length, file size, vision and tool support
-- **🎨 27 Themes**: Light, Dark, Ocean Blue, Deep Slate, Mint Green, Speed Red, Neon Purple, Solarized Dark/Light, Gruvbox, Dracula, Nord, Monokai, Paper, Terminal Green, OLED, Forest, Sunset, Cyberpunk, Pastel, Sepia, 80s, 90s, Hacker/Matrix, Hardware
+- **🎨 27 Themes**: Light, Dark, Ocean Blue, Deep Slate, Mint Green, Speed Red, Neon Purple, Solarized
+  Dark/Light, Gruvbox, Dracula, Nord, Monokai, Paper, Terminal Green, OLED, Forest, Sunset, Cyberpunk, Pastel,
+  Sepia, 80s, 90s, Hacker/Matrix, Hardware
 
 ## System Requirements
 
 - **OS**: Linux (primary), macOS (untested), Windows (untested)
 - **Python**: 3.10 or newer
 - **GPU**: ~12GB VRAM recommended (NVIDIA/AMD/Intel)
-- **Software**: [LM Studio](https://lmstudio.ai/) or [LM Studio (Headless)](https://lmstudio.ai/docs/developer/core/headless_llmster/) installed locally
+- **Software**: [LM Studio](https://lmstudio.ai/) or
+  [LM Studio (Headless)](https://lmstudio.ai/docs/developer/core/headless_llmster/) installed locally
 
 ## Installation
 
@@ -150,7 +157,7 @@ Start the modern web UI with live streaming and an interactive results browser:
 1. Check/start LM Studio server
 2. Discover all installed models
 3. Test each model with a standardized prompt
-4. Save results into the `results/` directory
+4. Save results into `~/.local/share/lm-studio-bench/results/` (symlinked from project `results/`)
 
 ### CLI Options
 
@@ -311,7 +318,9 @@ For standardized and reproducible benchmarks the following sampling parameters a
 
 ## Customization
 
-For persistent changes edit the configuration file [config/defaults.json](config/defaults.json). This file controls the default `prompt`, `context_length`, `num_runs`, and other inference parameters used by the benchmark.
+For persistent changes edit the configuration file [config/defaults.json](config/defaults.json). This file
+controls the default `prompt`, `context_length`, `num_runs`, and other inference parameters used by the
+benchmark.
 
 For ad-hoc runs you can override defaults on the command line. Example:
 
@@ -348,7 +357,8 @@ Benchmark reports are stored in the `results/` directory:
 - `benchmark_results_YYYYMMDD_HHMMSS.html` - interactive Plotly charts
 - `benchmark_cache.db` - SQLite database with all benchmark results (automatic caching)
 
-**Note:** Reports contain only the **newly tested models** from the current run. The interactive results browser in the web dashboard shows all cached results for historical comparisons.
+**Note:** Reports contain only the **newly tested models** from the current run. The interactive results browser
+in the web dashboard shows all cached results for historical comparisons.
 
 ### PDF report
 
@@ -358,9 +368,12 @@ The PDF report is generated in **A4 landscape** and includes:
 - **Detailed table**: all metrics including metadata (parameter size, architecture, file size)
 - **Visual indicators**: emoji icons for vision capability (👁) and tool support (🔧)
 - **Performance stats**: fastest/slowest model, averages
-- **Best practices**: recommendations based on the results (e.g. "Use Q4 quantization for 7B models for best speed/quality balance")
-- **Model-specific insights**: notes on specific models (e.g. "Llama 3.2 3B shows excellent performance with Q4_K_M quantization, achieving 51.43 tokens/s with a TTFT of 0.111s")
-- **Hardware profiling charts**: if `--enable-profiling` is used, includes GPU temperature and power draw charts for each model
+- **Best practices**: recommendations based on the results (e.g. "Use Q4 quantization for 7B models for best
+  speed/quality balance")
+- **Model-specific insights**: notes on specific models (e.g. "Llama 3.2 3B shows excellent performance with
+  Q4_K_M quantization, achieving 51.43 tokens/s with a TTFT of 0.111s")
+- **Hardware profiling charts**: if `--enable-profiling` is used, includes GPU temperature and power draw
+  charts for each model
 
 ### Example CSV output
 
@@ -596,6 +609,7 @@ Comprehensive guides and references:
 - 📖 [**Configuration Reference**](docs/CONFIGURATION.md) - All CLI arguments and config file options
 - 🚀 [**Quickstart Guide**](docs/QUICKSTART.md) - Get started in 5 minutes
 - 🏗️ [**Architecture Documentation**](docs/ARCHITECTURE.md) - System architecture with Mermaid diagrams
+- 📂 [**User Data & Configuration**](docs/USER_DATA.md) - XDG directory structure and config management
 - 🔌 [**REST API Features**](docs/REST_API_FEATURES.md) - Advanced REST API integration
 - 🖥️ [**Hardware Monitoring Guide**](docs/HARDWARE_MONITORING_GUIDE.md) - GPU, CPU, RAM tracking
 - 🏷️ [**LLM Metadata Guide**](docs/LLM_METADATA_GUIDE.md) - Model capabilities and metadata

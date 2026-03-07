@@ -2,7 +2,8 @@
 
 <!-- markdownlint-disable MD033 MD046 -->
 
-> Comprehensive architecture documentation with Mermaid diagrams showing how the Python modules interact and how CLI arguments and configuration files are processed.
+> Comprehensive architecture documentation with Mermaid diagrams showing how the Python modules interact and
+> how CLI arguments and configuration files are processed.
 
 ---
 
@@ -42,13 +43,14 @@ graph TB
     Benchmark --> ConfigLoader[src/config_loader.py<br/>Configuration Manager]
     Benchmark --> RestClient[src/rest_client.py<br/>REST API Client]
     
-    ConfigLoader -->|reads| DefaultsJSON[config/defaults.json<br/>Default Configuration]
-    ConfigLoader -->|provides| DefaultConfig[(DEFAULT_CONFIG)]
+    ConfigLoader -->|reads| ProjectConfig[config/defaults.json<br/>Project Defaults]
+    ConfigLoader -->|reads| UserConfig[~/.config/lm-studio-bench/defaults.json<br/>User Overrides]
+    ConfigLoader -->|provides| DefaultConfig[(DEFAULT_CONFIG<br/>Merged)]
     
     Benchmark -->|uses| LMStudio[LM Studio Server<br/>localhost:1234/1235]
     RestClient -->|HTTP API v1| LMStudio
     
-    Benchmark -->|writes| ResultsDB[(results/benchmark_cache.db<br/>SQLite Cache)]
+    Benchmark -->|writes| ResultsDB[(~/.local/share/lm-studio-bench/results/<br/>benchmark_cache.db)]
     Benchmark -->|exports| Reports[JSON/CSV/PDF/HTML<br/>Reports]
     
     WebApp -->|launches| Benchmark
@@ -295,9 +297,12 @@ flowchart TD
     Start([config_loader.py<br/>import]) --> BaseConfig[BASE_DEFAULT_CONFIG<br/>Hard-coded Defaults]
 
     BaseConfig --> LoadFunc[load_default_config]
-    LoadFunc --> CheckFile{config/defaults.json<br/>exists?}
+    LoadFunc --> ReadProject[Read config/defaults.json<br/>Project Defaults]
     
-    CheckFile -->|Yes| ReadJSON[Read JSON file]
+    ReadProject --> CheckUser{~/.config/lm-studio-bench/<br/>defaults.json exists?}
+    
+    CheckUser -->|Yes| ReadUser[Read User Config<br/>Deep Merge]
+    CheckUser -->|No| UseProject[Use Project Only]
     CheckFile -->|No| UseBase[Use BASE_DEFAULT_CONFIG]
     
     ReadJSON --> ParseJSON[Parse JSON]
@@ -321,7 +326,8 @@ flowchart TD
 | Layer | Source | Priority |
 | ----- | ------ | -------- |
 | **1. Hard-coded** | `BASE_DEFAULT_CONFIG` in config_loader.py | Lowest |
-| **2. JSON File** | `config/defaults.json` | Medium |
+| **2. User Config** | `~/.config/lm-studio-bench/defaults.json` | Medium |
+| **3. Project Config** | `config/defaults.json` | Low |
 | **3. CLI Arguments** | argparse in benchmark.py | Highest |
 
 **Merge Strategy:**
@@ -338,7 +344,8 @@ flowchart TD
 flowchart LR
     CLI[CLI Arguments<br/>--runs 5<br/>--context 4096] -->|Highest Priority| Merge[Configuration<br/>Merge]
 
-    JSON[config/defaults.json<br/>num_runs: 3<br/>context_length: 2048] -->|Medium Priority| Merge
+    UserCfg[~/.config/.../defaults.json<br/>context_length: 4096] -->|High Priority| Merge
+    ProjCfg[config/defaults.json<br/>num_runs: 3<br/>context_length: 2048] -->|Medium Priority| Merge
     
     Base[BASE_DEFAULT_CONFIG<br/>prompt: default<br/>temperature: 0.1] -->|Lowest Priority| Merge
     
@@ -545,7 +552,7 @@ flowchart TD
 
 **Responsibilities:**
 
-- Load `config/defaults.json`
+- Load `config/defaults.json` (project) + `~/.config/lm-studio-bench/defaults.json` (user overrides)
 - Merge with `BASE_DEFAULT_CONFIG`
 - Provide `DEFAULT_CONFIG` singleton
 
@@ -688,7 +695,8 @@ response = client.chat(
 graph LR
     User([User]) -->|./run.py --runs 5| CLI[CLI Arguments]
 
-    JSON[config/defaults.json] --> Config[Configuration<br/>Merge]
+    ProjJSON[config/defaults.json] --> Config[Configuration<br/>Merge]
+    UserJSON[~/.config/.../defaults.json] --> Config
     CLI --> Config
     Base[BASE_DEFAULT_CONFIG] --> Config
     

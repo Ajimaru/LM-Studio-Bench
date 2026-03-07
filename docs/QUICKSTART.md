@@ -90,7 +90,8 @@ http://192.168.1.100:8080
 ```
 
 ✅ Tests all installed models with 3 runs each (~1-2 hours)
-✅ Automatically caches results - reruns are instant!
+✅ Automatically caches results in `~/.local/share/lm-studio-bench/results/`
+✅ Symlink from project `results/` for backward compatibility
 ✅ Clean output with emoji icons and formatted model lists
 ✅ Detailed logs saved to `logs/benchmark_YYYYMMDD_HHMMSS.log`
 
