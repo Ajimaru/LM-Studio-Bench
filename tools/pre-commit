@@ -136,14 +136,14 @@ if [[ ${#PYTHON_FILES[@]} -gt 0 ]]; then
 
     # Run pylint (optional, with timeout)
     if [[ -z "$SKIP_PYLINT" ]]; then
-        echo -e "${YELLOW}Running pylint (timeout 10s)...${NC}"
+        echo -e "${YELLOW}Running pylint (timeout 15s)...${NC}"
         readarray -t PYLINT_FILES < <(
             printf '%s\n' "${PYTHON_FILES[@]}" | \
                 grep -E '^(src|web)/' || true
         )
 
         if [[ ${#PYLINT_FILES[@]} -gt 0 ]]; then
-            if timeout 10s pylint "${PYLINT_FILES[@]}" --exit-zero; then
+            if timeout 15s pylint "${PYLINT_FILES[@]}" --exit-zero; then
                 echo -e "${GREEN}✓ pylint passed${NC}"
             else
                 EXIT_CODE=$?
