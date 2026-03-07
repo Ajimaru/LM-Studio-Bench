@@ -23,7 +23,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RESULTS_DIR = PROJECT_ROOT / "results"
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from user_paths import USER_RESULTS_DIR  # noqa: E402
+
+RESULTS_DIR = USER_RESULTS_DIR
 METADATA_DB = RESULTS_DIR / "model_metadata.db"
 LOGS_DIR = PROJECT_ROOT / "logs"
 LOGS_DIR.mkdir(exist_ok=True)

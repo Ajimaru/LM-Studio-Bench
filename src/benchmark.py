@@ -48,6 +48,7 @@ except (ImportError, ModuleNotFoundError):
 
 from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
 from rest_client import LMStudioRESTClient
+from user_paths import USER_RESULTS_DIR
 
 try:
     import plotly.graph_objects as go
@@ -117,9 +118,6 @@ CONTEXT_LENGTH = int(DEFAULT_CONFIG.get("context_length", BASE_CONTEXT_LENGTH))
 NUM_MEASUREMENT_RUNS = int(DEFAULT_CONFIG.get("num_runs", BASE_NUM_MEASUREMENT_RUNS))
 VRAM_SAFETY_HEADROOM_GB = 1.0
 CONTEXT_VRAM_FACTOR = 0.000002
-
-from src.user_paths import USER_RESULTS_DIR
-
 RESULTS_DIR = USER_RESULTS_DIR
 DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
 METADATA_DATABASE_FILE = RESULTS_DIR / "model_metadata.db"

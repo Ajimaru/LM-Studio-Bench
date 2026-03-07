@@ -290,7 +290,7 @@ class BenchmarkManager:
             self.status = "running"
             self.start_time = datetime.now()
             self.current_output = ""
-            logs_dir = RESULTS_DIR.parent / "logs"
+            logs_dir = PROJECT_ROOT / "logs"
             logs_dir.mkdir(parents=True, exist_ok=True)
             timestamp_str = self.start_time.strftime('%Y%m%d_%H%M%S')
             filename = f"benchmark_{timestamp_str}.log"
@@ -2627,9 +2627,8 @@ async def run_experiment(request: Request) -> dict:
         }
 
         try:
-            from pathlib import Path
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            results_dir = PROJECT_ROOT / "results"
+            results_dir = USER_RESULTS_DIR
             results_dir.mkdir(exist_ok=True)
 
             json_file = results_dir / f"ab_test_results_{timestamp}.json"

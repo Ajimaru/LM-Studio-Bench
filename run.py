@@ -87,6 +87,13 @@ def _build_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("LD_LIBRARY_PATH", None)
     env.pop("LD_PRELOAD", None)
+    src_dir = str(project_root / "src")
+    existing_path = env.get("PYTHONPATH", "")
+    if existing_path:
+        env["PYTHONPATH"] = f"{src_dir}:{existing_path}"
+    else:
+        env["PYTHONPATH"] = src_dir
+
     return env
 
 
