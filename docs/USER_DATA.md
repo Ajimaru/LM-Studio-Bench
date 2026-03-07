@@ -10,13 +10,13 @@ configuration.
 
 ### Project Directory
 
-The project directory contains read-only defaults and symlinks:
+The project directory contains read-only defaults and temporary logs:
 
 ```text
 <project>/
 ├── config/
 │   └── defaults.json       # Project defaults (in Git)
-├── results/                # Symlink → ~/.local/share/lm-studio-bench/results/
+├── results/                # Optional: can be symlinked to user results
 └── logs/                   # Benchmark and web logs (in project root)
 ```
 

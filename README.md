@@ -157,7 +157,7 @@ Start the modern web UI with live streaming and an interactive results browser:
 1. Check/start LM Studio server
 2. Discover all installed models
 3. Test each model with a standardized prompt
-4. Save results into `~/.local/share/lm-studio-bench/results/` (symlinked from project `results/`)
+4. Save results to `~/.local/share/lm-studio-bench/results/`
 
 ### CLI Options
 
