@@ -147,25 +147,25 @@ grep ERROR logs/benchmark_*.log
 
 **Monitored Metrics:**
 
-- 🌡️ GPU Temperatur (°C)
-- ⚡ GPU Leistung (W)
+- 🌡️ GPU Temperature (°C)
+- ⚡ GPU Power (W)
 - 💾 GPU VRAM (GB)
 - 🧠 GPU GTT (GB) - AMD only
-- 🖥️ System CPU-Auslastung (%)
-- 💾 System RAM-Auslastung (GB)
+- 🖥️ System CPU usage (%)
+- 💾 System RAM usage (GB)
 
-✅ Alle Metriken werden live in der WebApp angezeigt
-✅ 6 interaktive Plotly.js Charts mit Min/Max/Avg Stats
-✅ Gleitendes Mittel für stabile RAM-Kurven
-✅ Jede Metrik wird jede Sekunde gemessen
+✅ All metrics are displayed live in the WebApp
+✅ 6 interactive Plotly.js charts with Min/Max/Avg stats
+✅ Moving average for stable RAM curves
+✅ Each metric is measured every second
 
-**Mit Safety Limits:**
+**With Safety Limits:**
 
 ```bash
 ./run.py --enable-profiling --max-temp 85 --max-power 350
 ```
 
-✅ Unterbricht Benchmark wenn Limits überschritten werden
+✅ Interrupts benchmark when limits are exceeded
 
 ### 2️⃣ AMD GTT Support (Shared System RAM)
 

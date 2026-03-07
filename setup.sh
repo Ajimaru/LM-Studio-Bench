@@ -108,7 +108,7 @@ ask_yes_no() {
                 return 1
                 ;;
             *)
-                log "WARN" "Bitte mit y(es) oder n(o) antworten."
+                log "WARN" "Please answer with y(es) or n(o)."
                 ;;
         esac
     done
@@ -152,10 +152,10 @@ HELP
 
 ensure_linux() {
     if [[ "$(uname -s)" != "Linux" ]]; then
-        log "ERROR" "Dieses Setup-Skript unterstützt aktuell nur Linux."
+        log "ERROR" "This setup script currently only supports Linux."
         exit 1
     fi
-    log "OK" "Linux erkannt: $(uname -sr)"
+    log "OK" "Linux detected: $(uname -sr)"
 }
 
 detect_pkg_manager() {
@@ -182,11 +182,11 @@ detect_pkg_manager() {
     fi
 
     if [[ -z "${PKG_MANAGER}" ]]; then
-        log "WARN" "Kein unterstützter Paketmanager erkannt (apt/dnf/pacman/zypper/apk)."
+        log "WARN" "No supported package manager detected (apt/dnf/pacman/zypper/apk)."
         return 1
     fi
 
-    log "OK" "Paketmanager erkannt: ${PKG_MANAGER}"
+    log "OK" "Package manager detected: ${PKG_MANAGER}"
     return 0
 }
 
@@ -198,7 +198,7 @@ run_pkg_update_once() {
     if [[ "${PKG_MANAGER}" == "apt" || "${PKG_MANAGER}" == "pacman" || \
           "${PKG_MANAGER}" == "zypper" || "${PKG_MANAGER}" == "apk" ]]; then
         if ! run_with_privileges "${PKG_UPDATE_CMD}"; then
-            log "WARN" "Paketindex konnte nicht aktualisiert werden. Fahre fort."
+            log "WARN" "Could not update package index. Proceeding anyway."
         fi
     fi
 
@@ -210,7 +210,7 @@ run_with_privileges() {
     local cmd="$1"
 
     if [[ "${DRY_RUN}" == "1" ]]; then
-        log "INFO" "[DRY-RUN] Würde ausführen: ${cmd}"
+        log "INFO" "[DRY-RUN] Would execute: ${cmd}"
         return 0
     fi
 
@@ -224,7 +224,7 @@ run_with_privileges() {
         return $?
     fi
 
-    log "ERROR" "Root-Rechte nötig, aber sudo ist nicht verfügbar."
+    log "ERROR" "Root privileges required, but sudo is not available."
     return 1
 }
 
@@ -338,7 +338,7 @@ install_package_key() {
 
     package_name="$(pkg_name_for_key "${key}")"
     if [[ -z "${package_name}" ]]; then
-        log "WARN" "Kein Paket-Mapping für '${key}' auf ${PKG_MANAGER} vorhanden."
+        log "WARN" "No package mapping for '${key}' on ${PKG_MANAGER} available."
         return 1
     fi
 
@@ -348,7 +348,7 @@ install_package_key() {
 
     local install_cmd="${PKG_INSTALL_CMD} ${package_name}"
     if [[ "${DRY_RUN}" == "1" ]]; then
-        log "INFO" "[DRY-RUN] Würde installieren: '${package_name}' via ${PKG_MANAGER}"
+        log "INFO" "[DRY-RUN] Would install: '${package_name}' via ${PKG_MANAGER}"
         return 0
     fi
 
@@ -368,19 +368,19 @@ check_binary_dependency() {
     local package_key="$3"
 
     if command -v "${cmd_name}" >/dev/null 2>&1; then
-        log "OK" "${label} gefunden (${cmd_name})."
+        log "OK" "${label} found (${cmd_name})."
         return 0
     fi
 
-    log "WARN" "${label} fehlt (${cmd_name})."
-    if [[ -n "${PKG_MANAGER}" ]] && ask_yes_no "${label} jetzt installieren?"; then
+    log "WARN" "${label} missing (${cmd_name})."
+    if [[ -n "${PKG_MANAGER}" ]] && ask_yes_no "Install ${label} now?"; then
         install_package_key "${package_key}" || true
     fi
 
     if command -v "${cmd_name}" >/dev/null 2>&1; then
-        log "OK" "${label} ist jetzt verfügbar."
+        log "OK" "${label} is now available."
     else
-        log "WARN" "${label} weiterhin nicht verfügbar."
+        log "WARN" "${label} still not available."
     fi
 }
 
@@ -390,24 +390,24 @@ check_system_libs() {
     if command -v pkg-config >/dev/null 2>&1; then
         if ! pkg-config --exists gobject-introspection-1.0; then
             missing_dev="1"
-            log "WARN" "gobject-introspection dev-Dateien fehlen."
+            log "WARN" "gobject-introspection dev files missing."
             if [[ -n "${PKG_MANAGER}" ]] && \
-               ask_yes_no "gobject-introspection dev-Paket installieren?"; then
+               ask_yes_no "Install gobject-introspection dev package?"; then
                 install_package_key "gobj_dev" || true
             fi
         fi
 
         if ! pkg-config --exists cairo; then
             missing_dev="1"
-            log "WARN" "cairo dev-Dateien fehlen."
+            log "WARN" "cairo dev files missing."
             if [[ -n "${PKG_MANAGER}" ]] && \
-               ask_yes_no "cairo dev-Paket installieren?"; then
+               ask_yes_no "Install cairo dev package?"; then
                 install_package_key "cairo_dev" || true
             fi
         fi
     else
         missing_dev="1"
-        log "WARN" "pkg-config fehlt, daher keine genaue Lib-Prüfung möglich."
+        log "WARN" "pkg-config missing, therefore no exact lib check possible."
     fi
 
     if ! python3 - <<'PY' >/dev/null 2>&1
@@ -416,19 +416,19 @@ print("ok")
 PY
     then
         missing_dev="1"
-        log "WARN" "Python-Modul 'gi' fehlt (PyGObject)."
+        log "WARN" "Python module 'gi' missing (PyGObject)."
         if [[ -n "${PKG_MANAGER}" ]] && \
-           ask_yes_no "Python-Header + GObject-Dev-Pakete installieren?"; then
+           ask_yes_no "Install Python header + GObject dev packages?"; then
             install_package_key "python_dev" || true
             install_package_key "gobj_dev" || true
             install_package_key "cairo_dev" || true
         fi
     else
-        log "OK" "Python-Modul 'gi' ist verfügbar."
+        log "OK" "Python module 'gi' is available."
     fi
 
     if [[ "${missing_dev}" == "0" ]]; then
-        log "OK" "System-Libraries für PyGObject/Cairo wirken vollständig."
+        log "OK" "System libraries for PyGObject/Cairo seem complete."
     fi
 }
 
@@ -436,19 +436,19 @@ open_download_link() {
     local label="$1"
     local url="$2"
 
-    if ! ask_yes_no "Soll ich den Download-Link für ${label} im Browser öffnen?"; then
-        log "INFO" "Link für ${label} übersprungen: ${url}"
+    if ! ask_yes_no "Should I open the download link for ${label} in the browser?"; then
+        log "INFO" "Link for ${label} skipped: ${url}"
         return 0
     fi
 
     if command -v xdg-open >/dev/null 2>&1; then
         if xdg-open "${url}" >/dev/null 2>&1; then
-            log "OK" "Browser geöffnet für ${label}: ${url}"
+            log "OK" "Browser opened for ${label}: ${url}"
         else
-            log "WARN" "Konnte Browser nicht öffnen. URL manuell öffnen: ${url}"
+            log "WARN" "Could not open browser. Open URL manually: ${url}"
         fi
     else
-        log "WARN" "xdg-open nicht gefunden. URL manuell öffnen: ${url}"
+        log "WARN" "xdg-open not found. Open URL manually: ${url}"
     fi
 }
 
@@ -459,15 +459,15 @@ check_lmstudio_stack() {
 
     if command -v lms >/dev/null 2>&1; then
         has_lms="1"
-        log "OK" "LM Studio CLI gefunden: $(sanitize_path "$(command -v lms)")"
+        log "OK" "LM Studio CLI found: $(sanitize_path "$(command -v lms)")"
     else
-        log "WARN" "LM Studio CLI (lms) nicht gefunden."
+        log "WARN" "LM Studio CLI (lms) not found."
     fi
 
     if command -v llmster >/dev/null 2>&1; then
         has_llmster="1"
         llmster_path="$(command -v llmster)"
-        log "OK" "Headless CLI gefunden: $(sanitize_path "${llmster_path}")"
+        log "OK" "Headless CLI found: $(sanitize_path "${llmster_path}")"
     else
         local search_paths=(
             "${HOME}/.lmstudio/llmster"
@@ -481,27 +481,27 @@ check_lmstudio_stack() {
                 llmster_path=$(find "${base_path}" -name "llmster" -type f -executable 2>/dev/null | head -n1)
                 if [[ -n "${llmster_path}" && -x "${llmster_path}" ]]; then
                     has_llmster="1"
-                    log "OK" "Headless CLI gefunden: $(sanitize_path "${llmster_path}")"
-                    log "INFO" "Tipp: Füge '$(sanitize_path "${llmster_path}")' zu deinem PATH hinzu oder erstelle einen Symlink."
+                    log "OK" "Headless CLI found: $(sanitize_path "${llmster_path}")"
+                    log "INFO" "Tip: Add '$(sanitize_path "${llmster_path}")' to your PATH or create a symlink."
                     break
                 fi
             fi
         done
 
         if [[ "${has_llmster}" == "0" ]]; then
-            log "WARN" "Headless CLI (llmster) nicht gefunden."
+            log "WARN" "Headless CLI (llmster) not found."
         fi
     fi
 
     if [[ "${has_lms}" == "0" && "${has_llmster}" == "0" ]]; then
-        log "WARN" "Weder LM Studio noch llmster gefunden."
-        log "INFO" "Hinweis: Mindestens eines der Tools wird für Benchmarks benötigt."
+        log "WARN" "Neither LM Studio nor llmster found."
+        log "INFO" "Note: At least one of the tools is required for benchmarks."
         open_download_link "LM Studio" "https://lmstudio.ai/download"
         open_download_link \
             "LM Studio Headless (llmster)" \
             "https://lmstudio.ai/docs/developer/core/headless_llmster/"
     elif [[ "${has_lms}" == "0" || "${has_llmster}" == "0" ]]; then
-        log "INFO" "Hinweis: Es wurde nur eins der Tools gefunden. Beide sind optional."
+        log "INFO" "Note: Only one of the tools was found. Both are optional."
     fi
 }
 
@@ -512,17 +512,17 @@ check_optional_tool() {
     local help_url="$4"
 
     if command -v "${cmd_name}" >/dev/null 2>&1; then
-        log "OK" "${label} gefunden (${cmd_name})."
+        log "OK" "${label} found (${cmd_name})."
         return 0
     fi
 
-    log "WARN" "${label} fehlt (${cmd_name})."
-    if [[ -n "${PKG_MANAGER}" ]] && ask_yes_no "${label} jetzt installieren?"; then
+    log "WARN" "${label} missing (${cmd_name})."
+    if [[ -n "${PKG_MANAGER}" ]] && ask_yes_no "Install ${label} now?"; then
         install_package_key "${package_key}" || true
     fi
 
     if command -v "${cmd_name}" >/dev/null 2>&1; then
-        log "OK" "${label} ist jetzt verfügbar."
+        log "OK" "${label} is now available."
         return 0
     fi
 
@@ -541,8 +541,8 @@ check_gpu_and_monitoring() {
     section "GPU Detection & Monitoring"
 
     if ! command -v lspci >/dev/null 2>&1; then
-        log "WARN" "lspci fehlt. GPU-Erkennung wird eingeschränkt sein."
-        if [[ -n "${PKG_MANAGER}" ]] && ask_yes_no "lspci (pciutils) installieren?"; then
+        log "WARN" "lspci missing. GPU detection will be limited."
+        if [[ -n "${PKG_MANAGER}" ]] && ask_yes_no "install lspci (pciutils)?"; then
             install_package_key "pciutils" || true
         fi
     fi
@@ -550,12 +550,12 @@ check_gpu_and_monitoring() {
     if command -v lspci >/dev/null 2>&1; then
         gpu_lines="$(lspci | grep -Ei 'vga|3d|display' || true)"
         if [[ -n "${gpu_lines}" ]]; then
-            log "INFO" "Erkannte Grafikadapter:"
+            log "INFO" "Detected graphics adapters:"
             while IFS= read -r line; do
                 [[ -n "${line}" ]] && log "INFO" "  - ${line}"
             done <<< "${gpu_lines}"
         else
-            log "WARN" "Keine GPU-Einträge über lspci gefunden."
+            log "WARN" "No GPU entries found via lspci."
         fi
 
         if grep -Eiq 'nvidia' <<< "${gpu_lines}"; then
@@ -568,13 +568,13 @@ check_gpu_and_monitoring() {
             has_intel="1"
         fi
     else
-        log "WARN" "GPU-Details nicht verfügbar (lspci fehlt)."
+        log "WARN" "GPU details not available (lspci missing)."
     fi
 
     check_optional_tool "sensors" "lm-sensors (alle GPUs)" "lm_sensors" "" || true
 
     if [[ "${has_nvidia}" == "1" ]]; then
-        log "INFO" "NVIDIA GPU erkannt."
+        log "INFO" "NVIDIA GPU detected."
         check_optional_tool \
             "nvidia-smi" \
             "NVIDIA Treiber-Tool (nvidia-smi)" \
@@ -583,16 +583,16 @@ check_gpu_and_monitoring() {
     fi
 
     if [[ "${has_amd}" == "1" ]]; then
-        log "INFO" "AMD GPU erkannt."
+        log "INFO" "AMD GPU detected."
         check_optional_tool \
             "rocm-smi" \
-            "ROCm SMI für AMD (rocm-smi)" \
+            "ROCm SMI for AMD (rocm-smi)" \
             "" \
             "https://rocm.docs.amd.com/projects/install-on-linux/en/latest/" || true
     fi
 
     if [[ "${has_intel}" == "1" ]]; then
-        log "INFO" "Intel GPU erkannt."
+        log "INFO" "Intel GPU detected."
         check_optional_tool \
             "intel_gpu_top" \
             "Intel GPU Tools (intel_gpu_top)" \
@@ -602,7 +602,7 @@ check_gpu_and_monitoring() {
 
     if [[ "${has_nvidia}" == "0" && "${has_amd}" == "0" && \
           "${has_intel}" == "0" ]]; then
-        log "WARN" "GPU-Hersteller konnte nicht eindeutig erkannt werden."
+        log "WARN" "GPU vendor could not be clearly detected."
     fi
 }
 
@@ -614,75 +614,75 @@ check_amd_drivers() {
     
     if lspci -nn 2>/dev/null | grep -i "AMD/ATI" | grep -qE "\[03[0-9a-f]{2}\]"; then
         gpu_device_id=$(lspci -nn 2>/dev/null | grep -i "AMD/ATI" | grep -oP '\[1002:[0-9a-f]{4}\]' | head -1 | tr -d '[]')
-        log "OK" "AMD GPU gefunden: ${gpu_device_id}"
+        log "OK" "AMD GPU found: ${gpu_device_id}"
     else
-        log "INFO" "Keine AMD GPU erkannt. Überspringe AMD-Treiber-Check."
+        log "INFO" "No AMD GPU detected. Skipping AMD driver check."
         return 0
     fi
     
     if lsmod 2>/dev/null | grep -q "^amdgpu "; then
-        log "OK" "amdgpu Kernel-Treiber geladen"
+        log "OK" "amdgpu kernel driver loaded"
     elif lspci -k 2>/dev/null | grep -A 2 "AMD/ATI" | grep -q "Kernel driver in use: amdgpu"; then
-        log "OK" "amdgpu Kernel-Treiber aktiv (lspci)"
+        log "OK" "amdgpu kernel driver active (lspci)"
     else
-        log "WARN" "amdgpu Kernel-Treiber nicht geladen oder nicht aktiv"
-        log "INFO" "Hinweis: Möglicherweise läuft ein proprietärer oder alter Treiber."
-        log "INFO" "Empfehlung: Installiere 'linux-firmware' und 'xserver-xorg-video-amdgpu'"
+        log "WARN" "amdgpu kernel driver not loaded or not active"
+        log "INFO" "Note: A proprietary or old driver may be running."
+        log "INFO" "Recommendation: Install 'linux-firmware' and 'xserver-xorg-video-amdgpu'"
     fi
     
     if dpkg -l xserver-xorg-video-amdgpu 2>/dev/null | grep -q "^ii"; then
         local xorg_version
         xorg_version=$(dpkg -l xserver-xorg-video-amdgpu 2>/dev/null | grep "^ii" | awk '{print $3}')
-        log "OK" "X.Org Display-Treiber (amdgpu): v${xorg_version}"
+        log "OK" "X.Org display driver (amdgpu): v${xorg_version}"
     elif rpm -qa xserver-xorg-video-amdgpu 2>/dev/null | grep -q "xserver"; then
-        log "OK" "X.Org Display-Treiber (amdgpu) installiert"
+        log "OK" "X.Org display driver (amdgpu) installed"
     else
-        log "INFO" "xserver-xorg-video-amdgpu nicht installiert (optional für Display)"
-        log "INFO" "Falls Displayprobleme auftreten, installiere: sudo apt install xserver-xorg-video-amdgpu"
+        log "INFO" "xserver-xorg-video-amdgpu not installed (optional for display)"
+        log "INFO" "If display problems occur, install: sudo apt install xserver-xorg-video-amdgpu"
     fi
     
     if command -v rocm-smi >/dev/null 2>&1; then
-        log "OK" "rocm-smi gefunden: $(command -v rocm-smi)"
+        log "OK" "rocm-smi found: $(command -v rocm-smi)"
         
         if rocm-smi --showproductname >/dev/null 2>&1; then
             gpu_sku=$(rocm-smi --showproductname 2>/dev/null | grep "Card SKU:" | awk '{print $NF}')
             if [[ -n "${gpu_sku}" ]]; then
-                log "OK" "ROCm erkennt GPU: ${gpu_sku}"
+                log "OK" "ROCm recognizes GPU: ${gpu_sku}"
             else
-                log "OK" "ROCm erkennt GPU (SKU nicht ermittelbar)"
+                log "OK" "ROCm recognizes GPU (SKU not determinable)"
             fi
         else
-            log "WARN" "rocm-smi installiert, aber GPU-Abfrage fehlgeschlagen"
-            log "INFO" "Möglicherweise fehlen ROCm-Kernel-Module oder Permissions."
+            log "WARN" "rocm-smi installed, but GPU query failed"
+            log "INFO" "ROCm kernel modules or permissions may be missing."
         fi
     else
-        log "WARN" "rocm-smi nicht gefunden"
-        log "INFO" "rocm-smi ist wichtig für GPU-Monitoring (Temperatur, VRAM, etc.)"
+        log "WARN" "rocm-smi not found"
+        log "INFO" "rocm-smi is important for GPU monitoring (temperature, VRAM, etc.)"
         
         if [[ "${INTERACTIVE}" == "1" ]] && [[ "${DRY_RUN}" == "0" ]]; then
-            if ask_yes_no "rocm-smi jetzt installieren?"; then
-                install_package_key "rocm-smi" || log "ERROR" "Installation fehlgeschlagen"
+            if ask_yes_no "Install rocm-smi now?"; then
+                install_package_key "rocm-smi" || log "ERROR" "Installation failed"
             fi
         else
-            log "INFO" "Installation mit: sudo apt install rocm-smi  # Ubuntu/Debian"
+            log "INFO" "Install with: sudo apt install rocm-smi  # Ubuntu/Debian"
         fi
     fi
     
     if command -v rocminfo >/dev/null 2>&1; then
-        log "OK" "rocminfo gefunden: $(command -v rocminfo)"
+        log "OK" "rocminfo found: $(command -v rocminfo)"
     else
-        log "INFO" "rocminfo nicht installiert (optional)"
-        log "INFO" "rocminfo zeigt detaillierte ROCm-Plattform-Informationen"
+        log "INFO" "rocminfo not installed (optional)"
+        log "INFO" "rocminfo shows detailed ROCm platform information"
         
         if [[ "${INTERACTIVE}" == "1" ]] && [[ "${DRY_RUN}" == "0" ]]; then
-            if ask_yes_no "rocminfo jetzt installieren? (optional)"; then
-                install_package_key "rocminfo" || log "WARN" "Installation fehlgeschlagen"
+            if ask_yes_no "Install rocminfo now? (optional)"; then
+                install_package_key "rocminfo" || log "WARN" "Installation failed"
             fi
         fi
     fi
     
     local rocm_found="0"
-    local rocm_version="unbekannt"
+    local rocm_version="unknown"
     
     if [[ -d "/opt/rocm" ]]; then
         rocm_found="1"
@@ -699,98 +699,98 @@ check_amd_drivers() {
         local rocm_path
         rocm_path=$(find /opt -maxdepth 1 -type d -name "rocm*" 2>/dev/null | head -1)
         if [[ -n "${rocm_path}" ]]; then
-            rocm_version=$(basename "${rocm_path}" | grep -oP 'rocm-\K[\d.]+' || echo "unbekannt")
+            rocm_version=$(basename "${rocm_path}" | grep -oP 'rocm-\K[\d.]+' || echo "unknown")
         fi
-        log "OK" "ROCm SDK installiert: ${rocm_version}"
+        log "OK" "ROCm SDK installed: ${rocm_version}"
     else
-        log "INFO" "ROCm SDK nicht in /opt/rocm gefunden"
-        log "INFO" "Für Machine Learning mit AMD GPUs kann das vollständige ROCm SDK nützlich sein."
+        log "INFO" "ROCm SDK not found in /opt/rocm"
+        log "INFO" "For machine learning with AMD GPUs, the complete ROCm SDK can be useful."
         log "INFO" "Download: https://rocm.docs.amd.com/en/latest/deploy/linux/quick_start.html"
-        log "INFO" "Hinweis: LM Studio nutzt primär die GGML/llama.cpp Integration,"
-        log "INFO" "         das vollständige ROCm SDK ist nur für spezielle Frameworks nötig."
+        log "INFO" "Note: LM Studio primarily uses GGML/llama.cpp integration,"
+        log "INFO" "         the complete ROCm SDK is only needed for special frameworks."
     fi
     
     if dpkg -l libdrm-amdgpu1 2>/dev/null | grep -q "^ii"; then
-        log "OK" "libdrm-amdgpu1 installiert"
+        log "OK" "libdrm-amdgpu1 installed"
     elif rpm -qa 2>/dev/null | grep -q "^libdrm-amdgpu"; then
-        log "OK" "libdrm-amdgpu installiert"
+        log "OK" "libdrm-amdgpu installed"
     else
-        log "WARN" "libdrm-amdgpu nicht gefunden"
-        log "INFO" "Dieses Paket ist wichtig für die Userspace-Kommunikation mit AMD GPUs"
+        log "WARN" "libdrm-amdgpu not found"
+        log "INFO" "This package is important for userspace communication with AMD GPUs"
     fi
     
     if [[ "${gpu_device_id}" == "1002:150e" ]]; then
-        log "WARN" "Radeon 890M (STRIX Point) ist eine sehr neue iGPU"
-        log "INFO" "Für optimale Unterstützung benötigst du:"
-        log "INFO" "  - Kernel 6.12+ (aktuell: $(uname -r))"
-        log "INFO" "  - Mesa 24.2+ oder AMDGPU-PRO Treiber"
-        log "INFO" "  - ROCm 6.2+ für Computing-Workloads"
-        log "INFO" "Bei Problemen: Prüfe LM Studio logs für GPU-Fehler"
+        log "WARN" "Radeon 890M (STRIX Point) is a very new iGPU"
+        log "INFO" "For optimal support you need:"
+        log "INFO" "  - Kernel 6.12+ (current: $(uname -r))"
+        log "INFO" "  - Mesa 24.2+ or AMDGPU-PRO driver"
+        log "INFO" "  - ROCm 6.2+ for computing workloads"
+        log "INFO" "If problems occur: Check LM Studio logs for GPU errors"
     fi
 }
 
 check_python_requirements() {
     if ! command -v python3 >/dev/null 2>&1; then
-        log "ERROR" "Python3 fehlt. Python-Abhängigkeiten können nicht geprüft werden."
+        log "ERROR" "Python3 missing. Python dependencies cannot be checked."
         return 1
     fi
 
     if [[ ! -f "${PROJECT_ROOT}/requirements.txt" ]]; then
-        log "WARN" "requirements.txt nicht gefunden."
+        log "WARN" "requirements.txt not found."
         return 0
     fi
 
     section "Python Dependencies"
 
     if [[ -n "${VIRTUAL_ENV:-}" ]]; then
-        log "INFO" "Virtuelle Umgebung aktiv: $(sanitize_path "${VIRTUAL_ENV}")"
+        log "INFO" "Virtual environment active: $(sanitize_path "${VIRTUAL_ENV}")"
     else
-        log "INFO" "Keine venv aktiv. Hinweis: 'source .venv/bin/activate' vor Installation empfohlen."
+        log "INFO" "No venv active. Note: 'source .venv/bin/activate' recommended before installation."
     fi
 
     if ! python3 -m pip --version >/dev/null 2>&1; then
-        log "ERROR" "pip nicht verfügbar im aktuellen Python-Environment."
+        log "ERROR" "pip not available in current Python environment."
         if [[ -z "${VIRTUAL_ENV:-}" ]] && [[ -d "${PROJECT_ROOT}/.venv" ]]; then
-            log "INFO" "Führe 'source .venv/bin/activate' aus und starte das Setup erneut."
+            log "INFO" "Run 'source .venv/bin/activate' and restart the setup."
         fi
         return 1
     fi
 
-    log "OK" "pip gefunden: $(python3 -m pip --version | head -n1)"
+    log "OK" "pip found: $(python3 -m pip --version | head -n1)"
 
-    if ! ask_yes_no "Soll ich 'python3 -m pip install -r requirements.txt' ausführen?"; then
-        log "INFO" "Installation von requirements.txt übersprungen."
+    if ! ask_yes_no "Should I run 'python3 -m pip install -r requirements.txt'?"; then
+        log "INFO" "Installation of requirements.txt skipped."
         return 0
     fi
 
     if [[ -z "${VIRTUAL_ENV:-}" ]] && [[ -d "${PROJECT_ROOT}/.venv" ]]; then
-        log "INFO" "Aktiviere .venv intern für Installation..."
+        log "INFO" "Activating .venv internally for installation..."
         if source "${PROJECT_ROOT}/.venv/bin/activate" 2>/dev/null; then
-            log "OK" "venv intern aktiviert: $(sanitize_path "${VIRTUAL_ENV}")"
+            log "OK" "venv internally activated: $(sanitize_path "${VIRTUAL_ENV}")"
         else
-            log "ERROR" "Konnte .venv nicht aktivieren."
-            log "INFO" "Bitte manuell aktivieren: source .venv/bin/activate"
+            log "ERROR" "Could not activate .venv."
+            log "INFO" "Please activate manually: source .venv/bin/activate"
             return 1
         fi
     fi
 
     if [[ "${DRY_RUN}" == "0" ]]; then
         if python3 -m pip check >/dev/null 2>&1; then
-            log "OK" "Aktuelles Python-Environment hat keine pip-Konflikte."
+            log "OK" "Current Python environment has no pip conflicts."
         else
-            log "WARN" "pip meldet mögliche Paketkonflikte im aktuellen Environment."
+            log "WARN" "pip reports possible package conflicts in current environment."
         fi
     else
-        log "INFO" "[DRY-RUN] Pip-Konflikt-Check übersprungen."
+        log "INFO" "[DRY-RUN] Pip conflict check skipped."
     fi
 
     if [[ "${DRY_RUN}" == "1" ]]; then
-        log "INFO" "[DRY-RUN] Würde ausführen: python3 -m pip install -r requirements.txt"
+        log "INFO" "[DRY-RUN] Would execute: python3 -m pip install -r requirements.txt"
     else
         if python3 -m pip install -r "${PROJECT_ROOT}/requirements.txt"; then
-            log "OK" "Python-Abhängigkeiten installiert/aktualisiert."
+            log "OK" "Python dependencies installed/updated."
         else
-            log "ERROR" "Installation aus requirements.txt fehlgeschlagen."
+            log "ERROR" "Installation from requirements.txt failed."
             return 1
         fi
     fi
@@ -802,78 +802,78 @@ create_project_venv() {
     section "Python Virtual Environment"
 
     if ! command -v python3 >/dev/null 2>&1; then
-        log "ERROR" "python3 fehlt. .venv kann nicht erstellt werden."
+        log "ERROR" "python3 missing. .venv cannot be created."
         return 1
     fi
 
     if ! python3 -m venv --help >/dev/null 2>&1; then
-        log "WARN" "Python venv-Modul fehlt."
-        if [[ -n "${PKG_MANAGER}" ]] && ask_yes_no "venv-Modul jetzt installieren?"; then
+        log "WARN" "Python venv module missing."
+        if [[ -n "${PKG_MANAGER}" ]] && ask_yes_no "Install venv module now?"; then
             install_package_key "venv" || true
         fi
     fi
 
     if ! python3 -m venv --help >/dev/null 2>&1; then
-        log "ERROR" "venv-Modul weiterhin nicht verfügbar."
+        log "ERROR" "venv module still not available."
         return 1
     fi
 
     if [[ -d "${PROJECT_ROOT}/.venv" ]]; then
-        log "INFO" ".venv existiert bereits."
-        if ask_yes_no "Bestehende .venv löschen und neu erstellen?"; then
+        log "INFO" ".venv already exists."
+        if ask_yes_no "Delete existing .venv and recreate?"; then
             if [[ "${DRY_RUN}" == "1" ]]; then
-                log "INFO" "[DRY-RUN] Würde löschen: $(sanitize_path "${PROJECT_ROOT}")/.venv"
+                log "INFO" "[DRY-RUN] Would delete: $(sanitize_path "${PROJECT_ROOT}")/.venv"
             else
                 rm -rf "${PROJECT_ROOT}/.venv"
             fi
         else
-            log "INFO" "Bestehende .venv wird weiterverwendet."
-            log "INFO" "Aktivieren mit: source .venv/bin/activate"
+            log "INFO" "Existing .venv will continue to be used."
+            log "INFO" "Activate with: source .venv/bin/activate"
             return 0
         fi
     fi
 
     if [[ "${DRY_RUN}" == "1" ]]; then
-        log "INFO" "[DRY-RUN] Würde erstellen: $(sanitize_path "${PROJECT_ROOT}")/.venv"
-        log "INFO" "[DRY-RUN] Aktivieren würde damit funktionieren: source .venv/bin/activate"
+        log "INFO" "[DRY-RUN] Would create: $(sanitize_path "${PROJECT_ROOT}")/.venv"
+        log "INFO" "[DRY-RUN] Activation would work with: source .venv/bin/activate"
         return 0
     fi
 
     if python3 -m venv "${PROJECT_ROOT}/.venv"; then
-        log "OK" "Virtuelle Umgebung erstellt: $(sanitize_path "${PROJECT_ROOT}")/.venv"
-        log "INFO" "Aktivieren mit: source .venv/bin/activate"
-        log "INFO" "Python-Requirements werden im nächsten Schritt geprüft."
+        log "OK" "Virtual environment created: $(sanitize_path "${PROJECT_ROOT}")/.venv"
+        log "INFO" "Activate with: source .venv/bin/activate"
+        log "INFO" "Python requirements will be checked in next step."
         return 0
     fi
 
-    log "ERROR" "Erstellung der virtuellen Umgebung fehlgeschlagen."
+    log "ERROR" "Creation of virtual environment failed."
     return 1
 }
 
 summary() {
-    section "Zusammenfassung"
-    log "INFO" "Setup-Check abgeschlossen."
-    log "INFO" "Logdatei: $(sanitize_path "${LOG_FILE}")"
+    section "Summary"
+    log "INFO" "Setup check completed."
+    log "INFO" "Log file: $(sanitize_path "${LOG_FILE}")"
     echo ""
-    log "INFO" "Nächste Schritte:"
+    log "INFO" "Next steps:"
     log "INFO" ""
-    log "INFO" "1. Virtuelle Umgebung aktivieren:"
+    log "INFO" "1. Activate virtual environment:"
     log "INFO" "   source .venv/bin/activate"
     log "INFO" ""
-    log "INFO" "2. Webapp starten (Web Dashboard):"
+    log "INFO" "2. Start webapp (Web Dashboard):"
     log "INFO" "   python run.py --webapp"
-    log "INFO" "   oder: python run.py -w"
+    log "INFO" "   or: python run.py -w"
     log "INFO" ""
-    log "INFO" "3. Benchmark direkt ausführen:"
+    log "INFO" "3. Run benchmark directly:"
     log "INFO" "   python run.py"
-    log "INFO" "   python run.py --limit 5        # Nur 5 Modelle testen"
-    log "INFO" "   python run.py --export-only    # Reports aus Cache generieren"
+    log "INFO" "   python run.py --limit 5        # Test only 5 models"
+    log "INFO" "   python run.py --export-only    # Generate reports from cache"
     log "INFO" ""
-    log "INFO" "4. Debug-Modus aktivieren:"
+    log "INFO" "4. Activate debug mode:"
     log "INFO" "   python run.py --debug"
     log "INFO" "   python run.py -d"
     log "INFO" ""
-    log "INFO" "Für alle Optionen: python run.py --help"
+    log "INFO" "For all options: python run.py --help"
 }
 
 parse_arguments() {
@@ -886,21 +886,21 @@ parse_arguments() {
             --dry-run)
                 DRY_RUN="1"
                 INTERACTIVE="0"
-                log "INFO" "Dry-Run Mode aktiviert (--dry-run)"
+                log "INFO" "Dry-run mode activated (--dry-run)"
                 shift
                 ;;
             --yes)
                 INTERACTIVE="0"
-                log "INFO" "Non-interactive Mode aktiviert (--yes)"
+                log "INFO" "Non-interactive mode activated (--yes)"
                 shift
                 ;;
             --interactive)
                 INTERACTIVE="1"
-                log "INFO" "Interactive Mode erzwungen"
+                log "INFO" "Interactive mode enforced"
                 shift
                 ;;
             *)
-                log "ERROR" "Unbekannte Option: $1"
+                log "ERROR" "Unknown option: $1"
                 print_help
                 exit 1
                 ;;
@@ -912,8 +912,8 @@ main() {
     parse_arguments "$@"
 
     section "LM-Studio-Bench Setup Check"
-    log "INFO" "Projektpfad: $(sanitize_path "${PROJECT_ROOT}")"
-    log "INFO" "Logdatei: $(sanitize_path "${LOG_FILE}")"
+    log "INFO" "Project path: $(sanitize_path "${PROJECT_ROOT}")"
+    log "INFO" "Log file: $(sanitize_path "${LOG_FILE}")"
     if [[ "${DRY_RUN}" == "1" ]]; then
         log "INFO" "Mode: Dry-Run (Preview Only)"
     elif [[ "${INTERACTIVE}" == "0" ]]; then

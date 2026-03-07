@@ -1874,7 +1874,7 @@ class LMStudioBenchmark:
             if results:
                 offloads = [r[0] for r in results]
                 avg_offload = sum(offloads) / len(offloads)
-                logger.info(f"📚 Cache-Hit: Verwende durchschn. Offload {avg_offload:.2f} "
+                logger.info(f"📚 Cache-Hit: Using average offload {avg_offload:.2f} "
                            f"for {architecture} (~{model_size_gb:.1f}GB)")
                 return round(avg_offload, 1)
             
@@ -2836,7 +2836,7 @@ class LMStudioBenchmark:
                 
                 model_name = key.split('@')[0].split('/')[-1][:15]
                 quantization = key.split('@')[1][:6]
-                
+
                 fig.add_trace(go.Scatter(
                     x=timestamps,
                     y=speeds,
@@ -2845,9 +2845,9 @@ class LMStudioBenchmark:
                     line=dict(color=colors[color_idx % len(colors)]),
                     marker=dict(size=6)
                 ))
-                
+
                 color_idx += 1
-            
+
             fig.update_layout(
                 title="Performance trends over time",
                 xaxis_title="Datum",
@@ -2856,29 +2856,29 @@ class LMStudioBenchmark:
                 height=600,
                 template='plotly_white'
             )
-            
+
             return json.dumps({
                 'data': fig.to_dict()['data'],
                 'layout': fig.to_dict()['layout']
             })
-        
+
         except Exception as e:
             logger.debug(f"Error creating trend chart: {e}")
             return None
-    
+
     def _export_results_to_files(self, results_to_export):
         """Exports given results as JSON, CSV, PDF and HTML"""
         if not results_to_export:
             logger.warning("⚠️ No results to export")
             return
-        
+
         timestamp = time.strftime('%Y%m%d_%H%M%S')
-        
+
         json_file = RESULTS_DIR / f"benchmark_results_{timestamp}.json"
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump([asdict(r) for r in results_to_export], f, indent=2, ensure_ascii=False)
         logger.info(f"📄 JSON results saved: {json_file}")
-        
+
         csv_file = RESULTS_DIR / f"benchmark_results_{timestamp}.csv"
         with open(csv_file, 'w', newline='', encoding='utf-8') as f:
             if results_to_export:
@@ -2887,23 +2887,23 @@ class LMStudioBenchmark:
                 for result in results_to_export:
                     writer.writerow(asdict(result))
         logger.info(f"📊 CSV results saved: {csv_file}")
-        
+
         self._export_pdf(timestamp, results_to_export)
-        
+
         if PLOTLY_AVAILABLE:
             self._export_html(timestamp, results_to_export)
-    
+
     def export_results(self):
         """Legacy wrapper for direct calls (e.g. --export-only)"""
         self._export_results_to_files(self.results)
-    
+
     def _export_pdf(self, timestamp: str, results_to_export):
         """Exports given benchmark results as PDF report"""
         try:
             results = results_to_export
-            
+
             pdf_file = RESULTS_DIR / f"benchmark_results_{timestamp}.pdf"
-            
+
             doc = SimpleDocTemplate(
                 str(pdf_file),
                 pagesize=landscape(A4),
@@ -2913,9 +2913,9 @@ class LMStudioBenchmark:
                 bottomMargin=0.5*inch,
                 title="LM Studio Benchmark Results"
             )
-            
+
             elements = []
-            
+
             styles = getSampleStyleSheet()
             title_style = ParagraphStyle(
                 'CustomTitle',
@@ -2933,7 +2933,7 @@ class LMStudioBenchmark:
                 spaceAfter=12,
                 spaceBefore=12
             )
-            
+
             elements.append(Paragraph("LM Studio Model Benchmark Report", title_style))
             elements.append(Spacer(1, 12))
             timestamp_display = time.strftime('%d.%m.%Y %H:%M:%S')
@@ -2944,7 +2944,7 @@ class LMStudioBenchmark:
             tools_count = sum(1 for r in results if r.has_tools)
             avg_size_gb = sum(r.model_size_gb for r in results) / len(results) if self.results else 0
             avg_tokens_per_sec = sum(r.avg_tokens_per_sec for r in results) / len(results) if self.results else 0
-            
+
             summary_data = [
                 ['Metric', 'Value'],
                 ['Models tested', str(len(results))],
@@ -2971,7 +2971,7 @@ class LMStudioBenchmark:
             elements.append(summary_table)
             elements.append(Spacer(1, 20))
             elements.append(Paragraph("Benchmark Parameters", heading_style))
-            
+
             params_data = [
                 ['Parameter', 'Value'],
                 ['Measurements per model', f"{self.num_measurement_runs}"],
@@ -2984,13 +2984,13 @@ class LMStudioBenchmark:
                 ['Max Tokens', str(OPTIMIZED_INFERENCE_PARAMS['max_tokens'])],
                 ['GPU-Offload Levels', ', '.join(map(str, GPU_OFFLOAD_LEVELS))],
             ]
-            
+
             if self._gtt_info and self._gtt_info.get('total', 0) > 0:
                 gtt_total = self._gtt_info['total']
                 gtt_used = self._gtt_info['used']
                 gtt_status = "Enabled" if self.use_gtt else "Disabled"
                 params_data.append(['GTT (Shared System RAM)', f"{gtt_status} ({gtt_total:.1f}GB total, {gtt_used:.1f}GB used)"])
-            
+
             if self.cli_args.get('limit'):
                 params_data.append(['Model limit', str(self.cli_args['limit'])])
             if self.cli_args.get('retest'):
@@ -3009,7 +3009,7 @@ class LMStudioBenchmark:
                     params_data.append(['Max. Temperature', f"{self.cli_args['max_temp']}°C"])
                 if self.cli_args.get('max_power'):
                     params_data.append(['Max. Power Draw', f"{self.cli_args['max_power']}W"])
-            
+
             params_table = Table(params_data, colWidths=[3*inch, 3*inch])
             params_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
@@ -3025,9 +3025,9 @@ class LMStudioBenchmark:
             ]))
             elements.append(params_table)
             elements.append(Spacer(1, 20))
-            
+
             elements.append(Paragraph("Detailed Results", heading_style))
-            
+
             if self.rank_by == 'speed':
                 sorted_results = sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
             elif self.rank_by == 'efficiency':
@@ -3043,7 +3043,7 @@ class LMStudioBenchmark:
                 sorted_results = sorted(results, key=get_vram_mb, reverse=False)
             else:
                 sorted_results = sorted(results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
-            
+
             rank_labels = {
                 'speed': 'Speed (Tokens/s)',
                 'efficiency': 'Efficiency (Tokens/s per GB)',
@@ -3052,7 +3052,7 @@ class LMStudioBenchmark:
             }
             elements.append(Paragraph(f"<font size=9>Sorted by: <b>{rank_labels.get(self.rank_by, 'Speed')}</b></font>", styles['Normal']))
             elements.append(Spacer(1, 10))
-            
+
             table_data = [['Model', 'Param', 'Arch', 'Size(GB)', 'Vision', 'Tools', 'Quant.', 'GPU', 'GPU Off.', 'Tokens/s', 'Δ%', 'TTFT (ms)', 'Gen.Time (s)']]
             for result in sorted_results:
                 vision_icon = '👁' if result.has_vision else ''
@@ -3073,7 +3073,7 @@ class LMStudioBenchmark:
                     f"{result.avg_ttft*1000:.1f}" if result.avg_ttft else "N/A",
                     f"{result.avg_gen_time:.2f}",
                 ])
-            
+
             results_table = Table(table_data, colWidths=[1.2*inch, 0.55*inch, 0.6*inch, 0.65*inch, 0.45*inch, 0.45*inch, 0.6*inch, 0.5*inch, 0.5*inch, 0.65*inch, 0.45*inch, 0.65*inch, 0.7*inch])
             results_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
@@ -3102,20 +3102,20 @@ class LMStudioBenchmark:
                         'best_efficiency': None,
                         'best_ttft': None
                     }
-                
+
                 if not best_by_model[result.model_name]['best_speed'] or \
                    result.avg_tokens_per_sec > best_by_model[result.model_name]['best_speed'].avg_tokens_per_sec:
                     best_by_model[result.model_name]['best_speed'] = result
-                
+
                 if not best_by_model[result.model_name]['best_efficiency'] or \
                    result.tokens_per_sec_per_gb > best_by_model[result.model_name]['best_efficiency'].tokens_per_sec_per_gb:
                     best_by_model[result.model_name]['best_efficiency'] = result
-                
+
                 if result.avg_ttft > 0:
                     if not best_by_model[result.model_name]['best_ttft'] or \
                        result.avg_ttft < best_by_model[result.model_name]['best_ttft'].avg_ttft:
                         best_by_model[result.model_name]['best_ttft'] = result
-            
+
             quant_data = [['Model', 'Best Speed', 'Best Efficiency', 'Best TTFT']]
             for model_name, analysis in sorted(best_by_model.items()):
                 speed_q = analysis['best_speed'].quantization if analysis['best_speed'] else '-'
@@ -3127,7 +3127,7 @@ class LMStudioBenchmark:
                     efficiency_q[:8],
                     ttft_q[:8]
                 ])
-            
+
             quant_table = Table(quant_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
             quant_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
@@ -3142,19 +3142,19 @@ class LMStudioBenchmark:
             ]))
             elements.append(quant_table)
             elements.append(Spacer(1, 20))
-            
+
             model_quants = {}
             for result in results:
                 if result.model_name not in model_quants:
                     model_quants[result.model_name] = {}
-                
+
                 quant_level = result.quantization.split('_')[0].lower()
                 if quant_level not in model_quants[result.model_name]:
                     model_quants[result.model_name][quant_level] = result
                 else:
                     if result.avg_tokens_per_sec > model_quants[result.model_name][quant_level].avg_tokens_per_sec:
                         model_quants[result.model_name][quant_level] = result
-            
+
             comp_data = {}
             for model, quants in sorted(model_quants.items()):
                 comp_data[model] = {
@@ -3172,10 +3172,10 @@ class LMStudioBenchmark:
                             'vram_mb': r.vram_mb,
                             'ttft': round(r.avg_ttft * 1000, 1)
                         }
-            
+
             if comp_data:
                 elements.append(Paragraph("Quantisierungs-Vergleich (Q4 vs Q5 vs Q6)", heading_style))
-                
+
                 comp_table_data = [['Model', 'Q4 (t/s)', 'Q5 (t/s)', 'Q6 (t/s)', 'Q8 (t/s)']]
                 for model_name, q_variants in sorted(comp_data.items()):
                     row = [model_name[:15]]
@@ -3185,7 +3185,7 @@ class LMStudioBenchmark:
                         else:
                             row.append('-')
                     comp_table_data.append(row)
-                
+
                 comp_table = Table(comp_table_data, colWidths=[1.5*inch, 1.2*inch, 1.2*inch, 1.2*inch, 1.2*inch])
                 comp_table.setStyle(TableStyle([
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d7aa8')),
@@ -3200,8 +3200,8 @@ class LMStudioBenchmark:
                 ]))
                 elements.append(comp_table)
                 elements.append(Spacer(1, 20))
-            
-            elements.append(Paragraph("Performance-Statistiken", heading_style))
+
+            elements.append(Paragraph("Performance Statistics", heading_style))
             max_tps_result = max(results, key=lambda x: x.avg_tokens_per_sec)
             min_tps_result = min(results, key=lambda x: x.avg_tokens_per_sec)
             avg_tps = sum(r.avg_tokens_per_sec for r in results) / len(results)
@@ -3213,14 +3213,14 @@ class LMStudioBenchmark:
                     'p95': speeds[int(len(speeds) * 0.95)],
                     'p99': speeds[int(len(speeds) * 0.99)] if len(speeds) > 100 else speeds[-1]
                 }
-            
+
             stats_data = [
-                ['Statistik', 'Wert'],
+                ['Statistic', 'Value'],
                 ['Fastest Model', f"{max_tps_result.model_name} ({max_tps_result.avg_tokens_per_sec:.2f} tokens/s)"],
                 ['Slowest Model', f"{min_tps_result.model_name} ({min_tps_result.avg_tokens_per_sec:.2f} tokens/s)"],
-                ['Durchschnitt Tokens/s', f"{avg_tps:.2f}"],
+                ['Average Tokens/s', f"{avg_tps:.2f}"],
             ]
-            
+
             if 'speed' in percentile_stats:
                 speed_p = percentile_stats['speed']
                 stats_data.extend([
@@ -3228,7 +3228,7 @@ class LMStudioBenchmark:
                     ['Tokens/s - P95', f"{speed_p.get('p95', '-'):.2f}"],
                     ['Tokens/s - P99', f"{speed_p.get('p99', '-'):.2f}"],
                 ])
-            
+
             stats_table = Table(stats_data, colWidths=[3*inch, 3*inch])
             stats_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2d5aa8')),
@@ -3243,7 +3243,7 @@ class LMStudioBenchmark:
             ]))
             elements.append(stats_table)
             elements.append(Spacer(1, 20))
-            elements.append(Paragraph("💡 Best-Practice-Empfehlungen", heading_style))
+            elements.append(Paragraph("💡 Best Practice Recommendations", heading_style))
             recommendations = self._generate_best_practices()
             
             if recommendations:
@@ -3295,7 +3295,7 @@ class LMStudioBenchmark:
                 ]))
                 elements.append(vision_table)
                 elements.append(Spacer(1, 15))
-                elements.append(Paragraph("Top 3 Vision-Modelle", heading_style))
+                elements.append(Paragraph("Top 3 Vision Models", heading_style))
                 top3_text = []
                 for i, r in enumerate(vision_sorted[:3], 1):
                     top3_text.append(f"{i}. <b>{r.model_name}</b> ({r.quantization})")
@@ -4313,7 +4313,7 @@ Examples:
         
         logger.info(f"⚙️ Generating reports for {len(benchmark.results)} models...")
         benchmark.export_results()
-        logger.info("✅ Reports erfolgreich generiert!")
+        logger.info("✅ Reports successfully generated!")
         return
     
     if args.dev_mode:

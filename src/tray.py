@@ -264,7 +264,7 @@ class TrayApp:
         if not status_data:
             self._show_info_dialog(
                 "Benchmark Status",
-                "Status konnte nicht abgerufen werden.",
+                "Status could not be retrieved.",
             )
             return
 
@@ -391,7 +391,7 @@ class TrayApp:
 
         menu.append(Gtk.SeparatorMenuItem())
 
-        status_item = Gtk.MenuItem(label="Status anzeigen")
+        status_item = Gtk.MenuItem(label="Show Status")
         status_item.connect("activate", self._on_status)
         menu.append(status_item)
 

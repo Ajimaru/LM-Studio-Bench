@@ -1823,7 +1823,7 @@
                   </label>
                   <input type="number"
                          id="paramMaxPower"
-                         placeholder="z.B. 400.0"
+                         placeholder="e.g. 400.0"
                          min="50"
                          max="1000"
                          step="0.1">
@@ -1861,7 +1861,7 @@
               </div>
 
               <div class="chart-card">
-                <h4>⚡ GPU-Leistung</h4>
+                <h4>⚡ GPU Power</h4>
                 <div id="chart-power" style="height: 300px;"></div>
                 <div class="chart-stats">
                   <div class="chart-stat">
@@ -1880,7 +1880,7 @@
               </div>
 
               <div class="chart-card">
-                <h4>💾 GPU-VRAM-Auslastung</h4>
+                <h4>💾 GPU VRAM Usage</h4>
                 <div id="chart-vram" style="height: 300px;"></div>
                 <div class="chart-stats">
                   <div class="chart-stat">
@@ -1899,7 +1899,7 @@
               </div>
 
               <div class="chart-card">
-                <h4>🧠 GTT-RAM-Auslastung</h4>
+                <h4>🧠 GTT RAM Usage</h4>
                 <div id="chart-gtt" style="height: 300px;"></div>
                 <div class="chart-stats">
                   <div class="chart-stat">
@@ -1918,7 +1918,7 @@
               </div>
 
               <div class="chart-card">
-                <h4>🖥️ CPU-Auslastung</h4>
+                <h4>🖥️ CPU Usage</h4>
                 <div id="chart-cpu" style="height: 300px;"></div>
                 <div class="chart-stats">
                   <div class="chart-stat">
@@ -1937,7 +1937,7 @@
               </div>
 
               <div class="chart-card">
-                <h4>💾 System-RAM-Auslastung</h4>
+                <h4>💾 System RAM Usage</h4>
                 <div id="chart-ram" style="height: 300px;"></div>
                 <div class="chart-stats">
                   <div class="chart-stat">
@@ -2081,7 +2081,7 @@
                 <label style="color: var(--text);
                               font-weight: 500;
                               display: block;
-                              margin-bottom: 0.5rem">Quantisierungen:</label>
+                              margin-bottom: 0.5rem">Quantizations:</label>
                 <div id="comparison-quantization-filters"
                      style="display: flex;
                             flex-direction: column;
@@ -2092,7 +2092,7 @@
                 <label style="color: var(--text);
                               font-weight: 500;
                               display: block;
-                              margin-bottom: 0.5rem">Zeitraum:</label>
+                              margin-bottom: 0.5rem">Time Period:</label>
                 <div style="display: flex; gap: 0.5rem;">
                   <input type="date"
                          id="comparison-start-date"
@@ -2122,7 +2122,7 @@
                                border: none;
                                border-radius: 0.5rem;
                                cursor: pointer;
-                               font-weight: 600">🎛️ Filter anwenden</button>
+                               font-weight: 600">🎛️ Apply Filter</button>
                 <button onclick="resetComparisonFilters()"
                         style="padding: 0.75rem;
                                background: var(--card);
@@ -2194,7 +2194,7 @@
                             border-radius: 0.75rem;
                             margin-bottom: 1.5rem;
                             box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
-                  <h3 style="color: var(--text); margin-bottom: 1rem;">📈 Statistiken</h3>
+                  <h3 style="color: var(--text); margin-bottom: 1rem;">📈 Statistics</h3>
                   <div id="comparison-stats"
                        style="display: grid;
                               grid-template-columns: repeat(2, 1fr);
@@ -2234,7 +2234,7 @@
                             border-radius: 0.75rem;
                             margin-bottom: 1.5rem;
                             box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
-                  <h3 style="color: var(--text); margin-bottom: 1rem;">🔬 Erweiterte Statistik & Vorhersage</h3>
+                  <h3 style="color: var(--text); margin-bottom: 1rem;">🔬 Advanced Statistics & Prediction</h3>
                   <div id="advanced-stats-container" style="display: none;">
                     <!-- Performance Alert -->
                     <div style="background: var(--bg);
@@ -3018,7 +3018,7 @@
                   <div style="margin-top: 1rem;
                               padding-top: 1rem;
                               border-top: 1px solid var(--border)">
-                    <div style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">Ergebnis:</div>
+                    <div style="font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem;">Result:</div>
                     <div style="font-size: 1.3rem; font-weight: bold;" id="ab-winner-badge">--</div>
                   </div>
                 </div>
@@ -3307,9 +3307,9 @@
             };
             
             const titles = {
-                success: title || 'Erfolg',
+                success: title || 'Success',
                 error: title || 'Error',
-                warning: title || 'Warnung',
+                warning: title || 'Warning',
                 info: title || 'Info'
             };
             
@@ -3342,7 +3342,7 @@
 
         // ===== Keyboard Shortcuts =====
         document.addEventListener('keydown', (e) => {
-            // Ignore wenn Input-Feld aktiv
+            // Ignore when input field is active
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
                 return;
             }
@@ -3690,9 +3690,9 @@
             websocket = new WebSocket(wsUrl);
 
             websocket.onopen = () => {
-                console.log('✅ WebSocket verbunden');
-                addAlert('✅ WebSocket verbunden', 'success');
-                updateStatus(); // Sofort Status aktualisieren
+                console.log('✅ WebSocket connected');
+                addAlert('✅ WebSocket connected', 'success');
+                updateStatus(); // Immediately update status
             };
 
             websocket.onmessage = (event) => {
@@ -3735,7 +3735,7 @@
             };
 
             websocket.onclose = () => {
-                console.log('❌ WebSocket getrennt');
+                console.log('❌ WebSocket disconnected');
                 // If benchmark is still running, try to reconnect automatically
                 updateStatus().then(() => {
                     if (document.getElementById('statusBadge').classList.contains('status-running')) {
@@ -3926,7 +3926,7 @@
         function renderResults() {
             const tbody = document.getElementById('results-tbody');
             if (!tbody) {
-                console.error('results-tbody nicht gefunden');
+                console.error('results-tbody not found');
                 return;
             }
 
@@ -4395,7 +4395,7 @@
                     document.getElementById('advanced-stats-container').style.display = 'none';
                     const placeholder = document.getElementById('advanced-stats-placeholder');
                     placeholder.style.display = 'block';
-                    placeholder.textContent = 'No data gefunden';
+                    placeholder.textContent = 'No data found';
                 }
             } catch (error) {
                 console.error('Error loading model history:', error);
@@ -4576,8 +4576,8 @@
                 { label: '📈 Max Speed', value: `${stats.max_speed} tok/s` },
                 { label: '📉 Avg Speed', value: `${stats.avg_speed} tok/s` },
                 { label: '🔄 Total Runs', value: stats.total_runs },
-                { label: '⬆️ Trend', value: stats.trend === 'up' ? '🟢 Steigend' : stats.trend === 'down' ? '🔴 Fallend' : '⚪ Stabil' },
-                { label: '📅 Erste Messung', value: stats.first_run.substring(0, 10) }
+                { label: '⬆️ Trend', value: stats.trend === 'up' ? '🟢 Increasing' : stats.trend === 'down' ? '🔴 Decreasing' : '⚪ Stable' },
+                { label: '📅 First Measurement', value: stats.first_run.substring(0, 10) }
             ];
 
             statItems.forEach(item => {
@@ -4804,7 +4804,7 @@
             updateABButton('running');
 
             // Helper function: Converts comma to dot for decimal numbers
-            const parseGermanFloat = (value) => {
+            const parseDecimalFloat = (value) => {
                 if (typeof value === 'string') {
                     value = value.replace(',', '.');
                 }
@@ -4813,11 +4813,11 @@
 
             // Baseline Params (without 'name' - only needed for display)
             const baselineParams = {
-                temperature: parseGermanFloat(document.getElementById('ab-baseline-temp').value),
+                temperature: parseDecimalFloat(document.getElementById('ab-baseline-temp').value),
                 top_k: parseInt(document.getElementById('ab-baseline-topk').value),
-                top_p: parseGermanFloat(document.getElementById('ab-baseline-topp').value),
-                min_p: parseGermanFloat(document.getElementById('ab-baseline-minp').value) || null,
-                repeat_penalty: parseGermanFloat(document.getElementById('ab-baseline-penalty').value) || null,
+                top_p: parseDecimalFloat(document.getElementById('ab-baseline-topp').value),
+                min_p: parseDecimalFloat(document.getElementById('ab-baseline-minp').value) || null,
+                repeat_penalty: parseDecimalFloat(document.getElementById('ab-baseline-penalty').value) || null,
                 max_tokens: parseInt(document.getElementById('ab-baseline-maxtokens').value) || null,
                 // Load-Config
                 n_gpu_layers: parseInt(document.getElementById('ab-baseline-gpu-layers').value) ?? null,
@@ -4833,11 +4833,11 @@
 
             // Test Params (without 'name' - only needed for display)
             const testParams = {
-                temperature: parseGermanFloat(document.getElementById('ab-test-temp').value),
+                temperature: parseDecimalFloat(document.getElementById('ab-test-temp').value),
                 top_k: parseInt(document.getElementById('ab-test-topk').value),
-                top_p: parseGermanFloat(document.getElementById('ab-test-topp').value),
-                min_p: parseGermanFloat(document.getElementById('ab-test-minp').value) || null,
-                repeat_penalty: parseGermanFloat(document.getElementById('ab-test-penalty').value) || null,
+                top_p: parseDecimalFloat(document.getElementById('ab-test-topp').value),
+                min_p: parseDecimalFloat(document.getElementById('ab-test-minp').value) || null,
+                repeat_penalty: parseDecimalFloat(document.getElementById('ab-test-penalty').value) || null,
                 max_tokens: parseInt(document.getElementById('ab-test-maxtokens').value) || null,
                 // Load-Config
                 n_gpu_layers: parseInt(document.getElementById('ab-test-gpu-layers').value) ?? null,
@@ -4931,10 +4931,10 @@
                         test_params: testParams,
                         ...comparisonData
                     };
-                    showToast(`✅ Experiment "${expName}" erstellt und verglichen`, 'success', 'Erfolg');
+                    showToast(`✅ Experiment "${expName}" created and compared`, 'success', 'Success');
                 }
 
-                // Rendere Ergebnisse
+                // Render results
                 console.log('📊 Rendering results...');
                 renderABResults(comparisonData);
                 
@@ -5077,7 +5077,7 @@
                 const data = await response.json();
                 if (data.success && data.url) {
                     window.open(data.url, '_blank');
-                    showToast(`✅ ${format.toUpperCase()} exportiert`, 'success');
+                    showToast(`✅ ${format.toUpperCase()} exported`, 'success');
                 } else {
                     alert(`Error: ${data.error}`);
                 }

@@ -603,7 +603,7 @@ class CreateExperimentRequest(BaseModel):
 
 
 class ExperimentResult(BaseModel):
-    """A/B Test Ergebnis mit Statistiken"""
+    """A/B Test Result with Statistics"""
     experiment_id: str
     model_name: str
     baseline_data: Dict[str, Any]
@@ -723,7 +723,7 @@ def calculate_effect_size(
     baseline_speeds: List[float],
     test_speeds: List[float]
 ) -> Dict[str, Union[float, str]]:
-    """Berechne Cohen's d effect size"""
+    """Calculate Cohen's d effect size"""
     if not baseline_speeds or not test_speeds:
         return {"cohens_d": 0.0, "effect_magnitude": "negligible"}
 
@@ -1164,7 +1164,7 @@ async def delete_cache_entry(model_key: str) -> dict:
             conn.close()
             return {
                 "success": False,
-                "error": f"Model {model_key} nicht im Cache gefunden"
+                "error": f"Model {model_key} not found in cache"
             }
 
         cursor.execute(
@@ -1204,7 +1204,7 @@ async def clear_cache() -> dict:
 
         try:
             shutil.copy2(DATABASE_FILE, backup_file)
-            logger.info("💾 Backup erstellt: %s", backup_file)
+            logger.info("💾 Backup created: %s", backup_file)
         except (shutil.Error, OSError) as backup_error:
             logger.warning(
                 "⚠️ Backup error during copy (will still be cleared): %s",
@@ -1490,7 +1490,7 @@ async def export_comparison_csv(
         conn.close()
 
         if not rows:
-            return {"success": False, "error": "No data gefunden"}
+            return {"success": False, "error": "No data found"}
 
         def safe_round(value, digits):
             try:
@@ -1623,7 +1623,7 @@ async def export_comparison_pdf(request: Request) -> dict:
         conn.close()
 
         if not rows:
-            return {"success": False, "error": "No data gefunden"}
+            return {"success": False, "error": "No data found"}
 
         speeds = [row[3] for row in rows if row[3] is not None]
         stats = {
@@ -1705,7 +1705,7 @@ async def export_comparison_pdf(request: Request) -> dict:
             f"Zeitraum: {start_filter or '---'} bis {end_filter or '---'}",
             f"Quantization: {quant_str}",
             "",
-            "Statistiken:",
+            "Statistics:",
             f"  Min Speed: {min_spd if min_spd is not None else '-'} tok/s",
             f"  Max Speed: {max_spd if max_spd is not None else '-'} tok/s",
             f"  Avg Speed: {avg_spd if avg_spd is not None else '-'} tok/s",
@@ -1752,7 +1752,7 @@ async def export_comparison_pdf(request: Request) -> dict:
 
 @app.post("/api/comparison/statistics/{model_name:path}")
 async def get_advanced_statistics(model_name: str) -> dict:
-    """Berechnet erweiterte Statistiken (Volatility, Regression, Alerts)"""
+    """Calculates advanced statistics (Volatility, Regression, Alerts)"""
     model_name = unquote(model_name)
 
     if not BenchmarkCache:
@@ -1907,7 +1907,7 @@ async def get_output() -> dict:
 
 @app.post("/api/experiments/create")
 async def create_experiment(request: CreateExperimentRequest) -> dict:
-    """Erstellt ein neues A/B Testing Experiment"""
+    """Creates a new A/B Testing Experiment"""
     if not BenchmarkCache:
         return {"success": False, "error": "BenchmarkCache not available"}
 
@@ -1920,7 +1920,7 @@ async def create_experiment(request: CreateExperimentRequest) -> dict:
         baseline_hash = calculate_hash(baseline_dict)
         test_hash = calculate_hash(test_dict)
 
-        logger.info(f"🧪 Experiment erstellt: {experiment_id}")
+        logger.info(f"🧪 Experiment created: {experiment_id}")
         logger.info(f"   Model: {request.model_name}")
         logger.info(f"   Baseline: {baseline_dict} (hash: {baseline_hash})")
         logger.info(f"   Test: {test_dict} (hash: {test_hash})")
@@ -2104,7 +2104,7 @@ async def post_experiment_comparison(
         end_date = payload.get("end_date")
 
         if not model_name:
-            return {"success": False, "error": "model_name fehlt", "comparison": {}}
+            return {"success": False, "error": "model_name missing", "comparison": {}}
 
         if "@" in model_name:
             model_name = model_name.split("@")[0]
@@ -2246,7 +2246,7 @@ async def export_experiment(
     experiment_id: str,
     request: Request
 ) -> dict:
-    """Exportiert Experiment-Ergebnisse als CSV/PDF"""
+    """Exports experiment results as CSV/PDF"""
     try:
         import csv
         from io import StringIO
@@ -2407,7 +2407,7 @@ async def run_experiment(request: Request) -> dict:
         prompt = payload.get("prompt", "Explain machine learning in 3 sentences")
 
         if not model_name:
-            return {"success": False, "error": "model_name fehlt"}
+            return {"success": False, "error": "model_name missing"}
 
         if "@" in model_name:
             model_name = model_name.split("@")[0]
@@ -2472,7 +2472,7 @@ async def run_experiment(request: Request) -> dict:
         baseline_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         baseline_ok = await run_once(baseline_args)
         if not baseline_ok:
-            return {"success": False, "error": "Konnte Baseline Benchmark nicht starten"}
+            return {"success": False, "error": "Could not start Baseline Benchmark"}
 
         while manager.is_running():
             await asyncio.sleep(1.0)
@@ -2485,7 +2485,7 @@ async def run_experiment(request: Request) -> dict:
         test_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         test_ok = await run_once(test_args)
         if not test_ok:
-            return {"success": False, "error": "Konnte Test Benchmark nicht starten"}
+            return {"success": False, "error": "Could not start Test Benchmark"}
 
         while manager.is_running():
             await asyncio.sleep(1.0)
@@ -3225,7 +3225,7 @@ async def websocket_benchmark(websocket: WebSocket):
 
     try:
         logger.info(
-            "✅ WebSocket Client verbunden (Total: %d)",
+            "✅ WebSocket Client connected (Total: %d)",
             len(manager.connected_clients),
         )
 
@@ -3245,7 +3245,7 @@ async def websocket_benchmark(websocket: WebSocket):
             except asyncio.TimeoutError:
                 pass
             except WebSocketDisconnect:
-                logger.info("⚠️ WebSocket Client hat Verbindung getrennt")
+                logger.info("⚠️ WebSocket Client has disconnected")
                 break
             except Exception as e:
                 logger.error(f"❌ WebSocket Receive Error: {e}")
@@ -3341,7 +3341,7 @@ async def websocket_benchmark(websocket: WebSocket):
                         })
                     except Exception as e:
                         logger.warning(
-                            "⚠️ Konnte Completion-Message nicht senden: %s",
+                            "⚠️ Could not send Completion message: %s",
                             e,
                         )
                     finally:
@@ -3356,7 +3356,7 @@ async def websocket_benchmark(websocket: WebSocket):
     finally:
         manager.connected_clients.discard(websocket)
         logger.info(
-            "❌ WebSocket Client getrennt (Total: %d)",
+            "❌ WebSocket Client disconnected (Total: %d)",
             len(manager.connected_clients),
         )
 
@@ -3367,7 +3367,7 @@ async def websocket_benchmark(websocket: WebSocket):
 
 @app.get("/api/latest-results")
 async def get_latest_results() -> dict:
-    """Findet die neuesten Benchmark-Ergebnisse"""
+    """Finds the latest benchmark results"""
     try:
         results_dir = RESULTS_DIR
 
@@ -3445,10 +3445,10 @@ if __name__ == "__main__":
 
     if args.port:
         port = args.port
-        logger.info(f"🔧 Verwende angegebenen Port: {port}")
+        logger.info(f"🔧 Using specified port: {port}")
     else:
         port = find_free_port()
-        logger.info(f"🎲 Nutze automatisch gefundenen freien Port: {port}")
+        logger.info(f"🎲 Using automatically found free port: {port}")
 
     dashboard_url = f"http://localhost:{port}"
     logger.info(f"🚀 Dashboard available at {dashboard_url}")
