@@ -195,7 +195,7 @@ class TrayApp:
         """
         status_data = self._call_api("/api/status")
         api_reachable = status_data is not None
-        
+
         if not api_reachable:
             status = "idle"
             LOGGER.warning("API unreachable, treating as idle state")
@@ -412,7 +412,7 @@ class TrayApp:
         """Initialize AppIndicator3 and run GTK loop."""
         project_root = Path(__file__).resolve().parent.parent
         self.icon_dir = project_root / "assets" / "icons"
-        
+
         self.appindicator = AppIndicator3.Indicator.new(
             "lm-studio-benchmark",
             "lmstudio-bench-tray-gray",
