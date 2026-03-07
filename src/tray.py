@@ -148,7 +148,7 @@ class TrayApp:
         """Show a simple GTK information dialog."""
         dialog = Gtk.MessageDialog(
             parent=None,
-            flags=Gtk.DialogFlags.MODAL,
+            modal=True,
             message_type=Gtk.MessageType.INFO,
             buttons=Gtk.ButtonsType.OK,
             text=title,
@@ -179,7 +179,7 @@ class TrayApp:
             color = "gray"
 
         icon_name = f"lmstudio-bench-tray-{color}"
-        self.appindicator.set_icon(icon_name)
+        self.appindicator.set_icon_full(icon_name, "")
         LOGGER.debug("Updated tray icon: %s (status=%s)", color, status)
 
     def _refresh_menu_buttons(self) -> None:
