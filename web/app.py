@@ -46,6 +46,12 @@ try:
 except ImportError:
     scipy_stats = None
 
+from config_loader import DEFAULT_CONFIG
+from user_paths import USER_RESULTS_DIR
+
+PROJECT_ROOT = Path(__file__).parent.parent
+SRC_DIR = PROJECT_ROOT / "src"
+
 SCIPY_AVAILABLE = scipy_stats is not None
 
 logging.basicConfig(
@@ -56,7 +62,7 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Helpers
+# Helper functions
 # ============================================================================
 
 def _collect_lms_variants(base_model: str) -> list[dict]:
@@ -152,16 +158,9 @@ def find_free_port() -> int:
     return port
 
 
-PROJECT_ROOT = Path(__file__).parent.parent
-SRC_DIR = PROJECT_ROOT / "src"
-sys.path.insert(0, str(SRC_DIR))
-sys.path.insert(0, str(PROJECT_ROOT))
-
-from config_loader import DEFAULT_CONFIG
-
 BENCHMARK_SCRIPT = SRC_DIR / "benchmark.py"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-RESULTS_DIR = PROJECT_ROOT / "results"
+RESULTS_DIR = USER_RESULTS_DIR
 DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
 METADATA_DATABASE_FILE = RESULTS_DIR / "model_metadata.db"
 SCRAPER_SCRIPT = PROJECT_ROOT / "tools" / "scrape_metadata.py"
