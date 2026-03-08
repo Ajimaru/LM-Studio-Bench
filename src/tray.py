@@ -8,6 +8,7 @@ from datetime import datetime
 import json
 import logging
 from pathlib import Path
+import sys
 import threading
 import time
 from typing import Optional
@@ -867,6 +868,26 @@ def start_tray(dashboard_url: str, debug: bool = False) -> bool:
 
 def _parse_args() -> argparse.Namespace:
     """Parse CLI arguments for standalone tray execution."""
+    def _expand_short_flag_clusters(cli_args: list[str]) -> list[str]:
+        """Expand combined short flags like ``-dh`` to ``-d -h``."""
+        combinable = {"d", "h"}
+        normalized: list[str] = []
+
+        for arg in cli_args:
+            if arg.startswith("--") or not arg.startswith("-"):
+                normalized.append(arg)
+                continue
+            if len(arg) <= 2:
+                normalized.append(arg)
+                continue
+
+            cluster = arg[1:]
+            if all(flag in combinable for flag in cluster):
+                normalized.extend(f"-{flag}" for flag in cluster)
+            else:
+                normalized.append(arg)
+        return normalized
+
     parser = argparse.ArgumentParser(description="LM Studio Benchmark Tray")
     parser.add_argument(
         "--url",
@@ -879,7 +900,8 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable debug logging for tray app",
     )
-    return parser.parse_args()
+    normalized_args = _expand_short_flag_clusters(sys.argv[1:])
+    return parser.parse_args(args=normalized_args)
 
 
 def main() -> int:

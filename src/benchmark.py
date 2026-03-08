@@ -3886,6 +3886,28 @@ def main():
     """Main function with CLI arguments"""
     global log_filename
 
+    def _expand_short_flag_clusters(cli_args: list[str]) -> list[str]:
+        """Expand combined short flags like ``-rd`` to ``-r -d``.
+
+        This only expands flags that do not consume a value directly.
+        """
+        combinable = {"d", "h"}
+        normalized: list[str] = []
+        for arg in cli_args:
+            if arg.startswith("--") or not arg.startswith("-"):
+                normalized.append(arg)
+                continue
+            if len(arg) <= 2:
+                normalized.append(arg)
+                continue
+
+            cluster = arg[1:]
+            if all(flag in combinable for flag in cluster):
+                normalized.extend(f"-{flag}" for flag in cluster)
+            else:
+                normalized.append(arg)
+        return normalized
+
     import psutil
     current_process = psutil.Process()
     parent_process = current_process.parent()
@@ -4228,7 +4250,8 @@ Examples:
         help='Enable unified KV cache (REST API only, optimizes VRAM for parallel requests)'
     )
     
-    args = parser.parse_args()
+    normalized_args = _expand_short_flag_clusters(sys.argv[1:])
+    args = parser.parse_args(args=normalized_args)
     
     if args.debug:
         logger.setLevel(logging.DEBUG)

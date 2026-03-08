@@ -120,6 +120,38 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
         return []
 
 
+def _expand_short_flag_clusters(
+    cli_args: list[str],
+    combinable: set[str],
+) -> list[str]:
+    """Expand combined short flags for CLI parsing.
+
+    Example: ``-dh`` becomes ``-d -h`` when both flags are combinable.
+
+    Args:
+        cli_args: Raw command line arguments.
+        combinable: Allowed short flags for cluster expansion.
+
+    Returns:
+        Normalized argument list.
+    """
+    normalized: list[str] = []
+    for arg in cli_args:
+        if arg.startswith("--") or not arg.startswith("-"):
+            normalized.append(arg)
+            continue
+        if len(arg) <= 2:
+            normalized.append(arg)
+            continue
+
+        cluster = arg[1:]
+        if all(flag in combinable for flag in cluster):
+            normalized.extend(f"-{flag}" for flag in cluster)
+        else:
+            normalized.append(arg)
+    return normalized
+
+
 # ============================================================================
 # System tray helper (GTK3-based, moved to separate module)
 # ============================================================================
@@ -3548,7 +3580,11 @@ if __name__ == "__main__":
         action='store_true',
         help='Enable DEBUG logging for detailed output'
     )
-    args = parser.parse_args()
+    normalized_args = _expand_short_flag_clusters(
+        sys.argv[1:],
+        combinable={"d", "h"},
+    )
+    args = parser.parse_args(args=normalized_args)
 
     DEBUG_MODE = args.debug
 

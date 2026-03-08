@@ -117,6 +117,39 @@ def _sanitize_cli_args(cli_args: list[str]) -> list[str]:
     return sanitized
 
 
+def _expand_short_flag_clusters(cli_args: list[str]) -> list[str]:
+    """Expand supported short-flag clusters (e.g. ``-wd``).
+
+    Only clusters that contain known boolean flags are expanded.
+    Other arguments are passed through unchanged.
+
+    Args:
+        cli_args: Raw CLI arguments (without argv[0]).
+
+    Returns:
+        Normalized argument list.
+    """
+    combinable_flags = {"w", "d", "h"}
+    normalized: list[str] = []
+
+    for arg in cli_args:
+        if arg.startswith("--") or not arg.startswith("-"):
+            normalized.append(arg)
+            continue
+
+        if len(arg) <= 2:
+            normalized.append(arg)
+            continue
+
+        cluster = arg[1:]
+        if all(flag in combinable_flags for flag in cluster):
+            normalized.extend(f"-{flag}" for flag in cluster)
+        else:
+            normalized.append(arg)
+
+    return normalized
+
+
 def _start_tray_process(
     tray_dashboard_url: str,
     tray_debug_enabled: bool,
@@ -202,7 +235,11 @@ def _stop_tray_process(tray_proc: subprocess.Popen | None) -> None:
             pass
 
 
-if "--help" in sys.argv or "-h" in sys.argv:
+RAW_ARGS = sys.argv[1:]
+CLI_ARGS = _expand_short_flag_clusters(RAW_ARGS)
+
+
+if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print("LM Studio Model Benchmark - Entry Point")
     print("=" * 60)
     print()
@@ -248,13 +285,13 @@ if "--help" in sys.argv or "-h" in sys.argv:
 
     sys.exit(0)
 
-has_web_flag = "--webapp" in sys.argv or "-w" in sys.argv
-debug_enabled = "--debug" in sys.argv or "-d" in sys.argv
+has_web_flag = "--webapp" in CLI_ARGS or "-w" in CLI_ARGS
+debug_enabled = "--debug" in CLI_ARGS or "-d" in CLI_ARGS
 
 TRAY_PROCESS = None
 
 if has_web_flag:
-    args = [arg for arg in sys.argv[1:] if arg not in ("--webapp", "-w")]
+    args = [arg for arg in CLI_ARGS if arg not in ("--webapp", "-w")]
     web_port = _extract_port(args)
     if web_port is None:
         web_port = _find_free_port()
@@ -295,7 +332,7 @@ else:
         sys.exit(1)
 
     try:
-        safe_args = _sanitize_cli_args(sys.argv[1:])
+        safe_args = _sanitize_cli_args(CLI_ARGS)
     except ValueError as error:
         print(f"❌ Invalid CLI arguments: {error}")
         _stop_tray_process(TRAY_PROCESS)

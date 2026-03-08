@@ -659,10 +659,30 @@ def main() -> None:
         SystemExit: Exits with status code 1 if scraping fails due to an
             unhandled exception.
     """
+    def _expand_short_flag_clusters(cli_args: List[str]) -> List[str]:
+        """Expand combined short flags like ``-rn`` to ``-r -n``."""
+        combinable = {"r", "n", "h"}
+        normalized: List[str] = []
+        for arg in cli_args:
+            if arg.startswith("--") or not arg.startswith("-"):
+                normalized.append(arg)
+                continue
+            if len(arg) <= 2:
+                normalized.append(arg)
+                continue
+
+            cluster = arg[1:]
+            if all(flag in combinable for flag in cluster):
+                normalized.extend(f"-{flag}" for flag in cluster)
+            else:
+                normalized.append(arg)
+        return normalized
+
     setup_logger()
     parser = argparse.ArgumentParser(description="Scrape LM Studio model metadata")
     parser.add_argument(
         "--refresh",
+        "-r",
         action="store_true",
         help=(
             "Rescrape even "
@@ -671,13 +691,15 @@ def main() -> None:
     )
     parser.add_argument(
         "--no-hf",
+        "-n",
         action="store_true",
         help=(
             "Disable Hugging Face "
             "enrichment"
         ),
     )
-    args = parser.parse_args()
+    normalized_args = _expand_short_flag_clusters(sys.argv[1:])
+    args = parser.parse_args(args=normalized_args)
 
     try:
         scrape(only_missing=not args.refresh, enable_hf=not args.no_hf)
