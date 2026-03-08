@@ -25,6 +25,11 @@ import time
 
 project_root = Path(__file__).parent
 os.chdir(project_root)
+src_path = project_root / "src"
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
+
+from user_paths import USER_LOGS_DIR
 
 
 def _resolve_python_executable() -> str:
@@ -122,7 +127,7 @@ def _start_tray_process(
         print(f"⚠️ Tray script not found: {tray_script}")
         return None
 
-    logs_dir = project_root / "logs"
+    logs_dir = USER_LOGS_DIR
     logs_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     launcher_log = logs_dir / f"runapp_{timestamp}.log"

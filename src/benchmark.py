@@ -48,7 +48,7 @@ except (ImportError, ModuleNotFoundError):
 
 from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
 from rest_client import LMStudioRESTClient
-from user_paths import USER_RESULTS_DIR
+from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
 
 try:
     import plotly.graph_objects as go
@@ -60,7 +60,7 @@ except (ImportError, ModuleNotFoundError):
 
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-LOGS_DIR = PROJECT_ROOT / 'logs'
+LOGS_DIR = USER_LOGS_DIR
 LOGS_DIR.mkdir(exist_ok=True)
 log_filename = None
 

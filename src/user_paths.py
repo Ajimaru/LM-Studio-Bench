@@ -42,3 +42,5 @@ USER_CONFIG_FILE = USER_CONFIG_DIR / "defaults.json"
 USER_DATA_DIR = get_user_data_dir()
 USER_RESULTS_DIR = USER_DATA_DIR / "results"
 USER_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+USER_LOGS_DIR = USER_DATA_DIR / "logs"
+USER_LOGS_DIR.mkdir(parents=True, exist_ok=True)

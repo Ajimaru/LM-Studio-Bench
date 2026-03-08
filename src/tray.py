@@ -15,6 +15,8 @@ from urllib.parse import urlparse
 from urllib import request as urllib_request
 import webbrowser
 
+from user_paths import USER_LOGS_DIR
+
 try:
     import gi
 
@@ -43,8 +45,7 @@ def _setup_logger(debug: bool) -> Path:
     Returns:
         Path to created log file.
     """
-    project_root = Path(__file__).resolve().parent.parent
-    logs_dir = project_root / "logs"
+    logs_dir = USER_LOGS_DIR
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

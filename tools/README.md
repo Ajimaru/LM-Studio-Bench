@@ -2,6 +2,72 @@
 
 This directory contains development tools and scripts for LM-Studio-Bench.
 
+## AppImage Build
+
+Build a local AppImage artifact using one of two methods:
+
+### Method 1: Docker Build (Recommended)
+
+Uses Ubuntu 24.04 Docker container for reproducible builds:
+
+```bash
+# Make script executable once
+chmod +x ./tools/build_appimage_docker.sh
+
+# Build dist/LM-Studio-Bench-x86_64.AppImage
+./tools/build_appimage_docker.sh
+```
+
+Requirements:
+
+- `docker` installed and running
+- No other dependencies needed (all bundled in container)
+
+### Method 2: Native Build
+
+Build directly on Ubuntu 24.04 (or compatible):
+
+```bash
+# Make script executable once
+chmod +x ./tools/build_appimage.sh
+
+# Build dist/LM-Studio-Bench-x86_64.AppImage
+./tools/build_appimage.sh
+```
+
+Requirements:
+
+- `python3`
+- `appimagetool` in `PATH`
+  - Download from: [AppImageTool continuous releases](https://github.com/AppImage/appimagetool/releases/tag/continuous)
+  - Install: `chmod +x appimagetool-*.AppImage && sudo mv appimagetool-*.AppImage /usr/local/bin/appimagetool`
+- LM Studio CLI (`lms`) is **not** bundled and must exist on host
+
+Output:
+
+- `dist/LM-Studio-Bench-x86_64.AppImage`
+
+### Docker Details
+
+The Docker build:
+
+- Uses `ubuntu:24.04` base image
+- Installs Python 3, appimagetool, and all dependencies
+- Runs appimagetool in extracted mode (no FUSE required)
+- Copies a minimal build context (incl. runtime `tools/`) via `docker cp`
+- Works even when Docker Desktop path sharing for `/mnt` is disabled
+- Reuses a persistent build container by default (`lmstudio-bench-appimage-build-cache`)
+- Preserves file permissions for the generated AppImage
+- Dockerfile: `tools/Dockerfile.AppImage`
+- Image name: `lmstudio-bench-appimage-builder:ubuntu24.04`
+
+Optional environment variables:
+
+- `REUSE_CONTAINER=1` (default): Reuse existing build container and caches
+- `REUSE_CONTAINER=0`: Remove and recreate build container for a clean run
+- `FAST_MODE=1`: Skip `docker build` if builder image already exists
+- `CONTAINER_NAME=<name>`: Use a custom container name
+
 ## Git Hooks
 
 ### Pre-commit Hook

@@ -47,7 +47,7 @@ except ImportError:
     scipy_stats = None
 
 from config_loader import DEFAULT_CONFIG
-from user_paths import USER_RESULTS_DIR
+from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
 
 PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
@@ -127,7 +127,7 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
 
 def setup_webapp_logger():
     """Creates a separate WebApp startup log file"""
-    logs_dir = Path(PROJECT_ROOT) / "logs"
+    logs_dir = USER_LOGS_DIR
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -290,7 +290,7 @@ class BenchmarkManager:
             self.status = "running"
             self.start_time = datetime.now()
             self.current_output = ""
-            logs_dir = PROJECT_ROOT / "logs"
+            logs_dir = USER_LOGS_DIR
             logs_dir.mkdir(parents=True, exist_ok=True)
             timestamp_str = self.start_time.strftime('%Y%m%d_%H%M%S')
             filename = f"benchmark_{timestamp_str}.log"

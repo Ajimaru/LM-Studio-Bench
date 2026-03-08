@@ -10,6 +10,7 @@ Scrape LM Studio model metadata into a dedicated SQLite database.
 import argparse
 from datetime import datetime, timezone
 import html as htmllib
+from http.client import RemoteDisconnected
 import json
 import logging
 from pathlib import Path
@@ -25,12 +26,12 @@ from urllib.request import Request, urlopen
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from user_paths import USER_RESULTS_DIR  # noqa: E402
+from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR  # noqa: E402
 
 RESULTS_DIR = USER_RESULTS_DIR
 METADATA_DB = RESULTS_DIR / "model_metadata.db"
-LOGS_DIR = PROJECT_ROOT / "logs"
-LOGS_DIR.mkdir(exist_ok=True)
+LOGS_DIR = USER_LOGS_DIR
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 BACKUPS_DIR = RESULTS_DIR / "backups"
 BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -153,7 +154,13 @@ def fetch_lmstudio_readme(model_key: str, timeout: int = 5) -> str:
     try:
         with urlopen(req, timeout=timeout) as resp:
             html = resp.read().decode("utf-8", errors="ignore")
-    except (HTTPError, URLError, TimeoutError, ValueError):
+    except (
+        HTTPError,
+        URLError,
+        TimeoutError,
+        ValueError,
+        RemoteDisconnected,
+    ):
         return ""
 
     meta_desc_pattern = (

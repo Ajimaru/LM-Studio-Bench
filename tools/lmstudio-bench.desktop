@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=LM Studio Bench
+Comment=Benchmark LM Studio models with web dashboard and tray
+Exec=lmstudio-bench --webapp
+Icon=lmstudio-bench
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true
