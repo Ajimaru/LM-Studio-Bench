@@ -65,11 +65,13 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
   "prompt": "Is the sky blue?",
   "context_length": 2048,
   "num_runs": 3,
+  "retest": false,
+  "enable_profiling": false,
   "lmstudio": {
     "host": "localhost",
     "ports": [1234, 1235],
     "api_token": null,
-    "use_rest_api": false
+    "use_rest_api": true
   },
   "inference": {
     "temperature": 0.1,
@@ -84,11 +86,11 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
     "n_batch": 512,
     "n_threads": -1,
     "flash_attention": true,
-    "rope_freq_base": null,
-    "rope_freq_scale": null,
+    "rope_freq_base": 10000,
+    "rope_freq_scale": 1.0,
     "use_mmap": true,
     "use_mlock": false,
-    "kv_cache_quant": null
+    "kv_cache_quant": "f16"
   }
 }
 ```
@@ -102,6 +104,8 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
 | `prompt` | string | `"Is the sky blue?"` | Default test prompt for all benchmarks |
 | `context_length` | integer | `2048` | Context length in tokens |
 | `num_runs` | integer | `3` | Number of measurements per model/quantization |
+| `retest` | boolean | `false` | Ignore cache and benchmark all selected models again |
+| `enable_profiling` | boolean | `false` | Enable temperature/power monitoring |
 
 #### LM Studio Server (`lmstudio`)
 
@@ -110,7 +114,7 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
 | `host` | string | `"localhost"` | LM Studio server hostname |
 | `ports` | array | `[1234, 1235]` | Ports for server discovery (tries both) |
 | `api_token` | string/null | `null` | API permission token (REST API authentication) |
-| `use_rest_api` | boolean | `false` | Use REST API v1 instead of SDK/CLI |
+| `use_rest_api` | boolean | `true` | Use REST API v1 instead of SDK/CLI |
 
 #### Inference Parameters (`inference`)
 
@@ -131,11 +135,26 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
 | `n_batch` | integer | `512` | Batch size for prompt processing |
 | `n_threads` | integer | `-1` | CPU threads (-1=auto/all) |
 | `flash_attention` | boolean | `true` | Flash attention (faster computation) |
-| `rope_freq_base` | float/null | `null` | RoPE frequency base (null=model default) |
-| `rope_freq_scale` | float/null | `null` | RoPE frequency scaling (null=model default) |
+| `rope_freq_base` | float | `10000` | RoPE frequency base |
+| `rope_freq_scale` | float | `1.0` | RoPE frequency scaling |
 | `use_mmap` | boolean | `true` | Memory mapping (faster model load) |
 | `use_mlock` | boolean | `false` | Memory locking (prevents swapping) |
-| `kv_cache_quant` | string/null | `null` | KV cache quantization (f32/f16/q8_0/q4_0/etc.) |
+| `kv_cache_quant` | string | `"f16"` | KV cache quantization (f32/f16/q8_0/q4_0/etc.) |
+
+### Preset Defaults and Compatibility
+
+The readonly `default` preset contains explicit values for all benchmark
+fields that can be set in the web UI and CLI benchmark request model.
+This avoids `null` values in preset comparison output.
+
+Compatibility mapping is applied automatically when loading and comparing
+presets with legacy keys:
+
+- `context_length` -> `context`
+- `num_runs` -> `runs`
+- `top_k` -> `top_k_sampling`
+- `top_p` -> `top_p_sampling`
+- `min_p` -> `min_p_sampling`
 
 ---
 
@@ -171,12 +190,42 @@ Context length in tokens.
 
 ---
 
-#### `--prompt`, `-p` (string)
+#### `--list-presets`
+
+List all available presets (readonly + user presets) and exit.
+
+```bash
+./run.py --list-presets
+```
+
+---
+
+#### `--preset`, `-p` (string)
+
+Load a preset before parsing all remaining CLI arguments.
+If omitted, `default` is loaded automatically.
+
+```bash
+./run.py --preset quick_test
+./run.py --preset high_quality --runs 3
+```
+
+Built-in readonly presets:
+
+- `default`
+- `quick_test`
+- `high_quality`
+- `resource_limited`
+
+---
+
+#### `--prompt`, `-P` (string)
 
 Default test prompt.
 
 ```bash
 ./run.py --prompt "Explain machine learning"
+./run.py -P "Explain machine learning"
 ```
 
 **Default**: `"Is the sky blue?"`
@@ -674,6 +723,14 @@ Enable unified KV cache (REST API only).
 
 ```bash
 ./run.py --temperature 0.7 --top-p 0.95 --max-tokens 512 --limit 3
+```
+
+### Preset Workflow
+
+```bash
+./run.py --list-presets
+./run.py --preset quick_test
+./run.py --preset resource_limited --max-size 10 --runs 2
 ```
 
 ### Performance Tuning (VRAM-optimized)

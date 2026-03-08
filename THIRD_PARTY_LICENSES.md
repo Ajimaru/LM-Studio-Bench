@@ -55,6 +55,14 @@ advice.
   - Website: <https://github.com/workhorsy/py-cpuinfo>
   - License: MIT
 
+- **SciPy**
+  - Website: <https://scipy.org/>
+  - License: BSD-3-Clause
+
+- **PyGObject**
+  - Website: <https://pygobject.gnome.org/>
+  - License: LGPL-2.1-or-later
+
 - **GPU tooling (optional)**
   - Tools: `nvidia-smi`, `rocm-smi`, `lspci`
   - License: See vendor terms and licensing documentation

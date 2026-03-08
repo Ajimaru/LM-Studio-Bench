@@ -46,11 +46,13 @@ try:
 except ImportError:
     scipy_stats = None
 
-from config_loader import DEFAULT_CONFIG
-from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
-
 PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
+sys.path.insert(0, str(SRC_DIR))
+
+from config_loader import DEFAULT_CONFIG
+from preset_manager import PresetManager
+from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
 
 SCIPY_AVAILABLE = scipy_stats is not None
 
@@ -737,6 +739,18 @@ class ExperimentResult(BaseModel):
     test_data: Dict[str, Any]
     statistical_test: Dict[str, Any]
     winner: str
+
+
+class PresetSaveRequest(BaseModel):
+    """Request to save a new user preset"""
+    name: str
+    config: Dict[str, Any]
+
+
+class PresetCompareRequest(BaseModel):
+    """Request to compare two presets"""
+    preset_a: str
+    preset_b: str
 
 
 # ============================================================================
@@ -2058,6 +2072,281 @@ async def get_output() -> dict:
         "output": manager.current_output,
         "status": manager.status
     }
+
+
+# ============================================================================
+# PRESET MANAGEMENT ENDPOINTS
+# ============================================================================
+
+preset_mgr = PresetManager()
+
+
+@app.get("/api/presets")
+async def list_presets() -> dict:
+    """List all available presets (readonly + user-created)"""
+    try:
+        all_presets = preset_mgr.list_presets_detailed()
+        
+        result = {
+            "success": True,
+            "presets": [
+                {
+                    "name": name,
+                    "readonly": is_readonly,
+                    "type": "readonly" if is_readonly else "user"
+                }
+                for name, is_readonly in all_presets
+            ]
+        }
+        
+        logger.info(f"📜 Listed {len(all_presets)} presets")
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error listing presets: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/presets/{name}")
+async def get_preset(name: str) -> dict:
+    """Get a single preset by name"""
+    try:
+        is_valid_name, _ = preset_mgr.validate_preset_name(name)
+        if not is_valid_name and name not in preset_mgr.READONLY_PRESETS:
+            return {
+                "success": False,
+                "error": f"Invalid preset name: {name}"
+            }
+        
+        preset_config = preset_mgr.load_preset(name)
+        
+        all_presets = preset_mgr.list_presets_detailed()
+        is_readonly = any(
+            pname == name and ro for pname, ro in all_presets
+        )
+        
+        logger.info(f"📦 Loaded preset: {name}")
+        return {
+            "success": True,
+            "name": name,
+            "readonly": is_readonly,
+            "config": preset_config
+        }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "error": f"Preset not found: {name}"
+        }
+    except Exception as e:
+        logger.error(f"❌ Error loading preset {name}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/presets")
+async def save_preset(request: PresetSaveRequest) -> dict:
+    """Save a new user preset"""
+    try:
+        is_valid_name, _ = preset_mgr.validate_preset_name(request.name)
+        if not is_valid_name:
+            return {
+                "success": False,
+                "error": f"Invalid preset name: {request.name}"
+            }
+        
+        if request.name in preset_mgr.READONLY_PRESETS:
+            return {
+                "success": False,
+                "error": f"Cannot overwrite readonly preset: {request.name}"
+            }
+        
+        preset_mgr.save_preset(request.name, request.config)
+        
+        logger.info(f"💾 Saved user preset: {request.name}")
+        return {
+            "success": True,
+            "message": f"Preset '{request.name}' saved successfully"
+        }
+    except Exception as e:
+        logger.error(f"❌ Error saving preset {request.name}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.delete("/api/presets/{name}")
+async def delete_preset(name: str) -> dict:
+    """Delete a user preset"""
+    try:
+        is_valid_name, _ = preset_mgr.validate_preset_name(name)
+        if not is_valid_name:
+            return {
+                "success": False,
+                "error": f"Invalid preset name: {name}"
+            }
+
+        if name in preset_mgr.READONLY_PRESETS:
+            return {
+                "success": False,
+                "error": f"Cannot delete readonly preset: {name}"
+            }
+
+        preset_mgr.delete_preset(name)
+
+        logger.info(f"🗑️ Deleted user preset: {name}")
+        return {
+            "success": True,
+            "message": f"Preset '{name}' deleted successfully"
+        }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "error": f"Preset not found: {name}"
+        }
+    except Exception as e:
+        logger.error(f"❌ Error deleting preset {name}: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/presets/compare")
+async def compare_presets(request: PresetCompareRequest) -> dict:
+    """Compare two presets and return differences"""
+    try:
+        preset_a = preset_mgr.load_preset(request.preset_a)
+        preset_b = preset_mgr.load_preset(request.preset_b)
+
+        differences = preset_mgr.compare_presets(
+            preset_a, preset_b
+        )
+
+        logger.info(
+            f"🔍 Compared presets: {request.preset_a} vs {request.preset_b}"
+        )
+
+        return {
+            "success": True,
+            "preset_a": request.preset_a,
+            "preset_b": request.preset_b,
+            "differences": differences
+        }
+    except FileNotFoundError as e:
+        return {
+            "success": False,
+            "error": f"Preset not found: {str(e)}"
+        }
+    except Exception as e:
+        logger.error(
+            f"❌ Error comparing presets "
+            f"{request.preset_a} vs {request.preset_b}: {e}"
+        )
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/presets/export")
+async def export_presets() -> dict:
+    """Export all user presets as ZIP archive"""
+    try:
+        import base64
+        from io import BytesIO
+        import zipfile
+
+        zip_buffer = BytesIO()
+
+        with zipfile.ZipFile(
+            zip_buffer, 'w', zipfile.ZIP_DEFLATED
+        ) as zip_file:
+            user_presets = [
+                name for name, is_ro
+                in preset_mgr.list_presets_detailed()
+                if not is_ro
+            ]
+
+            for preset_name in user_presets:
+                preset_config = preset_mgr.load_preset(preset_name)
+                json_str = json.dumps(preset_config, indent=2)
+
+                zip_file.writestr(
+                    f"{preset_name}.json",
+                    json_str
+                )
+
+        zip_buffer.seek(0)
+        zip_bytes = zip_buffer.read()
+        zip_base64 = base64.b64encode(zip_bytes).decode('utf-8')
+
+        logger.info(f"📤 Exported {len(user_presets)} user presets")
+
+        return {
+            "success": True,
+            "filename": "lmstudio_presets.zip",
+            "data": zip_base64,
+            "count": len(user_presets)
+        }
+    except Exception as e:
+        logger.error(f"❌ Error exporting presets: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/presets/import")
+async def import_presets(request: Request) -> dict:
+    """Import user presets from ZIP archive"""
+    try:
+        import base64
+        from io import BytesIO
+        import zipfile
+        
+        body = await request.json()
+        zip_base64 = body.get("data", "")
+        
+        if not zip_base64:
+            return {
+                "success": False,
+                "error": "No ZIP data provided"
+            }
+        
+        zip_bytes = base64.b64decode(zip_base64)
+        zip_buffer = BytesIO(zip_bytes)
+        
+        imported_count = 0
+        skipped = []
+        
+        with zipfile.ZipFile(zip_buffer, 'r') as zip_file:
+            for file_info in zip_file.namelist():
+                if not file_info.endswith('.json'):
+                    continue
+                
+                preset_name = Path(file_info).stem
+                
+                is_valid_name, _ = preset_mgr.validate_preset_name(
+                    preset_name
+                )
+                if not is_valid_name:
+                    skipped.append(
+                        f"{preset_name} (invalid name)"
+                    )
+                    continue
+                
+                if preset_name in preset_mgr.READONLY_PRESETS:
+                    skipped.append(
+                        f"{preset_name} (readonly)"
+                    )
+                    continue
+                
+                json_content = zip_file.read(file_info).decode('utf-8')
+                preset_config = json.loads(json_content)
+                
+                preset_mgr.save_preset(preset_name, preset_config)
+                imported_count += 1
+        
+        logger.info(
+            f"📥 Imported {imported_count} presets, "
+            f"skipped {len(skipped)}"
+        )
+        
+        return {
+            "success": True,
+            "imported": imported_count,
+            "skipped": skipped
+        }
+    except Exception as e:
+        logger.error(f"❌ Error importing presets: {e}")
+        return {"success": False, "error": str(e)}
 
 
 # ============================================================================

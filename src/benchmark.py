@@ -47,6 +47,7 @@ except (ImportError, ModuleNotFoundError):
     REPORTLAB_AVAILABLE = False
 
 from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
+from preset_manager import PresetManager
 from rest_client import LMStudioRESTClient
 from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
 
@@ -3936,12 +3937,49 @@ def main():
     latest_link.unlink(missing_ok=True)
     latest_link.symlink_to(log_filename.name)
     
+    normalized_args = _expand_short_flag_clusters(sys.argv[1:])
+
+    preset_manager = PresetManager()
+    preset_parser = argparse.ArgumentParser(add_help=False)
+    preset_parser.add_argument(
+        '--list-presets',
+        action='store_true',
+        help='List all available presets and exit'
+    )
+    preset_parser.add_argument(
+        '-p', '--preset',
+        type=str,
+        default='default',
+        help='Load benchmark preset by name (default: default)'
+    )
+    preset_args, remaining_args = preset_parser.parse_known_args(normalized_args)
+
+    if preset_args.list_presets:
+        print("\nAvailable presets:\n")
+        for preset_name, readonly in preset_manager.list_presets_detailed():
+            icon = "[readonly]" if readonly else "[user]"
+            print(f"  {icon:<11} {preset_name}")
+        print("\nUse: python benchmark.py -p <preset_name>\n")
+        return
+
+    try:
+        loaded_preset = preset_manager.load_preset(preset_args.preset)
+    except (FileNotFoundError, ValueError) as exc:
+        logger.error("❌ %s", exc)
+        logger.info("Use --list-presets to see all available presets")
+        sys.exit(1)
+
+    preset_cli_args = preset_manager.preset_to_cli_args(loaded_preset)
+    final_cli_args = preset_cli_args + remaining_args
+
     parser = argparse.ArgumentParser(
         description="LM Studio Model Benchmark - Tests all locally installed LLM models",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python benchmark.py                                   # Standard: all models, 3 measurements
+  python benchmark.py --list-presets                    # Show available presets and exit
+  python benchmark.py -p quick_test                     # Load preset before parsing other args
   python benchmark.py --runs 1                          # Fast: all models, 1 measurement
   python benchmark.py --limit 3 --runs 1                # Test 3 models with 1 measurement
   python benchmark.py --limit 1 --runs 1                # Test 1 model with 1 measurement
@@ -3965,7 +4003,7 @@ Examples:
     )
     
     parser.add_argument(
-        '--prompt', '-p',
+        '--prompt', '-P',
         type=str,
         default=STANDARD_PROMPT,
         help=f'Standard test prompt (default: "{STANDARD_PROMPT}")'
@@ -4250,8 +4288,9 @@ Examples:
         help='Enable unified KV cache (REST API only, optimizes VRAM for parallel requests)'
     )
     
-    normalized_args = _expand_short_flag_clusters(sys.argv[1:])
-    args = parser.parse_args(args=normalized_args)
+    args = parser.parse_args(args=final_cli_args)
+
+    logger.info("📦 Loaded preset: %s", preset_args.preset)
     
     if args.debug:
         logger.setLevel(logging.DEBUG)

@@ -2,6 +2,8 @@
   "prompt": "Is the sky blue?",
   "context_length": 2048,
   "num_runs": 3,
+  "retest": false,
+  "enable_profiling": false,
   "lmstudio": {
     "host": "localhost",
     "ports": [1234, 1235],
@@ -21,10 +23,10 @@
     "n_batch": 512,
     "n_threads": -1,
     "flash_attention": true,
-    "rope_freq_base": null,
-    "rope_freq_scale": null,
+    "rope_freq_base": 10000,
+    "rope_freq_scale": 1.0,
     "use_mmap": true,
     "use_mlock": false,
-    "kv_cache_quant": null
+    "kv_cache_quant": "f16"
   }
 }

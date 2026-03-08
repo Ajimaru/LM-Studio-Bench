@@ -38,6 +38,8 @@ quantizations to measure and compare tokens-per-second performance.
   - ⚙️ **Parameter Configuration**: All CLI parameters available via GUI
     - All CLI arguments available
     - Tooltip explanations for all options
+    - Preset Management (load/save/delete/compare)
+    - Preset ZIP export/import
     - Filters by quantization, architecture, parameter size, context length
     - Sort by speed, efficiency, TTFT or VRAM
     - Hardware limits (max GPU temp, max power)
@@ -174,6 +176,34 @@ Start the modern web UI with live streaming and an interactive results browser:
 ./run.py --prompt "..."     # Custom prompt
 ./run.py --limit 5          # Test up to 5 NEW models (+ all cached results)
 ```
+
+</details>
+
+#### Preset management
+
+<details>
+<summary>click to expand</summary>
+
+```bash
+# Show all available presets (readonly + user)
+./run.py --list-presets
+
+# Load preset (default is loaded if omitted)
+./run.py --preset quick_test
+
+# Load preset and override individual values
+./run.py --preset high_quality --runs 3 --context 4096
+
+# Prompt short flag is -P (because -p is used for --preset)
+./run.py --preset default -P "Explain machine learning in 3 sentences"
+```
+
+Built-in readonly presets:
+
+- `default`
+- `quick_test`
+- `high_quality`
+- `resource_limited`
 
 </details>
 
@@ -325,7 +355,7 @@ benchmark.
 For ad-hoc runs you can override defaults on the command line. Example:
 
 ```bash
-./run.py --prompt "Your custom test prompt" --context 4096 --runs 5
+./run.py -P "Your custom test prompt" --context 4096 --runs 5
 ```
 
 (See [config/defaults.json](config/defaults.json) for persistent configuration.)

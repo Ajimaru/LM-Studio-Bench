@@ -1441,6 +1441,54 @@
             </div>
           </div>
 
+          <!-- Preset Management Toolbar -->
+          <div class="card" style="margin-bottom: 1rem;">
+            <h3 style="margin-bottom: 1rem;">
+              <span class="tooltip-icon"
+                    data-tooltip="Save and load benchmark configurations">?</span>
+              📦 Preset Management
+            </h3>
+
+            <div style="display: flex;
+                        gap: 0.5rem;
+                        align-items: center;
+                        flex-wrap: wrap">
+              <!-- Preset Dropdown -->
+              <select id="presetDropdown"
+                      style="flex: 1;
+                             min-width: 200px;
+                             padding: 0.6rem">
+                <option value="default">default [readonly]</option>
+              </select>
+
+              <!-- Action Buttons -->
+              <button onclick="loadSelectedPreset()"
+                      class="btn-secondary"
+                      title="Load selected preset">📂 Load</button>
+
+              <button onclick="showSavePresetModal()"
+                      class="btn-secondary"
+                      title="Save current settings as preset">💾 Save</button>
+
+              <button onclick="deleteSelectedPreset()"
+                      class="btn-secondary"
+                      id="btnDeletePreset"
+                      title="Delete selected preset">🗑️ Delete</button>
+
+              <button onclick="showCompareModal()"
+                      class="btn-secondary"
+                      title="Compare two presets">🔍 Compare</button>
+
+              <button onclick="exportPresets()"
+                      class="btn-secondary"
+                      title="Export all user presets as ZIP">📤 Export</button>
+
+              <button onclick="showImportModal()"
+                      class="btn-secondary"
+                      title="Import presets from ZIP file">📥 Import</button>
+            </div>
+          </div>
+
           <!-- Start Modal -->
           <div id="startModal"
                class="card hidden"
@@ -1845,6 +1893,125 @@
             <div class="controls" style="gap: 1rem; margin-top: 1rem;">
               <button class="btn-success" onclick="startBenchmark()">✅ Start Benchmark</button>
               <button class="btn-primary" onclick="toggleStartModal()">❌ Cancel</button>
+            </div>
+          </div>
+
+          <!-- Save Preset Modal -->
+          <div id="savePresetModal"
+               class="card hidden"
+               style="margin-bottom: 2rem;
+                      border: 2px solid var(--primary)">
+            <h2>💾 Save Preset</h2>
+
+            <div class="form-group">
+              <label>
+                <span class="tooltip-icon"
+                      data-tooltip="Alphanumeric, dash, underscore only (1-50 chars)">?</span>
+                Preset Name
+              </label>
+              <input type="text"
+                     id="presetNameInput"
+                     placeholder="e.g. my_custom_preset"
+                     pattern="[a-zA-Z0-9_-]{1,50}">
+            </div>
+
+            <div style="margin-top: 1rem;
+                        padding: 1rem;
+                        background: var(--surface);
+                        border-radius: 4px">
+              <strong>Current Settings:</strong>
+              <div id="currentSettingsPreview"
+                   style="font-family: monospace;
+                          font-size: 0.85rem;
+                          margin-top: 0.5rem;
+                          max-height: 200px;
+                          overflow-y: auto">
+                <!-- Will be populated by JavaScript -->
+              </div>
+            </div>
+
+            <div class="controls" style="gap: 1rem; margin-top: 1.5rem;">
+              <button class="btn-success" onclick="confirmSavePreset()">✅ Save</button>
+              <button class="btn-primary" onclick="hideSavePresetModal()">❌ Cancel</button>
+            </div>
+          </div>
+
+          <!-- Compare Presets Modal -->
+          <div id="comparePresetsModal"
+               class="card hidden"
+               style="margin-bottom: 2rem;
+                      border: 2px solid var(--primary)">
+            <h2>🔍 Compare Presets</h2>
+
+            <div style="display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 1rem;
+                        margin-bottom: 1rem">
+              <div class="form-group">
+                <label>Preset A</label>
+                <select id="comparePresetA" class="form-control"></select>
+              </div>
+              <div class="form-group">
+                <label>Preset B</label>
+                <select id="comparePresetB" class="form-control"></select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="compareShowOnlyDiff" checked>
+                Show only differences
+              </label>
+            </div>
+
+            <div id="compareResultsContainer"
+                 style="margin-top: 1rem;
+                        padding: 1rem;
+                        background: var(--surface);
+                        border-radius: 4px;
+                        max-height: 400px;
+                        overflow-y: auto">
+              <div style="text-align: center; color: var(--text-light);">Select two presets and click "Compare"</div>
+            </div>
+
+            <div class="controls" style="gap: 1rem; margin-top: 1.5rem;">
+              <button class="btn-success" onclick="executeCompare()">✅ Compare</button>
+              <button class="btn-primary" onclick="hideCompareModal()">❌ Cancel</button>
+            </div>
+          </div>
+
+          <!-- Import Presets Modal -->
+          <div id="importPresetsModal"
+               class="card hidden"
+               style="margin-bottom: 2rem;
+                      border: 2px solid var(--primary)">
+            <h2>📥 Import Presets</h2>
+
+            <div class="form-group">
+              <label>
+                <span class="tooltip-icon"
+                      data-tooltip="Upload a ZIP file containing preset JSON files">?</span>
+                Select ZIP File
+              </label>
+              <input type="file"
+                     id="importFileInput"
+                     accept=".zip"
+                     style="padding: 0.5rem">
+            </div>
+
+            <div id="importPreviewContainer"
+                 style="margin-top: 1rem;
+                        padding: 1rem;
+                        background: var(--surface);
+                        border-radius: 4px;
+                        max-height: 200px;
+                        overflow-y: auto">
+              <div style="color: var(--text-light); font-size: 0.9rem;">No file selected</div>
+            </div>
+
+            <div class="controls" style="gap: 1rem; margin-top: 1.5rem;">
+              <button class="btn-success" onclick="confirmImportPresets()">✅ Import</button>
+              <button class="btn-primary" onclick="hideImportModal()">❌ Cancel</button>
             </div>
           </div>
 
@@ -5221,6 +5388,662 @@
             };
             document.addEventListener('keydown', closeHandler);
         }
+
+        // ====================================================================
+        // PRESET MANAGEMENT FUNCTIONS
+        // ====================================================================
+
+        // Global variables
+        let allPresets = [];
+
+        /**
+         * Load preset list from API and populate dropdown
+         */
+        async function loadPresetList() {
+            try {
+                const response = await fetch('/api/presets');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    showToast('❌ Failed to load presets: ' + data.error, 'error');
+                    return;
+                }
+                
+                allPresets = data.presets;
+                
+                const dropdown = document.getElementById('presetDropdown');
+                dropdown.innerHTML = '';
+                
+                data.presets.forEach(preset => {
+                    const option = document.createElement('option');
+                    option.value = preset.name;
+                    const badge = preset.readonly ? ' [readonly]' : ' [user]';
+                    option.textContent = preset.name + badge;
+                    dropdown.appendChild(option);
+                });
+                
+                // Update Compare modal dropdowns
+                updateCompareDropdowns();
+                
+                // Update delete button state
+                updateDeleteButtonState();
+                
+            } catch (error) {
+                console.error('Error loading preset list:', error);
+                showToast('❌ Failed to load presets', 'error');
+            }
+        }
+
+        /**
+         * Update delete button based on selected preset
+         */
+        function updateDeleteButtonState() {
+            const dropdown = document.getElementById('presetDropdown');
+            const selectedName = dropdown.value;
+            const btnDelete = document.getElementById('btnDeletePreset');
+            
+            const preset = allPresets.find(p => p.name === selectedName);
+            
+            if (preset && preset.readonly) {
+                btnDelete.disabled = true;
+                btnDelete.title = 'Cannot delete readonly preset';
+            } else {
+                btnDelete.disabled = false;
+                btnDelete.title = 'Delete selected preset';
+            }
+        }
+
+        /**
+         * Load selected preset from dropdown
+         */
+        async function loadSelectedPreset() {
+            const dropdown = document.getElementById('presetDropdown');
+            const presetName = dropdown.value;
+            
+            if (!presetName) {
+                showToast('⚠️ No preset selected', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/presets/${presetName}`);
+                const data = await response.json();
+                
+                if (!data.success) {
+                    showToast('❌ Failed to load preset: ' + data.error, 'error');
+                    return;
+                }
+                
+                // Apply config to form fields
+                applyConfigToForm(data.config);
+                
+                showToast(`✅ Loaded preset: ${presetName}`, 'success');
+                
+            } catch (error) {
+                console.error('Error loading preset:', error);
+                showToast('❌ Failed to load preset', 'error');
+            }
+        }
+
+        /**
+         * Apply config object to form fields
+         */
+        function applyConfigToForm(config) {
+            // Basic Parameters
+            if (config.runs !== undefined)
+                document.getElementById('paramRuns').value = config.runs;
+            if (config.context_length !== undefined)
+                document.getElementById('paramContext').value = config.context_length;
+            if (config.prompt !== undefined)
+                document.getElementById('paramPrompt').value = config.prompt;
+            if (config.warmup_runs !== undefined)
+                document.getElementById('paramWarmup').value = config.warmup_runs;
+            
+            // Filters
+            if (config.include_quant !== undefined)
+                document.getElementById('filterQuants').value = config.include_quant || '';
+            if (config.include_arch !== undefined)
+                document.getElementById('filterArchs').value = config.include_arch || '';
+            if (config.include_size !== undefined)
+                document.getElementById('filterSizes').value = config.include_size || '';
+            if (config.include_context !== undefined)
+                document.getElementById('filterContext').value = config.include_context || '';
+            
+            // Ranking
+            if (config.rank_by !== undefined)
+                document.getElementById('paramRankBy').value = config.rank_by || '';
+            
+            // Resource Limits
+            if (config.max_size !== undefined)
+                document.getElementById('paramMaxSize').value = config.max_size || '';
+            if (config.gpu_offload !== undefined)
+                document.getElementById('paramGpuOffload').value = config.gpu_offload || '';
+            
+            // Advanced: LLM Inference
+            if (config.temperature !== undefined)
+                document.getElementById('paramTemperature').value = config.temperature || '';
+            if (config.top_k !== undefined)
+                document.getElementById('paramTopK').value = config.top_k || '';
+            if (config.top_p !== undefined)
+                document.getElementById('paramTopP').value = config.top_p || '';
+            if (config.min_p !== undefined)
+                document.getElementById('paramMinP').value = config.min_p || '';
+            if (config.repeat_penalty !== undefined)
+                document.getElementById('paramRepeatPenalty').value = config.repeat_penalty || '';
+            if (config.max_tokens !== undefined)
+                document.getElementById('paramMaxTokens').value = config.max_tokens || '';
+            
+            // Hardware Limits
+            if (config.max_temp !== undefined)
+                document.getElementById('paramMaxTemp').value = config.max_temp || '';
+            if (config.max_power !== undefined)
+                document.getElementById('paramMaxPower').value = config.max_power || '';
+            
+            // Flags (checkboxes, if they exist)
+            if (config.retest !== undefined && document.getElementById('paramRetest'))
+                document.getElementById('paramRetest').checked = config.retest;
+            if (config.dev_mode !== undefined && document.getElementById('paramDevMode'))
+                document.getElementById('paramDevMode').checked = config.dev_mode;
+            if (config.enable_profiling !== undefined && document.getElementById('paramProfiling'))
+                document.getElementById('paramProfiling').checked = config.enable_profiling;
+        }
+
+        /**
+         * Collect current form settings into config object
+         */
+        function collectCurrentSettings() {
+            const getValue = (id) => {
+                const el = document.getElementById(id);
+                if (!el || el.value === '') return undefined;
+                
+                // Number inputs
+                if (el.type === 'number') {
+                    const val = parseFloat(el.value);
+                    return isNaN(val) ? undefined : val;
+                }
+                
+                // Checkboxes
+                if (el.type === 'checkbox') {
+                    return el.checked;
+                }
+                
+                // Text inputs
+                return el.value;
+            };
+            
+            return {
+                runs: getValue('paramRuns'),
+                context_length: getValue('paramContext'),
+                prompt: getValue('paramPrompt'),
+                warmup_runs: getValue('paramWarmup'),
+                include_quant: getValue('filterQuants'),
+                include_arch: getValue('filterArchs'),
+                include_size: getValue('filterSizes'),
+                include_context: getValue('filterContext'),
+                rank_by: getValue('paramRankBy'),
+                max_size: getValue('paramMaxSize'),
+                gpu_offload: getValue('paramGpuOffload'),
+                temperature: getValue('paramTemperature'),
+                top_k: getValue('paramTopK'),
+                top_p: getValue('paramTopP'),
+                min_p: getValue('paramMinP'),
+                repeat_penalty: getValue('paramRepeatPenalty'),
+                max_tokens: getValue('paramMaxTokens'),
+                max_temp: getValue('paramMaxTemp'),
+                max_power: getValue('paramMaxPower'),
+                retest: getValue('paramRetest'),
+                dev_mode: getValue('paramDevMode'),
+                enable_profiling: getValue('paramProfiling')
+            };
+        }
+
+        /**
+         * Show Save Preset Modal
+         */
+        function showSavePresetModal() {
+            const modal = document.getElementById('savePresetModal');
+            modal.classList.remove('hidden');
+            
+            // Collect and display current settings
+            const settings = collectCurrentSettings();
+            const preview = document.getElementById('currentSettingsPreview');
+            
+            // Filter out undefined values
+            const filtered = Object.fromEntries(
+                Object.entries(settings).filter(([_, v]) => v !== undefined)
+            );
+            
+            preview.textContent = JSON.stringify(filtered, null, 2);
+            
+            // Clear input field
+            document.getElementById('presetNameInput').value = '';
+        }
+
+        /**
+         * Hide Save Preset Modal
+         */
+        function hideSavePresetModal() {
+            const modal = document.getElementById('savePresetModal');
+            modal.classList.add('hidden');
+        }
+
+        /**
+         * Confirm and save preset
+         */
+        async function confirmSavePreset() {
+            const nameInput = document.getElementById('presetNameInput');
+            const presetName = nameInput.value.trim();
+            
+            if (!presetName) {
+                showToast('⚠️ Please enter a preset name', 'warning');
+                return;
+            }
+            
+            // Validate name format
+            const nameRegex = /^[a-zA-Z0-9_-]{1,50}$/;
+            if (!nameRegex.test(presetName)) {
+                showToast('❌ Invalid name: only alphanumeric, dash, underscore (1-50 chars)', 'error');
+                return;
+            }
+            
+            const settings = collectCurrentSettings();
+            
+            // Filter out undefined
+            const filtered = Object.fromEntries(
+                Object.entries(settings).filter(([_, v]) => v !== undefined)
+            );
+            
+            try {
+                const response = await fetch('/api/presets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: presetName,
+                        config: filtered
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`✅ Preset saved: ${presetName}`, 'success');
+                    hideSavePresetModal();
+                    await loadPresetList(); // Refresh dropdown
+                } else {
+                    showToast('❌ Failed to save: ' + data.error, 'error');
+                }
+                
+            } catch (error) {
+                console.error('Error saving preset:', error);
+                showToast('❌ Failed to save preset', 'error');
+            }
+        }
+
+        /**
+         * Delete selected preset
+         */
+        async function deleteSelectedPreset() {
+            const dropdown = document.getElementById('presetDropdown');
+            const presetName = dropdown.value;
+            
+            if (!presetName) {
+                showToast('⚠️ No preset selected', 'warning');
+                return;
+            }
+            
+            const preset = allPresets.find(p => p.name === presetName);
+            if (preset && preset.readonly) {
+                showToast('❌ Cannot delete readonly preset', 'error');
+                return;
+            }
+            
+            if (!confirm(`Delete preset "${presetName}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/presets/${presetName}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast(`✅ Preset deleted: ${presetName}`, 'success');
+                    await loadPresetList(); // Refresh dropdown
+                } else {
+                    showToast('❌ Failed to delete: ' + data.error, 'error');
+                }
+                
+            } catch (error) {
+                console.error('Error deleting preset:', error);
+                showToast('❌ Failed to delete preset', 'error');
+            }
+        }
+
+        /**
+         * Show Compare Modal
+         */
+        function showCompareModal() {
+            const modal = document.getElementById('comparePresetsModal');
+            modal.classList.remove('hidden');
+            
+            updateCompareDropdowns();
+            
+            // Reset results
+            const resultsContainer = document.getElementById('compareResultsContainer');
+            resultsContainer.innerHTML = '<div style="text-align: center; color: var(--text-light);">Select two presets and click "Compare"</div>';
+        }
+
+        /**
+         * Hide Compare Modal
+         */
+        function hideCompareModal() {
+            const modal = document.getElementById('comparePresetsModal');
+            modal.classList.add('hidden');
+        }
+
+        /**
+         * Update Compare modal dropdowns
+         */
+        function updateCompareDropdowns() {
+            const dropdownA = document.getElementById('comparePresetA');
+            const dropdownB = document.getElementById('comparePresetB');
+            
+            if (!dropdownA || !dropdownB) return;
+            
+            const currentA = dropdownA.value;
+            const currentB = dropdownB.value;
+            
+            dropdownA.innerHTML = '';
+            dropdownB.innerHTML = '';
+            
+            allPresets.forEach(preset => {
+                const optA = document.createElement('option');
+                optA.value = preset.name;
+                optA.textContent = preset.name;
+                dropdownA.appendChild(optA);
+                
+                const optB = document.createElement('option');
+                optB.value = preset.name;
+                optB.textContent = preset.name;
+                dropdownB.appendChild(optB);
+            });
+            
+            // Restore selection
+            if (currentA) dropdownA.value = currentA;
+            if (currentB) dropdownB.value = currentB;
+            
+            // Default: select first two different presets
+            if (!currentA && allPresets.length >= 2) {
+                dropdownA.value = allPresets[0].name;
+                dropdownB.value = allPresets[1].name;
+            }
+        }
+
+        /**
+         * Execute preset comparison
+         */
+        async function executeCompare() {
+            const presetA = document.getElementById('comparePresetA').value;
+            const presetB = document.getElementById('comparePresetB').value;
+            const showOnlyDiff = document.getElementById('compareShowOnlyDiff').checked;
+            
+            if (!presetA || !presetB) {
+                showToast('⚠️ Please select two presets', 'warning');
+                return;
+            }
+            
+            if (presetA === presetB) {
+                showToast('⚠️ Please select two different presets', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/presets/compare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        preset_a: presetA,
+                        preset_b: presetB
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    showToast('❌ Comparison failed: ' + data.error, 'error');
+                    return;
+                }
+                
+                displayComparisonResults(data, showOnlyDiff);
+                
+            } catch (error) {
+                console.error('Error comparing presets:', error);
+                showToast('❌ Failed to compare presets', 'error');
+            }
+        }
+
+        /**
+         * Display comparison results in modal
+         */
+        function displayComparisonResults(data, showOnlyDiff) {
+            const container = document.getElementById('compareResultsContainer');
+            
+            const diffs = data.differences;
+            
+            let html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">';
+            html += '<thead><tr style="border-bottom: 2px solid var(--border);">';
+            html += '<th style="text-align: left; padding: 0.5rem;">Parameter</th>';
+            html += `<th style="text-align: left; padding: 0.5rem;">${data.preset_a}</th>`;
+            html += `<th style="text-align: left; padding: 0.5rem;">${data.preset_b}</th>`;
+            html += '</tr></thead><tbody>';
+            
+            let rowCount = 0;
+            
+            for (const [key, values] of Object.entries(diffs)) {
+                const valA = values.preset_a;
+                const valB = values.preset_b;
+                
+                const isDifferent = valA !== valB;
+                
+                // Skip if showOnlyDiff and values are equal
+                if (showOnlyDiff && !isDifferent) {
+                    continue;
+                }
+                
+                rowCount++;
+                
+                const rowStyle = isDifferent
+                    ? 'background: rgba(255, 200, 100, 0.1);'
+                    : '';
+                
+                html += `<tr style="border-bottom: 1px solid var(--border); ${rowStyle}">`;
+                html += `<td style="padding: 0.5rem; font-weight: ${isDifferent ? 'bold' : 'normal'};">${key}</td>`;
+                html += `<td style="padding: 0.5rem;">${valA !== undefined ? valA : '<em>not set</em>'}</td>`;
+                html += `<td style="padding: 0.5rem;">${valB !== undefined ? valB : '<em>not set</em>'}</td>`;
+                html += '</tr>';
+            }
+            
+            html += '</tbody></table>';
+            
+            if (rowCount === 0) {
+                html = '<div style="text-align: center; color: var(--text-light);">No differences found</div>';
+            }
+            
+            container.innerHTML = html;
+        }
+
+        /**
+         * Export all user presets as ZIP
+         */
+        async function exportPresets() {
+            try {
+                const response = await fetch('/api/presets/export');
+                const data = await response.json();
+                
+                if (!data.success) {
+                    showToast('❌ Export failed: ' + data.error, 'error');
+                    return;
+                }
+                
+                if (data.count === 0) {
+                    showToast('⚠️ No user presets to export', 'warning');
+                    return;
+                }
+                
+                // Decode base64 and trigger download
+                const blob = base64ToBlob(data.data, 'application/zip');
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = data.filename || 'lmstudio_presets.zip';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showToast(`✅ Exported ${data.count} preset(s)`, 'success');
+                
+            } catch (error) {
+                console.error('Error exporting presets:', error);
+                showToast('❌ Failed to export presets', 'error');
+            }
+        }
+
+        /**
+         * Show Import Modal
+         */
+        function showImportModal() {
+            const modal = document.getElementById('importPresetsModal');
+            modal.classList.remove('hidden');
+            
+            // Reset file input
+            document.getElementById('importFileInput').value = '';
+            document.getElementById('importPreviewContainer').innerHTML = '<div style="color: var(--text-light); font-size: 0.9rem;">No file selected</div>';
+        }
+
+        /**
+         * Hide Import Modal
+         */
+        function hideImportModal() {
+            const modal = document.getElementById('importPresetsModal');
+            modal.classList.add('hidden');
+        }
+
+        /**
+         * Confirm and import presets from ZIP
+         */
+        async function confirmImportPresets() {
+            const fileInput = document.getElementById('importFileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showToast('⚠️ Please select a ZIP file', 'warning');
+                return;
+            }
+            
+            try {
+                const base64data = await fileToBase64(file);
+                
+                const response = await fetch('/api/presets/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: base64data })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    let msg = `✅ Imported ${data.imported} preset(s)`;
+                    if (data.skipped.length > 0) {
+                        msg += ` (skipped ${data.skipped.length})`;
+                    }
+                    showToast(msg, 'success');
+                    hideImportModal();
+                    await loadPresetList(); // Refresh dropdown
+                } else {
+                    showToast('❌ Import failed: ' + data.error, 'error');
+                }
+                
+            } catch (error) {
+                console.error('Error importing presets:', error);
+                showToast('❌ Failed to import presets', 'error');
+            }
+        }
+
+        /**
+         * Helper: Convert File to base64
+         */
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        /**
+         * Helper: Convert base64 to Blob
+         */
+        function base64ToBlob(base64, type) {
+            const byteCharacters = atob(base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            return new Blob([byteArray], { type });
+        }
+
+        /**
+         * Show toast notification
+         */
+        function showToast(message, type = 'info') {
+            // Reuse existing toast logic or create simple alert
+            console.log(`[${type.toUpperCase()}] ${message}`);
+            
+            // Create a temporary toast element
+            const toast = document.createElement('div');
+            toast.textContent = message;
+            toast.style.cssText = `
+                position: fixed;
+                bottom: 2rem;
+                right: 2rem;
+                padding: 1rem 1.5rem;
+                background: ${type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--warning)'};
+                color: white;
+                border-radius: 4px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                z-index: 10000;
+                animation: slideIn 0.3s ease-out;
+            `;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease-out';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Load preset list on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadPresetList();
+            
+            // Update delete button state when dropdown changes
+            const dropdown = document.getElementById('presetDropdown');
+            if (dropdown) {
+                dropdown.addEventListener('change', updateDeleteButtonState);
+            }
+        });
+
+        // END PRESET MANAGEMENT FUNCTIONS
       </script>
     </body>
   </html>

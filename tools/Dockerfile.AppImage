@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     gobject-introspection \
     gir1.2-gtk-3.0 \
     desktop-file-utils \
+    appstream \
     && rm -rf /var/lib/apt/lists/*
 
 # Download and install appimagetool

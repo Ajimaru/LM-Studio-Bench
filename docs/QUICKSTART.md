@@ -374,8 +374,37 @@ grep ERROR logs/benchmark_*.log
 **Custom Prompt:**
 
 ```bash
-./run.py --prompt "Your custom prompt here" --limit 2 --runs 1
+./run.py -P "Your custom prompt here" --limit 2 --runs 1
 ```
+
+### 7️⃣ Presets (Fast Setup)
+
+**Show available presets:**
+
+```bash
+./run.py --list-presets
+```
+
+**Load a built-in preset:**
+
+```bash
+./run.py --preset quick_test
+./run.py --preset high_quality
+./run.py --preset resource_limited
+```
+
+**Load preset and override values:**
+
+```bash
+./run.py --preset quick_test --runs 2 --context 2048
+```
+
+Notes:
+
+- `default` includes explicit values for all benchmark form fields, so
+  preset comparisons do not show `null` values for missing keys.
+- Legacy keys in imported/user presets are normalized automatically
+  (`context_length`/`top_k`/`top_p`/`min_p` -> current key names).
 
 ## 📊 Output Formats
 

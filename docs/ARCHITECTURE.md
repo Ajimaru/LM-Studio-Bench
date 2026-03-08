@@ -41,6 +41,7 @@ graph TB
     RunPy -->|benchmark mode| Benchmark[src/benchmark.py<br/>Benchmark Engine]
     
     Benchmark --> ConfigLoader[src/config_loader.py<br/>Configuration Manager]
+    Benchmark --> PresetManager[src/preset_manager.py<br/>Preset Manager]
     Benchmark --> RestClient[src/rest_client.py<br/>REST API Client]
     
     ConfigLoader -->|reads| ProjectConfig[config/defaults.json<br/>Project Defaults]
@@ -74,6 +75,7 @@ graph TB
 - **run.py**: Wrapper script that decides between web dashboard and CLI benchmark mode
 - **benchmark.py**: Main benchmark engine (~4,683 lines) with argparse, model discovery, and execution
 - **config_loader.py**: Loads and merges configuration from JSON file with built-in defaults
+- **preset_manager.py**: Manages readonly/user presets and maps presets to CLI args
 - **rest_client.py**: REST API client for LM Studio v1 endpoints (optional mode)
 - **web/app.py**: FastAPI web dashboard with live streaming and results browser
 - **tray.py**: Linux AppIndicator tray controller for benchmark controls
@@ -597,6 +599,7 @@ flowchart TD
 | Category | Arguments |
 | --- | --- |
 | **Basic** | `--runs`, `--context`, `--prompt`, `--limit`, `--dev-mode` |
+| **Presets** | `--list-presets`, `--preset` |
 | **Filter** | `--only-vision`, `--only-tools`, `--quants`, `--arch`, `--params`, `--min-context`, `--max-size`, `--include-models`, `--exclude-models` |
 | **Cache** | `--retest`, `--list-cache`, `--export-cache`, `--export-only` |
 | **Profiling** | `--enable-profiling`, `--max-temp`, `--max-power`, `--disable-gtt` |

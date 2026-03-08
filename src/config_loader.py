@@ -17,6 +17,8 @@ BASE_DEFAULT_CONFIG: Dict[str, Any] = {
     "prompt": "Is the sky blue?",
     "context_length": 2048,
     "num_runs": 3,
+    "retest": False,
+    "enable_profiling": False,
     "lmstudio": {
         "host": "localhost",
         "ports": [1234, 1235],

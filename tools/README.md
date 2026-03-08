@@ -68,6 +68,16 @@ Optional environment variables:
 - `FAST_MODE=1`: Skip `docker build` if builder image already exists
 - `CONTAINER_NAME=<name>`: Use a custom container name
 
+AppStream metadata notes:
+
+- AppImage builds include desktop/appdata metadata to satisfy
+  `appimagetool` validation.
+- Metadata sources:
+  - `tools/io.github.Ajimaru.LMStudioBench.desktop`
+  - `tools/io.github.Ajimaru.LMStudioBench.appdata.xml`
+- If the builder image changes, the Docker script recreates the cached
+  build container automatically to avoid stale dependency issues.
+
 ## Git Hooks
 
 ### Pre-commit Hook

@@ -24,8 +24,17 @@ fi
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share"
 
-cp "$ROOT_DIR/tools/lmstudio-bench.desktop" "$APPDIR/"
 cp "$ROOT_DIR/assets/icons/lmstudio-bench.svg" "$APPDIR/lmstudio-bench.svg"
+
+cp "$ROOT_DIR/tools/io.github.Ajimaru.LMStudioBench.desktop" "$APPDIR/"
+
+mkdir -p "$APPDIR/usr/share/applications"
+cp "$ROOT_DIR/tools/io.github.Ajimaru.LMStudioBench.desktop" \
+    "$APPDIR/usr/share/applications/io.github.Ajimaru.LMStudioBench.desktop"
+
+mkdir -p "$APPDIR/usr/share/metainfo"
+cp "$ROOT_DIR/tools/io.github.Ajimaru.LMStudioBench.appdata.xml" \
+    "$APPDIR/usr/share/metainfo/io.github.Ajimaru.LMStudioBench.appdata.xml"
 
 cat >"$APPDIR/AppRun" <<'EOF'
 #!/usr/bin/env bash
@@ -43,6 +52,7 @@ cp -a "$ROOT_DIR/config" "$PROJECT_DIR/"
 cp -a "$ROOT_DIR/tools" "$PROJECT_DIR/"
 cp -a "$ROOT_DIR/assets" "$PROJECT_DIR/"
 cp -a "$ROOT_DIR/requirements.txt" "$PROJECT_DIR/"
+cp -a "$ROOT_DIR/VERSION" "$PROJECT_DIR/"
 
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --upgrade pip setuptools wheel

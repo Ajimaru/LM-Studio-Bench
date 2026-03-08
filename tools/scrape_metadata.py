@@ -10,7 +10,7 @@ Scrape LM Studio model metadata into a dedicated SQLite database.
 import argparse
 from datetime import datetime, timezone
 import html as htmllib
-from http.client import RemoteDisconnected
+from http.client import IncompleteRead, RemoteDisconnected
 import json
 import logging
 from pathlib import Path
@@ -153,13 +153,18 @@ def fetch_lmstudio_readme(model_key: str, timeout: int = 5) -> str:
     req = Request(url, headers={"User-Agent": "lmstudio-metadata-scraper"})
     try:
         with urlopen(req, timeout=timeout) as resp:
-            html = resp.read().decode("utf-8", errors="ignore")
+            try:
+                html_bytes = resp.read()
+            except IncompleteRead as exc:
+                html_bytes = exc.partial or b""
+            html = html_bytes.decode("utf-8", errors="ignore")
     except (
         HTTPError,
         URLError,
         TimeoutError,
         ValueError,
         RemoteDisconnected,
+        IncompleteRead,
     ):
         return ""
 
@@ -375,14 +380,20 @@ def fetch_hf_metadata(model_key: str, timeout: int = 3) -> Dict:
     req = Request(url, headers={"User-Agent": "lmstudio-metadata-scraper"})
     try:
         with urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            try:
+                payload_bytes = resp.read()
+            except IncompleteRead as exc:
+                payload_bytes = exc.partial or b""
+            if not payload_bytes:
+                return {}
+            data = json.loads(payload_bytes.decode("utf-8", errors="ignore"))
             card = data.get("cardData") or {}
             return {
                 "hf_tags": data.get("tags", []),
                 "hf_pipeline_tag": data.get("pipeline_tag", ""),
                 "hf_description": card.get("description", ""),
             }
-    except (HTTPError, URLError, TimeoutError, ValueError):
+    except (HTTPError, URLError, TimeoutError, ValueError, IncompleteRead):
         return {}
 
 

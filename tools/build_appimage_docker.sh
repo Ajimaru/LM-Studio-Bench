@@ -45,6 +45,9 @@ prepare_build_context() {
     cp -a "$ROOT_DIR/assets" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/tools" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/requirements.txt" "$BUILD_CONTEXT_DIR/"
+    cp -a "$ROOT_DIR/VERSION" "$BUILD_CONTEXT_DIR/"
+    cp -a "$ROOT_DIR/tools/io.github.Ajimaru.LMStudioBench.appdata.xml" \
+        "$BUILD_CONTEXT_DIR/tools/"
 
     find "$BUILD_CONTEXT_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} +
 }
@@ -64,6 +67,21 @@ image_exists() {
     docker image inspect "${IMAGE_NAME}:${IMAGE_TAG}" >/dev/null 2>&1
 }
 
+container_matches_image() {
+    if ! container_exists; then
+        return 1
+    fi
+
+    local container_image_id
+    local current_image_id
+
+    container_image_id="$(docker inspect -f '{{.Image}}' "$CONTAINER_NAME")"
+    current_image_id="$(docker image inspect -f '{{.Id}}' \
+        "${IMAGE_NAME}:${IMAGE_TAG}")"
+
+    [[ "$container_image_id" == "$current_image_id" ]]
+}
+
 trap cleanup_build_context EXIT
 
 if [ "$FAST_MODE" = "1" ] && image_exists; then
@@ -76,7 +94,18 @@ fi
 
 echo ""
 if [ "$REUSE_CONTAINER" = "1" ] && container_exists; then
-    echo "Reusing existing build container: $CONTAINER_NAME"
+    if container_matches_image; then
+        echo "Reusing existing build container: $CONTAINER_NAME"
+    else
+        echo "Container image changed, recreating: $CONTAINER_NAME"
+        cleanup_container
+        echo "Creating build container: $CONTAINER_NAME"
+        docker create \
+            --name "$CONTAINER_NAME" \
+            -w /build \
+            "${IMAGE_NAME}:${IMAGE_TAG}" \
+            /bin/bash -lc "./tools/build_appimage.sh" >/dev/null
+    fi
 else
     if container_exists; then
         echo "Removing existing build container: $CONTAINER_NAME"

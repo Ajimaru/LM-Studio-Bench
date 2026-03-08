@@ -26,7 +26,10 @@ User-specific data is stored in standard XDG locations:
 
 ```text
 ~/.config/lm-studio-bench/
-└── defaults.json           # User configuration overrides (optional)
+├── defaults.json           # User configuration overrides (optional)
+└── presets/
+    ├── my_fast_test.json   # User preset example
+    └── my_quality.json     # User preset example
 
 ~/.local/share/lm-studio-bench/results/
 ├── benchmark_results_<timestamp>.json
@@ -190,6 +193,13 @@ The project `results/` directory is now a symlink for backward compatibility.
 **A**: `~/.config/lm-studio-bench/defaults.json`
 
 Only include fields you want to override from project defaults.
+
+### Q: Where are user presets stored?
+
+**A**: `~/.config/lm-studio-bench/presets/`
+
+Built-in readonly presets (`default`, `quick_test`, `high_quality`,
+`resource_limited`) are not stored as files.
 
 ### Q: What happens to my old results?
 
