@@ -108,8 +108,8 @@ echo ""
 echo "Copying AppImage artifact back to host..."
 mkdir -p "$ROOT_DIR/dist"
 if ! docker cp \
-    "$CONTAINER_NAME:/build/dist/LM-Studio-Bench-x86_64.AppImage" \
-    "$ROOT_DIR/dist/LM-Studio-Bench-x86_64.AppImage"; then
+    "$CONTAINER_NAME:/build/dist/lm-studio-bench-x86_64.AppImage" \
+    "$ROOT_DIR/dist/lm-studio-bench-x86_64.AppImage"; then
     echo "Error: AppImage artifact not found in container output." >&2
     exit 1
 fi
@@ -122,10 +122,10 @@ fi
 echo ""
 echo "Build completed!"
 
-if [ -f "$ROOT_DIR/dist/LM-Studio-Bench-x86_64.AppImage" ]; then
-    APPIMAGE_SIZE=$(du -h "$ROOT_DIR/dist/LM-Studio-Bench-x86_64.AppImage" | cut -f1)
-    echo "AppImage: dist/LM-Studio-Bench-x86_64.AppImage (${APPIMAGE_SIZE})"
+if [ -f "$ROOT_DIR/dist/lm-studio-bench-x86_64.AppImage" ]; then
+    APPIMAGE_SIZE=$(du -h "$ROOT_DIR/dist/lm-studio-bench-x86_64.AppImage" | cut -f1)
+    echo "AppImage: dist/lm-studio-bench-x86_64.AppImage (${APPIMAGE_SIZE})"
     echo ""
     echo "Test run:"
-    echo "  ./dist/LM-Studio-Bench-x86_64.AppImage --help"
+    echo "  ./dist/lm-studio-bench-x86_64.AppImage --help"
 fi

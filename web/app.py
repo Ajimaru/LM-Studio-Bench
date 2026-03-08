@@ -174,11 +174,107 @@ except ImportError as e:
     BenchmarkCache = None
     BenchmarkResult = None
 
+try:
+    from version_checker import (
+        compare_versions,
+        fetch_latest_release,
+        format_release_url,
+        get_current_version,
+    )
+except ImportError as e:
+    logger.error(f"❌ Could not import version_checker.py: {e}")
+    get_current_version = None
+    fetch_latest_release = None
+    compare_versions = None
+    format_release_url = None
+
 CONFIG_DEFAULTS = DEFAULT_CONFIG
 LMSTUDIO_HOST = CONFIG_DEFAULTS.get("lmstudio", {}).get("host", "localhost")
 LMSTUDIO_PORTS = CONFIG_DEFAULTS.get("lmstudio", {}).get("ports", [1234, 1235])
 template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
 DEBUG_MODE = False
+
+# Cache for latest release checks (1 hour TTL)
+LATEST_RELEASE_CACHE: Dict[str, Any] = {
+    "data": None,
+    "timestamp": 0,
+    "ttl_seconds": 3600,  # 1 hour
+}
+
+
+def _get_cached_latest_release() -> Optional[dict]:
+    """Fetch latest release with caching.
+
+    Uses 1-hour cache to prevent GitHub API rate-limiting.
+    Returns None if cache is stale or fetch fails.
+
+    Returns:
+        Dict with 'current_version', 'latest_version', 'download_url',
+        'is_update_available' or None on failure.
+    """
+    cache = LATEST_RELEASE_CACHE
+    now = time.time()
+
+    # Check if cache is valid (not expired and not None)
+    if (
+        cache["data"] is not None
+        and (now - cache["timestamp"]) < cache["ttl_seconds"]
+    ):
+        logger.debug("Cache hit for latest release")
+        return cache["data"]
+
+    logger.debug("Cache miss or expired, fetching from GitHub")
+
+    # Fetch fresh data
+    if not all(
+        [
+            get_current_version,
+            fetch_latest_release,
+            compare_versions,
+            format_release_url,
+        ]
+    ):
+        logger.warning(
+            "Version checker functions not available, "
+            "skipping update check"
+        )
+        return None
+
+    try:
+        current = get_current_version()
+        latest_data = fetch_latest_release()
+
+        if latest_data is None:
+            logger.warning(
+                "Failed to fetch latest release from GitHub"
+            )
+            return None
+
+        latest_version = latest_data.get("tag_name", "unknown")
+        is_update = compare_versions(current, latest_version)
+        download_url = format_release_url(latest_version)
+
+        result = {
+            "current_version": current,
+            "latest_version": latest_version,
+            "download_url": download_url,
+            "is_update_available": is_update,
+        }
+
+        # Update cache
+        cache["data"] = result
+        cache["timestamp"] = now
+
+        logger.info(
+            "Latest release: %s (update available: %s)",
+            latest_version,
+            is_update,
+        )
+        return result
+    except Exception as exc:
+        logger.error("Error in latest release check: %s", exc)
+        return None
+
 
 class BenchmarkManager:
     def __init__(self):
@@ -1019,6 +1115,38 @@ async def shutdown_system() -> dict:
     return {
         "success": True,
         "message": "🛑 Shutting down..."
+    }
+
+
+@app.get("/api/system/latest-release")
+async def get_latest_release() -> dict:
+    """Check for updates and return latest release info.
+
+    Fetches latest release from GitHub Releases with 1-hour caching
+    to prevent API rate-limiting. Returns version comparison info.
+
+    Returns:
+        Dict with 'current_version', 'latest_version', 'download_url',
+        'is_update_available' and 'success' flag.
+    """
+    result = _get_cached_latest_release()
+
+    if result is None:
+        return {
+            "success": False,
+            "current_version": "unknown",
+            "latest_version": "unknown",
+            "download_url": "",
+            "is_update_available": False,
+            "message": "Failed to check for updates",
+        }
+
+    return {
+        "success": True,
+        "current_version": result["current_version"],
+        "latest_version": result["latest_version"],
+        "download_url": result["download_url"],
+        "is_update_available": result["is_update_available"],
     }
 
 

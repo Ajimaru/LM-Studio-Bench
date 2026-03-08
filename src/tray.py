@@ -9,6 +9,7 @@ import json
 import logging
 from pathlib import Path
 import threading
+import time
 from typing import Optional
 from urllib import error as urllib_error
 from urllib.parse import urlparse
@@ -92,6 +93,9 @@ class TrayApp:
         self._polling_timer_id: Optional[int] = None
         self.appindicator: Optional[AppIndicator3.Indicator] = None
         self.icon_dir: Optional[Path] = None
+        self.last_update_check: float = 0.0  # Timestamp of last check
+        self.force_update_check: bool = False  # Force immediate check
+        self.pending_update: Optional[dict] = None  # Update info if any
 
     def _call_api(
         self,
@@ -157,6 +161,46 @@ class TrayApp:
         dialog.format_secondary_text(message)
         dialog.run()
         dialog.destroy()
+
+    def _show_update_notification(self) -> None:
+        """Show update notification with Download button.
+
+        Displays a dialog with current/latest version info and allows
+        user to open the GitHub Release URL to download the update.
+        """
+        if not self.pending_update:
+            return
+
+        current = self.pending_update.get("current", "unknown")
+        latest = self.pending_update.get("latest", "unknown")
+        url = self.pending_update.get("url", "")
+
+        dialog = Gtk.MessageDialog(
+            parent=None,
+            modal=True,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.CANCEL,
+            text="🆕 Update Available",
+        )
+        message = (
+            f"A new version of LM Studio Benchmark is available!\n\n"
+            f"Current: {current}\n"
+            f"Latest: {latest}"
+        )
+        dialog.format_secondary_text(message)
+
+        # Add "Download" button
+        download_button = dialog.add_button("Download", Gtk.ResponseType.OK)
+        download_button.set_image(Gtk.Image.new_from_icon_name(
+            "document-save", Gtk.IconSize.BUTTON
+        ))
+
+        response = dialog.run()
+        dialog.destroy()
+
+        if response == Gtk.ResponseType.OK and url:
+            LOGGER.info("Opening download URL: %s", url)
+            webbrowser.open(url)
 
     def _update_icon_for_status(
         self, status: str, api_reachable: bool
@@ -280,18 +324,76 @@ class TrayApp:
         self._show_info_dialog("Benchmark Status", message)
         self._refresh_menu_buttons()
 
+    def _check_for_updates(self) -> bool:
+        """Check for new version and store update info if available.
+
+        Queries /api/system/latest-release endpoint to check for
+        updates. If new version is available, stores info in
+        self.pending_update and returns True.
+
+        Returns:
+            True if update is available, False otherwise.
+        """
+        update_data = self._call_api("/api/system/latest-release")
+        if not update_data:
+            LOGGER.debug("Update check failed (API error)")
+            return False
+
+        if not update_data.get("success"):
+            LOGGER.debug("Update check returned error: %s",
+                        update_data.get("message"))
+            return False
+
+        is_update_available = update_data.get("is_update_available",
+                                               False)
+        current = update_data.get("current_version", "unknown")
+        latest = update_data.get("latest_version", "unknown")
+        url = update_data.get("download_url", "")
+
+        LOGGER.info("Update check: current=%s, latest=%s, available=%s",
+                   current, latest, is_update_available)
+
+        if is_update_available:
+            self.pending_update = {
+                "current": current,
+                "latest": latest,
+                "url": url,
+            }
+            LOGGER.info("🆕 Update available: %s → %s", current, latest)
+            return True
+
+        self.pending_update = None
+        LOGGER.debug("No update available")
+        return False
+
     def _on_polling_tick(self) -> bool:
         """Periodic status update callback for GLib timeout.
 
         This ensures button states are refreshed every few seconds,
         allowing recovery when benchmark crashes or API becomes
-        unavailable and then recovers.
+        unavailable and then recovers. Also checks for updates every
+        24 hours (or when forced).
 
         Returns:
             True to keep the timer running, False to stop it.
         """
         try:
             self._refresh_menu_buttons()
+
+            # Check for updates (24h interval or when forced)
+            now = time.time()
+            time_since_last_check = now - self.last_update_check
+            check_interval = 24 * 3600  # 24 hours
+
+            if (
+                self.force_update_check
+                or time_since_last_check >= check_interval
+            ):
+                self.last_update_check = now
+                self.force_update_check = False
+                update_available = self._check_for_updates()
+                if update_available and self.pending_update:
+                    self._show_update_notification()
         except Exception:
             LOGGER.exception("Error during status polling")
         return True
@@ -320,6 +422,89 @@ class TrayApp:
         """Open dashboard URL in default browser."""
         LOGGER.info("Opening webapp: %s", self.dashboard_url)
         webbrowser.open(self.dashboard_url)
+
+    def _on_check_updates_clicked(self, _item: Gtk.MenuItem) -> None:
+        """Handle "Check for Updates" menu item click.
+
+        Forces an immediate update check regardless of the 24h interval.
+        Shows update notification if a new version is available.
+        """
+        LOGGER.info("Manual update check triggered")
+        self.force_update_check = True
+        self.last_update_check = 0.0  # Reset to trigger immediate check
+        update_available = self._check_for_updates()
+
+        if update_available and self.pending_update:
+            self._show_update_notification()
+        else:
+            self._show_info_dialog(
+                "No Updates Available",
+                "You are running the latest version.",
+            )
+
+    def _parse_version_tuple(self, version: str) -> Optional[tuple]:
+        """Parse semantic version string to a comparable tuple.
+
+        Accepts versions like v1.2.3 or 1.2.3 and ignores suffixes
+        like "-beta". Returns None when format is not parseable.
+
+        Args:
+            version: Version string to parse.
+
+        Returns:
+            Tuple (major, minor, patch) or None.
+        """
+        cleaned = version.strip()
+        if cleaned.startswith("v"):
+            cleaned = cleaned[1:]
+        cleaned = cleaned.split("-")[0]
+
+        parts = cleaned.split(".")
+        if len(parts) < 3:
+            return None
+
+        try:
+            major = int(parts[0])
+            minor = int(parts[1])
+            patch = int(parts[2])
+            return (major, minor, patch)
+        except ValueError:
+            return None
+
+    def _get_about_version_status(self, local_version: str) -> str:
+        """Resolve version status text for About tab.
+
+        Mapping:
+        - local version invalid -> dev
+        - GitHub version invalid/unavailable -> unknown
+        - local == GitHub -> no update
+        - local > GitHub -> Ahead of release
+        - GitHub > local -> update avaiable
+
+        Args:
+            local_version: Local VERSION file value.
+
+        Returns:
+            Human-readable status text.
+        """
+        local_tuple = self._parse_version_tuple(local_version)
+        if local_tuple is None:
+            return "dev"
+
+        update_data = self._call_api("/api/system/latest-release")
+        if not update_data or not update_data.get("success"):
+            return "unknown"
+
+        github_version = str(update_data.get("latest_version", "")).strip()
+        github_tuple = self._parse_version_tuple(github_version)
+        if github_tuple is None:
+            return "unknown"
+
+        if github_tuple > local_tuple:
+            return "update avaiable"
+        if local_tuple > github_tuple:
+            return "Ahead of release"
+        return "no update"
 
     def _create_info_tab(self) -> Gtk.Box:
         """Create the Info tab with icon, title, version, etc."""
@@ -354,9 +539,12 @@ class TrayApp:
         version = "v0.1.0"
         if version_file.exists():
             version = version_file.read_text().strip()
+        version_status = self._get_about_version_status(version)
         version_label = Gtk.Label()
         version_label.set_markup(
-            f'<span foreground="#888888">{version}</span>'
+            f'<span foreground="#888888">'
+            f'{version} ({version_status})'
+            f'</span>'
         )
         version_label.set_justify(Gtk.Justification.CENTER)
         box.pack_start(version_label, False, False, 5)
@@ -589,6 +777,10 @@ class TrayApp:
         open_item = Gtk.MenuItem(label="Go to WebApp")
         open_item.connect("activate", self._on_open_webapp)
         menu.append(open_item)
+
+        check_updates_item = Gtk.MenuItem(label="Check for Updates")
+        check_updates_item.connect("activate", self._on_check_updates_clicked)
+        menu.append(check_updates_item)
 
         menu.append(Gtk.SeparatorMenuItem())
 
