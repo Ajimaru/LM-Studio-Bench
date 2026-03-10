@@ -1,17 +1,6 @@
 # Optional dependencies for enhanced features
 # Install with: pip install -r requirements-optional.txt
 
-# System tray integration (Linux/GNOME/X11)
-# Requires system libraries: libgirepository1.0, libcairo2-dev, gobject-introspection
-# 
-# To install system dependencies on Linux:
-#   Ubuntu/Debian: sudo apt-get install libgirepository1.0 libcairo2-dev gobject-introspection
-#   Fedora: sudo dnf install gobject-introspection-devel cairo-devel
-#   Arch: sudo pacman -S gobject-introspection cairo
-#
-# IMPORTANT: PyGObject is optional because it requires system-level cairo libraries
-# that are not always available (e.g., in CI/CD environments, Docker containers, WSL).
-# The application works fine without it - the system tray feature simply won't be available.
-# Only install if you need system tray integration on your desktop.
-
+# System tray integration (Linux/X11)
+# Requires system libraries: libgirepository1.0, libcairo2, libcairo2-dev, gobject-introspection
 PyGObject>=3.48,<3.50
