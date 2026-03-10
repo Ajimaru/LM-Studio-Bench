@@ -27,6 +27,7 @@
     - [4. rest\_client.py (REST API Client)](#4-rest_clientpy-rest-api-client)
     - [5. tray.py (Linux Tray Controller)](#5-traypy-linux-tray-controller)
   - [Data Flow Summary](#data-flow-summary)
+  - [Testing Architecture](#testing-architecture)
   - [See Also](#see-also)
 
 ---
@@ -724,6 +725,103 @@ graph LR
     style Config fill:#e1ffe1
     style Cache fill:#fff4e1
     style Reports fill:#e1f5ff
+```
+
+---
+
+## Testing Architecture
+
+LM-Studio-Bench includes a comprehensive test suite with 520+ tests and 51% code coverage to ensure reliability and maintainability.
+
+### Test Organization
+
+```mermaid
+graph TB
+    Tests[tests/] --> Fixtures[conftest.py<br/>Test Fixtures & Utilities]
+
+    Tests --> BenchmarkTests[test_benchmark.py<br/>55+ tests]
+    Tests --> AppTests[test_app.py<br/>23+ tests]
+    Tests --> APITests[test_api_endpoints.py<br/>32+ tests]
+    Tests --> RestTests[test_rest_client.py<br/>22+ tests]
+    Tests --> TrayTests[test_tray.py<br/>26+ tests]
+    Tests --> PresetTests[test_preset_manager.py<br/>19+ tests]
+    Tests --> ConfigTests[test_config_loader.py<br/>9+ tests]
+    Tests --> PathTests[test_user_paths.py<br/>4+ tests]
+    Tests --> VersionTests[test_version_checker.py<br/>7+ tests]
+    Tests --> MetadataTests[test_scrape_metadata.py<br/>24+ tests]
+    Tests --> RunTests[test_run.py<br/>10+ tests]
+
+    BenchmarkTests --> Benchmark[src/benchmark.py]
+    AppTests --> WebApp[web/app.py]
+    APITests --> WebApp
+    RestTests --> RestClient[src/rest_client.py]
+    TrayTests --> Tray[src/tray.py]
+    PresetTests --> PresetMgr[src/preset_manager.py]
+    ConfigTests --> ConfigLoader[src/config_loader.py]
+    PathTests --> UserPaths[src/user_paths.py]
+    VersionTests --> VersionChecker[src/version_checker.py]
+    MetadataTests --> Metadata[tools/scrape_metadata.py]
+    RunTests --> RunPy[run.py]
+
+    style Tests fill:#e1f5ff
+    style Fixtures fill:#fff4e1
+    style BenchmarkTests fill:#ffe1e1
+    style AppTests fill:#e1ffe1
+```
+
+### Test Coverage by Component
+
+| Component | Test Module | Test Count | Coverage |
+|-----------|-------------|------------|----------|
+| Benchmark Engine | `test_benchmark.py` | 55+ | High |
+| Web Dashboard | `test_app.py` | 23+ | Medium |
+| API Endpoints | `test_api_endpoints.py` | 32+ | High |
+| REST Client | `test_rest_client.py` | 22+ | High |
+| Linux Tray | `test_tray.py` | 26+ | Medium |
+| Preset Manager | `test_preset_manager.py` | 19+ | High |
+| Config Loader | `test_config_loader.py` | 9+ | High |
+| User Paths | `test_user_paths.py` | 4+ | High |
+| Version Checker | `test_version_checker.py` | 7+ | High |
+| Metadata Scraping | `test_scrape_metadata.py` | 24+ | Medium |
+| Entry Point | `test_run.py` | 10+ | Medium |
+
+### Testing Approach
+
+**Unit Testing:**
+- Mock external dependencies (LM Studio API, system commands, file I/O)
+- Isolated test cases that can run in any order
+- Fast execution (no real API calls or file system operations)
+- Use pytest fixtures for common setup and teardown
+
+**Test Fixtures (`conftest.py`):**
+- Mock LM Studio client and server responses
+- Temporary directories for file operations
+- Mock system commands (nvidia-smi, rocm-smi, etc.)
+- Sample configuration and model data
+
+**Continuous Integration:**
+- GitHub Actions runs full test suite on every PR
+- Code quality checks (flake8, pylint)
+- Security scans (Bandit, CodeQL, Snyk)
+- Test results reported in PR status checks
+
+**Running Tests:**
+
+```bash
+# Run all tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run specific module
+pytest tests/test_benchmark.py
+
+# Run with coverage report
+pytest --cov=src --cov=web --cov-report=html
+
+# Run tests matching a pattern
+pytest -k "test_gpu_detection"
 ```
 
 ---
