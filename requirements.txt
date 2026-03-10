@@ -10,4 +10,6 @@ httpx>=0.25.0
 distro>=1.8.0
 py-cpuinfo>=9.0.0
 scipy>=1.11.0
-PyGObject>=3.48,<3.50
+
+# NOTE: PyGObject is now optional - see requirements-optional.txt
+# This prevents cairo system dependency issues in CI/CD environments
