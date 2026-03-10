@@ -778,6 +778,28 @@ def perform_ttest(
         }
 
     try:
+        baseline_var = (
+            statistics.variance(baseline_speeds)
+            if len(baseline_speeds) > 1 else 0
+        )
+        test_var = (
+            statistics.variance(test_speeds)
+            if len(test_speeds) > 1 else 0
+        )
+
+        if baseline_var == 0 and test_var == 0:
+            baseline_mean = statistics.mean(baseline_speeds)
+            test_mean = statistics.mean(test_speeds)
+            if math.isclose(baseline_mean, test_mean, rel_tol=1e-12):
+                return {
+                    "test_name": "Welch's t-test",
+                    "t_statistic": 0.0,
+                    "p_value": 1.0,
+                    "significant": False,
+                    "alpha": 0.05,
+                    "reason": "Identical distributions"
+                }
+
         if SCIPY_AVAILABLE and scipy_stats is not None:
             t_stat, p_value = scipy_stats.ttest_ind(
                 baseline_speeds, test_speeds
@@ -792,14 +814,6 @@ def perform_ttest(
 
         baseline_mean = statistics.mean(baseline_speeds)
         test_mean = statistics.mean(test_speeds)
-        baseline_var = (
-            statistics.variance(baseline_speeds)
-            if len(baseline_speeds) > 1 else 0
-        )
-        test_var = (
-            statistics.variance(test_speeds)
-            if len(test_speeds) > 1 else 0
-        )
 
         n1, n2 = len(baseline_speeds), len(test_speeds)
         se = math.sqrt((baseline_var / n1) + (test_var / n2))
@@ -2362,8 +2376,10 @@ async def create_experiment(request: CreateExperimentRequest) -> dict:
     try:
         experiment_id = str(uuid.uuid4())[:8]
 
-        baseline_dict = request.baseline_params.dict(exclude_none=True)
-        test_dict = request.test_params.dict(exclude_none=True)
+        baseline_dict = request.baseline_params.model_dump(
+            exclude_none=True
+        )
+        test_dict = request.test_params.model_dump(exclude_none=True)
 
         baseline_hash = calculate_hash(baseline_dict)
         test_hash = calculate_hash(test_dict)

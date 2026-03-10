@@ -583,9 +583,14 @@ class TestBenchmarkManagerWithProcess:
 class TestBenchmarkManagerStartAsync:
     """Async tests for BenchmarkManager.start_benchmark."""
 
+    @staticmethod
+    def _run(coro):
+        """Run a coroutine in an isolated event loop."""
+        import asyncio
+        return asyncio.run(coro)
+
     def test_start_benchmark_returns_true_on_success(self):
         """start_benchmark returns True when subprocess starts."""
-        import asyncio
         app_mod = _import_app()
         mgr = app_mod.BenchmarkManager()
 
@@ -593,35 +598,31 @@ class TestBenchmarkManagerStartAsync:
         mock_proc.pid = 12345
         mock_proc.stdout = MagicMock()
 
+        def _capture_task(coro):
+            coro.close()
+            return MagicMock()
+
         with patch("subprocess.Popen", return_value=mock_proc), \
-                patch("asyncio.create_task"):
-            result = asyncio.get_event_loop().run_until_complete(
-                mgr.start_benchmark(["--test"])
-            )
+                patch("asyncio.create_task", side_effect=_capture_task):
+            result = self._run(mgr.start_benchmark(["--test"]))
         assert result is True
         assert mgr.status == "running"
 
     def test_start_benchmark_returns_false_when_already_running(self):
         """start_benchmark returns False if already running."""
-        import asyncio
         app_mod = _import_app()
         mgr = app_mod.BenchmarkManager()
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
         mgr.process = mock_proc
-        result = asyncio.get_event_loop().run_until_complete(
-            mgr.start_benchmark(["--test"])
-        )
+        result = self._run(mgr.start_benchmark(["--test"]))
         assert result is False
 
     def test_start_benchmark_returns_false_on_error(self):
         """start_benchmark returns False when Popen raises."""
-        import asyncio
         app_mod = _import_app()
         mgr = app_mod.BenchmarkManager()
         with patch("subprocess.Popen", side_effect=OSError("no exec")):
-            result = asyncio.get_event_loop().run_until_complete(
-                mgr.start_benchmark(["--test"])
-            )
+            result = self._run(mgr.start_benchmark(["--test"]))
         assert result is False
         assert mgr.status == "idle"

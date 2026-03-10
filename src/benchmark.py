@@ -994,14 +994,14 @@ class GPUMonitor:
         """Searches for tool in PATH and specific paths"""
         if shutil.which(tool_name):
             return tool_name
-        
+
         for path in search_paths:
-            full_path = Path(path) / tool_name
-            if full_path.exists() and os.access(full_path, os.X_OK):
-                return str(full_path)
-        
+            found = shutil.which(tool_name, path=path)
+            if found:
+                return found
+
         return None
-    
+
     def _find_amd_sysfs_path(self) -> Optional[str]:
         """Finds AMD GPU sysfs path for direct monitoring"""
         try:

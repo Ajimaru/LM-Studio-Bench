@@ -1,8 +1,8 @@
 """Shared fixtures and configuration for the test suite."""
 import json
 import os
-import sys
 from pathlib import Path
+import sys
 from typing import Any, Dict
 from unittest.mock import MagicMock
 
@@ -13,6 +13,8 @@ SRC_DIR = PROJECT_ROOT / "src"
 WEB_DIR = PROJECT_ROOT / "web"
 TOOLS_DIR = PROJECT_ROOT / "tools"
 
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 if str(WEB_DIR) not in sys.path:
