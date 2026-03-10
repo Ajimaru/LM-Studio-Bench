@@ -86,6 +86,8 @@ class TrayApp:
         self.dashboard_url = dashboard_url.rstrip("/")
         parsed = urlparse(self.dashboard_url)
         self.api_base = f"{parsed.scheme}://{parsed.netloc}"
+        self._api_scheme = parsed.scheme
+        self._api_netloc = parsed.netloc
         self.debug = debug
         self.menu: Optional[Gtk.Menu] = None
         self.start_item: Optional[Gtk.MenuItem] = None
@@ -97,6 +99,35 @@ class TrayApp:
         self.last_update_check: float = 0.0  # Timestamp of last check
         self.force_update_check: bool = False  # Force immediate check
         self.pending_update: Optional[dict] = None  # Update info if any
+
+    def _build_api_url(self, endpoint: str) -> Optional[str]:
+        """Build and validate API URL for endpoint.
+
+        Only same-origin HTTP(S) requests are allowed to reduce SSRF risk.
+        """
+        if not endpoint.startswith("/") or endpoint.startswith("//"):
+            LOGGER.warning("Rejected endpoint format: %s", endpoint)
+            return None
+
+        parsed_endpoint = urlparse(endpoint)
+        if parsed_endpoint.scheme or parsed_endpoint.netloc:
+            LOGGER.warning("Rejected absolute endpoint: %s", endpoint)
+            return None
+
+        url = f"{self.api_base}{endpoint}"
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in {"http", "https"}:
+            LOGGER.warning("Rejected non-HTTP(S) scheme: %s", parsed_url.scheme)
+            return None
+
+        if (
+            parsed_url.scheme != self._api_scheme
+            or parsed_url.netloc != self._api_netloc
+        ):
+            LOGGER.warning("Rejected cross-origin API URL: %s", url)
+            return None
+
+        return url
 
     def _call_api(
         self,
@@ -114,7 +145,9 @@ class TrayApp:
         Returns:
             Parsed JSON as dict when successful, otherwise None.
         """
-        url = f"{self.api_base}{endpoint}"
+        url = self._build_api_url(endpoint)
+        if not url:
+            return None
         try:
             LOGGER.debug("API %s %s payload=%s", method, url, payload)
             data_bytes = b""

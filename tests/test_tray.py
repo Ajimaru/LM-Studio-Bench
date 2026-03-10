@@ -4,9 +4,9 @@ GTK dependencies (gi, Gtk, AppIndicator3) are mocked throughout
 because the test environment does not guarantee a display server.
 """
 import logging
+from pathlib import Path
 import sys
 import types
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -145,6 +145,42 @@ class TestTrayAppCallApi:
         with patch("tray.urllib_request.urlopen", return_value=mock_response):
             result = app._call_api("/api/status")
         assert result is None
+
+    def test_call_api_rejects_absolute_endpoint(self, tmp_path: Path):
+        """_call_api rejects absolute URLs in endpoint argument."""
+        tray, _, _ = _import_tray()
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+        with patch("tray.urllib_request.urlopen") as mock_open:
+            result = app._call_api("http://evil.example/pwn")
+        assert result is None
+        mock_open.assert_not_called()
+
+    def test_call_api_rejects_protocol_relative_endpoint(self, tmp_path: Path):
+        """_call_api rejects protocol-relative endpoint values."""
+        tray, _, _ = _import_tray()
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+        with patch("tray.urllib_request.urlopen") as mock_open:
+            result = app._call_api("//evil.example/pwn")
+        assert result is None
+        mock_open.assert_not_called()
+
+    def test_build_api_url_rejects_non_http_scheme(self, tmp_path: Path):
+        """_build_api_url rejects non-HTTP schemes."""
+        tray, _, _ = _import_tray()
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+        app.api_base = "file://localhost"
+        assert app._build_api_url("/api/status") is None
+
+    def test_build_api_url_rejects_cross_origin(self, tmp_path: Path):
+        """_build_api_url rejects URLs that change netloc."""
+        tray, _, _ = _import_tray()
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+        app.api_base = "http://127.0.0.1:8080"
+        assert app._build_api_url("/api/status") is None
 
 
 class TestTrayAppCheckForUpdates:
