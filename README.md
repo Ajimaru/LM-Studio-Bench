@@ -632,37 +632,6 @@ Hardware monitoring data is logged with emoji indicators:
 
 </details>
 
-## Testing & Quality Assurance
-
-LM Studio Bench includes a comprehensive test suite to ensure reliability and maintainability:
-
-- **520+ unit tests** covering all Python modules
-- **51% code coverage** across the entire codebase
-- **Automated testing** via GitHub Actions CI/CD
-- **Test modules** for all core components:
-  - Benchmark execution and caching
-  - Web dashboard backend and API endpoints
-  - REST API client and LM Studio integration
-  - Linux tray control and system interactions
-  - Configuration management and preset handling
-  - Hardware monitoring and metadata scraping
-
-Run the test suite:
-
-```bash
-# Install development dependencies
-pip install -r requirements-dev.txt
-
-# Run all tests
-pytest
-
-# Run with coverage report
-pytest --cov=src --cov=web --cov-report=html
-
-# Run specific test module
-pytest tests/test_benchmark.py -v
-```
-
 ## Documentation
 
 Comprehensive guides and references:
