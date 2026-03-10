@@ -13,6 +13,26 @@ quantizations to measure and compare tokens-per-second performance.
 [![Release](https://img.shields.io/github/v/release/Ajimaru/LM-Studio-Bench)](https://github.com/Ajimaru/LM-Studio-Bench/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Ajimaru/LM-Studio-Bench/total.svg)](https://github.com/Ajimaru/LM-Studio-Bench/releases)
 
+## Table of Contents
+
+- [Features](#features)
+- [System Requirements](#system-requirements)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Customization](#customization)
+- [Output](#output)
+- [Measured metrics](#measured-metrics)
+- [Technical Details](#technical-details)
+- [Troubleshooting](#troubleshooting)
+- [Documentation](#documentation)
+- [Support](#support)
+- [Contributing](#contributing)
+- [Code of Conduct](#code-of-conduct)
+- [Security](#security)
+- [Project Meta](#project-meta)
+- [License](#license)
+- [Third-party licenses](#third-party-licenses)
+
 ## Features
 
 - 🌐 **Web Dashboard**: Modern FastAPI-based web UI with live streaming, dark mode and an interactive results browser
@@ -81,22 +101,42 @@ quantizations to measure and compare tokens-per-second performance.
 
 ## Installation
 
-**1. Clone the repository**:
+### Option 1: Use the AppImage
 
-  ```bash
-  git clone <repository-url>
-  cd LM-Studio-Bench
-  ```
+Download `LM-Studio-Bench-x86_64.AppImage` from the latest release,
+make it executable, and start it directly:
 
-**2. Prepare your system with `setup.sh` (recommended)**:
+```bash
+chmod +x LM-Studio-Bench-x86_64.AppImage
+./LM-Studio-Bench-x86_64.AppImage --webapp
+```
 
-  ```bash
-  # Preview what setup would do (no changes)
-  ./setup.sh --dry-run
+Notes:
 
-  # Interactive setup (recommended)
-  ./setup.sh
-  ```
+- No repository clone or Python setup is required for the AppImage.
+- LM Studio still needs to be installed on the host system.
+- The `lms` CLI must be available in `PATH`.
+
+<!-- markdownlint-disable MD033 -->
+<details>
+<summary><strong>Option 2. Clone with Git and install with setup.sh</strong></summary>
+
+#### 1. Clone the repository
+
+```bash
+git clone <repository-url>
+cd LM-Studio-Bench
+```
+
+#### 2. Prepare your system with `setup.sh`
+
+```bash
+# Preview what setup would do (no changes)
+./setup.sh --dry-run
+
+# Interactive setup
+./setup.sh
+```
 
 The setup script checks and prepares:
 
@@ -106,46 +146,53 @@ The setup script checks and prepares:
 - Python virtual environment (`.venv`)
 - Python dependencies from `requirements.txt`
 
-**3. Activate the virtual environment**:
+#### 3. Activate the virtual environment
 
-  ```bash
-  # Activate (Linux/macOS)
-  source .venv/bin/activate
+```bash
+# Activate (Linux/macOS)
+source .venv/bin/activate
 
-  # Activate (Windows)
-  .venv\Scripts\activate.bat
-  ```
+# Activate (Windows)
+.venv\Scripts\activate.bat
+```
 
-**4. Manual fallback (if you skip `setup.sh`)**:
+#### 4. Manual fallback (if you skip `setup.sh`)
 
 Install system dependencies (Linux, tray support):
 
-  ```bash
-  # Ubuntu/Debian
-  sudo apt install python3-dev libgirepository1.0-dev libcairo2-dev pkg-config
-  
-  # Fedora/RHEL
-  sudo dnf install python3-devel gobject-introspection-devel cairo-devel pkg-config
-  
-  # Arch
-  sudo pacman -S python gobject-introspection cairo pkgconf
-  ```
+```bash
+# Ubuntu/Debian
+sudo apt install python3-dev libgirepository1.0-dev libcairo2-dev pkg-config
+
+# Fedora/RHEL
+sudo dnf install python3-devel gobject-introspection-devel cairo-devel pkg-config
+
+# Arch
+sudo pacman -S python gobject-introspection cairo pkgconf
+```
 
 Install Python dependencies:
 
-  ```bash
-  python3 -m venv .venv
-  source .venv/bin/activate
-  pip install -r requirements.txt
-  ```
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-**5. Check LM Studio CLI**:
+#### 5. Check LM Studio CLI
 
-  ```bash
-  lms --help
-  ```
+```bash
+lms --help
+```
+
+</details>
+<!-- markdownlint-enable MD033 -->
 
 ## Usage
+
+The AppImage is the preferred way to use LM-Studio-Bench.
+All examples below use `LM-Studio-Bench-x86_64.AppImage`.
+The same CLI options also work with `./run.py`.
 
 ### 🌐 Web Dashboard
 
@@ -153,7 +200,7 @@ Start the modern web UI with live streaming and an interactive results browser:
 
 ```bash
 # Start the web dashboard (opens browser automatically)
-./run.py --webapp
+./LM-Studio-Bench-x86_64.AppImage --webapp
 ```
 
 1. Check/start LM Studio server
@@ -171,10 +218,10 @@ Start the modern web UI with live streaming and an interactive results browser:
 <summary>click to expand</summary>
 
 ```bash
-./run.py --runs 1           # Number of measurements per model
-./run.py --context 4096     # Context length in tokens
-./run.py --prompt "..."     # Custom prompt
-./run.py --limit 5          # Test up to 5 NEW models (+ all cached results)
+./LM-Studio-Bench-x86_64.AppImage --runs 1
+./LM-Studio-Bench-x86_64.AppImage --context 4096
+./LM-Studio-Bench-x86_64.AppImage --prompt "..."
+./LM-Studio-Bench-x86_64.AppImage --limit 5
 ```
 
 </details>
@@ -186,16 +233,16 @@ Start the modern web UI with live streaming and an interactive results browser:
 
 ```bash
 # Show all available presets (readonly + user)
-./run.py --list-presets
+./LM-Studio-Bench-x86_64.AppImage --list-presets
 
 # Load preset (default is loaded if omitted)
-./run.py --preset quick_test
+./LM-Studio-Bench-x86_64.AppImage --preset quick_test
 
 # Load preset and override individual values
-./run.py --preset high_quality --runs 3 --context 4096
+./LM-Studio-Bench-x86_64.AppImage --preset high_quality --runs 3 --context 4096
 
 # Prompt short flag is -P (because -p is used for --preset)
-./run.py --preset default -P "Explain machine learning in 3 sentences"
+./LM-Studio-Bench-x86_64.AppImage --preset default -P "Explain machine learning in 3 sentences"
 ```
 
 Built-in readonly presets:
@@ -214,17 +261,17 @@ Built-in readonly presets:
 
 ```bash
 # Use REST API v1 instead of SDK/CLI
-./run.py --use-rest-api --limit 1
+./LM-Studio-Bench-x86_64.AppImage --use-rest-api --limit 1
 
 # With API authentication
-./run.py --use-rest-api --api-token "lms_your_token" --limit 1
+./LM-Studio-Bench-x86_64.AppImage --use-rest-api --api-token "lms_your_token" --limit 1
 
 # With parallel inference (continuous batching)
-./run.py --use-rest-api --n-parallel 8 --unified-kv-cache --limit 1
+./LM-Studio-Bench-x86_64.AppImage --use-rest-api --n-parallel 8 --unified-kv-cache --limit 1
 
 # Filter by capabilities
-./run.py --use-rest-api --only-vision      # Vision models only
-./run.py --use-rest-api --only-tools       # Tool-calling models only
+./LM-Studio-Bench-x86_64.AppImage --use-rest-api --only-vision
+./LM-Studio-Bench-x86_64.AppImage --use-rest-api --only-tools
 ```
 
 See [REST API Features](docs/REST_API_FEATURES.md) for full documentation.
@@ -238,13 +285,13 @@ See [REST API Features](docs/REST_API_FEATURES.md) for full documentation.
 
 ```bash
 # Enable GPU monitoring (temperature + power draw)
-./run.py --enable-profiling
+./LM-Studio-Bench-x86_64.AppImage --enable-profiling
 
 # With safety limits
-./run.py --enable-profiling --max-temp 85 --max-power 350
+./LM-Studio-Bench-x86_64.AppImage --enable-profiling --max-temp 85 --max-power 350
 
 # AMD GTT (shared system RAM)
-./run.py --disable-gtt  # Use VRAM only (default: GTT enabled)
+./LM-Studio-Bench-x86_64.AppImage --disable-gtt
 ```
 
 </details>
@@ -256,39 +303,39 @@ See [REST API Features](docs/REST_API_FEATURES.md) for full documentation.
 
 ```bash
 # Specific quantizations only
-./run.py --quants q4,q5
+./LM-Studio-Bench-x86_64.AppImage --quants q4,q5
 
 # Specific architectures only
-./run.py --arch llama,mistral
+./LM-Studio-Bench-x86_64.AppImage --arch llama,mistral
 
 # Specific parameter sizes only
-./run.py --params 3B,7B
+./LM-Studio-Bench-x86_64.AppImage --params 3B,7B
 
 # Vision models only
-./run.py --only-vision
+./LM-Studio-Bench-x86_64.AppImage --only-vision
 
 # Tool-capable models only
-./run.py --only-tools
+./LM-Studio-Bench-x86_64.AppImage --only-tools
 
 # Minimum context length
-./run.py --min-context 32000
+./LM-Studio-Bench-x86_64.AppImage --min-context 32000
 
 # Maximum model size (GB)
-./run.py --max-size 10.0
+./LM-Studio-Bench-x86_64.AppImage --max-size 10.0
 
 # Regex filter: include (only models that match)
-./run.py --include-models "qwen|phi"       # Qwen or Phi
-./run.py --include-models "llama.*7b"      # Llama 7B models
-./run.py --include-models ".*q4.*"         # All Q4 quantizations
+./LM-Studio-Bench-x86_64.AppImage --include-models "qwen|phi"
+./LM-Studio-Bench-x86_64.AppImage --include-models "llama.*7b"
+./LM-Studio-Bench-x86_64.AppImage --include-models ".*q4.*"
 
 # Regex filter: exclude (exclude models)
-./run.py --exclude-models "uncensored"     # No uncensored models
-./run.py --exclude-models "q2|q3"          # No Q2/Q3 quantizations
-./run.py --exclude-models ".*vision.*"     # No vision models
+./LM-Studio-Bench-x86_64.AppImage --exclude-models "uncensored"
+./LM-Studio-Bench-x86_64.AppImage --exclude-models "q2|q3"
+./LM-Studio-Bench-x86_64.AppImage --exclude-models ".*vision.*"
 
 # Combine filters (AND semantics)
-./run.py --include-models "llama" --exclude-models "q2" --only-tools
-./run.py --only-vision --params 7B --max-size 12
+./LM-Studio-Bench-x86_64.AppImage --include-models "llama" --exclude-models "q2" --only-tools
+./LM-Studio-Bench-x86_64.AppImage --only-vision --params 7B --max-size 12
 ```
 
 </details>
@@ -300,25 +347,25 @@ See [REST API Features](docs/REST_API_FEATURES.md) for full documentation.
 
 ```bash
 # Use cache (default - skips already-tested models)
-./run.py --limit 5
+./LM-Studio-Bench-x86_64.AppImage --limit 5
 
 # Ignore cache and retest everything
-./run.py --retest --limit 5
+./LM-Studio-Bench-x86_64.AppImage --retest --limit 5
 
 # Development mode (smallest model, 1 run)
-./run.py --dev-mode
+./LM-Studio-Bench-x86_64.AppImage --dev-mode
 
 # Show all cached results
-./run.py --list-cache
+./LM-Studio-Bench-x86_64.AppImage --list-cache
 
 # Export cache as JSON
-./run.py --export-cache my_cache.json
+./LM-Studio-Bench-x86_64.AppImage --export-cache my_cache.json
 
 # Generate reports from the database (no new tests)
-./run.py --export-only                  # All cached models
-./run.py --export-only --params 7B      # Only 7B models
-./run.py --export-only --quants q4      # Only Q4 quantizations
-./run.py --export-only --compare-with latest  # With historical comparison
+./LM-Studio-Bench-x86_64.AppImage --export-only
+./LM-Studio-Bench-x86_64.AppImage --export-only --params 7B
+./LM-Studio-Bench-x86_64.AppImage --export-only --quants q4
+./LM-Studio-Bench-x86_64.AppImage --export-only --compare-with latest
 ```
 
 </details>

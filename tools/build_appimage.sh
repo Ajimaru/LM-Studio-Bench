@@ -6,7 +6,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 APPDIR="$DIST_DIR/AppDir"
-APPIMAGE_OUT="$DIST_DIR/lm-studio-bench-x86_64.AppImage"
+APPIMAGE_NAME="${APPIMAGE_NAME:-LM-Studio-Bench-x86_64.AppImage}"
+APPIMAGE_OUT="$DIST_DIR/$APPIMAGE_NAME"
 PROJECT_DIR="$APPDIR/usr/share/lm-studio-bench"
 VENV_DIR="$APPDIR/usr/venv"
 

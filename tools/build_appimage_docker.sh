@@ -9,6 +9,7 @@ IMAGE_TAG="ubuntu24.04"
 CONTAINER_NAME="${CONTAINER_NAME:-lmstudio-bench-appimage-build-cache}"
 REUSE_CONTAINER="${REUSE_CONTAINER:-1}"
 FAST_MODE="${FAST_MODE:-0}"
+APPIMAGE_NAME="${APPIMAGE_NAME:-LM-Studio-Bench-x86_64.AppImage}"
 BUILD_CONTEXT_DIR=""
 
 # Check if Docker is available
@@ -137,8 +138,8 @@ echo ""
 echo "Copying AppImage artifact back to host..."
 mkdir -p "$ROOT_DIR/dist"
 if ! docker cp \
-    "$CONTAINER_NAME:/build/dist/lm-studio-bench-x86_64.AppImage" \
-    "$ROOT_DIR/dist/lm-studio-bench-x86_64.AppImage"; then
+    "$CONTAINER_NAME:/build/dist/$APPIMAGE_NAME" \
+    "$ROOT_DIR/dist/$APPIMAGE_NAME"; then
     echo "Error: AppImage artifact not found in container output." >&2
     exit 1
 fi
@@ -151,10 +152,10 @@ fi
 echo ""
 echo "Build completed!"
 
-if [ -f "$ROOT_DIR/dist/lm-studio-bench-x86_64.AppImage" ]; then
-    APPIMAGE_SIZE=$(du -h "$ROOT_DIR/dist/lm-studio-bench-x86_64.AppImage" | cut -f1)
-    echo "AppImage: dist/lm-studio-bench-x86_64.AppImage (${APPIMAGE_SIZE})"
+if [ -f "$ROOT_DIR/dist/$APPIMAGE_NAME" ]; then
+    APPIMAGE_SIZE=$(du -h "$ROOT_DIR/dist/$APPIMAGE_NAME" | cut -f1)
+    echo "AppImage: dist/$APPIMAGE_NAME (${APPIMAGE_SIZE})"
     echo ""
     echo "Test run:"
-    echo "  ./dist/lm-studio-bench-x86_64.AppImage --help"
+    echo "  ./dist/$APPIMAGE_NAME --help"
 fi
