@@ -228,11 +228,10 @@ LMSTUDIO_PORTS = CONFIG_DEFAULTS.get("lmstudio", {}).get("ports", [1234, 1235])
 template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
 DEBUG_MODE = False
 
-# Cache for latest release checks (1 hour TTL)
 LATEST_RELEASE_CACHE: Dict[str, Any] = {
     "data": None,
     "timestamp": 0,
-    "ttl_seconds": 3600,  # 1 hour
+    "ttl_seconds": 3600,
 }
 
 
@@ -249,7 +248,6 @@ def _get_cached_latest_release() -> Optional[dict]:
     cache = LATEST_RELEASE_CACHE
     now = time.time()
 
-    # Check if cache is valid (not expired and not None)
     if (
         cache["data"] is not None
         and (now - cache["timestamp"]) < cache["ttl_seconds"]
@@ -259,7 +257,6 @@ def _get_cached_latest_release() -> Optional[dict]:
 
     logger.debug("Cache miss or expired, fetching from GitHub")
 
-    # Fetch fresh data
     if not all(
         [
             get_current_version,
@@ -295,7 +292,6 @@ def _get_cached_latest_release() -> Optional[dict]:
             "is_update_available": is_update,
         }
 
-        # Update cache
         cache["data"] = result
         cache["timestamp"] = now
 
