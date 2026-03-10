@@ -122,4 +122,17 @@ jobs:
           CODACY_PROJECT_NAME: ${{ vars.CODACY_PROJECT_NAME }}
         continue-on-error: true
         run: |
+          if [ -z "${CODACY_API_TOKEN}" ]; then
+            echo "Skipping Codacy upload: CODACY_API_TOKEN is not set"
+            exit 0
+          fi
+
+          set +e
           bash <(curl -Ls https://coverage.codacy.com/get.sh) report -r coverage.xml -t "$CODACY_API_TOKEN"
+          codacy_exit=$?
+          set -e
+
+          if [ "$codacy_exit" -ne 0 ]; then
+            echo "Codacy upload failed (likely project/token mapping issue); continuing"
+            exit 0
+          fi
