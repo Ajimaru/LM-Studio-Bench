@@ -541,7 +541,7 @@ class LMStudioRESTClient:
         """
         import hashlib
         content = json.dumps({"messages": messages, "model": model, "temp": temperature}, sort_keys=True)
-        return hashlib.md5(content.encode()).hexdigest()
+        return hashlib.sha256(content.encode()).hexdigest()
 
     def clear_cache(self) -> int:
         """
