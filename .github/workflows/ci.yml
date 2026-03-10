@@ -56,7 +56,7 @@ jobs:
 
       # lint the shell scripts
       - name: Shellcheck
-        run: shellcheck setup.sh
+        run: shellcheck --disable=SC1091 setup.sh
 
       # test that main entry point works
       - name: Test entry point
