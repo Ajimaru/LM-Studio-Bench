@@ -674,7 +674,7 @@ class BenchmarkCache:
         if load_params:
             params_dict['load_config'] = load_params
         hash_input = json.dumps(params_dict, sort_keys=True)
-        return hashlib.md5(hash_input.encode()).hexdigest()[:8]
+        return hashlib.sha256(hash_input.encode()).hexdigest()[:8]
     
     def get_cached_result(self, model_key: str, params_hash: str) -> Optional[BenchmarkResult]:
         """Retrieves cached result from database"""
@@ -1907,15 +1907,15 @@ class LMStudioBenchmark:
             levels.extend([0.7, 0.5, 0.3])
         else:
             levels.extend([0.5, 0.3, 0.7])
-        
+
         return sorted(set(levels), reverse=True)
-    
+
     def _load_previous_results(self):
         """Loads previous benchmark results for comparison"""
         try:
             if not self.compare_with:
                 return
-            
+
             if self.compare_with.endswith('.json'):
                 json_file = RESULTS_DIR / self.compare_with
             else:
@@ -1927,50 +1927,50 @@ class LMStudioBenchmark:
                     json_file = json_files[-1]
                 else:
                     json_file = RESULTS_DIR / f"benchmark_results_{self.compare_with}.json"
-            
+
             if not json_file.exists():
                 logger.warning(f"⚠️ File not found: {json_file}")
                 return
-            
+
             with open(json_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 self.previous_results = [BenchmarkResult(**item) for item in data]
-            
+
             logger.info(f"✓ {len(self.previous_results)} previous results loaded from {json_file.name}")
         except Exception as e:
             logger.error(f"❌ Error loading previous results: {e}")
-    
+
     def _matches_filters(self, result: BenchmarkResult) -> bool:
         """Checks if a BenchmarkResult passes the active filters"""
         if self.filter_args.get('only_vision') and not result.has_vision:
             return False
-        
+
         if self.filter_args.get('only_tools') and not result.has_tools:
             return False
-        
+
         if self.filter_args.get('quants'):
             quants = [q.strip().lower() for q in self.filter_args['quants'].split(',')]
             if not any(q in result.quantization.lower() for q in quants):
                 return False
-        
+
         if self.filter_args.get('arch'):
             archs = [a.strip().lower() for a in self.filter_args['arch'].split(',')]
             if not any(a in result.architecture.lower() for a in archs):
                 return False
-        
+
         if self.filter_args.get('params'):
             params = [p.strip().upper() for p in self.filter_args['params'].split(',')]
             if result.params_size.upper() not in params:
                 return False
-        
+
         if self.filter_args.get('min_context'):
             if result.max_context_length < self.filter_args['min_context']:
                 return False
-        
+
         if self.filter_args.get('max_size'):
             if result.model_size_gb > self.filter_args['max_size']:
                 return False
-        
+
         if self.filter_args.get('include_models'):
             import re
             try:
@@ -1980,7 +1980,7 @@ class LMStudioBenchmark:
                     return False
             except re.error:
                 pass
-        
+
         if self.filter_args.get('exclude_models'):
             import re
             try:
@@ -1990,19 +1990,19 @@ class LMStudioBenchmark:
                     return False
             except re.error:
                 pass
-        
+
         return True
-    
+
     def _calculate_delta(self, current: BenchmarkResult) -> Optional[Dict]:
         """Calculates delta to previous benchmark for same model+quantization"""
         if not self.previous_results:
             return None
-        
+
         for prev in self.previous_results:
             if prev.model_name == current.model_name and prev.quantization == current.quantization:
                 speed_delta = current.avg_tokens_per_sec - prev.avg_tokens_per_sec
                 speed_delta_pct = (speed_delta / prev.avg_tokens_per_sec * 100) if prev.avg_tokens_per_sec > 0 else 0
-                
+
                 return {
                     'prev_speed': prev.avg_tokens_per_sec,
                     'current_speed': current.avg_tokens_per_sec,
@@ -2010,16 +2010,16 @@ class LMStudioBenchmark:
                     'speed_delta_pct': speed_delta_pct,
                     'prev_timestamp': prev.timestamp
                 }
-        
+
         return None
-    
+
     def benchmark_model(self, model_key: str) -> Optional[BenchmarkResult]:
         """Performs benchmark for a specific model"""
         logger.info(f"🎯 Starting benchmark for {model_key}")
-        
+
         benchmark_start_time = time.time()
         error_count = 0
-        
+
         if self.use_rest_api and self.rest_client:
             try:
                 models = self.rest_client.list_models()
@@ -2042,16 +2042,16 @@ class LMStudioBenchmark:
                 time.sleep(1)
             except Exception as e:
                 logger.warning(f"⚠️ Error unloading all models: {e}")
-        
+
         if '@' in model_key:
             model_name, quantization = model_key.split('@', 1)
         else:
             model_name = model_key
             quantization = "unknown"
-        
+
         metadata = ModelDiscovery.get_model_metadata(model_key)
         model_size_gb = metadata.get('model_size_gb', 0)
-        
+
         smart_offload_levels = self._get_smart_offload_levels(model_key, model_size_gb)
         logger.info(f"🎯 Intelligente Offload-Levels: {smart_offload_levels}")
 
@@ -2075,7 +2075,7 @@ class LMStudioBenchmark:
                     logger.warning(f"⚠️ Could not load model via REST: {model_key}")
             except Exception as e:
                 logger.warning(f"⚠️ REST error while loading model: {e}")
-        
+
         try:
             logger.info(f"🔥 Warmup for {model_key}...")
             for _ in range(NUM_WARMUP_RUNS):
@@ -2083,9 +2083,9 @@ class LMStudioBenchmark:
                 if not warmup_result:
                     logger.error(f"❌ Warmup for {model_key} failed")
                     return None
-            
+
             self.hardware_monitor.start()
-            
+
             logger.info(f"📊 Performing {self.num_measurement_runs} measurements...")
             measurements = []
             vram_after = "N/A"
@@ -2099,9 +2099,9 @@ class LMStudioBenchmark:
                     logger.info("⚡ Run %d/%d: %.2f tokens/s", run+1, self.num_measurement_runs, stats['tokens_per_second'])
                 else:
                     logger.warning("⚠️ Run %d/%d fehlgeschlagen", run+1, self.num_measurement_runs)
-            
+
             profiling_stats = self.hardware_monitor.stop()
-            
+
             if measurements:
                 result = self._calculate_averages(
                     model_name,
@@ -2111,7 +2111,7 @@ class LMStudioBenchmark:
                     measurements,
                     model_key
                 )
-                
+
                 if self.enable_profiling:
                     result.temp_celsius_min = profiling_stats.get('temp_celsius_min')
                     result.temp_celsius_max = profiling_stats.get('temp_celsius_max')
@@ -2119,13 +2119,13 @@ class LMStudioBenchmark:
                     result.power_watts_min = profiling_stats.get('power_watts_min')
                     result.power_watts_max = profiling_stats.get('power_watts_max')
                     result.power_watts_avg = profiling_stats.get('power_watts_avg')
-                    
+
                     if self.max_temp and result.temp_celsius_max and result.temp_celsius_max > self.max_temp:
                         logger.warning(f"⚠️ Max. temperature exceeded: {result.temp_celsius_max:.1f}°C > {self.max_temp}°C")
-                    
+
                     if self.max_power and result.power_watts_max and result.power_watts_max > self.max_power:
                         logger.warning(f"⚠️ Max. power exceeded: {result.power_watts_max:.1f}W > {self.max_power}W")
-                
+
                 benchmark_end_time = time.time()
                 result.benchmark_duration_seconds = round(benchmark_end_time - benchmark_start_time, 2)
                 result.error_count = error_count
@@ -2137,14 +2137,14 @@ class LMStudioBenchmark:
                 result.os_version = self.system_info.get('os_version')
                 result.cpu_model = self.system_info.get('cpu_model')
                 result.python_version = self.system_info.get('python_version')
-                result.inference_params_hash = hashlib.md5(json.dumps(self.inference_params, sort_keys=True).encode()).hexdigest()[:8]
-                
+                result.inference_params_hash = hashlib.sha256(json.dumps(self.inference_params, sort_keys=True).encode()).hexdigest()[:8]
+
                 if self.cache:
                     for run_idx, measurement in enumerate(measurements):
                         tps_per_gb = measurement['tokens_per_second'] / result.model_size_gb if result.model_size_gb > 0 else 0.0
                         params_billions = float(result.params_size.replace('B', '')) if result.params_size.endswith('B') and result.params_size[:-1].replace('.', '', 1).isdigit() else 0.0
                         tps_per_billion = measurement['tokens_per_second'] / params_billions if params_billions > 0 else 0.0
-                        
+
                         run_result = BenchmarkResult(
                             model_name=model_name,
                             quantization=quantization,

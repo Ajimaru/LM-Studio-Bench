@@ -1,8 +1,5 @@
 """Tests for src/user_paths.py."""
-import os
 from pathlib import Path
-
-import pytest
 
 
 class TestGetUserConfigDir:
@@ -12,6 +9,7 @@ class TestGetUserConfigDir:
         """XDG_CONFIG_HOME is honoured when set."""
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
         import importlib
+
         import user_paths as up
         importlib.reload(up)
         result = up.get_user_config_dir()
@@ -23,6 +21,7 @@ class TestGetUserConfigDir:
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
+
         import user_paths as up
         importlib.reload(up)
         result = up.get_user_config_dir()
@@ -34,11 +33,24 @@ class TestGetUserConfigDir:
         target = tmp_path / "xdg_conf"
         monkeypatch.setenv("XDG_CONFIG_HOME", str(target))
         import importlib
+
         import user_paths as up
         importlib.reload(up)
         result = up.get_user_config_dir()
         assert result.exists()
         assert result.is_dir()
+
+    def test_rejects_relative_traversal_xdg_config(self, tmp_path: Path,
+                                                    monkeypatch):
+        """Relative traversal values fall back to default config path."""
+        monkeypatch.setenv("XDG_CONFIG_HOME", "../etc")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        import importlib
+
+        import user_paths as up
+        importlib.reload(up)
+        result = up.get_user_config_dir()
+        assert result == tmp_path / ".config" / "lm-studio-bench"
 
 
 class TestGetUserDataDir:
@@ -48,6 +60,7 @@ class TestGetUserDataDir:
         """XDG_DATA_HOME is honoured when set."""
         monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
         import importlib
+
         import user_paths as up
         importlib.reload(up)
         result = up.get_user_data_dir()
@@ -59,6 +72,7 @@ class TestGetUserDataDir:
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
+
         import user_paths as up
         importlib.reload(up)
         result = up.get_user_data_dir()
@@ -70,11 +84,24 @@ class TestGetUserDataDir:
         target = tmp_path / "xdg_data"
         monkeypatch.setenv("XDG_DATA_HOME", str(target))
         import importlib
+
         import user_paths as up
         importlib.reload(up)
         result = up.get_user_data_dir()
         assert result.exists()
         assert result.is_dir()
+
+    def test_rejects_relative_traversal_xdg_data(self, tmp_path: Path,
+                                                  monkeypatch):
+        """Relative traversal values fall back to default data path."""
+        monkeypatch.setenv("XDG_DATA_HOME", "../../var")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        import importlib
+
+        import user_paths as up
+        importlib.reload(up)
+        result = up.get_user_data_dir()
+        assert result == tmp_path / ".local" / "share" / "lm-studio-bench"
 
 
 class TestModuleLevelConstants:
