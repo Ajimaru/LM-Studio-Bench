@@ -1,4 +1,5 @@
 """User directory paths following XDG Base Directory spec."""
+
 import os
 from pathlib import Path
 

@@ -60,26 +60,17 @@ def fetch_latest_release() -> Optional[dict]:
         None - Errors are logged and None is returned (graceful
         degradation).
     """
-    url = (
-        "https://api.github.com/repos/Ajimaru/"
-        "LM-Studio-Bench/releases/latest"
-    )
+    url = "https://api.github.com/repos/Ajimaru/" "LM-Studio-Bench/releases/latest"
 
     try:
         with httpx.Client(timeout=5.0) as client:
             response = client.get(url)
             response.raise_for_status()
             data = response.json()
-            LOGGER.debug(
-                "GitHub latest release: %s", data.get("tag_name")
-            )
+            LOGGER.debug("GitHub latest release: %s", data.get("tag_name"))
             return data
     except httpx.HTTPStatusError as exc:
-        LOGGER.warning(
-            "GitHub API error (%s): %s",
-            exc.response.status_code,
-            exc
-        )
+        LOGGER.warning("GitHub API error (%s): %s", exc.response.status_code, exc)
         return None
     except (httpx.RequestError, httpx.TimeoutException) as exc:
         LOGGER.warning("Failed to fetch latest release: %s", exc)
@@ -89,9 +80,7 @@ def fetch_latest_release() -> Optional[dict]:
         return None
 
 
-def compare_versions(
-    current: str, latest: str
-) -> bool:
+def compare_versions(current: str, latest: str) -> bool:
     """Check if a newer version is available.
 
     Compares two semantic version strings (e.g., "v0.1.0" vs
@@ -104,6 +93,7 @@ def compare_versions(
     Returns:
         True if latest is newer than current, False otherwise.
     """
+
     def parse_version(v: str) -> tuple:
         """Parse version string to tuple (major, minor, patch)."""
         v_clean = v.lstrip("v").split("-")[0]  # Remove "v" prefix, ignore pre-release
@@ -111,9 +101,7 @@ def compare_versions(
             parts = v_clean.split(".")
             return tuple(int(p) for p in parts[:3])
         except (ValueError, IndexError):
-            LOGGER.warning(
-                "Invalid version format: %s, assuming older", v
-            )
+            LOGGER.warning("Invalid version format: %s, assuming older", v)
             return (0, 0, 0)
 
     current_tuple = parse_version(current)
@@ -140,9 +128,6 @@ def format_release_url(tag_name: str) -> str:
     Returns:
         Full GitHub release URL.
     """
-    url = (
-        f"https://github.com/Ajimaru/LM-Studio-Bench/"
-        f"releases/tag/{tag_name}"
-    )
+    url = f"https://github.com/Ajimaru/LM-Studio-Bench/" f"releases/tag/{tag_name}"
     LOGGER.debug("Release URL: %s", url)
     return url

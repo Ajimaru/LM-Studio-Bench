@@ -173,14 +173,10 @@ class TrayApp:
             TimeoutError,
         ) as exc:
             exc_type = type(exc).__name__
-            LOGGER.warning(
-                "API %s %s failed (%s): %s", method, endpoint, exc_type, exc
-            )
+            LOGGER.warning("API %s %s failed (%s): %s", method, endpoint, exc_type, exc)
             return None
         except Exception as exc:
-            LOGGER.error(
-                "Unexpected error on API %s %s: %s", method, endpoint, exc
-            )
+            LOGGER.error("Unexpected error on API %s %s: %s", method, endpoint, exc)
             return None
 
     def _show_info_dialog(self, title: str, message: str) -> None:
@@ -225,9 +221,9 @@ class TrayApp:
 
         # Add "Download" button
         download_button = dialog.add_button("Download", Gtk.ResponseType.OK)
-        download_button.set_image(Gtk.Image.new_from_icon_name(
-            "document-save", Gtk.IconSize.BUTTON
-        ))
+        download_button.set_image(
+            Gtk.Image.new_from_icon_name("document-save", Gtk.IconSize.BUTTON)
+        )
 
         response = dialog.run()
         dialog.destroy()
@@ -236,9 +232,7 @@ class TrayApp:
             LOGGER.info("Opening download URL: %s", url)
             webbrowser.open(url)
 
-    def _update_icon_for_status(
-        self, status: str, api_reachable: bool
-    ) -> None:
+    def _update_icon_for_status(self, status: str, api_reachable: bool) -> None:
         """Update tray icon based on benchmark status.
 
         Args:
@@ -283,9 +277,7 @@ class TrayApp:
 
         self._update_icon_for_status(status, api_reachable)
 
-        LOGGER.debug(
-            "Updating menu buttons: status=%s, data=%s", status, status_data
-        )
+        LOGGER.debug("Updating menu buttons: status=%s, data=%s", status, status_data)
 
         is_running_or_paused = status in ("running", "paused")
         if self.start_item:
@@ -374,18 +366,20 @@ class TrayApp:
             return False
 
         if not update_data.get("success"):
-            LOGGER.debug("Update check returned error: %s",
-                        update_data.get("message"))
+            LOGGER.debug("Update check returned error: %s", update_data.get("message"))
             return False
 
-        is_update_available = update_data.get("is_update_available",
-                                               False)
+        is_update_available = update_data.get("is_update_available", False)
         current = update_data.get("current_version", "unknown")
         latest = update_data.get("latest_version", "unknown")
         url = update_data.get("download_url", "")
 
-        LOGGER.info("Update check: current=%s, latest=%s, available=%s",
-                   current, latest, is_update_available)
+        LOGGER.info(
+            "Update check: current=%s, latest=%s, available=%s",
+            current,
+            latest,
+            is_update_available,
+        )
 
         if is_update_available:
             self.pending_update = {
@@ -419,10 +413,7 @@ class TrayApp:
             time_since_last_check = now - self.last_update_check
             check_interval = 24 * 3600  # 24 hours
 
-            if (
-                self.force_update_check
-                or time_since_last_check >= check_interval
-            ):
+            if self.force_update_check or time_since_last_check >= check_interval:
                 self.last_update_check = now
                 self.force_update_check = False
                 update_available = self._check_for_updates()
@@ -447,9 +438,7 @@ class TrayApp:
             LOGGER.warning("GLib not available, status polling disabled")
             return
 
-        self._polling_timer_id = GLib.timeout_add(
-            3000, self._on_polling_tick
-        )
+        self._polling_timer_id = GLib.timeout_add(3000, self._on_polling_tick)
         LOGGER.debug("Started status polling (interval: 3s)")
 
     def _on_open_webapp(self, _item: Gtk.MenuItem) -> None:
@@ -542,9 +531,7 @@ class TrayApp:
 
     def _create_info_tab(self) -> Gtk.Box:
         """Create the Info tab with icon, title, version, etc."""
-        box = Gtk.Box(
-            orientation=Gtk.Orientation.VERTICAL, spacing=15
-        )
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
         box.set_margin_top(30)
         box.set_margin_bottom(30)
         box.set_margin_start(40)
@@ -552,9 +539,7 @@ class TrayApp:
 
         project_root = Path(__file__).resolve().parent.parent
 
-        icon_path = (
-            project_root / "assets" / "icons" / "lmstudio-bench.svg"
-        )
+        icon_path = project_root / "assets" / "icons" / "lmstudio-bench.svg"
         if icon_path.exists():
             image = Gtk.Image()
             image.set_from_file(str(icon_path))
@@ -563,8 +548,7 @@ class TrayApp:
 
         title_label = Gtk.Label()
         title_label.set_markup(
-            '<span size="large" weight="bold">'
-            'LM Studio Model Benchmark</span>'
+            '<span size="large" weight="bold">' "LM Studio Model Benchmark</span>"
         )
         title_label.set_justify(Gtk.Justification.CENTER)
         box.pack_start(title_label, False, False, 0)
@@ -576,9 +560,7 @@ class TrayApp:
         version_status = self._get_about_version_status(version)
         version_label = Gtk.Label()
         version_label.set_markup(
-            f'<span foreground="#888888">'
-            f'{version} ({version_status})'
-            f'</span>'
+            f'<span foreground="#888888">' f"{version} ({version_status})" f"</span>"
         )
         version_label.set_justify(Gtk.Justification.CENTER)
         box.pack_start(version_label, False, False, 5)
@@ -595,9 +577,7 @@ class TrayApp:
         desc_label.set_justify(Gtk.Justification.CENTER)
         box.pack_start(desc_label, False, False, 10)
 
-        links_box = Gtk.Box(
-            orientation=Gtk.Orientation.VERTICAL, spacing=5
-        )
+        links_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
 
         doc_link = Gtk.LinkButton(
             uri="https://ajimaru.github.io/LM-Studio-Bench",
@@ -616,9 +596,7 @@ class TrayApp:
         box.pack_start(links_box, False, False, 0)
 
         copyright_label = Gtk.Label()
-        copyright_label.set_markup(
-            '<span foreground="#888888">© 2026 Ajimaru</span>'
-        )
+        copyright_label.set_markup('<span foreground="#888888">© 2026 Ajimaru</span>')
         copyright_label.set_justify(Gtk.Justification.CENTER)
         box.pack_start(copyright_label, False, False, 5)
 
@@ -627,9 +605,7 @@ class TrayApp:
 
     def _create_contributors_tab(self) -> Gtk.Box:
         """Create the Contributors tab with list of contributors."""
-        box = Gtk.Box(
-            orientation=Gtk.Orientation.VERTICAL, spacing=12
-        )
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.set_margin_top(30)
         box.set_margin_bottom(30)
         box.set_margin_start(40)
@@ -638,16 +614,14 @@ class TrayApp:
         project_root = Path(__file__).resolve().parent.parent
 
         header_label = Gtk.Label()
-        header_label.set_markup(
-            '<span size="large" weight="bold">Contributors</span>'
-        )
+        header_label.set_markup('<span size="large" weight="bold">Contributors</span>')
         header_label.set_justify(Gtk.Justification.CENTER)
         box.pack_start(header_label, False, False, 10)
 
         ajimaru_label = Gtk.Label()
         ajimaru_label.set_markup(
             '<b>Ajimaru</b> (<a href="https://github.com/Ajimaru">'
-            '@Ajimaru</a>)\n'
+            "@Ajimaru</a>)\n"
             '<span foreground="#888888">Project creator and maintainer</span>'
         )
         ajimaru_label.set_line_wrap(True)
@@ -676,16 +650,12 @@ class TrayApp:
                     contrib = line[2:].strip()
                     if "(@" in contrib:
                         name, handle_part = contrib.split(" ")
-                        handle = (
-                            handle_part.replace("(@", "")
-                            .replace(")", "")
-                            .strip()
-                        )
+                        handle = handle_part.replace("(@", "").replace(")", "").strip()
                         contrib_label = Gtk.Label()
                         contrib_label.set_markup(
                             f'{name} (<a href="'
                             f'https://github.com/{handle}">'
-                            f'@{handle}</a>)'
+                            f"@{handle}</a>)"
                         )
                         contrib_label.set_line_wrap(True)
                         contrib_label.set_justify(Gtk.Justification.CENTER)
@@ -763,13 +733,9 @@ class TrayApp:
             LOGGER.info("Calling WebApp shutdown endpoint...")
             result = self._call_api("/api/system/shutdown", "POST")
             if result:
-                LOGGER.info(
-                    "Shutdown response: %s", result.get("message", "ok")
-                )
+                LOGGER.info("Shutdown response: %s", result.get("message", "ok"))
             else:
-                LOGGER.warning(
-                    "Shutdown endpoint failed, trying stop only..."
-                )
+                LOGGER.warning("Shutdown endpoint failed, trying stop only...")
                 status_data = self._call_api("/api/status")
                 if status_data:
                     status = str(status_data.get("status", "")).lower()
@@ -901,6 +867,7 @@ def start_tray(dashboard_url: str, debug: bool = False) -> bool:
 
 def _parse_args() -> argparse.Namespace:
     """Parse CLI arguments for standalone tray execution."""
+
     def _expand_short_flag_clusters(cli_args: list[str]) -> list[str]:
         """Expand combined short flags like ``-dh`` to ``-d -h``."""
         combinable = {"d", "h"}

@@ -1,4 +1,5 @@
 """Preset management for benchmark CLI and web app."""
+
 from __future__ import annotations
 
 import json
@@ -70,9 +71,7 @@ class PresetManager:
         for path in sorted(self._presets_dir.glob("*.json")):
             name = path.stem
             if name in self.READONLY_PRESETS:
-                logger.warning(
-                    "Ignoring user preset with reserved name: %s", name
-                )
+                logger.warning("Ignoring user preset with reserved name: %s", name)
                 continue
             user_names.append(name)
 
@@ -81,10 +80,7 @@ class PresetManager:
 
     def list_presets_detailed(self) -> List[tuple[str, bool]]:
         """Return presets with readonly status."""
-        return [
-            (name, name in self.READONLY_PRESETS)
-            for name in self.list_presets()
-        ]
+        return [(name, name in self.READONLY_PRESETS) for name in self.list_presets()]
 
     def load_preset(self, name: str) -> Dict[str, Any]:
         """Load a preset by name."""
@@ -141,9 +137,7 @@ class PresetManager:
             "include_models": "",
             "exclude_models": "",
             "retest": bool(default_cfg.get("retest", False)),
-            "enable_profiling": bool(
-                default_cfg.get("enable_profiling", False)
-            ),
+            "enable_profiling": bool(default_cfg.get("enable_profiling", False)),
             "disable_gtt": False,
             "max_temp": 0.0,
             "max_power": 0.0,
@@ -181,11 +175,7 @@ class PresetManager:
         if not valid:
             raise ValueError(reason)
 
-        payload = {
-            key: value
-            for key, value in config.items()
-            if value is not None
-        }
+        payload = {key: value for key, value in config.items() if value is not None}
 
         preset_path = self._preset_path(name)
         with preset_path.open("w", encoding="utf-8") as handle:
