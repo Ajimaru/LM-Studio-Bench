@@ -659,6 +659,7 @@ If you encounter problems:
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and PR guidance.
 
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/230bc2828cc645f28b52803d11227b9c)](https://app.codacy.com/gh/Ajimaru/LM-Studio-Bench/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
+[![codecov](https://codecov.io/github/ajimaru/lm-studio-bench/graph/badge.svg?token=7Vfxuc5mFi)](https://codecov.io/github/ajimaru/lm-studio-bench)
 [![CI](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/ci.yml/badge.svg)](https://github.com/Ajimaru/LM-Studio-Bench/actions/workflows/ci.yml)
 
 ## Code of Conduct

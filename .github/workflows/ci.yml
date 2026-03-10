@@ -105,7 +105,7 @@ jobs:
 
       # send coverage report to Codecov
       - name: Upload coverage to Codecov
-        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-bench' }}
+        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Bench' }}
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de
         with:
           files: coverage.xml
@@ -114,7 +114,7 @@ jobs:
 
       # optionally report coverage to Codacy
       - name: Upload coverage to Codacy
-        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-bench' }}
+        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Bench' }}
         env:
           CODACY_API_TOKEN: ${{ secrets.CODACY_API_TOKEN }}
           CODACY_ORGANIZATION_PROVIDER: ${{ vars.CODACY_ORGANIZATION_PROVIDER }}
