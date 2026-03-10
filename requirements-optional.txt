@@ -1,0 +1,6 @@
+# Optional dependencies for enhanced features
+# Install with: pip install -r requirements-optional.txt
+
+# System tray integration (Linux/X11)
+# Requires system libraries: libgirepository1.0, libcairo2, libcairo2-dev, gobject-introspection
+PyGObject>=3.48,<3.50
