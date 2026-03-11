@@ -2844,8 +2844,8 @@ class LMStudioBenchmark:
                 logger.info("")
                 logger.info("📦 === Cached Models ===")
                 logger.info(
-                    f"💾 {
-                        len(cached_models)} models already tested (will be loaded from cache):"
+                    f"💾 {len(cached_models)} models already tested "
+                    f"(will be loaded from cache):"
                 )
                 for model_key, cached in cached_models[:10]:
                     date_part = (
@@ -2854,8 +2854,8 @@ class LMStudioBenchmark:
                         else cached.timestamp[:10]
                     )
                     logger.info(
-                        f"  • {model_key}: {
-                            cached.avg_tokens_per_sec:.2f} tok/s (zuletzt: {date_part})"
+                        f"  • {model_key}: {cached.avg_tokens_per_sec:.2f} "
+                        f"tok/s (zuletzt: {date_part})"
                     )
                 if len(cached_models) > 10:
                     logger.info("  ... and %s more", len(cached_models) - 10)
@@ -3134,9 +3134,10 @@ class LMStudioBenchmark:
             avg_q6_speed = sum(r.avg_tokens_per_sec for r in q6_models) / len(q6_models)
             speed_diff = ((avg_q4_speed - avg_q6_speed) / avg_q6_speed) * 100
 
-            recommendations.append(f"   → Q4 is on average {
-                    abs(speed_diff):.0f}% {
-                    'faster' if speed_diff > 0 else 'slower'} than Q6")
+            recommendations.append(
+                f"   → Q4 is on average {abs(speed_diff):.0f}% "
+                f"{'faster' if speed_diff > 0 else 'slower'} than Q6"
+            )
             recommendations.append(
                 f"   → Q4: Faster, less quality | Q6: Slower, better quality"
             )
@@ -3852,8 +3853,8 @@ class LMStudioBenchmark:
                 elements.append(Spacer(1, 12))
                 elements.append(
                     Paragraph(
-                        f"<font size=10>{
-                            len(vision_models)} Vision-capable models found</font>",
+                        f"<font size=10>{len(vision_models)} "
+                        f"Vision-capable models found</font>",
                         styles["Normal"],
                     )
                 )
@@ -3939,8 +3940,8 @@ class LMStudioBenchmark:
                 elements.append(Spacer(1, 12))
                 elements.append(
                     Paragraph(
-                        f"<font size=10>{
-                            len(tool_models)} Tool-capable models found</font>",
+                        f"<font size=10>{len(tool_models)} "
+                        f"Tool-capable models found</font>",
                         styles["Normal"],
                     )
                 )
@@ -4432,9 +4433,8 @@ class LMStudioBenchmark:
                 gtt_used = self._gtt_info["used"]
                 gtt_status = "✅ Enabled" if self.use_gtt else "❌ Disabled"
                 cli_params.append(
-                    f"<strong>GTT (Shared System RAM):</strong> {gtt_status} ({
-                        gtt_total:.1f}GB total, {
-                        gtt_used:.1f}GB used)"
+                    f"<strong>GTT (Shared System RAM):</strong> {gtt_status} "
+                    f"({gtt_total:.1f}GB total, {gtt_used:.1f}GB used)"
                 )
 
             if self.cli_args.get("limit"):
@@ -4487,11 +4487,11 @@ class LMStudioBenchmark:
         <div class="chart" id="trend-chart"></div>
 """
                 trend_data = json.loads(trend_json)
-                trend_script = f"        Plotly.newPlot('trend-chart', {
-                    json.dumps(
-                        trend_data['data'])}, {
-                    json.dumps(
-                        trend_data['layout'])});"
+                trend_script = (
+                    "        Plotly.newPlot('trend-chart', "
+                    f"{json.dumps(trend_data['data'])}, "
+                    f"{json.dumps(trend_data['layout'])});"
+                )
             else:
                 trend_section = ""
                 trend_script = ""
@@ -5114,10 +5114,10 @@ Examples:
         "--n-batch",
         type=int,
         default=DEFAULT_LOAD_PARAMS.get("n_batch", 512),
-        help=f"Batch size for prompt processing (default: {
-            DEFAULT_LOAD_PARAMS.get(
-                'n_batch',
-                512)})",
+        help=(
+            "Batch size for prompt processing "
+            f"(default: {DEFAULT_LOAD_PARAMS.get('n_batch', 512)})"
+        ),
     )
     parser.add_argument(
         "--n-threads",
@@ -5129,10 +5129,10 @@ Examples:
         "--flash-attention",
         action="store_true",
         default=DEFAULT_LOAD_PARAMS.get("flash_attention", True),
-        help=f"Enable Flash Attention (faster attention computation, default: {
-            'enabled' if DEFAULT_LOAD_PARAMS.get(
-                'flash_attention',
-                True) else 'disabled'})",
+        help=(
+            "Enable Flash Attention (faster attention computation, default: "
+            f"{'enabled' if DEFAULT_LOAD_PARAMS.get('flash_attention', True) else 'disabled'})"
+        ),
     )
     parser.add_argument(
         "--no-flash-attention",
@@ -5156,10 +5156,10 @@ Examples:
         "--use-mmap",
         action="store_true",
         default=DEFAULT_LOAD_PARAMS.get("use_mmap", True),
-        help=f"Enable memory-mapping (faster model load, default: {
-            'enabled' if DEFAULT_LOAD_PARAMS.get(
-                'use_mmap',
-                True) else 'disabled'})",
+        help=(
+            "Enable memory-mapping (faster model load, default: "
+            f"{'enabled' if DEFAULT_LOAD_PARAMS.get('use_mmap', True) else 'disabled'})"
+        ),
     )
     parser.add_argument(
         "--no-mmap",
@@ -5171,10 +5171,10 @@ Examples:
         "--use-mlock",
         action="store_true",
         default=DEFAULT_LOAD_PARAMS.get("use_mlock", False),
-        help=f"Enable memory-locking (prevents swapping, default: {
-            'enabled' if DEFAULT_LOAD_PARAMS.get(
-                'use_mlock',
-                False) else 'disabled'})",
+        help=(
+            "Enable memory-locking (prevents swapping, default: "
+            f"{'enabled' if DEFAULT_LOAD_PARAMS.get('use_mlock', False) else 'disabled'})"
+        ),
     )
     parser.add_argument(
         "--kv-cache-quant",
