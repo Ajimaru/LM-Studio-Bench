@@ -39,8 +39,8 @@ max-attributes=7
 max-public-methods=20
 
 [LOGGING]
-# Logging format style
-logging-format-style=new
+# Logging format style (old = % formatting, new = .format(), fstr = f-strings)
+logging-format-style=old
 
 [SIMILARITIES]
 # Minimum lines number of a similarity (ignore-similarities=python)

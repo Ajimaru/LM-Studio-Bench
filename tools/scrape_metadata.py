@@ -79,8 +79,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
     Args:
         conn: SQLite database connection.
     """
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS model_metadata (
             model_key TEXT PRIMARY KEY,
             display_name TEXT,
@@ -97,17 +96,12 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             description TEXT,
             scraped_at TEXT
         )
-        """
-    )
+        """)
     conn.commit()
 
 
 def _strip_tags(html: str) -> str:
-    script_style_pattern = (
-        r"<(script|style)[^>]*>"
-        r".*?"
-        r"</\1>"
-    )
+    script_style_pattern = r"<(script|style)[^>]*>" r".*?" r"</\1>"
     flags = re.DOTALL | re.IGNORECASE
     html = re.sub(
         script_style_pattern,
@@ -168,10 +162,7 @@ def fetch_lmstudio_readme(model_key: str, timeout: int = 5) -> str:
     ):
         return ""
 
-    meta_desc_pattern = (
-        r"<meta\\s+name=\"description\"\\s+"
-        r"content=\"(.*?)\""
-    )
+    meta_desc_pattern = r"<meta\\s+name=\"description\"\\s+" r"content=\"(.*?)\""
     m = re.search(
         meta_desc_pattern,
         html,
@@ -317,9 +308,9 @@ def backup_metadata_db() -> None:
     backup_path = BACKUPS_DIR / f"model_metadata_{timestamp}_backup.db"
     try:
         shutil.copy2(METADATA_DB, backup_path)
-        logger.info(f"Backup created: {backup_path}")
+        logger.info("Backup created: %s", backup_path)
     except (OSError, shutil.Error) as copy_err:
-        logger.warning(f"Could not create backup: {copy_err}")
+        logger.warning("Could not create backup: %s", copy_err)
 
 
 def infer_capabilities(model_key: str, display_name: str) -> List[str]:
@@ -550,9 +541,7 @@ def scrape(only_missing: bool = True, enable_hf: bool = True) -> None:
             "description": row[1] or "",
             "source_url": row[2] or "",
             "capabilities": (
-                json.loads(row[3])
-                if (row[3] and str(row[3]).strip())
-                else []
+                json.loads(row[3]) if (row[3] and str(row[3]).strip()) else []
             ),
         }
     existing_keys = set(existing_map.keys())
@@ -640,8 +629,7 @@ def scrape(only_missing: bool = True, enable_hf: bool = True) -> None:
     if to_insert:
         upsert_metadata(conn, to_insert)
         logger.info(
-            "Inserted/updated %d models into model_metadata.db"
-            % len(to_insert)
+            "Inserted/updated %d models into model_metadata.db" % len(to_insert)
         )
     else:
         logger.info("No new models to insert")
@@ -670,6 +658,7 @@ def main() -> None:
         SystemExit: Exits with status code 1 if scraping fails due to an
             unhandled exception.
     """
+
     def _expand_short_flag_clusters(cli_args: List[str]) -> List[str]:
         """Expand combined short flags like ``-rn`` to ``-r -n``."""
         combinable = {"r", "n", "h"}
@@ -695,19 +684,13 @@ def main() -> None:
         "--refresh",
         "-r",
         action="store_true",
-        help=(
-            "Rescrape even "
-            "if already present"
-        ),
+        help=("Rescrape even " "if already present"),
     )
     parser.add_argument(
         "--no-hf",
         "-n",
         action="store_true",
-        help=(
-            "Disable Hugging Face "
-            "enrichment"
-        ),
+        help=("Disable Hugging Face " "enrichment"),
     )
     normalized_args = _expand_short_flag_clusters(sys.argv[1:])
     args = parser.parse_args(args=normalized_args)

@@ -1,4 +1,5 @@
 """Shared configuration loader for benchmark and web app."""
+
 from __future__ import annotations
 
 import json
@@ -47,9 +48,7 @@ BASE_DEFAULT_CONFIG: Dict[str, Any] = {
 }
 
 
-def _deep_merge(
-    base: Dict[str, Any], override: Dict[str, Any]
-) -> Dict[str, Any]:
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively merge override into base without mutating base."""
     merged: Dict[str, Any] = dict(base)
     for key, value in override.items():
@@ -93,8 +92,7 @@ def load_default_config(config_path: Path | None = None) -> Dict[str, Any]:
             logger.info("Loaded project defaults from %s", PROJECT_CONFIG_PATH)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning(
-                "Failed to load project config from %s: %s",
-                PROJECT_CONFIG_PATH, exc
+                "Failed to load project config from %s: %s", PROJECT_CONFIG_PATH, exc
             )
 
     # 2. Load user overrides (if exists)
@@ -106,8 +104,7 @@ def load_default_config(config_path: Path | None = None) -> Dict[str, Any]:
             logger.info("Loaded user config overrides from %s", USER_CONFIG_FILE)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning(
-                "Failed to load user config from %s: %s",
-                USER_CONFIG_FILE, exc
+                "Failed to load user config from %s: %s", USER_CONFIG_FILE, exc
             )
 
     lmstudio_cfg = config.get("lmstudio", {}) or {}

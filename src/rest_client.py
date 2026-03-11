@@ -119,13 +119,10 @@ class LMStudioRESTClient:
             True if server is accessible
         """
         try:
-            response = self.client.get(
-                f"{self.base_url}/",
-                timeout=5.0
-            )
+            response = self.client.get(f"{self.base_url}/", timeout=5.0)
             return response.status_code == 200
         except Exception as e:
-            logger.debug(f"Health check failed: {e}")
+            logger.debug("Health check failed: %s", e)
             return False
 
     def list_models(self) -> List[ModelInfo]:
@@ -161,9 +158,7 @@ class LMStudioRESTClient:
             if caps_data:
                 capabilities = ModelCapabilities(
                     vision=caps_data.get("vision", False),
-                    trained_for_tool_use=caps_data.get(
-                        "trained_for_tool_use", False
-                    ),
+                    trained_for_tool_use=caps_data.get("trained_for_tool_use", False),
                 )
 
             loaded_instances = []
@@ -192,7 +187,7 @@ class LMStudioRESTClient:
             )
             models.append(model)
 
-        logger.info(f"Found {len(models)} models")
+        logger.info("Found %s models", len(models))
         return models
 
     def load_model(
@@ -219,7 +214,7 @@ class LMStudioRESTClient:
         Raises:
             httpx.HTTPError: on API errors
         """
-        base_key = model_key.split('@')[0] if '@' in model_key else model_key
+        base_key = model_key.split("@")[0] if "@" in model_key else model_key
         payload: Dict[str, Any] = {"model": base_key}
 
         if context_length is not None:
@@ -228,7 +223,7 @@ class LMStudioRESTClient:
         if gpu_offload is not None:
             payload["offload_kv_cache_to_gpu"] = bool(gpu_offload)
 
-        logger.info(f"Loading model: {base_key}")
+        logger.info("Loading model: %s", base_key)
         response = self.client.post(
             f"{self.base_url}/api/v1/models/load",
             headers=self._headers(),
@@ -238,7 +233,7 @@ class LMStudioRESTClient:
 
         result = response.json()
         instance_id = result.get("instance_id", base_key)
-        logger.info(f"Model loaded: {instance_id}")
+        logger.info("Model loaded: %s", instance_id)
         return instance_id
 
     def unload_model(self, instance_id: str) -> bool:
@@ -256,7 +251,7 @@ class LMStudioRESTClient:
         """
         payload = {"instance_id": instance_id}
 
-        logger.info(f"Unloading model: {instance_id}")
+        logger.info("Unloading model: %s", instance_id)
         response = self.client.post(
             f"{self.base_url}/api/v1/models/unload",
             headers=self._headers(),
@@ -264,7 +259,7 @@ class LMStudioRESTClient:
         )
         response.raise_for_status()
 
-        logger.info(f"Model unloaded: {instance_id}")
+        logger.info("Model unloaded: %s", instance_id)
         return True
 
     def download_model(
@@ -289,7 +284,7 @@ class LMStudioRESTClient:
         """
         payload = {"model": model_key}
 
-        logger.info(f"Downloading model: {model_key}")
+        logger.info("Downloading model: %s", model_key)
         response = self.client.post(
             f"{self.base_url}/api/v1/models/download",
             headers=self._headers(),
@@ -299,10 +294,10 @@ class LMStudioRESTClient:
         result = response.json()
 
         if result.get("status") == "already_downloaded":
-            logger.info(f"Model already downloaded: {model_key}")
+            logger.info("Model already downloaded: %s", model_key)
             return True
 
-        logger.info(f"Download started: {model_key}")
+        logger.info("Download started: %s", model_key)
 
         if wait_for_completion:
             return self._poll_download_progress(model_key, progress_callback)
@@ -333,19 +328,19 @@ class LMStudioRESTClient:
                     progress_callback(status)
 
                 if current_status == "completed":
-                    logger.info(f"Download completed: {model_key}")
+                    logger.info("Download completed: %s", model_key)
                     return True
                 elif current_status == "failed":
-                    logger.error(f"Download failed: {model_key}")
+                    logger.error("Download failed: %s", model_key)
                     return False
                 elif current_status == "already_downloaded":
-                    logger.info(f"Model already downloaded: {model_key}")
+                    logger.info("Model already downloaded: %s", model_key)
                     return True
 
                 time.sleep(2)
 
             except Exception as e:
-                logger.warning(f"Error polling download status: {e}")
+                logger.warning("Error polling download status: %s", e)
                 time.sleep(2)
 
     def download_status(self, model_key: str) -> Dict[str, Any]:
@@ -408,7 +403,7 @@ class LMStudioRESTClient:
                 return _RESPONSE_CACHE[cache_key]
         base_model = None
         if model:
-            base_model = model.split('@')[0] if '@' in model else model
+            base_model = model.split("@")[0] if "@" in model else model
 
         payload: Dict[str, Any] = {"temperature": temperature, "stream": True}
 
@@ -428,13 +423,13 @@ class LMStudioRESTClient:
 
         if use_stateful and self.last_response_id:
             payload["previous_response_id"] = self.last_response_id
-            logger.debug(f"Using stateful chat: {self.last_response_id}")
+            logger.debug("Using stateful chat: %s", self.last_response_id)
 
         if mcp_integrations:
             payload["integrations"] = mcp_integrations
-            logger.debug(f"Using {len(mcp_integrations)} MCP integrations")
+            logger.debug("Using %s MCP integrations", len(mcp_integrations))
 
-        logger.debug(f"Sending chat request: {len(messages)} messages")
+        logger.debug("Sending chat request: %s messages", len(messages))
 
         full_text = ""
         final_stats = None
@@ -458,7 +453,7 @@ class LMStudioRESTClient:
                     try:
                         event = json.loads(json_str)
                     except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse event: {json_str}")
+                        logger.warning("Failed to parse event: %s", json_str)
                         continue
 
                     if event.get("type") == "chat.end":
@@ -497,7 +492,8 @@ class LMStudioRESTClient:
                 tokens_out=final_stats.get("total_output_tokens", 0),
                 time_to_first_token_ms=final_stats.get(
                     "time_to_first_token_seconds", 0.0
-                ) * 1000.0,
+                )
+                * 1000.0,
                 total_time_ms=total_time * 1000.0,
                 tokens_per_second=final_stats.get("tokens_per_second", 0.0),
             )
@@ -509,11 +505,11 @@ class LMStudioRESTClient:
             result["response_id"] = response_id
             if use_stateful:
                 self.last_response_id = response_id
-                logger.debug(f"Saved response_id for stateful chat: {response_id}")
+                logger.debug("Saved response_id for stateful chat: %s", response_id)
 
         if self.enable_cache and cache_key:
             _RESPONSE_CACHE[cache_key] = result
-            logger.debug(f"Cached response (cache size: {len(_RESPONSE_CACHE)})")
+            logger.debug("Cached response (cache size: %s)", len(_RESPONSE_CACHE))
 
         logger.info(
             f"Chat complete: {result.get('stats', ChatStats()).tokens_out} "
@@ -540,7 +536,10 @@ class LMStudioRESTClient:
             Cache key string
         """
         import hashlib
-        content = json.dumps({"messages": messages, "model": model, "temp": temperature}, sort_keys=True)
+
+        content = json.dumps(
+            {"messages": messages, "model": model, "temp": temperature}, sort_keys=True
+        )
         return hashlib.sha256(content.encode()).hexdigest()
 
     def clear_cache(self) -> int:
@@ -552,7 +551,7 @@ class LMStudioRESTClient:
         """
         count = len(_RESPONSE_CACHE)
         _RESPONSE_CACHE.clear()
-        logger.info(f"Cleared {count} cached responses")
+        logger.info("Cleared %s cached responses", count)
         return count
 
     def reset_stateful_chat(self):
@@ -577,18 +576,12 @@ class LMStudioRESTClient:
 
 def is_vision_model(model: ModelInfo) -> bool:
     """Check if model supports vision/image inputs."""
-    return (
-        model.capabilities is not None
-        and model.capabilities.vision
-    )
+    return model.capabilities is not None and model.capabilities.vision
 
 
 def is_tool_model(model: ModelInfo) -> bool:
     """Check if model was trained for tool/function calling."""
-    return (
-        model.capabilities is not None
-        and model.capabilities.trained_for_tool_use
-    )
+    return model.capabilities is not None and model.capabilities.trained_for_tool_use
 
 
 def filter_llm_models(models: List[ModelInfo]) -> List[ModelInfo]:
