@@ -2348,9 +2348,11 @@ async def get_experiment_comparison(
         test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
 
         if not baseline_speeds or not test_speeds:
-            return {"success": False, "error": f"Insufficient data: Baseline={
-                    len(baseline_speeds)} entries, Test={
-                    len(test_speeds)} entries", "comparison": {}}
+            error_msg = (
+                f"Insufficient data: Baseline={len(baseline_speeds)} entries, "
+                f"Test={len(test_speeds)} entries"
+            )
+            return {"success": False, "error": error_msg, "comparison": {}}
 
         baseline_stats = {
             "count": len(baseline_speeds),
