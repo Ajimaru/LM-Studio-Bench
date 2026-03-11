@@ -43,7 +43,7 @@ from pydantic import BaseModel
 
 from config_loader import DEFAULT_CONFIG
 from preset_manager import PresetManager
-from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
+from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
 
 try:
     from scipy import stats as scipy_stats
@@ -369,13 +369,25 @@ class BenchmarkManager:
                     logger.error("❌ Read error: %s", read_error)
                     break
 
-            if not self.is_running():
-                self.status = "completed"
+            if self.process is not None:
+                return_code = self.process.poll()
+                if return_code == 0:
+                    self.status = "completed"
+                else:
+                    self.status = "failed"
+                    failure_msg = (
+                        f"❌ Benchmark process exited with code {return_code}\n"
+                    )
+                    await self.output_queue.put(failure_msg)
+                    self.current_output += failure_msg
 
             logger.info("🔄 Output consumer task ended (EOF reached)")
 
             if self.benchmark_log_file and self.benchmark_log_file.exists():
-                logger.info("✅ Benchmark-Log: %s", self.benchmark_log_file)
+                logger.info(
+                    "✅ Benchmark-Log: %s",
+                    format_path_for_logs(self.benchmark_log_file),
+                )
 
         except Exception as e:
             logger.error("❌ Error in output consumer: %s", e)
@@ -423,7 +435,10 @@ class BenchmarkManager:
             self.output_task = asyncio.create_task(self._consume_output())
 
             logger.info(f"✅ Benchmark started with PID %s", self.process.pid)
-            logger.info("📝 Benchmark log: %s", self.benchmark_log_file)
+            logger.info(
+                "📝 Benchmark log: %s",
+                format_path_for_logs(self.benchmark_log_file),
+            )
             return True
         except Exception as e:
             logger.error("❌ Error starting benchmark: %s", e)
@@ -961,7 +976,7 @@ async def get_lmstudio_health() -> dict:
 
 @app.post("/api/benchmark/start")
 async def start_benchmark(params: BenchmarkParams) -> dict:
-    """Startet neuen Benchmark"""
+    """Start a new benchmark."""
     args = []
 
     if params.runs:
@@ -1300,7 +1315,7 @@ async def delete_cache_entry(model_key: str) -> dict:
 
 @app.post("/api/cache/clear")
 async def clear_cache() -> dict:
-    """Leert den gesamten Cache mit Backup"""
+    """Clears entire cache with backup"""
     if not BenchmarkCache:
         return {"success": False, "error": "BenchmarkCache not available"}
 
@@ -1536,7 +1551,7 @@ async def export_comparison_csv(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
 ) -> dict:
-    """Exports comparison data as CSV mit optionalen Filtern"""
+    """Exports comparison data as CSV with optional filters"""
     if not BenchmarkCache:
         return {"success": False, "error": "BenchmarkCache not available"}
 
@@ -1789,7 +1804,7 @@ async def export_comparison_pdf(request: Request) -> dict:
             "Historical Comparison Export",
             f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"Model: {model_filter or 'All models'}",
-            f"Zeitraum: {start_filter or '---'} bis {end_filter or '---'}",
+            f"Time period: {start_filter or '---'} to {end_filter or '---'}",
             f"Quantization: {quant_str}",
             "",
             "Statistics:",
@@ -2986,7 +3001,7 @@ async def run_experiment(request: Request) -> dict:
                 logger.info("❌ No Match: run_index=%s, params=%s", run_idx, row_params)
 
         logger.info(
-            f"🔍 Nach Filterung: Baseline={len(baseline_data)}, Test={len(test_data)}"
+            f"🔍 After filtering: Baseline={len(baseline_data)}, Test={len(test_data)}"
         )
 
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
@@ -3083,7 +3098,7 @@ async def run_experiment(request: Request) -> dict:
             json_file = results_dir / f"ab_test_results_{timestamp}.json"
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(results_data, f, indent=2, ensure_ascii=False)
-            logger.info("📄 A/B Test JSON gespeichert: %s", json_file)
+            logger.info("📄 A/B Test JSON saved: %s", json_file)
 
             csv_file = results_dir / f"ab_test_results_{timestamp}.csv"
             with open(csv_file, "w", encoding="utf-8") as f:
@@ -3119,7 +3134,7 @@ async def run_experiment(request: Request) -> dict:
                 )
                 f.write(f"Winner,-,-,{winner}\n")
                 f.write(f"Significant,-,-,{test_result.get('significant', False)}\n")
-            logger.info("📊 A/B Test CSV gespeichert: %s", csv_file)
+            logger.info("📊 A/B Test CSV saved: %s", csv_file)
 
             html_file = results_dir / f"ab_test_results_{timestamp}.html"
             html_content = f"""<!DOCTYPE html>
@@ -3207,7 +3222,7 @@ async def run_experiment(request: Request) -> dict:
 </html>"""
             with open(html_file, "w", encoding="utf-8") as f:
                 f.write(html_content)
-            logger.info("🌐 A/B Test HTML gespeichert: %s", html_file)
+            logger.info("🌐 A/B Test HTML saved: %s", html_file)
 
             try:
                 from reportlab.lib import colors
@@ -3300,7 +3315,7 @@ async def run_experiment(request: Request) -> dict:
                 )
 
                 doc.build(elements)
-                logger.info("📑 A/B Test PDF gespeichert: %s", pdf_file)
+                logger.info("📑 A/B Test PDF saved: %s", pdf_file)
             except ImportError:
                 logger.warning("⚠️ reportlab not installed - PDF export skipped")
             except Exception as pdf_error:
@@ -3842,17 +3857,18 @@ async def websocket_benchmark(websocket: WebSocket):
                 logger.error("❌ WebSocket Receive Error: %s", e)
                 break
 
+            output = manager.drain_output_queue()
+            if output:
+                try:
+                    await websocket.send_json(
+                        {"type": "output", "line": output, "status": manager.status}
+                    )
+                    heartbeat_count = 0
+                except Exception as e:
+                    logger.error("❌ WebSocket Send Error: %s", e)
+                    break
+
             if manager.is_running():
-                output = manager.drain_output_queue()
-                if output:
-                    try:
-                        await websocket.send_json(
-                            {"type": "output", "line": output, "status": manager.status}
-                        )
-                        heartbeat_count = 0
-                    except Exception as e:
-                        logger.error("❌ WebSocket Send Error: %s", e)
-                        break
 
                 current_time = time.time()
                 if current_time - manager.last_hardware_send_time >= 2.0:
@@ -3912,7 +3928,7 @@ async def websocket_benchmark(websocket: WebSocket):
                         await websocket.send_json(
                             {
                                 "type": "completed",
-                                "message": "✅ Benchmark abgeschlossen",
+                                "message": "✅ Benchmark completed",
                             }
                         )
                     except Exception as e:
@@ -3923,10 +3939,26 @@ async def websocket_benchmark(websocket: WebSocket):
                     finally:
                         manager.status = "idle"
 
+                if manager.status == "failed":
+                    try:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "❌ Benchmark failed",
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "⚠️ Could not send Failure message: %s",
+                            e,
+                        )
+                    finally:
+                        manager.status = "idle"
+
                 await asyncio.sleep(0.5)
 
     except WebSocketDisconnect:
-        logger.info("ℹ️ WebSocket normaler Disconnect")
+        logger.info("ℹ️ WebSocket normal disconnect")
     except Exception as e:
         logger.error("❌ WebSocket Error: %s", e)
     finally:
@@ -4013,17 +4045,20 @@ if __name__ == "__main__":
         logger.setLevel(logging.DEBUG)
         for handler in logging.root.handlers:
             handler.setLevel(logging.DEBUG)
-        logger.debug("🐛 DEBUG-Modus aktiviert")
+        logger.debug("🐛 DEBUG mode enabled")
 
     webapp_log_file = setup_webapp_logger()
 
-    logger.info("🌐 Starte FastAPI Web-Dashboard...")
-    logger.info("📝 WebApp-Log: %s", webapp_log_file)
-    logger.info("📁 Projekt-Root: %s", PROJECT_ROOT)
-    logger.info("📄 Benchmark-Script: %s", BENCHMARK_SCRIPT)
+    logger.info("🌐 Starting FastAPI web dashboard...")
+    logger.info("📝 WebApp log: %s", format_path_for_logs(webapp_log_file))
+    logger.info("📁 Project root: %s", format_path_for_logs(PROJECT_ROOT))
+    logger.info("📄 Benchmark script: %s", format_path_for_logs(BENCHMARK_SCRIPT))
 
     if not BENCHMARK_SCRIPT.exists():
-        logger.error("❌ Benchmark script not found: %s", BENCHMARK_SCRIPT)
+        logger.error(
+            "❌ Benchmark script not found: %s",
+            format_path_for_logs(BENCHMARK_SCRIPT),
+        )
         sys.exit(1)
 
     if args.port:

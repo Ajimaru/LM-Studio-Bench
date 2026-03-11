@@ -2,6 +2,22 @@
 
 import os
 from pathlib import Path
+from typing import Union
+
+
+def _effective_home() -> Path:
+    """Return the effective user home directory.
+
+    In Snap environments (e.g. VS Code Snap), ``Path.home()`` often points
+    to a snap-scoped home like ``~/snap/code/<rev>``. If ``SNAP_REAL_HOME``
+    is available, prefer it so cache/log paths are stable across runs.
+    """
+    snap_real_home = os.environ.get("SNAP_REAL_HOME")
+    if snap_real_home:
+        candidate = Path(snap_real_home).expanduser()
+        if candidate.is_absolute() and ".." not in candidate.parts:
+            return candidate
+    return Path.home()
 
 
 def _resolve_xdg_home(env_var: str, fallback: Path) -> Path:
@@ -18,7 +34,29 @@ def _resolve_xdg_home(env_var: str, fallback: Path) -> Path:
     if not candidate.is_absolute() or ".." in candidate.parts:
         return fallback
 
+    effective_home = _effective_home()
+    if str(candidate).startswith(str(effective_home / "snap")):
+        return fallback
+
     return candidate
+
+
+def format_path_for_logs(path_value: Union[str, Path]) -> str:
+    """Format a path for logs without exposing username.
+
+    Replaces the effective home prefix with ``~``.
+    """
+    try:
+        raw = os.fspath(path_value)
+    except TypeError:
+        raw = str(path_value)
+
+    home_str = str(_effective_home())
+    if raw == home_str:
+        return "~"
+    if raw.startswith(f"{home_str}/"):
+        return raw.replace(home_str, "~", 1)
+    return raw
 
 
 def get_user_config_dir() -> Path:
@@ -29,7 +67,7 @@ def get_user_config_dir() -> Path:
     """
     base_dir = _resolve_xdg_home(
         "XDG_CONFIG_HOME",
-        Path.home() / ".config",
+        _effective_home() / ".config",
     )
     config_dir = base_dir / "lm-studio-bench"
 
@@ -45,7 +83,7 @@ def get_user_data_dir() -> Path:
     """
     base_dir = _resolve_xdg_home(
         "XDG_DATA_HOME",
-        Path.home() / ".local" / "share",
+        _effective_home() / ".local" / "share",
     )
     data_dir = base_dir / "lm-studio-bench"
 

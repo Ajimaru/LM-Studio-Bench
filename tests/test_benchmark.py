@@ -1,10 +1,10 @@
 """Tests for src/benchmark.py."""
-import io
-import sys
-import threading
 from dataclasses import asdict
+import io
 from pathlib import Path
 from statistics import mean
+import sys
+import threading
 from typing import Any, Optional
 from unittest.mock import MagicMock, patch
 
@@ -406,6 +406,82 @@ class TestBenchmarkCache:
         assert cached is not None
         assert cached.model_name == "test-model"
         assert cached.avg_tokens_per_sec == pytest.approx(55.0)
+
+    def test_get_cached_result_uses_params_hash(self, tmp_path: Path):
+        """Cache lookup must match the full params hash, not only inference hash."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(db_path=tmp_path / "cache.db")
+        result = bm.BenchmarkResult(
+            model_name="test-model",
+            quantization="Q4",
+            gpu_type="NVIDIA",
+            gpu_offload=1.0,
+            vram_mb="8192",
+            avg_tokens_per_sec=55.0,
+            avg_ttft=0.3,
+            avg_gen_time=0.8,
+            prompt_tokens=10,
+            completion_tokens=50,
+            timestamp="2024-01-01T00:00:00",
+            params_size="7B",
+            architecture="llama",
+            max_context_length=4096,
+            model_size_gb=4.0,
+            has_vision=False,
+            has_tools=False,
+            tokens_per_sec_per_gb=13.75,
+            tokens_per_sec_per_billion_params=7.86,
+            inference_params_hash="infr0001",
+        )
+        cache.save_result(
+            result,
+            "pub/test-model",
+            "full0001",
+            "test prompt",
+            2048,
+        )
+
+        cached = cache.get_cached_result("pub/test-model", "full0001")
+        assert cached is not None
+        assert cached.model_name == "test-model"
+
+    def test_get_latest_result_for_model_returns_entry(self, tmp_path: Path):
+        """Latest result lookup by model key works without params hash match."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(db_path=tmp_path / "cache.db")
+        result = bm.BenchmarkResult(
+            model_name="test-model",
+            quantization="Q4",
+            gpu_type="NVIDIA",
+            gpu_offload=1.0,
+            vram_mb="8192",
+            avg_tokens_per_sec=55.0,
+            avg_ttft=0.3,
+            avg_gen_time=0.8,
+            prompt_tokens=10,
+            completion_tokens=50,
+            timestamp="2024-01-01T00:00:00",
+            params_size="7B",
+            architecture="llama",
+            max_context_length=4096,
+            model_size_gb=4.0,
+            has_vision=False,
+            has_tools=False,
+            tokens_per_sec_per_gb=13.75,
+            tokens_per_sec_per_billion_params=7.86,
+            inference_params_hash="infr9999",
+        )
+        cache.save_result(
+            result,
+            "pub/test-model",
+            "full9999",
+            "test prompt",
+            2048,
+        )
+
+        cached = cache.get_latest_result_for_model("pub/test-model")
+        assert cached is not None
+        assert cached.model_name == "test-model"
 
     def test_export_to_json(self, tmp_path: Path):
         """export_to_json creates a JSON file."""

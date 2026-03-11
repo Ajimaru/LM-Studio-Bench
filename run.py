@@ -29,7 +29,7 @@ src_path = project_root / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from user_paths import USER_LOGS_DIR
+from user_paths import USER_LOGS_DIR, format_path_for_logs
 
 
 def _resolve_python_executable() -> str:
@@ -157,7 +157,7 @@ def _start_tray_process(
     """Start tray app as background subprocess."""
     tray_script = project_root / "src" / "tray.py"
     if not tray_script.exists():
-        print(f"⚠️ Tray script not found: {tray_script}")
+        print(f"⚠️ Tray script not found: {format_path_for_logs(tray_script)}")
         return None
 
     logs_dir = USER_LOGS_DIR
@@ -189,17 +189,21 @@ def _start_tray_process(
             time.sleep(0.6)
             if tray_proc.poll() is None:
                 print(f"🧩 Tray started ({tray_dashboard_url})")
-                print(f"📝 Run log: {launcher_log}")
+                print(f"📝 Run log: {format_path_for_logs(launcher_log)}")
                 return tray_proc
 
             print(
                 "⚠️ Tray exited early "
-                f"(code {tray_proc.returncode}) with {candidate}"
+                f"(code {tray_proc.returncode}) "
+                f"with {format_path_for_logs(candidate)}"
             )
         except OSError as error:
-            print(f"⚠️ Could not launch tray with {candidate}: {error}")
+            print(
+                "⚠️ Could not launch tray with "
+                f"{format_path_for_logs(candidate)}: {error}"
+            )
 
-    print(f"📝 Tray launcher log: {launcher_log}")
+    print(f"📝 Tray launcher log: {format_path_for_logs(launcher_log)}")
     try:
         launcher_text = launcher_log.read_text(encoding="utf-8")
         if "symbol lookup error" in launcher_text:

@@ -50,7 +50,7 @@ except (ImportError, ModuleNotFoundError):
 from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
 from preset_manager import PresetManager
 from rest_client import LMStudioRESTClient
-from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
+from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
 
 try:
     import plotly.graph_objects as go
@@ -145,6 +145,20 @@ OPTIMIZED_INFERENCE_PARAMS = {
 DEFAULT_LOAD_PARAMS = {**BASE_LOAD_PARAMS, **(DEFAULT_CONFIG.get("load") or {})}
 
 
+def get_app_version() -> str:
+    """Read app version from VERSION file"""
+    try:
+        version_file = PROJECT_ROOT / "VERSION"
+        if version_file.exists():
+            return version_file.read_text().strip()
+    except Exception:
+        pass
+    return "unknown"
+
+
+APP_VERSION = get_app_version()
+
+
 @dataclass
 class BenchmarkResult:
     """Results of a single benchmark run"""
@@ -197,6 +211,7 @@ class BenchmarkResult:
     warmup_runs: Optional[int] = None
     run_index: Optional[int] = None
     lmstudio_version: Optional[str] = None
+    app_version: Optional[str] = None
     nvidia_driver_version: Optional[str] = None
     rocm_driver_version: Optional[str] = None
     intel_driver_version: Optional[str] = None
@@ -365,7 +380,7 @@ class HardwareMonitor:
 
                     if cpu is not None:
                         self.cpus.append(cpu)
-                        logger.info("🖥️ CPU: %s%", cpu)
+                        logger.info("🖥️ CPU: %s%%", cpu)
 
                     if ram is not None:
                         self.rams.append(ram)
@@ -628,6 +643,7 @@ class BenchmarkCache:
                 warmup_runs INTEGER,
                 run_index INTEGER,
                 lmstudio_version TEXT,
+                app_version TEXT,
                 nvidia_driver_version TEXT,
                 rocm_driver_version TEXT,
                 intel_driver_version TEXT,
@@ -654,6 +670,11 @@ class BenchmarkCache:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_model_key_hash
             ON benchmark_results(model_key, inference_params_hash)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_model_key_params_hash
+            ON benchmark_results(model_key, params_hash)
         """)
 
         try:
@@ -716,13 +737,103 @@ class BenchmarkCache:
         cursor.execute("PRAGMA table_info(benchmark_results)")
         columns = {row[1]: row[0] for row in cursor.fetchall()}
 
+        if "params_hash" in columns:
+            cursor.execute(
+                """
+                SELECT * FROM benchmark_results
+                WHERE model_key = ? AND params_hash = ?
+                ORDER BY timestamp DESC LIMIT 1
+            """,
+                (model_key, params_hash),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                cursor.execute(
+                    """
+                    SELECT * FROM benchmark_results
+                    WHERE model_key = ? AND inference_params_hash = ?
+                    ORDER BY timestamp DESC LIMIT 1
+                """,
+                    (model_key, params_hash),
+                )
+                row = cursor.fetchone()
+        else:
+            cursor.execute(
+                """
+                SELECT * FROM benchmark_results
+                WHERE model_key = ? AND inference_params_hash = ?
+                ORDER BY timestamp DESC LIMIT 1
+            """,
+                (model_key, params_hash),
+            )
+            row = cursor.fetchone()
+        conn.close()
+
+        if row:
+            result_dict = {
+                "model_name": row[2],
+                "quantization": row[3],
+                "gpu_type": row[5],
+                "gpu_offload": row[6],
+                "vram_mb": row[7],
+                "avg_tokens_per_sec": row[8],
+                "avg_ttft": row[9],
+                "avg_gen_time": row[10],
+                "prompt_tokens": row[11],
+                "completion_tokens": row[12],
+                "timestamp": row[13],
+                "params_size": row[14],
+                "architecture": row[15],
+                "max_context_length": row[16],
+                "model_size_gb": row[17],
+                "has_vision": bool(row[18]),
+                "has_tools": bool(row[19]),
+                "tokens_per_sec_per_gb": row[20],
+                "tokens_per_sec_per_billion_params": row[21],
+                "speed_delta_pct": row[22],
+                "prev_timestamp": row[23],
+            }
+
+            if "n_gpu_layers" in columns:
+                result_dict["n_gpu_layers"] = row[columns["n_gpu_layers"]]
+            if "n_batch" in columns:
+                result_dict["n_batch"] = row[columns["n_batch"]]
+            if "n_threads" in columns:
+                result_dict["n_threads"] = row[columns["n_threads"]]
+            if "flash_attention" in columns:
+                val = row[columns["flash_attention"]]
+                result_dict["flash_attention"] = bool(val) if val is not None else None
+            if "rope_freq_base" in columns:
+                result_dict["rope_freq_base"] = row[columns["rope_freq_base"]]
+            if "rope_freq_scale" in columns:
+                result_dict["rope_freq_scale"] = row[columns["rope_freq_scale"]]
+            if "use_mmap" in columns:
+                val = row[columns["use_mmap"]]
+                result_dict["use_mmap"] = bool(val) if val is not None else None
+            if "use_mlock" in columns:
+                val = row[columns["use_mlock"]]
+                result_dict["use_mlock"] = bool(val) if val is not None else None
+            if "kv_cache_quant" in columns:
+                result_dict["kv_cache_quant"] = row[columns["kv_cache_quant"]]
+
+            return BenchmarkResult(**result_dict)
+        return None
+
+    def get_latest_result_for_model(self, model_key: str) -> Optional[BenchmarkResult]:
+        """Returns latest cached result for model regardless of params hash."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("PRAGMA table_info(benchmark_results)")
+        columns = {row[1]: row[0] for row in cursor.fetchall()}
+
         cursor.execute(
             """
             SELECT * FROM benchmark_results
-            WHERE model_key = ? AND inference_params_hash = ?
+            WHERE model_key = ?
             ORDER BY timestamp DESC LIMIT 1
         """,
-            (model_key, params_hash),
+            (model_key,),
         )
 
         row = cursor.fetchone()
@@ -828,6 +939,7 @@ class BenchmarkCache:
                 result.warmup_runs,
                 result.run_index,
                 result.lmstudio_version,
+                result.app_version,
                 result.nvidia_driver_version,
                 result.rocm_driver_version,
                 result.intel_driver_version,
@@ -869,7 +981,7 @@ class BenchmarkCache:
                     tokens_per_sec_per_billion_params, speed_delta_pct, prev_timestamp,
                     prompt, context_length, temperature, top_k_sampling, top_p_sampling,
                     min_p_sampling, repeat_penalty, max_tokens, num_runs, runs_averaged_from,
-                    warmup_runs, run_index, lmstudio_version, nvidia_driver_version, rocm_driver_version,
+                    warmup_runs, run_index, lmstudio_version, app_version, nvidia_driver_version, rocm_driver_version,
                     intel_driver_version, prompt_hash, params_hash, os_name, os_version,
                     cpu_model, python_version, benchmark_duration_seconds, error_count,
                     n_gpu_layers, n_batch, n_threads, flash_attention, rope_freq_base,
@@ -1895,12 +2007,13 @@ class LMStudioBenchmark:
 
         self.system_versions = {
             "lmstudio_version": self.get_lmstudio_version(),
+            "app_version": APP_VERSION,
             "nvidia_driver_version": self.get_nvidia_driver_version(),
             "rocm_driver_version": self.get_rocm_driver_version(),
             "intel_driver_version": self.get_intel_driver_version(),
         }
 
-        logger.info("📋 Erfasste Versions-Informationen:")
+        logger.info("📋 Collected version information:")
         for key, value in self.system_versions.items():
             logger.info("   • %s: %s", key, value if value else 'N/A')
 
@@ -1911,7 +2024,7 @@ class LMStudioBenchmark:
             "cpu_model": self.get_cpu_model(),
             "python_version": self.get_python_version(),
         }
-        logger.info("💻 System-Informationen:")
+        logger.info("💻 System information:")
         logger.info(
             f"   • OS: {self.system_info['os_name']} {self.system_info['os_version']}"
         )
@@ -2049,7 +2162,7 @@ class LMStudioBenchmark:
             return round(optimal_offload, 1)
 
         except Exception as e:
-            logger.debug("Offload-Prediction fehlgeschlagen: %s", e)
+            logger.debug("Offload prediction failed: %s", e)
             return 1.0
 
     def _get_cached_optimal_offload(
@@ -2097,7 +2210,7 @@ class LMStudioBenchmark:
             return None
 
         except Exception as e:
-            logger.debug("Cache-Lookup fehlgeschlagen: %s", e)
+            logger.debug("Cache lookup failed: %s", e)
             return None
 
     def _get_smart_offload_levels(
@@ -2300,7 +2413,7 @@ class LMStudioBenchmark:
                         instance_id = self._load_model_rest(model_key, used_offload)
                     except Exception as ex:
                         logger.warning(
-                            f"⚠️ Download/Load via REST fehlgeschlagen: {ex}"
+                            f"⚠️ Download/Load via REST failed: {ex}"
                         )
                 if instance_id:
                     logger.info("🧩 Using REST instance id: %s", instance_id)
@@ -2337,7 +2450,7 @@ class LMStudioBenchmark:
                     )
                 else:
                     logger.warning(
-                        "⚠️ Run %d/%d fehlgeschlagen",
+                        "⚠️ Run %d/%d failed",
                         run + 1,
                         self.num_measurement_runs,
                     )
@@ -2786,6 +2899,7 @@ class LMStudioBenchmark:
             runs_averaged_from=len(measurements),
             warmup_runs=NUM_WARMUP_RUNS,
             lmstudio_version=self.system_versions.get("lmstudio_version"),
+            app_version=APP_VERSION,
             nvidia_driver_version=self.system_versions.get("nvidia_driver_version"),
             rocm_driver_version=self.system_versions.get("rocm_driver_version"),
             intel_driver_version=self.system_versions.get("intel_driver_version"),
@@ -2798,33 +2912,59 @@ class LMStudioBenchmark:
 
         return result
 
-    def run_all_benchmarks(self):
-        """Performs benchmarks for all available models"""
+    def run_all_benchmarks(self) -> str:
+        """Performs benchmarks for all available models.
+
+        Returns:
+            Status string: "completed", "no_new_models", or "failed".
+        """
         if not LMStudioServerManager.ensure_server_running():
             logger.error("❌ Server could not be started, aborting")
-            return
+            return "failed"
 
         ModelDiscovery._get_metadata_cache()
 
         models = ModelDiscovery.get_installed_models()
         if not models:
             logger.error("❌ No models found")
-            return
+            return "failed"
 
         models = ModelDiscovery.filter_models(models, self.filter_args)
         if not models:
             logger.error("❌ No models remaining after filtering")
-            return
+            return "failed"
+
+        logger.info("")  
+        logger.info("📊 Models detected: %d total", len(models))
+        logger.info("🔍 App Version: %s", APP_VERSION)
+        logger.info("")
 
         newly_tested_models = []
         if self.cache and self.use_cache:
+            try:
+                cache_count = len(self.cache.list_cached_models())
+                logger.info("💽 Cache DB: %s", format_path_for_logs(DATABASE_FILE))
+                logger.info("💽 Cached entries available: %d", cache_count)
+            except Exception as e:
+                logger.debug("Cache stats read failed: %s", e)
+        if self.cache and self.use_cache:
             cached_models = []
             new_models = []
+            exact_hits = 0
+            fallback_hits = 0
 
             for model_key in models:
                 cached = self.cache.get_cached_result(model_key, self.params_hash)
+                is_fallback = False
+                if not cached:
+                    cached = self.cache.get_latest_result_for_model(model_key)
+                    is_fallback = cached is not None
                 if cached:
                     cached_models.append((model_key, cached))
+                    if is_fallback:
+                        fallback_hits += 1
+                    else:
+                        exact_hits += 1
                 else:
                     new_models.append(model_key)
 
@@ -2855,10 +2995,14 @@ class LMStudioBenchmark:
                     )
                     logger.info(
                         f"  • {model_key}: {cached.avg_tokens_per_sec:.2f} "
-                        f"tok/s (zuletzt: {date_part})"
+                        f"tok/s (last tested: {date_part})"
                     )
                 if len(cached_models) > 10:
                     logger.info("  ... and %s more", len(cached_models) - 10)
+                logger.debug(
+                    "🔍 Cache hits breakdown: %d exact + %d fallback = %d total",
+                    exact_hits, fallback_hits, len(cached_models)
+                )
                 logger.info("")
 
                 for model_key, cached in cached_models:
@@ -2870,9 +3014,11 @@ class LMStudioBenchmark:
                 )
                 models = new_models
             else:
-                logger.info("✅ All models already cached - no new tests necessary")
-                logger.info("📝 Reports will be skipped (no new data)")
-                return
+                logger.info("")
+                logger.info("💚 All models already cached - using cached results")
+                logger.info("📝 No new tests necessary (no new models to test)")
+                logger.info("")
+                return "no_new_models"
         else:
             if self.model_limit and self.model_limit < len(models):
                 logger.info("⚙️ Model limit set: Testing only first %s of %s models", 
@@ -2881,7 +3027,7 @@ class LMStudioBenchmark:
                 models = models[: self.model_limit]
             logger.info("🚀 Starting benchmark for %s models...", len(models))
 
-        for model_key in tqdm(models, desc="Benchmarking Modelle"):
+        for model_key in tqdm(models, desc="Benchmarking models"):
             result = self.benchmark_model(model_key)
             if result:
                 self.results.append(result)
@@ -2906,6 +3052,7 @@ class LMStudioBenchmark:
         logger.info("✅ Benchmark completed. %s/%s models successfully tested", 
                 len(newly_tested_models), 
                 len(models))
+        return "completed"
 
     def _analyze_best_quantizations(self) -> Dict[str, Dict]:
         """Analyzes best quantization per model based on different criteria"""
@@ -3109,7 +3256,7 @@ class LMStudioBenchmark:
         )
         recommendations.append(f"   → Size: {best_efficiency.model_size_gb:.2f} GB")
         recommendations.append("")
-        recommendations.append(f"🚀 Schnellste Reaktionszeit (TTFT):")
+        recommendations.append(f"🚀 Fastest response time (TTFT):")
         recommendations.append(
             f"   → {best_ttft.model_name} ({best_ttft.quantization})"
         )
@@ -3848,7 +3995,7 @@ class LMStudioBenchmark:
             if vision_models:
                 elements.append(PageBreak())
                 elements.append(
-                    Paragraph("👁️  Vision-Modelle (Multimodal)", title_style)
+                    Paragraph("👁️  Vision Models (Multimodal)", title_style)
                 )
                 elements.append(Spacer(1, 12))
                 elements.append(
@@ -3936,7 +4083,7 @@ class LMStudioBenchmark:
             tool_models = [r for r in results if r.has_tools]
             if tool_models:
                 elements.append(PageBreak())
-                elements.append(Paragraph("🔧 Tool-Calling Modelle", title_style))
+                elements.append(Paragraph("🔧 Tool-Calling Models", title_style))
                 elements.append(Spacer(1, 12))
                 elements.append(
                     Paragraph(
@@ -4009,7 +4156,7 @@ class LMStudioBenchmark:
                 )
                 elements.append(tool_table)
                 elements.append(Spacer(1, 15))
-                elements.append(Paragraph("Top 3 Tool-Calling Modelle", heading_style))
+                elements.append(Paragraph("Top 3 Tool-Calling Models", heading_style))
                 top3_text = []
                 for i, r in enumerate(tool_sorted[:3], 1):
                     top3_text.append(f"{i}. <b>{r.model_name}</b> ({r.quantization})")
@@ -4043,7 +4190,7 @@ class LMStudioBenchmark:
 
                     elements.append(
                         Paragraph(
-                            f"<b>{arch_name.upper()}</b> ({len(arch_models)} Modelle)",
+                            f"<b>{arch_name.upper()}</b> ({len(arch_models)} models)",
                             heading_style,
                         )
                     )
@@ -4298,7 +4445,7 @@ class LMStudioBenchmark:
                 ]
             )
             fig_bar.update_layout(
-                title="Top 10 schnellste Modelle",
+                title="Top 10 fastest models",
                 xaxis_title="Model + Quantization",
                 yaxis_title="Tokens/s",
                 hovermode="x unified",
@@ -4373,7 +4520,7 @@ class LMStudioBenchmark:
             )
 
             summary_stats = {
-                "Anzahl Modelle": len(results),
+                "Number of models": len(results),
                 "Measurements per Model": self.num_measurement_runs,
                 "Standard Prompt": (
                     self.prompt[:50] + "..." if len(self.prompt) > 50 else self.prompt
@@ -4540,7 +4687,7 @@ class LMStudioBenchmark:
                 {vision_rows}
             </tbody>
         </table>
-        <h3>Top 3 Vision-Modelle:</h3>
+        <h3>Top 3 Vision Models:</h3>
         <ul>"""
                 for i, r in enumerate(vision_sorted[:3], 1):
                     vision_section += f"""
@@ -4587,7 +4734,7 @@ class LMStudioBenchmark:
                 {tool_rows}
             </tbody>
         </table>
-        <h3>Top 3 Tool-Calling Modelle:</h3>
+        <h3>Top 3 Tool-Calling Models:</h3>
         <ul>"""
                 for i, r in enumerate(tool_sorted[:3], 1):
                     tools_section += f"""
@@ -4617,7 +4764,7 @@ class LMStudioBenchmark:
                         arch_models, key=lambda x: x.avg_tokens_per_sec, reverse=True
                     )
                     arch_rows = ""
-                    for r in arch_sorted[:5]:  # Top 5 per architecture
+                    for r in arch_sorted[:5]:
                         arch_rows += f"""
                         <tr>
                             <td>{r.model_name}</td>
@@ -4628,7 +4775,7 @@ class LMStudioBenchmark:
                         </tr>"""
 
                     arch_section += f"""
-        <h3>{arch_name.upper()} ({len(arch_models)} Modelle)</h3>
+        <h3>{arch_name.upper()} ({len(arch_models)} models)</h3>
         <table class="category-table">
             <thead class="arch">
                 <tr>
@@ -4805,8 +4952,6 @@ def main():
                 normalized.append(arg)
         return normalized
 
-    import psutil
-
     current_process = psutil.Process()
     parent_process = current_process.parent()
 
@@ -4830,7 +4975,7 @@ def main():
         )
         file_handler.addFilter(NoJSONFilter())
         logging.root.addHandler(file_handler)
-        logger.info("📝 Benchmark-Log: %s", log_filename)
+        logger.info("📝 Benchmark-Log: %s", format_path_for_logs(log_filename))
     else:
         logger.info("📝 Benchmark running as WebApp subprocess - Logging via WebApp")
 
@@ -5355,17 +5500,17 @@ Examples:
     logger.info("📏 Context Length: %s Tokens", args.context)
     logger.info("🔢 Measurements per Model: %s (+ %s Warmup)", args.runs, NUM_WARMUP_RUNS)
     if args.limit:
-        logger.info("📌 Model Limit: Testet max. %s Modelle", args.limit)
-
+            logger.info("📌 Model Limit: Testing max. %s models", args.limit)
     active_filters = [k for k, v in filter_args.items() if v]
     if active_filters:
-        logger.info("🔎 Aktive Filter: %s", ', '.join(active_filters))
+        logger.info("🔎 Active filters: %s", ', '.join(active_filters))
 
     if args.compare_with:
         logger.info("📈 Historical comparison: %s", args.compare_with)
 
     logger.info(
-        f"⏱️ Estimated total time: ~{int(args.runs * 45 * (args.limit or 9) / 9)} minutes"
+        "⏱️ Estimated total time (worst-case, uncached): ~%s minutes",
+        int(args.runs * 45 * (args.limit or 9) / 9),
     )
     logger.info("")
 
@@ -5413,9 +5558,14 @@ Examples:
         load_params=load_params,
         use_rest_api=args.use_rest_api,
     )
-    benchmark.run_all_benchmarks()
+    run_status = benchmark.run_all_benchmarks()
 
-    logger.info("🎉 Benchmark abgeschlossen!")
+    if run_status == "no_new_models":
+        logger.info("ℹ️ Benchmark finished with cache only (0 new models tested)")
+    elif run_status == "failed":
+        logger.error("❌ Benchmark failed before test execution")
+
+    logger.info("🎉 Benchmark completed!")
 
 
 if __name__ == "__main__":
