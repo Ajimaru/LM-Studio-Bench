@@ -3226,10 +3226,10 @@ async def run_experiment(request: Request) -> dict:
                 elements.append(Paragraph(f"<b>{experiment_name}</b>", styles["Title"]))
                 elements.append(Paragraph(f"Model: {model_name}", styles["Heading2"]))
                 elements.append(Spacer(1, 12))
+                timestamp_str = results_data["experiment_info"]["timestamp"]
                 elements.append(
                     Paragraph(
-                        f"Timestamp: {
-                            results_data['experiment_info']['timestamp']}",
+                        f"Timestamp: {timestamp_str}",
                         styles["Normal"],
                     )
                 )
