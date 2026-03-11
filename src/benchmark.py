@@ -1791,10 +1791,11 @@ class LMStudioBenchmark:
         try:
             import sys
 
-            return f"{
-                sys.version_info.major}.{
-                sys.version_info.minor}.{
-                sys.version_info.micro}"
+            return (
+                f"{sys.version_info.major}."
+                f"{sys.version_info.minor}."
+                f"{sys.version_info.micro}"
+            )
         except Exception:
             logger.debug("Python version not available")
         return None
