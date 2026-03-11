@@ -2592,13 +2592,14 @@ class LMStudioBenchmark:
                 max_tokens=self.inference_params["max_tokens"],
             )
 
-            logger.info(f"⚙️ Inference Config: temp={
-                    prediction_config.temperature}, " f"top_k={
-                    prediction_config.top_k_sampling}, top_p={
-                    prediction_config.top_p_sampling}, " f"min_p={
-                    prediction_config.min_p_sampling}, repeat_penalty={
-                        prediction_config.repeat_penalty}, " f"max_tokens={
-                            prediction_config.max_tokens}")
+            logger.info(
+                f"⚙️ Inference Config: temp={prediction_config.temperature}, "
+                f"top_k={prediction_config.top_k_sampling}, "
+                f"top_p={prediction_config.top_p_sampling}, "
+                f"min_p={prediction_config.min_p_sampling}, "
+                f"repeat_penalty={prediction_config.repeat_penalty}, "
+                f"max_tokens={prediction_config.max_tokens}"
+            )
 
             start_time = time.time()
             result = model.respond(self.prompt, config=prediction_config)
@@ -3508,10 +3509,12 @@ class LMStudioBenchmark:
                 "ttft": "Time to First Token (ms)",
                 "vram": "VRAM Usage (MB)",
             }
-            elements.append(Paragraph(f"<font size=9>Sorted by: <b>{
-                        rank_labels.get(
-                            self.rank_by,
-                            'Speed')}</b></font>", styles["Normal"]))
+            elements.append(
+                Paragraph(
+                    f"<font size=9>Sorted by: <b>{rank_labels.get(self.rank_by, 'Speed')}</b></font>",
+                    styles["Normal"],
+                )
+            )
             elements.append(Spacer(1, 10))
 
             table_data = [
@@ -3535,8 +3538,7 @@ class LMStudioBenchmark:
                 vision_icon = "👁" if result.has_vision else ""
                 tools_icon = "🔧" if result.has_tools else ""
                 delta_str = (
-                    f"{
-                    result.speed_delta_pct:+.1f}%"
+                    f"{result.speed_delta_pct:+.1f}%"
                     if result.speed_delta_pct is not None
                     else "-"
                 )
@@ -4174,18 +4176,36 @@ class LMStudioBenchmark:
                     results, key=lambda x: x.temp_celsius_avg or 0, reverse=True
                 ):
                     if r.temp_celsius_avg or r.power_watts_avg:
-                        temp_min = f"{
-                            r.temp_celsius_min:.1f}" if r.temp_celsius_min else "-"
-                        temp_max = f"{
-                            r.temp_celsius_max:.1f}" if r.temp_celsius_max else "-"
-                        temp_avg = f"{
-                            r.temp_celsius_avg:.1f}" if r.temp_celsius_avg else "-"
-                        power_min = f"{
-                            r.power_watts_min:.1f}" if r.power_watts_min else "-"
-                        power_max = f"{
-                            r.power_watts_max:.1f}" if r.power_watts_max else "-"
-                        power_avg = f"{
-                            r.power_watts_avg:.1f}" if r.power_watts_avg else "-"
+                        temp_min = (
+                            f"{r.temp_celsius_min:.1f}"
+                            if r.temp_celsius_min
+                            else "-"
+                        )
+                        temp_max = (
+                            f"{r.temp_celsius_max:.1f}"
+                            if r.temp_celsius_max
+                            else "-"
+                        )
+                        temp_avg = (
+                            f"{r.temp_celsius_avg:.1f}"
+                            if r.temp_celsius_avg
+                            else "-"
+                        )
+                        power_min = (
+                            f"{r.power_watts_min:.1f}"
+                            if r.power_watts_min
+                            else "-"
+                        )
+                        power_max = (
+                            f"{r.power_watts_max:.1f}"
+                            if r.power_watts_max
+                            else "-"
+                        )
+                        power_avg = (
+                            f"{r.power_watts_avg:.1f}"
+                            if r.power_watts_avg
+                            else "-"
+                        )
 
                         profile_data.append(
                             [
@@ -4636,18 +4656,36 @@ class LMStudioBenchmark:
                     results, key=lambda x: x.temp_celsius_avg or 0, reverse=True
                 ):
                     if r.temp_celsius_avg or r.power_watts_avg:
-                        temp_min = f"{
-                            r.temp_celsius_min:.1f}°C" if r.temp_celsius_min else "-"
-                        temp_max = f"{
-                            r.temp_celsius_max:.1f}°C" if r.temp_celsius_max else "-"
-                        temp_avg = f"{
-                            r.temp_celsius_avg:.1f}°C" if r.temp_celsius_avg else "-"
-                        power_min = f"{
-                            r.power_watts_min:.1f}W" if r.power_watts_min else "-"
-                        power_max = f"{
-                            r.power_watts_max:.1f}W" if r.power_watts_max else "-"
-                        power_avg = f"{
-                            r.power_watts_avg:.1f}W" if r.power_watts_avg else "-"
+                        temp_min = (
+                            f"{r.temp_celsius_min:.1f}°C"
+                            if r.temp_celsius_min
+                            else "-"
+                        )
+                        temp_max = (
+                            f"{r.temp_celsius_max:.1f}°C"
+                            if r.temp_celsius_max
+                            else "-"
+                        )
+                        temp_avg = (
+                            f"{r.temp_celsius_avg:.1f}°C"
+                            if r.temp_celsius_avg
+                            else "-"
+                        )
+                        power_min = (
+                            f"{r.power_watts_min:.1f}W"
+                            if r.power_watts_min
+                            else "-"
+                        )
+                        power_max = (
+                            f"{r.power_watts_max:.1f}W"
+                            if r.power_watts_max
+                            else "-"
+                        )
+                        power_avg = (
+                            f"{r.power_watts_avg:.1f}W"
+                            if r.power_watts_avg
+                            else "-"
+                        )
 
                         profile_rows += f"""
                 <tr>
