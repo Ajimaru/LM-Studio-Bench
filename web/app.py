@@ -2986,9 +2986,11 @@ async def run_experiment(request: Request) -> dict:
         if not baseline_speeds or not test_speeds:
             return {
                 "success": False,
-                "error": f"Insufficient data after execution: Baseline={
-                    len(baseline_speeds)}, Test={
-                    len(test_speeds)}",
+                "error": (
+                    "Insufficient data after execution: "
+                    f"Baseline={len(baseline_speeds)}, "
+                    f"Test={len(test_speeds)}"
+                ),
                 "baseline": {"count": len(baseline_speeds)},
                 "test": {"count": len(test_speeds)},
             }
