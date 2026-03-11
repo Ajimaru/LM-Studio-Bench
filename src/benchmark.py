@@ -2040,10 +2040,11 @@ class LMStudioBenchmark:
                 optimal_offload = safe_vram / estimated_vram
                 optimal_offload = max(0.3, min(1.0, optimal_offload))
 
-            logger.info(f"📊 VRAM prediction: {
-                    available_vram:.1f}GB available, " f"{
-                    estimated_vram:.1f}GB estimated → Offload {
-                    optimal_offload:.2f}")
+            logger.info(
+                f"📊 VRAM prediction: {available_vram:.1f}GB available, "
+                f"{estimated_vram:.1f}GB estimated -> Offload "
+                f"{optimal_offload:.2f}"
+            )
 
             return round(optimal_offload, 1)
 
