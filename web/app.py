@@ -6,9 +6,6 @@ Controls benchmark.py via subprocess and provides live monitoring via
 WebSocket.
 """
 
-from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
-from preset_manager import PresetManager
-from config_loader import DEFAULT_CONFIG
 import argparse
 import asyncio
 from contextlib import asynccontextmanager
@@ -43,6 +40,10 @@ from fastapi.staticfiles import StaticFiles
 import httpx
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
+
+from config_loader import DEFAULT_CONFIG
+from preset_manager import PresetManager
+from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
 
 try:
     from scipy import stats as scipy_stats
@@ -3089,10 +3090,12 @@ async def run_experiment(request: Request) -> dict:
                 f.write(f"Experiment Name: {experiment_name}\n")
                 f.write("Metric,Baseline,Test,Delta\n")
                 f.write(f"Model,{model_name},{model_name},-\n")
-                f.write(f"Mean Speed (tok/s),{
-                        baseline_stats['mean']},{
-                        test_stats['mean']},{
-                        results_data['comparison']['delta_pct']}%\n")
+                f.write(
+                    "Mean Speed (tok/s),"
+                    f"{baseline_stats['mean']},"
+                    f"{test_stats['mean']},"
+                    f"{results_data['comparison']['delta_pct']}%\n"
+                )
                 f.write(
                     f"Min Speed (tok/s),{baseline_stats['min']},{test_stats['min']},-\n"
                 )
@@ -3103,11 +3106,11 @@ async def run_experiment(request: Request) -> dict:
                     f"Std Dev,{baseline_stats['std_dev']},{test_stats['std_dev']},-\n"
                 )
                 f.write(f"Count,{baseline_stats['count']},{test_stats['count']},-\n")
-                f.write(f"Temperature,{
-                        baseline_params.get(
-                            'temperature', 'N/A')},{
-                        test_params.get(
-                            'temperature', 'N/A')},-\n")
+                f.write(
+                    "Temperature,"
+                    f"{baseline_params.get('temperature', 'N/A')},"
+                    f"{test_params.get('temperature', 'N/A')},-\n"
+                )
                 f.write(
                     f"Top-K,{baseline_params.get('top_k', 'N/A')},{test_params.get('top_k', 'N/A')},-\n"
                 )
