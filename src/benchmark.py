@@ -1843,11 +1843,10 @@ class LMStudioBenchmark:
         self.rest_client: Optional[LMStudioRESTClient] = None
 
         if self.use_rest_api:
-            base_url = f"http://{
-                lmstudio_config.get(
-                    'host', 'localhost')}:{
-                lmstudio_config.get(
-                    'ports', [1234])[0]}"
+            host = lmstudio_config.get("host", "localhost")
+            ports = lmstudio_config.get("ports", [1234])
+            port = ports[0] if ports else 1234
+            base_url = f"http://{host}:{port}"
             api_token = lmstudio_config.get("api_token")
             self.rest_client = LMStudioRESTClient(
                 base_url=base_url, api_token=api_token
