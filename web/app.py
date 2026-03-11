@@ -1257,8 +1257,6 @@ async def get_cache_stats() -> dict:
     except Exception as e:
         logger.error("❌ Error fetching cache statistics: %s", e)
         return {"success": False, "error": str(e)}
-        logger.error("❌ Error loading cache stats: %s", e)
-        return {"success": False, "error": str(e)}
 
 
 @app.delete("/api/cache/{model_key}")
