@@ -289,7 +289,8 @@ class HardwareMonitor:
             return
 
         logger.info(
-            f"🔥 Starting Hardware-Monitoring (GPU: {self.gpu_type}, Tool: {self.gpu_tool})"
+            f"🔥 Starting Hardware-Monitoring "
+            f"(GPU: {self.gpu_type}, Tool: {self.gpu_tool})"
         )
         self.monitoring = True
         self.temps.clear()
@@ -577,7 +578,7 @@ class HardwareMonitor:
             return None
 
     def _get_ram_usage(self) -> Optional[float]:
-        """Reads system RAM usage in GB with smoothing (moving average over 7 measurements)"""
+        """Reads system RAM usage in GB with smoothing (7 measurements)"""
         try:
             mem = psutil.virtual_memory()
             current_ram = mem.used / (1024**3)
@@ -1357,7 +1358,9 @@ class GPUMonitor:
             self.gpu_type = "Intel"
             self.gpu_tool = intel_tool
             self.gpu_model = self._detect_intel_gpu_model()
-            logger.info("🔵 Intel GPU detected: %s, Tool: %s", self.gpu_model, intel_tool)
+            logger.info(
+                "🔵 Intel GPU detected: %s, Tool: %s", self.gpu_model, intel_tool
+            )
             return
 
         logger.warning(
@@ -2299,7 +2302,8 @@ class LMStudioBenchmark:
                 self.previous_results = [BenchmarkResult(**item) for item in data]
 
             logger.info(
-                f"✓ {len(self.previous_results)} previous results loaded from {json_file.name}"
+                f"✓ {len(self.previous_results)} previous results "
+                f"loaded from {json_file.name}"
             )
         except Exception as e:
             logger.error("❌ Error loading previous results: %s", e)
@@ -3000,9 +3004,11 @@ class LMStudioBenchmark:
                     new_models.append(model_key)
 
             if self.model_limit and self.model_limit < len(new_models):
-                logger.info("⚙️ Model limit set: Testing max. %s new models (+ %s cached)",
-                        self.model_limit,
-                        len(cached_models))
+                logger.info(
+                    "⚙️ Model limit set: Testing max. %s new models (+ %s cached)",
+                    self.model_limit,
+                    len(cached_models),
+                )
                 new_models = new_models[: self.model_limit]
             elif self.model_limit:
                 logger.info("⚙️ Model limit: %s new models + %s cached = %s total",
@@ -3251,7 +3257,7 @@ class LMStudioBenchmark:
         return comparison
 
     def _generate_best_practices(self) -> List[str]:
-        """Generates best-practice recommendations based on hardware and benchmark results"""
+        """Generates best-practice recommendations based on results"""
         recommendations = []
 
         if not self.results:
@@ -3300,7 +3306,8 @@ class LMStudioBenchmark:
             f"   → {best_balance.model_name} ({best_balance.quantization})"
         )
         recommendations.append(
-            f"   → {best_balance.avg_tokens_per_sec:.2f} tokens/s, {best_balance.model_size_gb:.2f} GB"
+            f"   → {best_balance.avg_tokens_per_sec:.2f} tokens/s, "
+            f"{best_balance.model_size_gb:.2f} GB"
         )
         recommendations.append("")
         recommendations.append("📊 Quantisierungs-Tipps:")
@@ -3535,15 +3542,25 @@ class LMStudioBenchmark:
                 ["Measurements per model", str(self.num_measurement_runs)],
                 [
                     "Standard Prompt",
-                    self.prompt[:50] + "..." if len(self.prompt) > 50 else self.prompt,
+                    (
+                        self.prompt[:50] + "..."
+                        if len(self.prompt) > 50
+                        else self.prompt
+                    ),
                 ],
                 [
                     "Vision Models",
-                    f"{vision_count} ({vision_count * 100 // len(results) if self.results else 0}%)",
+                    (
+                        f"{vision_count} "
+                        f"({vision_count * 100 // len(results) if self.results else 0}%)"
+                    ),
                 ],
                 [
                     "Tool-capable Models",
-                    f"{tools_count} ({tools_count * 100 // len(results) if self.results else 0}%)",
+                    (
+                        f"{tools_count} "
+                        f"({tools_count * 100 // len(results) if self.results else 0}%)"
+                    ),
                 ],
                 ["Ø Model Size", f"{avg_size_gb:.2f} GB"],
                 ["Ø Speed", f"{avg_tokens_per_sec:.2f} tokens/s"],
@@ -3580,7 +3597,10 @@ class LMStudioBenchmark:
                 ["Context Length", f"{self.context_length} Tokens"],
                 ["Temperature", str(OPTIMIZED_INFERENCE_PARAMS["temperature"])],
                 ["Top-K Sampling", str(OPTIMIZED_INFERENCE_PARAMS["top_k_sampling"])],
-                ["Top-P Sampling", str(OPTIMIZED_INFERENCE_PARAMS["top_p_sampling"])],
+                [
+                    "Top-P Sampling",
+                    str(OPTIMIZED_INFERENCE_PARAMS["top_p_sampling"]),
+                ],
                 ["Min-P Sampling", str(OPTIMIZED_INFERENCE_PARAMS["min_p_sampling"])],
                 ["Repeat Penalty", str(OPTIMIZED_INFERENCE_PARAMS["repeat_penalty"])],
                 ["Max Tokens", str(OPTIMIZED_INFERENCE_PARAMS["max_tokens"])],
@@ -3676,7 +3696,9 @@ class LMStudioBenchmark:
                     except BaseException:
                         return 999999
 
-                sorted_results = sorted(results, key=get_vram_mb, reverse=False)
+                sorted_results = sorted(
+                    results, key=get_vram_mb, reverse=False
+                )
             else:
                 sorted_results = sorted(
                     results, key=lambda x: x.avg_tokens_per_sec, reverse=True
