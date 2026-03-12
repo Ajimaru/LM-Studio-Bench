@@ -3552,7 +3552,8 @@ class LMStudioBenchmark:
                     "Vision Models",
                     (
                         f"{vision_count} "
-                        f"({vision_count * 100 // len(results) if self.results else 0}%)"
+                        f"({vision_count * 100 // len(results) "
+                        f"if self.results else 0}%)"
                     ),
                 ],
                 [
@@ -3614,7 +3615,10 @@ class LMStudioBenchmark:
                 params_data.append(
                     [
                         "GTT (Shared System RAM)",
-                        f"{gtt_status} ({gtt_total:.1f}GB total, {gtt_used:.1f}GB used)",
+                        (
+                            f"{gtt_status} "
+                            f"({gtt_total:.1f}GB total, {gtt_used:.1f}GB used)"
+                        ),
                     ]
                 )
 
@@ -3712,7 +3716,8 @@ class LMStudioBenchmark:
             }
             elements.append(
                 Paragraph(
-                    f"<font size=9>Sorted by: <b>{rank_labels.get(self.rank_by, 'Speed')}</b></font>",
+                    f"<font size=9>Sorted by: <b>"
+                    f"{rank_labels.get(self.rank_by, 'Speed')}</b></font>",
                     styles["Normal"],
                 )
             )
@@ -3989,11 +3994,17 @@ class LMStudioBenchmark:
                 ["Statistic", "Value"],
                 [
                     "Fastest Model",
-                    f"{max_tps_result.model_name} ({max_tps_result.avg_tokens_per_sec:.2f} tokens/s)",
+                    (
+                        f"{max_tps_result.model_name} "
+                        f"({max_tps_result.avg_tokens_per_sec:.2f} tokens/s)"
+                    ),
                 ],
                 [
                     "Slowest Model",
-                    f"{min_tps_result.model_name} ({min_tps_result.avg_tokens_per_sec:.2f} tokens/s)",
+                    (
+                        f"{min_tps_result.model_name} "
+                        f"({min_tps_result.avg_tokens_per_sec:.2f} tokens/s)"
+                    ),
                 ],
                 ["Average Tokens/s", f"{avg_tps:.2f}"],
             ]
@@ -4122,7 +4133,9 @@ class LMStudioBenchmark:
                 )
                 elements.append(vision_table)
                 elements.append(Spacer(1, 15))
-                elements.append(Paragraph("Top 3 Vision Models", heading_style))
+                elements.append(
+                    Paragraph("Top 3 Vision Models", heading_style)
+                )
                 top3_text = []
                 for i, r in enumerate(vision_sorted[:3], 1):
                     top3_text.append(f"{i}. <b>{r.model_name}</b> ({r.quantization})")
@@ -4202,7 +4215,10 @@ class LMStudioBenchmark:
                                 "ROWBACKGROUNDS",
                                 (0, 1),
                                 (-1, -1),
-                                [colors.white, colors.HexColor("#fff4e8")],
+                                [
+                                    colors.white,
+                                    colors.HexColor("#fff4e8"),
+                                ],
                             ),
                         ]
                     )
@@ -4455,7 +4471,10 @@ class LMStudioBenchmark:
                                     "ROWBACKGROUNDS",
                                     (0, 1),
                                     (-1, -1),
-                                    [colors.white, colors.HexColor("#ffe5e5")],
+                                    [
+                                        colors.white,
+                                        colors.HexColor("#ffe5e5"),
+                                    ],
                                 ),
                             ]
                         )
