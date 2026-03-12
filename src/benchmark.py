@@ -711,7 +711,7 @@ class BenchmarkCache:
                 query = (
                     f"SELECT {col_name} FROM benchmark_results LIMIT 1"
                 )
-                cursor.execute(query)
+                cursor.execute(query)  # nosec B608
             except sqlite3.OperationalError:
                 logger.info("📦 Migration: Adding %s column...", col_name)
                 # Safe: both col_name and col_type are validated
@@ -719,7 +719,7 @@ class BenchmarkCache:
                     f"ALTER TABLE benchmark_results "
                     f"ADD COLUMN {col_name} {col_type}"
                 )
-                cursor.execute(alter_query)
+                cursor.execute(alter_query)  # nosec B608
                 conn.commit()
 
         conn.commit()
@@ -1103,7 +1103,7 @@ class BenchmarkCache:
                 FROM benchmark_results
                 ORDER BY timestamp DESC
             """
-            cursor.execute(select_query)
+            cursor.execute(select_query)  # nosec B608
 
             results = []
             for row in cursor.fetchall():
