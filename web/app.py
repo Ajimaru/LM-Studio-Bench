@@ -231,7 +231,10 @@ except ImportError as e:
 CONFIG_DEFAULTS = DEFAULT_CONFIG
 LMSTUDIO_HOST = CONFIG_DEFAULTS.get("lmstudio", {}).get("host", "localhost")
 LMSTUDIO_PORTS = CONFIG_DEFAULTS.get("lmstudio", {}).get("ports", [1234, 1235])
-template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR))
+template_env = Environment(
+    loader=FileSystemLoader(TEMPLATES_DIR),
+    autoescape=True
+)
 DEBUG_MODE = False
 
 LATEST_RELEASE_CACHE: Dict[str, Any] = {

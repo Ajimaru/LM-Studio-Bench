@@ -696,14 +696,30 @@ class BenchmarkCache:
             ("use_mlock", "INTEGER"),
             ("kv_cache_quant", "TEXT"),
         ]
+        # Whitelist validation: ensure column names are alphanumeric
         for col_name, col_type in new_columns:
+            if not col_name.replace("_", "").isalnum():
+                raise ValueError(
+                    f"Invalid column name: {col_name}"
+                )
+            if not col_type.replace(" ", "").isalpha():
+                raise ValueError(
+                    f"Invalid column type: {col_type}"
+                )
             try:
-                cursor.execute(f"SELECT {col_name} FROM benchmark_results LIMIT 1")
+                # Safe: col_name is validated against alphanumeric
+                query = (
+                    f"SELECT {col_name} FROM benchmark_results LIMIT 1"
+                )
+                cursor.execute(query)  # nosec B608
             except sqlite3.OperationalError:
                 logger.info("📦 Migration: Adding %s column...", col_name)
-                cursor.execute(
-                    f"ALTER TABLE benchmark_results ADD COLUMN {col_name} {col_type}"
+                # Safe: both col_name and col_type are validated
+                alter_query = (
+                    f"ALTER TABLE benchmark_results "
+                    f"ADD COLUMN {col_name} {col_type}"
                 )
+                cursor.execute(alter_query)  # nosec B608
                 conn.commit()
 
         conn.commit()
@@ -1008,9 +1024,12 @@ class BenchmarkCache:
 
             base_cols = (
                 "model_name, quantization, gpu_type, gpu_offload, vram_mb, "
-                "avg_tokens_per_sec, avg_ttft, avg_gen_time, prompt_tokens, completion_tokens, "
-                "timestamp, params_size, architecture, max_context_length, model_size_gb, "
-                "has_vision, has_tools, tokens_per_sec_per_gb, tokens_per_sec_per_billion_params"
+                "avg_tokens_per_sec, avg_ttft, avg_gen_time, prompt_tokens, "
+                "completion_tokens, "
+                "timestamp, params_size, architecture, max_context_length, "
+                "model_size_gb, "
+                "has_vision, has_tools, tokens_per_sec_per_gb, "
+                "tokens_per_sec_per_billion_params"
             )
 
             optional_cols = []
@@ -1023,7 +1042,9 @@ class BenchmarkCache:
                     ["power_watts_min", "power_watts_max", "power_watts_avg"]
                 )
             if "gtt_enabled" in columns:
-                optional_cols.extend(["gtt_enabled", "gtt_total_gb", "gtt_used_gb"])
+                optional_cols.extend(
+                    ["gtt_enabled", "gtt_total_gb", "gtt_used_gb"]
+                )
             if "speed_delta_pct" in columns:
                 optional_cols.extend(["speed_delta_pct", "prev_timestamp"])
             if "temperature" in columns:
@@ -1038,7 +1059,9 @@ class BenchmarkCache:
                     ]
                 )
             if "num_runs" in columns:
-                optional_cols.extend(["num_runs", "runs_averaged_from", "warmup_runs"])
+                optional_cols.extend(
+                    ["num_runs", "runs_averaged_from", "warmup_runs"]
+                )
             if "lmstudio_version" in columns:
                 optional_cols.extend(
                     [
@@ -1064,15 +1087,23 @@ class BenchmarkCache:
             if "inference_params_hash" in columns:
                 optional_cols.append("inference_params_hash")
 
-            select_cols = base_cols + (
+            # Validate all column names are alphanumeric (SQL injection)
+            all_cols_str = base_cols + (
                 ", " + ", ".join(optional_cols) if optional_cols else ""
             )
+            for col in all_cols_str.replace(",", "").split():
+                if not col.replace("_", "").isalnum():
+                    raise ValueError(
+                        f"Invalid column name detected: {col}"
+                    )
 
-            cursor.execute(f"""
-                SELECT {select_cols}
+            # Safe: all column names have been validated
+            select_query = f"""
+                SELECT {all_cols_str}
                 FROM benchmark_results
                 ORDER BY timestamp DESC
-            """)
+            """
+            cursor.execute(select_query)  # nosec B608
 
             results = []
             for row in cursor.fetchall():
