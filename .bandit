@@ -1,0 +1,3 @@
+[bandit]
+# Exclude tests directory from security scanning
+exclude_dirs = /tests,tests
