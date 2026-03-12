@@ -3536,6 +3536,10 @@ class LMStudioBenchmark:
                 else 0
             )
 
+            # Calculate percentages for vision and tool models
+            vision_pct = vision_count * 100 // len(results) if self.results else 0
+            tools_pct = tools_count * 100 // len(results) if self.results else 0
+
             summary_data = [
                 ["Metric", "Value"],
                 ["Models tested", str(len(results))],
@@ -3550,18 +3554,11 @@ class LMStudioBenchmark:
                 ],
                 [
                     "Vision Models",
-                    (
-                        f"{vision_count} "
-                        f"({vision_count * 100 // len(results) "
-                        f"if self.results else 0}%)"
-                    ),
+                    f"{vision_count} ({vision_pct}%)",
                 ],
                 [
                     "Tool-capable Models",
-                    (
-                        f"{tools_count} "
-                        f"({tools_count * 100 // len(results) if self.results else 0}%)"
-                    ),
+                    f"{tools_count} ({tools_pct}%)",
                 ],
                 ["Ø Model Size", f"{avg_size_gb:.2f} GB"],
                 ["Ø Speed", f"{avg_tokens_per_sec:.2f} tokens/s"],
