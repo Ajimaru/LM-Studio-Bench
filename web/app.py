@@ -231,10 +231,7 @@ except ImportError as e:
 CONFIG_DEFAULTS = DEFAULT_CONFIG
 LMSTUDIO_HOST = CONFIG_DEFAULTS.get("lmstudio", {}).get("host", "localhost")
 LMSTUDIO_PORTS = CONFIG_DEFAULTS.get("lmstudio", {}).get("ports", [1234, 1235])
-template_env = Environment(
-    loader=FileSystemLoader(TEMPLATES_DIR),
-    autoescape=True
-)
+template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
 DEBUG_MODE = False
 
 LATEST_RELEASE_CACHE: Dict[str, Any] = {
@@ -2415,14 +2412,16 @@ async def get_experiment_comparison(
             )
 
         logger.info("🧪 Experiment %s: %s", experiment_id, winner.upper())
-        logger.info("   Baseline: %s ± %s tok/s",
-                baseline_stats['mean'],
-                baseline_stats['std_dev'])
-        logger.info("   Test: %s ± %s tok/s", test_stats['mean'], test_stats['std_dev'])
+        logger.info(
+            "   Baseline: %s ± %s tok/s",
+            baseline_stats["mean"],
+            baseline_stats["std_dev"],
+        )
+        logger.info("   Test: %s ± %s tok/s", test_stats["mean"], test_stats["std_dev"])
         delta_str = (
             f"{delta_pct:.1f}%" if isinstance(delta_pct, (int, float)) else "n/a"
         )
-        logger.info("   Delta: %s | p-value: %s", delta_str, test_result.get('p_value'))
+        logger.info("   Delta: %s | p-value: %s", delta_str, test_result.get("p_value"))
 
         return {
             "success": True,
@@ -2698,11 +2697,8 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
             writer.writerow(["Delta %", comparison.get("delta_pct", "-")])
 
             csv_content = output.getvalue()
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            export_file = (
-                RESULTS_DIR
-                / f"experiment_{experiment_id}_{timestamp}.csv"
-            )
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            export_file = RESULTS_DIR / f"experiment_{experiment_id}_{timestamp}.csv"
 
             with open(export_file, "w", encoding="utf-8") as f:
                 f.write(csv_content)
@@ -2791,11 +2787,8 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
                 return bytes(pdf_bytes)
 
             pdf_bytes = generate_simple_pdf(lines)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            export_file = (
-                RESULTS_DIR
-                / f"experiment_{experiment_id}_{timestamp}.pdf"
-            )
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            export_file = RESULTS_DIR / f"experiment_{experiment_id}_{timestamp}.pdf"
 
             with open(export_file, "wb") as f:
                 f.write(pdf_bytes)
