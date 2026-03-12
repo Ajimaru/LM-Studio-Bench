@@ -1,12 +1,11 @@
 """Tests for src/rest_client.py."""
-from typing import Any, Dict, List
+from typing import Dict, List
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from rest_client import (
-    ChatStats,
     LMStudioRESTClient,
     LoadedInstance,
     ModelCapabilities,

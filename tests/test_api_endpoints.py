@@ -1,9 +1,7 @@
 """Comprehensive FastAPI endpoint tests for web/app.py."""
-import asyncio
-import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,10 +17,10 @@ if "lmstudio" not in sys.modules:
 def _get_client():
     """Return a TestClient for the FastAPI app."""
     if "app" in sys.modules:
-        app_mod = sys.modules["app"]
+        _app_mod = sys.modules["app"]
     else:
-        import app as app_mod
-    return TestClient(app_mod.app, raise_server_exceptions=False)
+        import app as _app_mod
+    return TestClient(_app_mod.app, raise_server_exceptions=False)
 
 
 def _make_bench_result_dict(**kwargs) -> Dict[str, Any]:
@@ -201,7 +199,7 @@ class TestSystemEndpoints:
     def test_shutdown_starts_thread(self):
         """Shutdown endpoint returns success and starts shutdown thread."""
         client = _get_client()
-        with patch("os.kill") as mock_kill, \
+        with patch("os.kill"), \
                 patch("time.sleep"):
             response = client.post("/api/system/shutdown")
         assert response.status_code == 200
@@ -301,7 +299,6 @@ class TestCacheDeletion:
 
     def test_delete_cache_entry(self):
         """Delete endpoint removes cache entry."""
-        app_mod = sys.modules["app"]
         client = _get_client()
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -315,7 +312,6 @@ class TestCacheDeletion:
 
     def test_clear_cache(self):
         """Clear cache endpoint truncates the table."""
-        app_mod = sys.modules["app"]
         client = _get_client()
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
@@ -674,8 +670,8 @@ class TestExperimentEndpoints2:
     def test_experiment_export_csv(self):
         """Experiment export CSV returns success."""
         import tempfile
-        client = _get_client()
         app_mod = sys.modules["app"]
+        client = _get_client()
         with tempfile.TemporaryDirectory() as tmpdir:
             real_dir = __import__("pathlib").Path(tmpdir)
             with patch.object(app_mod, "RESULTS_DIR", real_dir):
@@ -742,8 +738,8 @@ class TestCSVExportEndpoints:
     def test_csv_export_with_data(self):
         """CSV export returns success when data found."""
         import tempfile
-        client = _get_client()
         app_mod = sys.modules["app"]
+        client = _get_client()
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = [

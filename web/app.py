@@ -231,10 +231,7 @@ except ImportError as e:
 CONFIG_DEFAULTS = DEFAULT_CONFIG
 LMSTUDIO_HOST = CONFIG_DEFAULTS.get("lmstudio", {}).get("host", "localhost")
 LMSTUDIO_PORTS = CONFIG_DEFAULTS.get("lmstudio", {}).get("ports", [1234, 1235])
-template_env = Environment(
-    loader=FileSystemLoader(TEMPLATES_DIR),
-    autoescape=True
-)
+template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
 DEBUG_MODE = False
 
 LATEST_RELEASE_CACHE: Dict[str, Any] = {
@@ -929,7 +926,6 @@ async def get_status() -> dict:
 @app.get("/api/lmstudio/health")
 async def get_lmstudio_health() -> dict:
     """LM Studio Healthcheck - Live Status ohne Cache"""
-    lmstudio_health = {"ok": False, "status": "offline"}
     lmstudio_ports = LMSTUDIO_PORTS
 
     for port in lmstudio_ports:
@@ -2325,8 +2321,8 @@ async def get_experiment_comparison(
                 minp,
                 penalty,
                 maxts,
-                runs,
-                errors,
+                _runs,
+                _errors,
             ) = row
 
             params_dict = {
@@ -2416,14 +2412,16 @@ async def get_experiment_comparison(
             )
 
         logger.info("🧪 Experiment %s: %s", experiment_id, winner.upper())
-        logger.info("   Baseline: %s ± %s tok/s", 
-                baseline_stats['mean'], 
-                baseline_stats['std_dev'])
-        logger.info("   Test: %s ± %s tok/s", test_stats['mean'], test_stats['std_dev'])
+        logger.info(
+            "   Baseline: %s ± %s tok/s",
+            baseline_stats["mean"],
+            baseline_stats["std_dev"],
+        )
+        logger.info("   Test: %s ± %s tok/s", test_stats["mean"], test_stats["std_dev"])
         delta_str = (
             f"{delta_pct:.1f}%" if isinstance(delta_pct, (int, float)) else "n/a"
         )
-        logger.info("   Delta: %s | p-value: %s", delta_str, test_result.get('p_value'))
+        logger.info("   Delta: %s | p-value: %s", delta_str, test_result.get("p_value"))
 
         return {
             "success": True,
@@ -2521,8 +2519,8 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
                 minp,
                 penalty,
                 maxts,
-                runs,
-                errors,
+                _runs,
+                _errors,
             ) = row
             params_dict = {
                 "temperature": temp,
@@ -2699,10 +2697,8 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
             writer.writerow(["Delta %", comparison.get("delta_pct", "-")])
 
             csv_content = output.getvalue()
-            export_file = (
-                RESULTS_DIR
-                / f"experiment_{experiment_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            )
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            export_file = RESULTS_DIR / f"experiment_{experiment_id}_{timestamp}.csv"
 
             with open(export_file, "w", encoding="utf-8") as f:
                 f.write(csv_content)
@@ -2722,7 +2718,8 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
                 f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
                 "",
                 "Baseline Results:",
-                f"  Mean: {baseline_data.get('mean')} ± {baseline_data.get('std_dev')} tok/s",
+                f"  Mean: {baseline_data.get('mean')} "
+                f"± {baseline_data.get('std_dev')} tok/s",
                 f"  Range: {baseline_data.get('min')} - {baseline_data.get('max')}",
                 f"  Runs: {baseline_data.get('count')}",
                 "",
@@ -2759,13 +2756,20 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
                 stream_content = "\n".join(stream_lines).encode("latin-1")
 
                 add_obj(
-                    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
+                    "3 0 obj\n"
+                    "<< /Type /Page /Parent 2 0 R "
+                    "/MediaBox [0 0 612 792] /Contents 4 0 R "
+                    "/Resources << /Font << /F1 5 0 R >> >> >>\n"
+                    "endobj\n"
                 )
                 add_obj(f"4 0 obj\n<< /Length {len(stream_content)} >>\nstream\n")
                 pdf_bytes.extend(stream_content)
                 pdf_bytes.extend(b"\nendstream\nendobj\n")
                 add_obj(
-                    "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+                    "5 0 obj\n"
+                    "<< /Type /Font /Subtype /Type1 "
+                    "/BaseFont /Helvetica >>\n"
+                    "endobj\n"
                 )
 
                 xref_offset = len(pdf_bytes)
@@ -2783,10 +2787,8 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
                 return bytes(pdf_bytes)
 
             pdf_bytes = generate_simple_pdf(lines)
-            export_file = (
-                RESULTS_DIR
-                / f"experiment_{experiment_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-            )
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            export_file = RESULTS_DIR / f"experiment_{experiment_id}_{timestamp}.pdf"
 
             with open(export_file, "wb") as f:
                 f.write(pdf_bytes)
@@ -2985,7 +2987,8 @@ async def run_experiment(request: Request) -> dict:
                     }
                 )
                 logger.info(
-                    f"✅ Baseline Match: run_index={run_idx}, speed={speed}, params={row_params}"
+                    f"✅ Baseline Match: run_index={run_idx}, "
+                    f"speed={speed}, params={row_params}"
                 )
             elif match_parameters(row_params, test_params):
                 test_data.append(
@@ -2998,7 +3001,8 @@ async def run_experiment(request: Request) -> dict:
                     }
                 )
                 logger.info(
-                    f"✅ Test Match: run_index={run_idx}, speed={speed}, params={row_params}"
+                    f"✅ Test Match: run_index={run_idx}, "
+                    f"speed={speed}, params={row_params}"
                 )
             else:
                 logger.info("❌ No Match: run_index=%s, params=%s", run_idx, row_params)
@@ -3130,10 +3134,12 @@ async def run_experiment(request: Request) -> dict:
                     f"{test_params.get('temperature', 'N/A')},-\n"
                 )
                 f.write(
-                    f"Top-K,{baseline_params.get('top_k', 'N/A')},{test_params.get('top_k', 'N/A')},-\n"
+                    f"Top-K,{baseline_params.get('top_k', 'N/A')},"
+                    f"{test_params.get('top_k', 'N/A')},-\n"
                 )
                 f.write(
-                    f"Top-P,{baseline_params.get('top_p', 'N/A')},{test_params.get('top_p', 'N/A')},-\n"
+                    f"Top-P,{baseline_params.get('top_p', 'N/A')},"
+                    f"{test_params.get('top_p', 'N/A')},-\n"
                 )
                 f.write(f"Winner,-,-,{winner}\n")
                 f.write(f"Significant,-,-,{test_result.get('significant', False)}\n")
@@ -3147,7 +3153,11 @@ async def run_experiment(request: Request) -> dict:
     <title>{experiment_name} - {model_name}</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
-        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .container {{
+            max-width: 1200px; margin: 0 auto; background: white;
+            padding: 30px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
         h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }}
         h2 {{ color: #34495e; margin-top: 30px; }}
         table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
@@ -3156,14 +3166,18 @@ async def run_experiment(request: Request) -> dict:
         tr:hover {{ background-color: #f5f5f5; }}
         .winner {{ font-weight: bold; color: #27ae60; font-size: 1.2em; }}
         .metric {{ font-weight: 600; }}
-        .params {{ background: #ecf0f1; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+        .params {{
+            background: #ecf0f1; padding: 15px;
+            border-radius: 5px; margin: 10px 0;
+        }}
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🧪 {experiment_name}</h1>
         <p><strong>Model:</strong> {model_name}</p>
-        <p><strong>Timestamp:</strong> {results_data['experiment_info']['timestamp']}</p>
+        <p><strong>Timestamp:</strong>
+        {results_data['experiment_info']['timestamp']}</p>
 
         <h2>📊 Performance Comparison</h2>
         <table>
@@ -3208,18 +3222,29 @@ async def run_experiment(request: Request) -> dict:
         <h2>⚙️ Parameters</h2>
         <div class="params">
             <h3>Baseline</h3>
-            <p>Temperature: {baseline_params.get('temperature', 'N/A')}, Top-K: {baseline_params.get('top_k', 'N/A')}, Top-P: {baseline_params.get('top_p', 'N/A')}</p>
+            <p>
+                Temperature: {baseline_params.get('temperature', 'N/A')},
+                Top-K: {baseline_params.get('top_k', 'N/A')},
+                Top-P: {baseline_params.get('top_p', 'N/A')}
+            </p>
         </div>
         <div class="params">
             <h3>Test</h3>
-            <p>Temperature: {test_params.get('temperature', 'N/A')}, Top-K: {test_params.get('top_k', 'N/A')}, Top-P: {test_params.get('top_p', 'N/A')}</p>
+            <p>
+                Temperature: {test_params.get('temperature', 'N/A')},
+                Top-K: {test_params.get('top_k', 'N/A')},
+                Top-P: {test_params.get('top_p', 'N/A')}
+            </p>
         </div>
 
         <h2>📈 Statistical Analysis</h2>
         <p><strong>Winner:</strong> <span class="winner">{winner.upper()}</span></p>
-        <p><strong>Statistically Significant:</strong> {test_result.get('significant', False)}</p>
+        <p><strong>Statistically Significant:</strong>
+        {test_result.get('significant', False)}</p>
         <p><strong>p-value:</strong> {test_result.get('p_value', 'N/A')}</p>
-        <p><strong>Effect Size (Cohen's d):</strong> {effect_size.get('cohens_d', 'N/A')} ({effect_size.get('effect_magnitude', 'N/A')})</p>
+        <p><strong>Effect Size (Cohen's d):</strong>
+        {effect_size.get('cohens_d', 'N/A')}
+        ({effect_size.get('effect_magnitude', 'N/A')})</p>
     </div>
 </body>
 </html>"""
@@ -3375,7 +3400,9 @@ async def get_dashboard_stats() -> dict:
                 mconn = sqlite3.connect(METADATA_DATABASE_FILE)
                 mcur = mconn.cursor()
                 mcur.execute(
-                    "SELECT model_key, capabilities FROM model_metadata WHERE capabilities IS NOT NULL AND TRIM(capabilities) <> ''"
+                    "SELECT model_key, capabilities FROM model_metadata "
+                    "WHERE capabilities IS NOT NULL "
+                    "AND TRIM(capabilities) <> ''"
                 )
                 for mk, caps_json in mcur.fetchall():
                     try:
