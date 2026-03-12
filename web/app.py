@@ -8,17 +8,20 @@ WebSocket.
 
 import argparse
 import asyncio
+import base64
 from contextlib import asynccontextmanager
 import csv
 from dataclasses import dataclass, field
 from datetime import datetime
+import glob
 import hashlib
-from io import StringIO
+from io import BytesIO, StringIO
 import json
 import logging
 import math
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import signal
@@ -30,16 +33,19 @@ from subprocess import TimeoutExpired
 import sys
 import threading
 import time
+import traceback
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import unquote
 import uuid
 import webbrowser
+import zipfile
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 from jinja2 import Environment, FileSystemLoader
+import psutil
 from pydantic import BaseModel
 
 from src.config_loader import DEFAULT_CONFIG
@@ -2334,8 +2340,10 @@ async def compare_presets(request: PresetCompareRequest) -> dict:
         return {"success": False, "error": f"Preset not found: {str(e)}"}
     except Exception as e:
         logger.error(
-            f"❌ Error comparing presets "
-            f"{request.preset_a} vs {request.preset_b}: {e}"
+            "❌ Error comparing presets %s vs %s: %s",
+            request.preset_a,
+            request.preset_b,
+            e,
         )
         return {"success": False, "error": str(e)}
 
@@ -2344,10 +2352,6 @@ async def compare_presets(request: PresetCompareRequest) -> dict:
 async def export_presets() -> dict:
     """Export all user presets as ZIP archive"""
     try:
-        import base64
-        from io import BytesIO
-        import zipfile
-
         zip_buffer = BytesIO()
 
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -2382,10 +2386,6 @@ async def export_presets() -> dict:
 async def import_presets(request: Request) -> dict:
     """Import user presets from ZIP archive"""
     try:
-        import base64
-        from io import BytesIO
-        import zipfile
-
         body = await request.json()
         zip_base64 = body.get("data", "")
 
@@ -2420,7 +2420,7 @@ async def import_presets(request: Request) -> dict:
                 preset_mgr.save_preset(preset_name, preset_config)
                 imported_count += 1
 
-        logger.info(f"📥 Imported {imported_count} presets, " f"skipped {len(skipped)}")
+        logger.info("📥 Imported %s presets, skipped %s", imported_count, len(skipped))
 
         return {"success": True, "imported": imported_count, "skipped": skipped}
     except Exception as e:
@@ -2851,9 +2851,6 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
 async def export_experiment(experiment_id: str, request: Request) -> dict:
     """Exports experiment results as CSV/PDF"""
     try:
-        import csv
-        from io import StringIO
-
         payload = await request.json()
         export_format = payload.get("format", "csv")
         baseline_data = payload.get("baseline", {})
@@ -3201,8 +3198,10 @@ async def run_experiment(request: Request) -> dict:
                     }
                 )
                 logger.info(
-                    f"✅ Baseline Match: run_index={run_idx}, "
-                    f"speed={speed}, params={row_params}"
+                    "✅ Baseline Match: run_index=%s, speed=%s, params=%s",
+                    run_idx,
+                    speed,
+                    row_params,
                 )
             elif match_parameters(row_params, test_params):
                 test_data.append(
@@ -3215,14 +3214,18 @@ async def run_experiment(request: Request) -> dict:
                     }
                 )
                 logger.info(
-                    f"✅ Test Match: run_index={run_idx}, "
-                    f"speed={speed}, params={row_params}"
+                    "✅ Test Match: run_index=%s, speed=%s, params=%s",
+                    run_idx,
+                    speed,
+                    row_params,
                 )
             else:
                 logger.info("❌ No Match: run_index=%s, params=%s", run_idx, row_params)
 
         logger.info(
-            f"🔍 After filtering: Baseline={len(baseline_data)}, Test={len(test_data)}"
+            "🔍 After filtering: Baseline=%s, Test=%s",
+            len(baseline_data),
+            len(test_data),
         )
 
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
@@ -3582,8 +3585,6 @@ async def run_experiment(request: Request) -> dict:
         ValueError,
         sqlite3.Error,
     ) as e:
-        import traceback
-
         logger.error("❌ Experiment Run Error: %s", e)
         logger.error("Traceback: %s", traceback.format_exc())
         return {"success": False, "error": str(e)}
@@ -3596,14 +3597,6 @@ async def get_dashboard_stats() -> dict:
         return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
-        from datetime import datetime
-        import json
-        import platform
-        import sqlite3
-        import subprocess
-
-        import psutil
-
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
 
@@ -3739,8 +3732,6 @@ async def get_dashboard_stats() -> dict:
                 system_info["cpu"] = raw_cpu
 
                 if "Radeon" in raw_cpu:
-                    import re
-
                     radeon_match = re.search(r"Radeon\s+(\d+[A-Za-z]*)", raw_cpu)
                     if radeon_match:
                         cpu_gpu_series = f"AMD Radeon {radeon_match.group(1)}"
@@ -3749,10 +3740,6 @@ async def get_dashboard_stats() -> dict:
 
         gpu_info = None
         try:
-            import glob
-            import re
-            import subprocess
-
             gpu_type = "Unknown"
             gpu_model = "Unknown"
             vram_total_gb = None

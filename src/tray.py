@@ -25,7 +25,7 @@ try:
     gi.require_version("Gtk", "3.0")
     gi.require_version("AppIndicator3", "0.1")
     from gi.repository import AppIndicator3, Gtk
-except Exception as import_exc:
+except (ImportError, ValueError, AttributeError) as import_exc:
     gi = None
     Gtk = None
     AppIndicator3 = None

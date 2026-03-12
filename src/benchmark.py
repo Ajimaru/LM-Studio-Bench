@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+import platform
 import re
 import shutil
 import sqlite3
@@ -288,8 +289,9 @@ class HardwareMonitor:
             return
 
         logger.info(
-            f"🔥 Starting Hardware-Monitoring "
-            f"(GPU: {self.gpu_type}, Tool: {self.gpu_tool})"
+            "🔥 Starting Hardware-Monitoring (GPU: %s, Tool: %s)",
+            self.gpu_type,
+            self.gpu_tool,
         )
         self.monitoring = True
         self.temps.clear()
@@ -484,8 +486,6 @@ class HardwareMonitor:
                     timeout=3,
                 )
                 if result.returncode == 0:
-                    import re
-
                     for line in result.stdout.split("\n"):
                         if "GPU[" in line and ("(W):" in line or "W" in line):
                             try:
@@ -1284,8 +1284,6 @@ class GPUMonitor:
             if result.returncode != 0 or not result.stdout:
                 return None
 
-            import glob
-
             for cardpath in glob.glob("/sys/class/drm/card*/device"):
                 vendor_file = Path(cardpath) / "vendor"
                 if vendor_file.exists():
@@ -1319,13 +1317,13 @@ class GPUMonitor:
             except Exception:
                 self.gpu_model = "NVIDIA GPU"
             logger.info(
-                f"🟢 NVIDIA GPU detected: {self.gpu_model}, Tool: {nvidia_tool}"
+                "🟢 NVIDIA GPU detected: %s, Tool: %s",
+                self.gpu_model,
+                nvidia_tool,
             )
             return
 
         amd_paths = ["/usr/bin", "/usr/local/bin", "/opt/rocm/bin"]
-        import glob
-
         rocm_versions = glob.glob("/opt/rocm-*/bin")
         amd_paths.extend(rocm_versions)
 
@@ -1343,7 +1341,9 @@ class GPUMonitor:
             self.gpu_tool = "sysfs"
             self.gpu_model = self._detect_amd_gpu_model()
             logger.info(
-                f"🔴 AMD GPU detected (sysfs): {self.gpu_model}, " f"Path: {amd_sysfs}"
+                "🔴 AMD GPU detected (sysfs): %s, Path: %s",
+                self.gpu_model,
+                amd_sysfs,
             )
             return
 
@@ -1648,8 +1648,6 @@ class ModelDiscovery:
                 return []
 
             models = []
-            import json
-
             data = json.loads(result.stdout)
 
             for model_data in data:
@@ -1747,7 +1745,9 @@ class ModelDiscovery:
             filtered.append(model_key)
 
         logger.info(
-            f"✔️ After filtering: {len(filtered)}/{len(models)} models remaining"
+            "✔️ After filtering: %s/%s models remaining",
+            len(filtered),
+            len(models),
         )
         return filtered
 
@@ -1890,8 +1890,6 @@ class LMStudioBenchmark:
     def get_os_info() -> Tuple[Optional[str], Optional[str]]:
         """Retrieves operating system and kernel version"""
         try:
-            import platform
-
             os_system = platform.system()
 
             if os_system == "Linux":
@@ -1930,8 +1928,6 @@ class LMStudioBenchmark:
     def get_python_version() -> Optional[str]:
         """Retrieves Python version"""
         try:
-            import sys
-
             return (
                 f"{sys.version_info.major}."
                 f"{sys.version_info.minor}."
@@ -2055,7 +2051,9 @@ class LMStudioBenchmark:
         }
         logger.info("💻 System information:")
         logger.info(
-            f"   • OS: {self.system_info['os_name']} {self.system_info['os_version']}"
+            "   • OS: %s %s",
+            self.system_info["os_name"],
+            self.system_info["os_version"],
         )
         logger.info("   • CPU: %s", self.system_info["cpu_model"] or "N/A")
         logger.info("   • Python: %s", self.system_info["python_version"])
@@ -2185,9 +2183,11 @@ class LMStudioBenchmark:
                 optimal_offload = max(0.3, min(1.0, optimal_offload))
 
             logger.info(
-                f"📊 VRAM prediction: {available_vram:.1f}GB available, "
-                f"{estimated_vram:.1f}GB estimated -> Offload "
-                f"{optimal_offload:.2f}"
+                "📊 VRAM prediction: %.1fGB available, %.1fGB estimated"
+                " -> Offload %.2f",
+                available_vram,
+                estimated_vram,
+                optimal_offload,
             )
 
             return round(optimal_offload, 1)
@@ -2233,8 +2233,10 @@ class LMStudioBenchmark:
                 offloads = [r[0] for r in results]
                 avg_offload = sum(offloads) / len(offloads)
                 logger.info(
-                    f"📚 Cache-Hit: Using average offload {avg_offload:.2f} "
-                    f"for {architecture} (~{model_size_gb:.1f}GB)"
+                    "📚 Cache-Hit: Using average offload %.2f for %s (~%.1fGB)",
+                    avg_offload,
+                    architecture,
+                    model_size_gb,
                 )
                 return round(avg_offload, 1)
 
@@ -2299,8 +2301,9 @@ class LMStudioBenchmark:
                 self.previous_results = [BenchmarkResult(**item) for item in data]
 
             logger.info(
-                f"✓ {len(self.previous_results)} previous results "
-                f"loaded from {json_file.name}"
+                "✓ %s previous results loaded from %s",
+                len(self.previous_results),
+                json_file.name,
             )
         except Exception as e:
             logger.error("❌ Error loading previous results: %s", e)
@@ -2337,8 +2340,6 @@ class LMStudioBenchmark:
                 return False
 
         if self.filter_args.get("include_models"):
-            import re
-
             try:
                 pattern = re.compile(self.filter_args["include_models"], re.IGNORECASE)
                 model_full = f"{result.model_name}@{result.quantization}"
@@ -2348,8 +2349,6 @@ class LMStudioBenchmark:
                 pass
 
         if self.filter_args.get("exclude_models"):
-            import re
-
             try:
                 pattern = re.compile(self.filter_args["exclude_models"], re.IGNORECASE)
                 model_full = f"{result.model_name}@{result.quantization}"
@@ -2437,14 +2436,15 @@ class LMStudioBenchmark:
                 instance_id = self._load_model_rest(model_key, used_offload)
                 if not instance_id:
                     logger.info(
-                        f"⬇️ Model not loaded; starting download for {model_key}"
+                        "⬇️ Model not loaded; starting download for %s",
+                        model_key,
                     )
                     try:
                         self.rest_client.download_model(model_key)
                         time.sleep(3)
                         instance_id = self._load_model_rest(model_key, used_offload)
                     except Exception as ex:
-                        logger.warning(f"⚠️ Download/Load via REST failed: {ex}")
+                        logger.warning("⚠️ Download/Load via REST failed: %s", ex)
                 if instance_id:
                     logger.info("🧩 Using REST instance id: %s", instance_id)
                 else:
@@ -2717,16 +2717,20 @@ class LMStudioBenchmark:
                 load_config_params["llama_v_cache_quantization_type"] = kv_quant
 
             logger.info(
-                f"⚙️ Load Config: context={self.context_length}, "
-                f"n_gpu_layers={self.load_params.get('n_gpu_layers')}, "
-                f"n_batch={self.load_params.get('n_batch')}, "
-                f"n_threads={self.load_params.get('n_threads')}, "
-                f"flash_attention={self.load_params.get('flash_attention')}, "
-                f"rope_freq_base={self.load_params.get('rope_freq_base')}, "
-                f"rope_freq_scale={self.load_params.get('rope_freq_scale')}, "
-                f"use_mmap={self.load_params.get('use_mmap')}, "
-                f"use_mlock={self.load_params.get('use_mlock')}, "
-                f"kv_cache_quant={kv_quant}"
+                "⚙️ Load Config: context=%s, n_gpu_layers=%s, n_batch=%s,"
+                " n_threads=%s, flash_attention=%s, rope_freq_base=%s,"
+                " rope_freq_scale=%s, use_mmap=%s, use_mlock=%s,"
+                " kv_cache_quant=%s",
+                self.context_length,
+                self.load_params.get("n_gpu_layers"),
+                self.load_params.get("n_batch"),
+                self.load_params.get("n_threads"),
+                self.load_params.get("flash_attention"),
+                self.load_params.get("rope_freq_base"),
+                self.load_params.get("rope_freq_scale"),
+                self.load_params.get("use_mmap"),
+                self.load_params.get("use_mlock"),
+                kv_quant,
             )
 
             model = lms.llm(
@@ -2743,12 +2747,14 @@ class LMStudioBenchmark:
             )
 
             logger.info(
-                f"⚙️ Inference Config: temp={prediction_config.temperature}, "
-                f"top_k={prediction_config.top_k_sampling}, "
-                f"top_p={prediction_config.top_p_sampling}, "
-                f"min_p={prediction_config.min_p_sampling}, "
-                f"repeat_penalty={prediction_config.repeat_penalty}, "
-                f"max_tokens={prediction_config.max_tokens}"
+                "⚙️ Inference Config: temp=%s, top_k=%s, top_p=%s,"
+                " min_p=%s, repeat_penalty=%s, max_tokens=%s",
+                prediction_config.temperature,
+                prediction_config.top_k_sampling,
+                prediction_config.top_p_sampling,
+                prediction_config.min_p_sampling,
+                prediction_config.repeat_penalty,
+                prediction_config.max_tokens,
             )
 
             start_time = time.time()
@@ -3024,8 +3030,8 @@ class LMStudioBenchmark:
                 logger.info("")
                 logger.info("📦 === Cached Models ===")
                 logger.info(
-                    f"💾 {len(cached_models)} models already tested "
-                    "(will be loaded from cache):"
+                    "💾 %s models already tested (will be loaded from cache):",
+                    len(cached_models),
                 )
                 for model_key, cached in cached_models[:10]:
                     date_part = (
@@ -3034,8 +3040,10 @@ class LMStudioBenchmark:
                         else cached.timestamp[:10]
                     )
                     logger.info(
-                        f"  • {model_key}: {cached.avg_tokens_per_sec:.2f} "
-                        f"tok/s (last tested: {date_part})"
+                        "  • %s: %.2f tok/s (last tested: %s)",
+                        model_key,
+                        cached.avg_tokens_per_sec,
+                        date_part,
                     )
                 if len(cached_models) > 10:
                     logger.info("  ... and %s more", len(cached_models) - 10)
@@ -3052,7 +3060,8 @@ class LMStudioBenchmark:
 
             if new_models:
                 logger.info(
-                    f"🚀 Starting benchmark for {len(new_models)} new models..."
+                    "🚀 Starting benchmark for %s new models...",
+                    len(new_models),
                 )
                 models = new_models
             else:
