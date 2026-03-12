@@ -4483,7 +4483,7 @@ class LMStudioBenchmark:
             logger.error("❌ Error creating PDF: %s", e)
 
     def _export_html(self, timestamp: str, results_to_export):
-        """Exports given benchmark results as interactive HTML report with Plotly charts"""
+        """Exports benchmark results as interactive HTML with Plotly"""
         if not PLOTLY_AVAILABLE or go is None:
             logger.warning("⚠️ Plotly not available, skipping HTML export")
             return
@@ -4526,7 +4526,10 @@ class LMStudioBenchmark:
                         y=[r.avg_tokens_per_sec for r in results],
                         mode="markers",
                         text=[
-                            f"{r.model_name}<br>{r.quantization}<br>{r.avg_tokens_per_sec:.2f} t/s"
+                            (
+                                f"{r.model_name}<br>{r.quantization}<br>"
+                                f"{r.avg_tokens_per_sec:.2f} t/s"
+                            )
                             for r in results
                         ],
                         marker=dict(
@@ -4598,11 +4601,23 @@ class LMStudioBenchmark:
                 "Standard Prompt": (
                     self.prompt[:50] + "..." if len(self.prompt) > 50 else self.prompt
                 ),
-                "Fastest": f"{sorted_results[0].model_name[:20]} ({sorted_results[0].avg_tokens_per_sec:.2f} t/s)",
-                "Slowest": f"{sorted_results[-1].model_name[:20]} ({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)",
+                "Fastest": (
+                    f"{sorted_results[0].model_name[:20]} "
+                    f"({sorted_results[0].avg_tokens_per_sec:.2f} t/s)"
+                ),
+                "Slowest": (
+                    f"{sorted_results[-1].model_name[:20]} "
+                    f"({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)"
+                ),
                 "Ø Speed": f"{avg_tokens_per_sec:.2f} t/s",
-                "Vision Models": f"{vision_count} ({vision_count * 100 // len(results) if self.results else 0}%)",
-                "Tool-capable Models": f"{tools_count} ({tools_count * 100 // len(results) if self.results else 0}%)",
+                "Vision Models": (
+                    f"{vision_count} "
+                    f"({vision_count * 100 // len(results) if self.results else 0}%)"
+                ),
+                "Tool-capable Models": (
+                    f"{tools_count} "
+                    f"({tools_count * 100 // len(results) if self.results else 0}%)"
+                ),
                 "Ø Model Size": f"{avg_size_gb:.2f} GB",
             }
 
@@ -4611,7 +4626,8 @@ class LMStudioBenchmark:
             for i, (label, value) in enumerate(summary_stats.items()):
                 color = colors_list[i % len(colors_list)]
                 summary_boxes += f"""
-            <div class="summary-box" style="background: linear-gradient(135deg, {color} 0%, {color}dd 100%);">
+            <div class="summary-box" style="background: linear-gradient(
+                135deg, {color} 0%, {color}dd 100%);">
                 <div class="summary-label">{label}</div>
                 <div class="summary-value">{value}</div>
             </div>
@@ -4622,25 +4638,32 @@ class LMStudioBenchmark:
                 f"<strong>Context Length:</strong> {self.context_length} Tokens"
             )
             benchmark_params.append(
-                f"<strong>Temperature:</strong> {OPTIMIZED_INFERENCE_PARAMS['temperature']}"
+                f"<strong>Temperature:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['temperature']}"
             )
             benchmark_params.append(
-                f"<strong>Top-K Sampling:</strong> {OPTIMIZED_INFERENCE_PARAMS['top_k_sampling']}"
+                f"<strong>Top-K Sampling:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['top_k_sampling']}"
             )
             benchmark_params.append(
-                f"<strong>Top-P Sampling:</strong> {OPTIMIZED_INFERENCE_PARAMS['top_p_sampling']}"
+                f"<strong>Top-P Sampling:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['top_p_sampling']}"
             )
             benchmark_params.append(
-                f"<strong>Min-P Sampling:</strong> {OPTIMIZED_INFERENCE_PARAMS['min_p_sampling']}"
+                f"<strong>Min-P Sampling:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['min_p_sampling']}"
             )
             benchmark_params.append(
-                f"<strong>Repeat Penalty:</strong> {OPTIMIZED_INFERENCE_PARAMS['repeat_penalty']}"
+                f"<strong>Repeat Penalty:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['repeat_penalty']}"
             )
             benchmark_params.append(
-                f"<strong>Max Tokens:</strong> {OPTIMIZED_INFERENCE_PARAMS['max_tokens']}"
+                f"<strong>Max Tokens:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['max_tokens']}"
             )
             benchmark_params.append(
-                f"<strong>GPU-Offload Levels:</strong> {', '.join(map(str, GPU_OFFLOAD_LEVELS))}"
+                f"<strong>GPU-Offload Levels:</strong> "
+                f"{', '.join(map(str, GPU_OFFLOAD_LEVELS))}"
             )
 
             cli_params = []
@@ -4668,24 +4691,29 @@ class LMStudioBenchmark:
             if self.cli_args.get("only_tools"):
                 cli_params.append(f"<strong>Filter:</strong> Tool-capable models only")
             if self.cli_args.get("include_models"):
+                pattern_short = self.cli_args['include_models'][:40]
                 cli_params.append(
-                    f"<strong>Include-Pattern:</strong> {self.cli_args['include_models'][:40]}"
+                    f"<strong>Include-Pattern:</strong> {pattern_short}"
                 )
             if self.cli_args.get("exclude_models"):
+                pattern_short = self.cli_args['exclude_models'][:40]
                 cli_params.append(
-                    f"<strong>Exclude-Pattern:</strong> {self.cli_args['exclude_models'][:40]}"
+                    f"<strong>Exclude-Pattern:</strong> {pattern_short}"
                 )
             if self.cli_args.get("enable_profiling"):
                 cli_params.append(
-                    f"<strong>Hardware Profiling:</strong> Yes (--enable-profiling)"
+                    f"<strong>Hardware Profiling:</strong> "
+                    f"Yes (--enable-profiling)"
                 )
                 if self.cli_args.get("max_temp"):
+                    max_temp = self.cli_args['max_temp']
                     cli_params.append(
-                        f"<strong>Max. Temperature:</strong> {self.cli_args['max_temp']}°C"
+                        f"<strong>Max. Temperature:</strong> {max_temp}°C"
                     )
                 if self.cli_args.get("max_power"):
+                    max_power = self.cli_args['max_power']
                     cli_params.append(
-                        f"<strong>Max. Power Draw:</strong> {self.cli_args['max_power']}W"
+                        f"<strong>Max. Power Draw:</strong> {max_power}W"
                     )
 
             cli_section = f"""
@@ -4763,8 +4791,12 @@ class LMStudioBenchmark:
         <h3>Top 3 Vision Models:</h3>
         <ul>"""
                 for i, r in enumerate(vision_sorted[:3], 1):
-                    vision_section += f"""
-            <li><strong>{r.model_name}</strong> ({r.quantization}) → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB</li>"""
+                    vision_section += (
+                        f"""
+            <li><strong>{r.model_name}</strong> ({r.quantization}) → """
+                        f"""{r.avg_tokens_per_sec:.2f} tokens/s, """
+                        f"""{r.model_size_gb:.2f} GB</li>"""
+                    )
                 vision_section += """
         </ul>"""
             else:
@@ -4810,8 +4842,12 @@ class LMStudioBenchmark:
         <h3>Top 3 Tool-Calling Models:</h3>
         <ul>"""
                 for i, r in enumerate(tool_sorted[:3], 1):
-                    tools_section += f"""
-            <li><strong>{r.model_name}</strong> ({r.quantization}) → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB</li>"""
+                    tools_section += (
+                        f"""
+            <li><strong>{r.model_name}</strong> ({r.quantization}) → """
+                        f"""{r.avg_tokens_per_sec:.2f} tokens/s, """
+                        f"""{r.model_size_gb:.2f} GB</li>"""
+                    )
                 tools_section += """
         </ul>"""
             else:
@@ -4909,18 +4945,24 @@ class LMStudioBenchmark:
 
                 profile_summary = ""
                 if temps_avg:
-                    profile_summary += f"""
+                    profile_summary += (
+                        f"""
                 <div class="summary-box" style="border-left: 4px solid #d9534f;">
                     <h4>🌡️ GPU Temperatur</h4>
-                    <p>Min: {min(temps_avg):.1f}°C | Max: {max(temps_avg):.1f}°C | Ø: {mean(temps_avg):.1f}°C</p>
+                    <p>Min: {min(temps_avg):.1f}°C | Max: {max(temps_avg):.1f}°C | """
+                        f"""Ø: {mean(temps_avg):.1f}°C</p>
                 </div>"""
+                    )
 
                 if powers_avg:
-                    profile_summary += f"""
+                    profile_summary += (
+                        f"""
                 <div class="summary-box" style="border-left: 4px solid #ff9800;">
                     <h4>⚡ Power-Draw</h4>
-                    <p>Min: {min(powers_avg):.1f}W | Max: {max(powers_avg):.1f}W | Ø: {mean(powers_avg):.1f}W</p>
+                    <p>Min: {min(powers_avg):.1f}W | Max: {max(powers_avg):.1f}W | """
+                        f"""Ø: {mean(powers_avg):.1f}W</p>
                 </div>"""
+                    )
 
                 profiling_section = f"""
             <h2>🌡️ Hardware-Profiling</h2>
@@ -5081,7 +5123,10 @@ def main():
     final_cli_args = preset_cli_args + remaining_args
 
     parser = argparse.ArgumentParser(
-        description="LM Studio Model Benchmark - Tests all locally installed LLM models",
+        description=(
+            "LM Studio Model Benchmark - Tests all locally "
+            "installed LLM models"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -5101,7 +5146,10 @@ Examples:
         "-r",
         type=int,
         default=NUM_MEASUREMENT_RUNS,
-        help=f"Number of measurements per model quantization (default: {NUM_MEASUREMENT_RUNS})",
+        help=(
+            "Number of measurements per model quantization "
+            f"(default: {NUM_MEASUREMENT_RUNS})"
+        ),
     )
 
     parser.add_argument(
@@ -5186,7 +5234,10 @@ Examples:
         "--exclude-models",
         type=str,
         default=None,
-        help='Exclude models matching the regex pattern (e.g. ".*uncensored.*" or "test|experimental")',
+        help=(
+            'Exclude models matching the regex pattern '
+            '(e.g. ".*uncensored.*" or "test|experimental")'
+        ),
     )
 
     parser.add_argument(
@@ -5201,7 +5252,11 @@ Examples:
         type=str,
         choices=["speed", "efficiency", "ttft", "vram"],
         default="speed",
-        help="Sort results by: speed (tokens/s), efficiency (tokens/s per GB), ttft (Time to First Token), vram (VRAM usage)",
+        help=(
+            "Sort results by: speed (tokens/s), "
+            "efficiency (tokens/s per GB), ttft (Time to First Token), "
+            "vram (VRAM usage)"
+        ),
     )
 
     parser.add_argument(
@@ -5213,7 +5268,10 @@ Examples:
     parser.add_argument(
         "--dev-mode",
         action="store_true",
-        help="Development mode: Automatically tests the smallest available model with -l 1 -r 1",
+        help=(
+            "Development mode: Automatically tests the smallest "
+            "available model with -l 1 -r 1"
+        ),
     )
 
     parser.add_argument(
@@ -5231,7 +5289,10 @@ Examples:
     parser.add_argument(
         "--enable-profiling",
         action="store_true",
-        help="Enable hardware profiling: Measures temperature and power draw during benchmark",
+        help=(
+            "Enable hardware profiling: Measures temperature and "
+            "power draw during benchmark"
+        ),
     )
 
     parser.add_argument(
@@ -5257,7 +5318,10 @@ Examples:
     parser.add_argument(
         "--export-only",
         action="store_true",
-        help="Generate reports (JSON/CSV/PDF/HTML) from all results in database without running new tests",
+        help=(
+            "Generate reports (JSON/CSV/PDF/HTML) from all results in "
+            "database without running new tests"
+        ),
     )
 
     parser.add_argument(
@@ -5314,7 +5378,11 @@ Examples:
         "--n-gpu-layers",
         type=int,
         default=DEFAULT_LOAD_PARAMS.get("n_gpu_layers", -1),
-        help=f"Number of GPU layers (-1=auto/all, 0=CPU only, >0=specific count, default: {DEFAULT_LOAD_PARAMS.get('n_gpu_layers', -1)})",
+        help=(
+            "Number of GPU layers (-1=auto/all, 0=CPU only, "
+            f">0=specific count, default: "
+            f"{DEFAULT_LOAD_PARAMS.get('n_gpu_layers', -1)})"
+        ),
     )
     parser.add_argument(
         "--n-batch",
@@ -5329,15 +5397,20 @@ Examples:
         "--n-threads",
         type=int,
         default=DEFAULT_LOAD_PARAMS.get("n_threads", -1),
-        help=f"Number of CPU threads (-1=auto/all, default: {DEFAULT_LOAD_PARAMS.get('n_threads', -1)})",
+        help=(
+            f"Number of CPU threads (-1=auto/all, default: "
+            f"{DEFAULT_LOAD_PARAMS.get('n_threads', -1)})"
+        ),
     )
+    flash_attn_default = DEFAULT_LOAD_PARAMS.get("flash_attention", True)
+    flash_attn_status = 'enabled' if flash_attn_default else 'disabled'
     parser.add_argument(
         "--flash-attention",
         action="store_true",
-        default=DEFAULT_LOAD_PARAMS.get("flash_attention", True),
+        default=flash_attn_default,
         help=(
-            "Enable Flash Attention (faster attention computation, default: "
-            f"{'enabled' if DEFAULT_LOAD_PARAMS.get('flash_attention', True) else 'disabled'})"
+            "Enable Flash Attention (faster attention computation, "
+            f"default: {flash_attn_status})"
         ),
     )
     parser.add_argument(
@@ -5373,27 +5446,38 @@ Examples:
         dest="use_mmap",
         help="Disable memory-mapping",
     )
+    mlock_default = DEFAULT_LOAD_PARAMS.get("use_mlock", False)
+    mlock_status = 'enabled' if mlock_default else 'disabled'
     parser.add_argument(
         "--use-mlock",
         action="store_true",
-        default=DEFAULT_LOAD_PARAMS.get("use_mlock", False),
+        default=mlock_default,
         help=(
-            "Enable memory-locking (prevents swapping, default: "
-            f"{'enabled' if DEFAULT_LOAD_PARAMS.get('use_mlock', False) else 'disabled'})"
+            "Enable memory-locking (prevents swapping, "
+            f"default: {mlock_status})"
         ),
     )
     parser.add_argument(
         "--kv-cache-quant",
         type=str,
-        choices=["f32", "f16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
+        choices=[
+            "f32", "f16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"
+        ],
         default=DEFAULT_LOAD_PARAMS.get("kv_cache_quant"),
-        help="KV-Cache quantization (reduces VRAM, may affect performance, None=model default)",
+        help=(
+            "KV-Cache quantization (reduces VRAM, may affect performance, "
+            "None=model default)"
+        ),
     )
 
     parser.add_argument(
         "--use-rest-api",
         action="store_true",
-        help="Use LM Studio REST API v1 instead of Python SDK/CLI (enables advanced features like stateful chats, parallel requests)",
+        help=(
+            "Use LM Studio REST API v1 instead of Python SDK/CLI "
+            "(enables advanced features like stateful chats, "
+            "parallel requests)"
+        ),
     )
     parser.add_argument(
         "--api-token",
@@ -5405,13 +5489,19 @@ Examples:
         "--n-parallel",
         type=int,
         default=None,
-        help="Max. parallel predictions per model (REST API only, default: 4, requires continuous batching support)",
+        help=(
+            "Max. parallel predictions per model (REST API only, "
+            "default: 4, requires continuous batching support)"
+        ),
     )
     parser.add_argument(
         "--unified-kv-cache",
         action="store_true",
         default=None,
-        help="Enable unified KV cache (REST API only, optimizes VRAM for parallel requests)",
+        help=(
+            "Enable unified KV cache (REST API only, "
+            "optimizes VRAM for parallel requests)"
+        ),
     )
 
     args = parser.parse_args(args=final_cli_args)
@@ -5434,13 +5524,18 @@ Examples:
         if cached:
             print("\n=== Cached Benchmark Results ===")
             print(
-                f"{'Model':<50} {'Quant':<10} {'Params':<8} {'tok/s':<10} {'Date':<12} {'Hash':<10}"
+                f"{'Model':<50} {'Quant':<10} {'Params':<8} "
+                f"{'tok/s':<10} {'Date':<12} {'Hash':<10}"
             )
             print("-" * 110)
             for entry in cached:
                 print(
-                    f"{entry['model_name']:<50} {entry['quantization']:<10} {entry['params_size']:<8} "
-                    f"{entry['avg_tokens_per_sec']:<10.2f} {entry['timestamp'][:10]:<12} {entry['params_hash']:<10}"
+                    f"{entry['model_name']:<50} "
+                    f"{entry['quantization']:<10} "
+                    f"{entry['params_size']:<8} "
+                    f"{entry['avg_tokens_per_sec']:<10.2f} "
+                    f"{entry['timestamp'][:10]:<12} "
+                    f"{entry['params_hash']:<10}"
                 )
             print(f"\nTotal: {len(cached)} entries")
         else:
