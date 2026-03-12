@@ -350,32 +350,32 @@ class HardwareMonitor:
                         self.temps.append(temp)
                         logger.info("🌡️ GPU Temp: %s°C", temp)
                     else:
-                        logger.debug("⚠️ No temperature read (gpu_type=%s, tool=%s)", 
-                                self.gpu_type, 
+                        logger.debug("⚠️ No temperature read (gpu_type=%s, tool=%s)",
+                                self.gpu_type,
                                 self.gpu_tool)
 
                     if power is not None:
                         self.powers.append(power)
                         logger.info("⚡ GPU Power: %sW", power)
                     else:
-                        logger.debug("⚠️ No power read (gpu_type=%s, tool=%s)", 
-                                self.gpu_type, 
+                        logger.debug("⚠️ No power read (gpu_type=%s, tool=%s)",
+                                self.gpu_type,
                                 self.gpu_tool)
 
                     if vram is not None:
                         self.vrams.append(vram)
                         logger.info("💾 GPU VRAM: %sGB", vram)
                     else:
-                        logger.debug("⚠️ No VRAM read (gpu_type=%s, tool=%s)", 
-                                self.gpu_type, 
+                        logger.debug("⚠️ No VRAM read (gpu_type=%s, tool=%s)",
+                                self.gpu_type,
                                 self.gpu_tool)
 
                     if gtt is not None:
                         self.gtts.append(gtt)
                         logger.info("🧠 GPU GTT: %sGB", gtt)
                     else:
-                        logger.debug("⚠️ No GTT read (gpu_type=%s, tool=%s)", 
-                                self.gpu_type, 
+                        logger.debug("⚠️ No GTT read (gpu_type=%s, tool=%s)",
+                                self.gpu_type,
                                 self.gpu_tool)
 
                     if cpu is not None:
@@ -2141,9 +2141,9 @@ class LMStudioBenchmark:
 
                     if self.use_gtt and gtt_total > 0:
                         total_available = vram_free + gtt_free
-                        logger.info("💾 Memory: %sGB VRAM + %sGB GTT = %sGB total", 
-                                vram_free, 
-                                gtt_free, 
+                        logger.info("💾 Memory: %sGB VRAM + %sGB GTT = %sGB total",
+                                vram_free,
+                                gtt_free,
                                 total_available)
                         return total_available
                     else:
@@ -2511,8 +2511,8 @@ class LMStudioBenchmark:
                         and result.temp_celsius_max
                         and result.temp_celsius_max > self.max_temp
                     ):
-                        logger.warning("⚠️ Max. temperature exceeded: %s°C > %s°C", 
-                                result.temp_celsius_max, 
+                        logger.warning("⚠️ Max. temperature exceeded: %s°C > %s°C",
+                                result.temp_celsius_max,
                                 self.max_temp)
 
                     if (
@@ -2520,8 +2520,8 @@ class LMStudioBenchmark:
                         and result.power_watts_max
                         and result.power_watts_max > self.max_power
                     ):
-                        logger.warning("⚠️ Max. power exceeded: %sW > %sW", 
-                                result.power_watts_max, 
+                        logger.warning("⚠️ Max. power exceeded: %sW > %sW",
+                                result.power_watts_max,
                                 self.max_power)
 
                 benchmark_end_time = time.time()
@@ -2625,8 +2625,8 @@ class LMStudioBenchmark:
                             self.context_length,
                         )
 
-                logger.info("✓ %s: %s tokens/s (Duration: %ss)", model_key, 
-                        result.avg_tokens_per_sec, 
+                logger.info("✓ %s: %s tokens/s (Duration: %ss)", model_key,
+                        result.avg_tokens_per_sec,
                         result.benchmark_duration_seconds)
                 try:
                     if self.use_rest_api and instance_id:
@@ -2965,7 +2965,7 @@ class LMStudioBenchmark:
             logger.error("❌ No models remaining after filtering")
             return "failed"
 
-        logger.info("")  
+        logger.info("")
         logger.info("📊 Models detected: %d total", len(models))
         logger.info("🔍 App Version: %s", APP_VERSION)
         logger.info("")
@@ -3000,14 +3000,14 @@ class LMStudioBenchmark:
                     new_models.append(model_key)
 
             if self.model_limit and self.model_limit < len(new_models):
-                logger.info("⚙️ Model limit set: Testing max. %s new models (+ %s cached)", 
-                        self.model_limit, 
+                logger.info("⚙️ Model limit set: Testing max. %s new models (+ %s cached)",
+                        self.model_limit,
                         len(cached_models))
                 new_models = new_models[: self.model_limit]
             elif self.model_limit:
-                logger.info("⚙️ Model limit: %s new models + %s cached = %s total", 
-                        len(new_models), 
-                        len(cached_models), 
+                logger.info("⚙️ Model limit: %s new models + %s cached = %s total",
+                        len(new_models),
+                        len(cached_models),
                         len(new_models)
                         + len(cached_models))
 
@@ -3052,8 +3052,8 @@ class LMStudioBenchmark:
                 return "no_new_models"
         else:
             if self.model_limit and self.model_limit < len(models):
-                logger.info("⚙️ Model limit set: Testing only first %s of %s models", 
-                        self.model_limit, 
+                logger.info("⚙️ Model limit set: Testing only first %s of %s models",
+                        self.model_limit,
                         len(models))
                 models = models[: self.model_limit]
             logger.info("🚀 Starting benchmark for %s models...", len(models))
@@ -3065,7 +3065,7 @@ class LMStudioBenchmark:
                 newly_tested_models.append(result)
 
         if newly_tested_models:
-            logger.info("📊 Exporting reports for %s newly tested models...", 
+            logger.info("📊 Exporting reports for %s newly tested models...",
                     len(newly_tested_models))
             self._export_results_to_files(newly_tested_models)
         else:
@@ -3080,8 +3080,8 @@ class LMStudioBenchmark:
         except Exception as e:
             logger.warning("⚠️ Error unloading all models: %s", e)
 
-        logger.info("✅ Benchmark completed. %s/%s models successfully tested", 
-                len(newly_tested_models), 
+        logger.info("✅ Benchmark completed. %s/%s models successfully tested",
+                len(newly_tested_models),
                 len(models))
         return "completed"
 

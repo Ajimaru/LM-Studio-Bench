@@ -2416,8 +2416,8 @@ async def get_experiment_comparison(
             )
 
         logger.info("🧪 Experiment %s: %s", experiment_id, winner.upper())
-        logger.info("   Baseline: %s ± %s tok/s", 
-                baseline_stats['mean'], 
+        logger.info("   Baseline: %s ± %s tok/s",
+                baseline_stats['mean'],
                 baseline_stats['std_dev'])
         logger.info("   Test: %s ± %s tok/s", test_stats['mean'], test_stats['std_dev'])
         delta_str = (
