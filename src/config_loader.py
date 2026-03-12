@@ -1,4 +1,5 @@
 """Shared configuration loader for benchmark and web app."""
+
 from __future__ import annotations
 
 import json
@@ -6,19 +7,24 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
+from user_paths import USER_CONFIG_FILE
+
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "defaults.json"
+PROJECT_CONFIG_PATH = PROJECT_ROOT / "config" / "defaults.json"
 
-# Built-in fallbacks (used when JSON is missing or incomplete)
 BASE_DEFAULT_CONFIG: Dict[str, Any] = {
-    "prompt": "Erkläre maschinelles Lernen in 3 Sätzen",
+    "prompt": "Is the sky blue?",
     "context_length": 2048,
     "num_runs": 3,
+    "retest": False,
+    "enable_profiling": False,
     "lmstudio": {
         "host": "localhost",
         "ports": [1234, 1235],
+        "api_token": None,
+        "use_rest_api": True,
     },
     "inference": {
         "temperature": 0.1,
@@ -68,20 +74,39 @@ def _normalize_ports(ports: Any) -> list[int]:
 
 
 def load_default_config(config_path: Path | None = None) -> Dict[str, Any]:
-    """Load defaults from JSON if present, otherwise fall back to built-ins."""
-    path = config_path or DEFAULT_CONFIG_PATH
+    """Load config with fallback chain.
+
+    Load order:
+    1. Project defaults (project_root/config/defaults.json)
+    2. User overrides (if exists: ~/.config/lm-studio-bench/defaults.json)
+    3. Hardcoded defaults (BASE_DEFAULT_CONFIG)
+    """
     config = dict(BASE_DEFAULT_CONFIG)
 
-    if path.exists():
+    # 1. Load project defaults
+    if PROJECT_CONFIG_PATH.exists():
         try:
-            with path.open("r", encoding="utf-8") as f:
+            with PROJECT_CONFIG_PATH.open("r", encoding="utf-8") as f:
+                project_config = json.load(f)
+            config = _deep_merge(config, project_config)
+            logger.info("Loaded project defaults from %s", PROJECT_CONFIG_PATH)
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                "Failed to load project config from %s: %s", PROJECT_CONFIG_PATH, exc
+            )
+
+    # 2. Load user overrides (if exists)
+    if USER_CONFIG_FILE.exists():
+        try:
+            with USER_CONFIG_FILE.open("r", encoding="utf-8") as f:
                 user_config = json.load(f)
             config = _deep_merge(config, user_config)
-            logger.info(f"Loaded defaults from {path}")
-        except Exception as exc:  # pragma: no cover - defensive
-            logger.warning(f"Failed to load defaults from {path}: {exc}")
+            logger.info("Loaded user config overrides from %s", USER_CONFIG_FILE)
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(
+                "Failed to load user config from %s: %s", USER_CONFIG_FILE, exc
+            )
 
-    # Normalize LM Studio ports (always ensure at least one port)
     lmstudio_cfg = config.get("lmstudio", {}) or {}
     lmstudio_cfg["ports"] = _normalize_ports(lmstudio_cfg.get("ports"))
     lmstudio_cfg.setdefault("host", BASE_DEFAULT_CONFIG["lmstudio"]["host"])

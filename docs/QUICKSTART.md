@@ -4,6 +4,22 @@
 
 ```bash
 cd ~/LM-Studio-Bench
+
+# 1) Preview setup (no changes)
+./setup.sh --dry-run
+
+# 2) Prepare system + Python environment (recommended)
+./setup.sh
+
+# 3) Activate virtual environment
+source .venv/bin/activate
+```
+
+If you skip `setup.sh`, use this manual fallback:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -22,7 +38,10 @@ pip install -r requirements.txt
 ✅ Dark mode by default with 27 theme options
 ✅ All CLI parameters available as web form with tooltips
 ✅ Advanced filtering (quantization, architecture, size, context-length)
-✅ Separate logs: `logs/webapp_*.log` and `logs/benchmark_*.log`
+✅ Separate logs:
+`~/.local/share/lm-studio-bench/logs/webapp_*.log` and
+`~/.local/share/lm-studio-bench/logs/benchmark_*.log`
+✅ Linux tray control with dynamic status icon and quick actions
 
 **Dashboard Features:**
 
@@ -37,6 +56,22 @@ pip install -r requirements.txt
 - **Results Browser**: Filter and sort all cached benchmark results
 - **Export**: Download JSON/CSV/PDF/HTML reports
 - **Network Access**: Access from other devices on same network
+
+### Linux Tray Control
+
+When GTK/AppIndicator dependencies are installed, a tray controller starts
+with the web app.
+
+- **Dynamic status icon**:
+  - Gray: idle
+  - Green: running
+  - Yellow: paused
+  - Red: API unreachable/error
+- **Smart controls**:
+  - Start enabled in idle/error states
+  - Pause/Stop enabled only in running/paused states
+- **Auto refresh**: status and controls refresh every 3 seconds
+- **Quit behavior**: tray `Quit` triggers graceful full shutdown
 
 ### Network Access
 
@@ -57,8 +92,23 @@ http://192.168.1.100:8080
 ```
 
 ✅ Tests all installed models with 3 runs each (~1-2 hours)
-✅ Automatically caches results - reruns are instant!
+✅ Automatically saves results to `~/.local/share/lm-studio-bench/results/`
 ✅ Clean output with emoji icons and formatted model lists
+✅ Detailed logs saved to
+`~/.local/share/lm-studio-bench/logs/benchmark_YYYYMMDD_HHMMSS.log`
+
+#### Monitor Logs in Real-Time
+
+```bash
+# Watch benchmark execution
+tail -f ~/.local/share/lm-studio-bench/logs/benchmark_*.log
+
+# Watch web dashboard
+tail -f ~/.local/share/lm-studio-bench/logs/webapp_*.log
+
+# Search for errors
+grep ERROR ~/.local/share/lm-studio-bench/logs/benchmark_*.log
+```
 
 ### Quick Test (3 NEW Models)
 
@@ -100,25 +150,25 @@ http://192.168.1.100:8080
 
 **Monitored Metrics:**
 
-- 🌡️ GPU Temperatur (°C)
-- ⚡ GPU Leistung (W)
+- 🌡️ GPU Temperature (°C)
+- ⚡ GPU Power (W)
 - 💾 GPU VRAM (GB)
 - 🧠 GPU GTT (GB) - AMD only
-- 🖥️ System CPU-Auslastung (%)
-- 💾 System RAM-Auslastung (GB)
+- 🖥️ System CPU usage (%)
+- 💾 System RAM usage (GB)
 
-✅ Alle Metriken werden live in der WebApp angezeigt
-✅ 6 interaktive Plotly.js Charts mit Min/Max/Avg Stats
-✅ Gleitendes Mittel für stabile RAM-Kurven
-✅ Jede Metrik wird jede Sekunde gemessen
+✅ All metrics are displayed live in the WebApp
+✅ 6 interactive Plotly.js charts with Min/Max/Avg stats
+✅ Moving average for stable RAM curves
+✅ Each metric is measured every second
 
-**Mit Safety Limits:**
+**With Safety Limits:**
 
 ```bash
 ./run.py --enable-profiling --max-temp 85 --max-power 350
 ```
 
-✅ Unterbricht Benchmark wenn Limits überschritten werden
+✅ Interrupts benchmark when limits are exceeded
 
 ### 2️⃣ AMD GTT Support (Shared System RAM)
 
@@ -327,8 +377,37 @@ http://192.168.1.100:8080
 **Custom Prompt:**
 
 ```bash
-./run.py --prompt "Your custom prompt here" --limit 2 --runs 1
+./run.py -P "Your custom prompt here" --limit 2 --runs 1
 ```
+
+### 7️⃣ Presets (Fast Setup)
+
+**Show available presets:**
+
+```bash
+./run.py --list-presets
+```
+
+**Load a built-in preset:**
+
+```bash
+./run.py --preset quick_test
+./run.py --preset high_quality
+./run.py --preset resource_limited
+```
+
+**Load preset and override values:**
+
+```bash
+./run.py --preset quick_test --runs 2 --context 2048
+```
+
+Notes:
+
+- `default` includes explicit values for all benchmark form fields, so
+  preset comparisons do not show `null` values for missing keys.
+- Legacy keys in imported/user presets are normalized automatically
+  (`context_length`/`top_k`/`top_p`/`min_p` -> current key names).
 
 ## 📊 Output Formats
 

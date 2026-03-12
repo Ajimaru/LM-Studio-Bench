@@ -40,7 +40,7 @@ venv.bak/
 htmlcov/
 .tox/
 .nox/
-.coverage
+.coverage*
 .coverage.*
 .cache
 nosetests.xml
@@ -50,8 +50,10 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Benchmark Results
-results/
+# User Data (Symlinks to ~/.local/share and ~/.config)
+results/                      # Symlink to user results directory
+
+# Logs
 *.log
 errors.log
 
@@ -92,6 +94,9 @@ venv.bak/
 
 # mkdocs documentation
 /site
+
+# mdBook generated site
+book/
 
 # mypy
 .mypy_cache/
@@ -142,3 +147,4 @@ development/
 # Agents
 codacy-cli.sh
 .codacy/
+.continue/

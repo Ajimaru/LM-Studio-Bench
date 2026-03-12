@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      APPIMAGE_NAME: LM-Studio-Bench-x86_64.AppImage
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate tag format
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc|dev|test))?$ ]]; then
+            echo "Invalid tag format: $TAG_NAME"
+            echo "Expected format: vX.Y.Z or vX.Y.Z-{alpha|beta|rc|dev|test}"
+            exit 1
+          fi
+
+      - name: Ensure build scripts are executable
+        run: |
+          set -euo pipefail
+          chmod +x ./tools/build_appimage.sh
+          chmod +x ./tools/build_appimage_docker.sh
+
+      - name: Build AppImage
+        run: |
+          set -euo pipefail
+          ./tools/build_appimage_docker.sh
+
+      - name: Verify AppImage artifact
+        run: |
+          set -euo pipefail
+          APPIMAGE_PATH="dist/${APPIMAGE_NAME}"
+          [[ -f "$APPIMAGE_PATH" ]] || {
+            echo "AppImage missing: $APPIMAGE_PATH"
+            exit 1
+          }
+          ls -lh "$APPIMAGE_PATH"
+
+      - name: Generate SHA256 checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum "${APPIMAGE_NAME}" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: |
+            dist/${{ env.APPIMAGE_NAME }}
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/${{ env.APPIMAGE_NAME }}
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true

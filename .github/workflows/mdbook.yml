@@ -7,7 +7,7 @@ name: Deploy mdBook site to Pages
 on:
   # Runs on pushes targeting the default branch
   push:
-    branches: ["main"]
+    branches: ["main", "dev"]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -40,8 +40,8 @@ jobs:
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5
-      - name: Build with mdBook
-        run: mdbook build
+      - name: Build with mdBook (from docs/)
+        run: mdbook build docs
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -49,6 +49,7 @@ jobs:
 
   # Deployment job
   deploy:
+    if: ${{ github.ref == 'refs/heads/main' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

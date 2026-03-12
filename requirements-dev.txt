@@ -1,0 +1,30 @@
+# Development Requirements for LM-Studio-Bench
+# Install with: pip install -r requirements-dev.txt
+
+# Python Code Quality Tools
+flake8>=7.0.0              # Style checker (PEP 8)
+isort>=8.0.0               # Import sorter
+pylint>=4.0.0              # Code linter and checker
+djlint>=1.36.0             # HTML/Jinja linter
+
+# Optional tools for development
+black>=24.0.0              # Code formatter (for future use)
+mypy>=1.0.0                # Static type checker (for future use)
+
+# Testing
+pytest>=8.0.0              # Test framework
+pytest-cov>=5.0.0          # Coverage plugin for pytest
+pytest-mock>=3.14.0        # Mocking support for pytest
+pytest-httpx>=0.30.0       # httpx request mocking for pytest
+httpx>=0.25.0              # HTTP client (needed for test client)
+lmstudio>=0.1.0
+tqdm>=4.66.3
+psutil>=5.9.0
+reportlab>=4.0.0
+plotly>=5.0.0
+fastapi>=0.109.0
+uvicorn[standard]>=0.24.0
+jinja2>=3.1.6
+distro>=1.8.0
+py-cpuinfo>=9.0.0
+scipy>=1.11.0

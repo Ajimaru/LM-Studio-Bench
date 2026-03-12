@@ -1,0 +1,64 @@
+# PyProject Configuration for LM-Studio-Bench
+# See: https://peps.python.org/pep-0518/
+
+[tool.isort]
+# Profile compatible with Black
+profile = "black"
+
+# Line length
+line_length = 88
+
+# Multi-line import style
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+# Import order
+force_sort_within_sections = true
+lexicographical = true
+
+# Group imports
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+known_first_party = ["src", "web", "tools"]
+
+# Skip directories
+skip_glob = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "env",
+    "build",
+    "dist",
+    "*.egg-info",
+    ".tox",
+    ".pytest_cache",
+    ".mypy_cache",
+    "node_modules",
+    "book"
+]
+
+# Don't skip __init__.py files
+skip_gitignore = false
+
+[tool.djlint]
+# Profile for Django/Jinja templates
+profile = "jinja"
+
+# Line length
+line_length = 88
+
+# Indentation
+indent = 2
+
+# Formatting options
+use_formatter = true
+close_void_tags = false
+format_css = false
+format_js = false
+preserve_blank_lines = true
+
+# Exclude patterns (comma-separated)
+exclude = ".git,__pycache__,.venv,venv,env,build,dist,.tox,.pytest_cache,node_modules"

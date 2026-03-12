@@ -1,0 +1,16 @@
+# Ensure shell scripts always use LF line endings
+*.sh text eol=lf
+
+# Common text files
+*.py text eol=lf
+*.md text
+*.txt text
+
+# Prevent Git from altering binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.tar.gz binary
