@@ -54,7 +54,9 @@ quantizations to measure and compare tokens-per-second performance.
       - 🌐 HTML (interactive Plotly charts, best-practices, vision/tool/architecture tables, dark mode)
     - ⚡ **Instant Report Regeneration**: `--export-only` generates reports from cached data in <1s
   - 🌐 **Network Access**: Reachable from other devices on your network
-  - 📝 **Separate Logs**: `logs/webapp_*.log` and `logs/benchmark_*.log`
+  - 📝 **Separate Logs**:
+    `~/.local/share/lm-studio-bench/logs/webapp_*.log` and
+    `~/.local/share/lm-studio-bench/logs/benchmark_*.log`
   - ⚙️ **Parameter Configuration**: All CLI parameters available via GUI
     - All CLI arguments available
     - Tooltip explanations for all options
@@ -472,7 +474,9 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
   - ⚙️ Configuration
   - ⏱️ Time/Performance
   - Additional icons for specific operations
-- **Per-run logs**: `logs/benchmark_YYYYMMDD_HHMMSS.log` - separate log file per run
+- **Per-run logs**:
+  `~/.local/share/lm-studio-bench/logs/benchmark_YYYYMMDD_HHMMSS.log`
+  - separate log file per run
 - **Filtered logs**: third-party libraries (httpx, lmstudio, urllib3, websockets) are limited to WARNING level
 - **JSON filtering**: WebSocket debug events are automatically filtered
 
@@ -621,7 +625,7 @@ The benchmark tool generates separate log files for each component:
 **Log Locations**:
 
 ```text
-logs/
+~/.local/share/lm-studio-bench/logs/
 ├── benchmark_YYYYMMDD_HHMMSS.log    # Benchmark execution logs
 └── webapp_YYYYMMDD_HHMMSS.log       # Web dashboard logs
 ```
@@ -652,16 +656,17 @@ The following libraries have suppressed debug output for clarity:
 
 ```bash
 # View latest benchmark log (real-time)
-tail -f logs/benchmark_*.log
+tail -f ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 
 # View latest webapp log
-tail -f logs/webapp_*.log
+tail -f ~/.local/share/lm-studio-bench/logs/webapp_*.log
 
 # Search for errors
-grep ERROR logs/benchmark_*.log
+grep ERROR ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 
 # Check hardware metrics in logs
-grep "💾\|🌡️\|⚡" logs/benchmark_*.log
+grep "💾\|🌡️\|⚡" \
+  ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 ```
 
 **Hardware Metrics in Logs**:

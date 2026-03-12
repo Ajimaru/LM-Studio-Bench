@@ -38,7 +38,9 @@ pip install -r requirements.txt
 ✅ Dark mode by default with 27 theme options
 ✅ All CLI parameters available as web form with tooltips
 ✅ Advanced filtering (quantization, architecture, size, context-length)
-✅ Separate logs: `logs/webapp_*.log` and `logs/benchmark_*.log`
+✅ Separate logs:
+`~/.local/share/lm-studio-bench/logs/webapp_*.log` and
+`~/.local/share/lm-studio-bench/logs/benchmark_*.log`
 ✅ Linux tray control with dynamic status icon and quick actions
 
 **Dashboard Features:**
@@ -92,19 +94,20 @@ http://192.168.1.100:8080
 ✅ Tests all installed models with 3 runs each (~1-2 hours)
 ✅ Automatically saves results to `~/.local/share/lm-studio-bench/results/`
 ✅ Clean output with emoji icons and formatted model lists
-✅ Detailed logs saved to `logs/benchmark_YYYYMMDD_HHMMSS.log`
+✅ Detailed logs saved to
+`~/.local/share/lm-studio-bench/logs/benchmark_YYYYMMDD_HHMMSS.log`
 
 #### Monitor Logs in Real-Time
 
 ```bash
 # Watch benchmark execution
-tail -f logs/benchmark_*.log
+tail -f ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 
 # Watch web dashboard
-tail -f logs/webapp_*.log
+tail -f ~/.local/share/lm-studio-bench/logs/webapp_*.log
 
 # Search for errors
-grep ERROR logs/benchmark_*.log
+grep ERROR ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 ```
 
 ### Quick Test (3 NEW Models)

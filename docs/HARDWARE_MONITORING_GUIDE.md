@@ -95,7 +95,8 @@ When `--enable-profiling` is active, the benchmark prints metrics every second:
 
 These outputs are:
 
-- ✅ Saved in `logs/benchmark_YYYYMMDD_HHMMSS.log`
+- ✅ Saved in
+   `~/.local/share/lm-studio-bench/logs/benchmark_YYYYMMDD_HHMMSS.log`
 - ✅ Shown in the WebApp terminal
 - ✅ Visualized as charts
 
@@ -152,7 +153,9 @@ logger.info(f"💾 Memory: {vram_mb:.1f}MB VRAM + {gtt_mb:.1f}MB GTT")
 This ensures metrics appear in both:
 
 - **stdout** - Real-time display in terminal
-- **log files** - `logs/benchmark_YYYYMMDD_HHMMSS.log` for permanent record
+- **log files** -
+   `~/.local/share/lm-studio-bench/logs/benchmark_YYYYMMDD_HHMMSS.log`
+   for permanent record
 - **WebApp** - Streamed via WebSocket to dashboard
 
 ### Fix 3: WebApp Output Streaming

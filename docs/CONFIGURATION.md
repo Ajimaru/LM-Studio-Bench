@@ -879,27 +879,28 @@ The following libraries have suppressed debug output for cleaner logs:
 
 ```bash
 # Watch benchmark execution
-tail -f logs/benchmark_*.log
+tail -f ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 
 # Watch web dashboard
-tail -f logs/webapp_*.log
+tail -f ~/.local/share/lm-studio-bench/logs/webapp_*.log
 ```
 
 **Search and filter:**
 
 ```bash
 # Find errors
-grep ERROR logs/benchmark_*.log
+grep ERROR ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 
 # Find warnings
-grep WARNING logs/benchmark_*.log
+grep WARNING ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 
 # Find specific model errors
-grep "model_name_pattern" logs/benchmark_*.log
+grep "model_name_pattern" \
+  ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 
 # Count log entries by level
-grep -c INFO logs/benchmark_*.log
-grep -c ERROR logs/benchmark_*.log
+grep -c INFO ~/.local/share/lm-studio-bench/logs/benchmark_*.log
+grep -c ERROR ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 ```
 
 ---

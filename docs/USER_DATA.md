@@ -10,14 +10,15 @@ configuration.
 
 ### Project Directory
 
-The project directory contains read-only defaults and temporary logs:
+The project directory contains read-only defaults and optional compatibility
+locations:
 
 ```text
 <project>/
 ├── config/
 │   └── defaults.json       # Project defaults (in Git)
-├── results/                # Optional: can be symlinked to user results
-└── logs/                   # Benchmark and web logs (in project root)
+├── results/                # Optional: may exist as compatibility symlink
+└── logs/                   # Optional: legacy/manual debug folder
 ```
 
 ### User Directories (XDG Standard)
@@ -38,6 +39,12 @@ User-specific data is stored in standard XDG locations:
 ├── benchmark_results_<timestamp>.html
 ├── benchmark_cache.db      # SQLite benchmark cache
 └── model_metadata.db       # Model metadata cache
+
+~/.local/share/lm-studio-bench/logs/
+├── benchmark_<timestamp>.log
+├── webapp_<timestamp>.log
+├── runapp_<timestamp>.log
+└── trayapp_<timestamp>.log
 ```
 
 ---
@@ -140,6 +147,7 @@ On first run, the tool automatically:
 
 1. Creates user data directories (`~/.config/...` and `~/.local/share/...`)
 2. Places new results in `~/.local/share/lm-studio-bench/results/`
+3. Places runtime logs in `~/.local/share/lm-studio-bench/logs/`
 
 **Note**: If you have existing data in a legacy `results/` directory, you'll need to manually move it to the new location.
 
@@ -231,9 +239,11 @@ tar -czf lms-bench-data.tar.gz ~/.local/share/lm-studio-bench/
 
 ### Q: What about logs?
 
-**A**: Logs remain in the project directory: `<project>/logs/`
+**A**: Logs are stored in:
 
-This is intentional for development/debugging purposes.
+`~/.local/share/lm-studio-bench/logs/`
+
+This includes benchmark, web app, tray, and launcher logs.
 
 ---
 
