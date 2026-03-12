@@ -1,10 +1,7 @@
 """Tests for src/benchmark.py."""
 from dataclasses import asdict
-import io
 from pathlib import Path
-from statistics import mean
 import sys
-import threading
 from typing import Any, Optional
 from unittest.mock import MagicMock, patch
 

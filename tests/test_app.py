@@ -1,9 +1,6 @@
 """Tests for web/app.py."""
-import hashlib
 import json
 import math
-import socket
-import statistics
 import sys
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch

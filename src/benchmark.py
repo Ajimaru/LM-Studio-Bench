@@ -3016,7 +3016,7 @@ class LMStudioBenchmark:
                 logger.info("📦 === Cached Models ===")
                 logger.info(
                     f"💾 {len(cached_models)} models already tested "
-                    f"(will be loaded from cache):"
+                    "(will be loaded from cache):"
                 )
                 for model_key, cached in cached_models[:10]:
                     date_part = (
@@ -3272,13 +3272,13 @@ class LMStudioBenchmark:
 
         recommendations.append(f"🖥️  Hardware: {gpu_model} detected")
         recommendations.append("")
-        recommendations.append(f"⚡ Fastest model:")
+        recommendations.append("⚡ Fastest model:")
         recommendations.append(
             f"   → {best_speed.model_name} ({best_speed.quantization})"
         )
         recommendations.append(f"   → {best_speed.avg_tokens_per_sec:.2f} tokens/s")
         recommendations.append("")
-        recommendations.append(f"💎 Most efficient model (tokens/s per GB):")
+        recommendations.append("💎 Most efficient model (tokens/s per GB):")
         recommendations.append(
             f"   → {best_efficiency.model_name} ({best_efficiency.quantization})"
         )
@@ -3287,7 +3287,7 @@ class LMStudioBenchmark:
         )
         recommendations.append(f"   → Size: {best_efficiency.model_size_gb:.2f} GB")
         recommendations.append("")
-        recommendations.append(f"🚀 Fastest response time (TTFT):")
+        recommendations.append("🚀 Fastest response time (TTFT):")
         recommendations.append(
             f"   → {best_ttft.model_name} ({best_ttft.quantization})"
         )
@@ -3295,7 +3295,7 @@ class LMStudioBenchmark:
             f"   → {best_ttft.avg_ttft * 1000:.0f} ms until first token"
         )
         recommendations.append("")
-        recommendations.append(f"⚖️  Beste Balance (Speed + Effizienz):")
+        recommendations.append("⚖️  Beste Balance (Speed + Effizienz):")
         recommendations.append(
             f"   → {best_balance.model_name} ({best_balance.quantization})"
         )
@@ -3303,7 +3303,7 @@ class LMStudioBenchmark:
             f"   → {best_balance.avg_tokens_per_sec:.2f} tokens/s, {best_balance.model_size_gb:.2f} GB"
         )
         recommendations.append("")
-        recommendations.append(f"📊 Quantisierungs-Tipps:")
+        recommendations.append("📊 Quantisierungs-Tipps:")
         q4_models = [r for r in self.results if "q4" in r.quantization.lower()]
         q6_models = [r for r in self.results if "q6" in r.quantization.lower()]
 
@@ -3342,7 +3342,7 @@ class LMStudioBenchmark:
                 break
 
         if vram_info:
-            recommendations.append(f"🎯 VRAM-Empfehlungen:")
+            recommendations.append("🎯 VRAM-Empfehlungen:")
             recommendations.extend(vram_info[:3])
 
         return recommendations

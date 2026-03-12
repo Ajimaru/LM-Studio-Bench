@@ -929,7 +929,6 @@ async def get_status() -> dict:
 @app.get("/api/lmstudio/health")
 async def get_lmstudio_health() -> dict:
     """LM Studio Healthcheck - Live Status ohne Cache"""
-    lmstudio_health = {"ok": False, "status": "offline"}
     lmstudio_ports = LMSTUDIO_PORTS
 
     for port in lmstudio_ports:
@@ -2325,8 +2324,8 @@ async def get_experiment_comparison(
                 minp,
                 penalty,
                 maxts,
-                runs,
-                errors,
+                _runs,
+                _errors,
             ) = row
 
             params_dict = {
@@ -2521,8 +2520,8 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
                 minp,
                 penalty,
                 maxts,
-                runs,
-                errors,
+                _runs,
+                _errors,
             ) = row
             params_dict = {
                 "temperature": temp,

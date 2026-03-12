@@ -1,7 +1,7 @@
 """Tests for src/preset_manager.py."""
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 
 import pytest
 

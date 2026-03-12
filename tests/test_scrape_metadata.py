@@ -1,9 +1,7 @@
 """Tests for tools/scrape_metadata.py."""
 import json
-import shutil
 import sqlite3
 import sys
-import types
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
