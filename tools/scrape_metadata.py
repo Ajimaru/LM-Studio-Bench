@@ -24,9 +24,17 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
+SRC_DIR = PROJECT_ROOT / "src"
 
-from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR  # noqa: E402
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+try:
+    from src.user_paths import USER_LOGS_DIR, USER_RESULTS_DIR  # noqa: E402
+except ModuleNotFoundError:
+    from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR  # noqa: E402
 
 RESULTS_DIR = USER_RESULTS_DIR
 METADATA_DB = RESULTS_DIR / "model_metadata.db"
@@ -69,7 +77,7 @@ def setup_logger() -> logging.Logger:
         ],
     )
     log = logging.getLogger("metadata_scraper")
-    log.info(f"Logging to {log_file}")
+    log.info("Logging to %s", log_file)
     return log
 
 
@@ -101,7 +109,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
 
 def _strip_tags(html: str) -> str:
-    script_style_pattern = r"<(script|style)[^>]*>" r".*?" r"</\1>"
+    script_style_pattern = r"<(script|style)[^>]*>.*?</\1>"
     flags = re.DOTALL | re.IGNORECASE
     html = re.sub(
         script_style_pattern,
@@ -162,7 +170,7 @@ def fetch_lmstudio_readme(model_key: str, timeout: int = 5) -> str:
     ):
         return ""
 
-    meta_desc_pattern = r"<meta\\s+name=\"description\"\\s+" r"content=\"(.*?)\""
+    meta_desc_pattern = r"<meta\s+name=\"description\"\s+content=\"(.*?)\""
     m = re.search(
         meta_desc_pattern,
         html,
@@ -629,7 +637,8 @@ def scrape(only_missing: bool = True, enable_hf: bool = True) -> None:
     if to_insert:
         upsert_metadata(conn, to_insert)
         logger.info(
-            "Inserted/updated %d models into model_metadata.db" % len(to_insert)
+            "Inserted/updated %d models into model_metadata.db",
+            len(to_insert),
         )
     else:
         logger.info("No new models to insert")
@@ -637,8 +646,8 @@ def scrape(only_missing: bool = True, enable_hf: bool = True) -> None:
     if to_update:
         update_rows(conn, to_update)
         logger.info(
-            "Updated metadata for %d existing models (description/capabilities)"
-            % len(to_update)
+            "Updated metadata for %d existing models (description/capabilities)",
+            len(to_update),
         )
 
     conn.close()

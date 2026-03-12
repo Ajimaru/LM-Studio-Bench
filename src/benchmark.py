@@ -14,7 +14,6 @@ import glob
 import hashlib
 import json
 import logging
-import os
 from pathlib import Path
 import re
 import shutil
@@ -5510,8 +5509,8 @@ Examples:
 
     if args.debug:
         logger.setLevel(logging.DEBUG)
-        for handler in logging.root.handlers:
-            handler.setLevel(logging.DEBUG)
+        for log_handler in logging.root.handlers:
+            log_handler.setLevel(logging.DEBUG)
         logging.getLogger("httpx").setLevel(logging.DEBUG)
         logging.getLogger("lmstudio").setLevel(logging.DEBUG)
         logging.getLogger("urllib3").setLevel(logging.DEBUG)
@@ -5590,10 +5589,13 @@ Examples:
         if any(filter_args.values()):
             original_count = len(benchmark.results)
             benchmark.results = [
-                r for r in benchmark.results if benchmark._matches_filters(r)
+                r for r in benchmark.results
+                if benchmark._matches_filters(r)  # noqa: SLF001
             ]
             logger.info(
-                f"✔️ After filtering: {len(benchmark.results)}/{original_count} models"
+                "✔️ After filtering: %s/%s models",
+                len(benchmark.results),
+                original_count,
             )
 
         if not benchmark.results:
@@ -5601,7 +5603,7 @@ Examples:
             return
 
         if args.compare_with:
-            benchmark._load_previous_results()
+            benchmark._load_previous_results()  # noqa: SLF001
 
         logger.info("⚙️ Generating reports for %s models...", len(benchmark.results))
         benchmark.export_results()
@@ -5622,7 +5624,9 @@ Examples:
             model_sizes.sort(key=lambda x: x[1])
             smallest = model_sizes[0][0]
             logger.info(
-                f"✅ Smallest model selected: {smallest} ({model_sizes[0][1]:.2f} GB)"
+                "✅ Smallest model selected: %s (%.2f GB)",
+                smallest,
+                model_sizes[0][1],
             )
             logger.info("⚙️ Configuration: 1 measurement, context %s", args.context)
             logger.info("")

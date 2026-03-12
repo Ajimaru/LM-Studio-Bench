@@ -10,6 +10,7 @@ import argparse
 import asyncio
 from contextlib import asynccontextmanager
 import csv
+from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
 from io import StringIO
@@ -41,9 +42,9 @@ import httpx
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
 
-from config_loader import DEFAULT_CONFIG
-from preset_manager import PresetManager
-from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from src.config_loader import DEFAULT_CONFIG
+from src.preset_manager import PresetManager
+from src.user_paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
 
 try:
     from scipy import stats as scipy_stats
@@ -52,8 +53,6 @@ except ImportError:
 
 PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
-sys.path.insert(0, str(SRC_DIR))
-
 
 SCIPY_AVAILABLE = scipy_stats is not None
 
@@ -83,10 +82,10 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
             capture_output=True,
             text=True,
             timeout=20,
+            check=False,
         )
         if result.returncode != 0:
             return []
-        import json
 
         data = json.loads(result.stdout)
         out_models: list[dict] = []
@@ -123,7 +122,13 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
             )
             return out_models
         return out_models
-    except Exception:
+    except (
+        json.JSONDecodeError,
+        OSError,
+        TimeoutExpired,
+        TypeError,
+        ValueError,
+    ):
         return []
 
 
@@ -194,8 +199,8 @@ def find_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("", 0))
         s.listen(1)
-        port = s.getsockname()[1]
-    return port
+        free_port = s.getsockname()[1]
+    return free_port
 
 
 BENCHMARK_SCRIPT = SRC_DIR / "benchmark.py"
@@ -208,11 +213,10 @@ SCRAPER_SCRIPT = PROJECT_ROOT / "tools" / "scrape_metadata.py"
 
 sys.path.insert(0, str(SRC_DIR))
 try:
-    from benchmark import BenchmarkCache, BenchmarkResult
+    from benchmark import BenchmarkCache
 except ImportError as e:
     logger.error("❌ Could not import benchmark.py: %s", e)
     BenchmarkCache = None
-    BenchmarkResult = None
 
 try:
     from version_checker import (
@@ -260,30 +264,33 @@ def _get_cached_latest_release() -> Optional[dict]:
 
     logger.debug("Cache miss or expired, fetching from GitHub")
 
-    if not all(
-        [
-            get_current_version,
-            fetch_latest_release,
-            compare_versions,
-            format_release_url,
-        ]
+    current_version_fn = get_current_version
+    fetch_latest_release_fn = fetch_latest_release
+    compare_versions_fn = compare_versions
+    format_release_url_fn = format_release_url
+
+    if (
+        current_version_fn is None
+        or fetch_latest_release_fn is None
+        or compare_versions_fn is None
+        or format_release_url_fn is None
     ):
         logger.warning(
-            "Version checker functions not available, " "skipping update check"
+            "Version checker functions not available, skipping update check"
         )
         return None
 
     try:
-        current = get_current_version()
-        latest_data = fetch_latest_release()
+        current = current_version_fn()
+        latest_data = fetch_latest_release_fn()
 
         if latest_data is None:
             logger.warning("Failed to fetch latest release from GitHub")
             return None
 
-        latest_version = latest_data.get("tag_name", "unknown")
-        is_update = compare_versions(current, latest_version)
-        download_url = format_release_url(latest_version)
+        latest_version = str(latest_data.get("tag_name", "unknown"))
+        is_update = compare_versions_fn(current, latest_version)
+        download_url = format_release_url_fn(latest_version)
 
         result = {
             "current_version": current,
@@ -301,22 +308,32 @@ def _get_cached_latest_release() -> Optional[dict]:
             is_update,
         )
         return result
-    except Exception as exc:
+    except (
+        httpx.HTTPError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
         logger.error("Error in latest release check: %s", exc)
         return None
 
 
-class BenchmarkManager:
-    def __init__(self):
-        self.process: Optional[subprocess.Popen] = None
-        self.status = "idle"
-        self.start_time: Optional[datetime] = None
-        self.current_output = ""
-        self.connected_clients = set()
-        self.benchmark_log_file: Optional[Path] = None
-        self.output_queue: Optional[asyncio.Queue[str]] = None
-        self.output_task: Optional[asyncio.Task] = None
-        self.hardware_history = {
+@dataclass
+class _BenchmarkManagerState:
+    """Mutable runtime state for the benchmark process lifecycle."""
+
+    process: Optional[subprocess.Popen] = None
+    status: str = "idle"
+    start_time: Optional[datetime] = None
+    current_output: str = ""
+    connected_clients: set[WebSocket] = field(default_factory=set)
+    benchmark_log_file: Optional[Path] = None
+    output_queue: Optional[asyncio.Queue[str]] = None
+    output_task: Optional[asyncio.Task] = None
+    hardware_history: Dict[str, List[Dict[str, Union[str, float]]]] = field(
+        default_factory=lambda: {
             "temperatures": [],
             "power": [],
             "vram": [],
@@ -324,15 +341,45 @@ class BenchmarkManager:
             "cpu": [],
             "ram": [],
         }
-        self.last_hardware_send_time: float = 0
+    )
+    last_hardware_send_time: float = 0.0
+
+
+class BenchmarkManager:
+    """Manage benchmark execution, streaming output, and runtime telemetry."""
+
+    def __init__(self):
+        self._state = _BenchmarkManagerState()
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate state fields to the internal runtime state object."""
+        state = object.__getattribute__(self, "_state")
+        if hasattr(state, name):
+            return getattr(state, name)
+        raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Route state field updates to the internal runtime state object."""
+        if name == "_state":
+            object.__setattr__(self, name, value)
+            return
+        if "_state" in self.__dict__ and hasattr(self._state, name):
+            setattr(self._state, name, value)
+            return
+        object.__setattr__(self, name, value)
 
     def is_running(self) -> bool:
+        """Return whether the benchmark process is currently active.
+
+        Returns:
+            True if a process exists and has not exited, otherwise False.
+        """
         return self.process is not None and self.process.poll() is None
 
     async def _consume_output(self):
         """Continuously reads stdout and puts new chunks into output_queue."""
-        if self.output_queue is None:
-            self.output_queue = asyncio.Queue()
+        if self._state.output_queue is None:
+            self._state.output_queue = asyncio.Queue()
 
         logger.info("🔄 Output consumer task started")
 
@@ -351,46 +398,52 @@ class BenchmarkManager:
                     if not line:
                         break
 
-                    if self.benchmark_log_file:
+                    if self._state.benchmark_log_file:
                         try:
                             with open(
-                                self.benchmark_log_file, "a", encoding="utf-8"
+                                self._state.benchmark_log_file, "a", encoding="utf-8"
                             ) as f:
                                 f.write(line)
-                        except Exception as log_error:
+                        except (OSError, UnicodeError, ValueError) as log_error:
                             logger.error("❌ Log write error: %s", log_error)
 
                     self.parse_hardware_metrics(line)
 
-                    await self.output_queue.put(line)
-                    self.current_output += line
+                    await self._state.output_queue.put(line)
+                    self._state.current_output += line
 
-                except Exception as read_error:
+                except (OSError, RuntimeError, ValueError) as read_error:
                     logger.error("❌ Read error: %s", read_error)
                     break
 
             if self.process is not None:
                 return_code = self.process.poll()
                 if return_code == 0:
-                    self.status = "completed"
+                    self._state.status = "completed"
                 else:
-                    self.status = "failed"
+                    self._state.status = "failed"
                     failure_msg = (
                         f"❌ Benchmark process exited with code {return_code}\n"
                     )
-                    await self.output_queue.put(failure_msg)
-                    self.current_output += failure_msg
+                    await self._state.output_queue.put(failure_msg)
+                    self._state.current_output += failure_msg
 
             logger.info("🔄 Output consumer task ended (EOF reached)")
 
-            if self.benchmark_log_file and self.benchmark_log_file.exists():
+            if (
+                self._state.benchmark_log_file
+                and self._state.benchmark_log_file.exists()
+            ):
                 logger.info(
                     "✅ Benchmark-Log: %s",
-                    format_path_for_logs(self.benchmark_log_file),
+                    format_path_for_logs(self._state.benchmark_log_file),
                 )
 
-        except Exception as e:
-            logger.error("❌ Error in output consumer: %s", e)
+        except asyncio.CancelledError:
+            logger.info("ℹ️ Output consumer task cancelled")
+            raise
+        except (OSError, RuntimeError, TypeError, ValueError) as consume_error:
+            logger.error("❌ Error in output consumer: %s", consume_error)
 
     def drain_output_queue(self) -> str:
         """Fetches all currently available output chunks without blocking."""
@@ -404,77 +457,185 @@ class BenchmarkManager:
             pass
         return "".join(chunks)
 
-    async def start_benchmark(self, args: list) -> bool:
-        """Starts a new benchmark process"""
+    def _validate_cli_arg_value(self, flag: str, value: str) -> str:
+        """Validate and sanitize benchmark CLI argument values."""
+        if any(char in value for char in ("\x00", "\n", "\r")):
+            raise ValueError(f"Invalid control characters in {flag}")
+        if len(value) > 2000:
+            raise ValueError(f"Value too long for {flag}")
+
+        int_flags = {
+            "--runs",
+            "--context",
+            "--limit",
+            "--min-context",
+            "--top-k",
+            "--max-tokens",
+            "--n-gpu-layers",
+            "--n-batch",
+            "--n-threads",
+        }
+        float_flags = {
+            "--max-size",
+            "--max-temp",
+            "--max-power",
+            "--temperature",
+            "--top-p",
+            "--min-p",
+            "--repeat-penalty",
+            "--rope-freq-base",
+            "--rope-freq-scale",
+        }
+
+        if flag in int_flags:
+            int(value)
+        elif flag in float_flags:
+            float(value)
+
+        return value
+
+    def _sanitize_benchmark_args(self, cli_args: list[str]) -> list[str]:
+        """Whitelist and sanitize CLI args before subprocess execution."""
+        flags_with_values = {
+            "--runs",
+            "--context",
+            "--limit",
+            "--prompt",
+            "--min-context",
+            "--max-size",
+            "--quants",
+            "--arch",
+            "--params",
+            "--rank-by",
+            "--include-models",
+            "--exclude-models",
+            "--max-temp",
+            "--max-power",
+            "--temperature",
+            "--top-k",
+            "--top-p",
+            "--min-p",
+            "--repeat-penalty",
+            "--max-tokens",
+            "--n-gpu-layers",
+            "--n-batch",
+            "--n-threads",
+            "--rope-freq-base",
+            "--rope-freq-scale",
+            "--kv-cache-quant",
+        }
+        flags_without_values = {
+            "--only-vision",
+            "--only-tools",
+            "--retest",
+            "--dev-mode",
+            "--enable-profiling",
+            "--disable-gtt",
+            "--flash-attention",
+            "--no-flash-attention",
+            "--use-mmap",
+            "--no-mmap",
+            "--use-mlock",
+            "--debug",
+        }
+        allowed_flags = flags_with_values | flags_without_values
+
+        sanitized: list[str] = []
+        index = 0
+        while index < len(cli_args):
+            current = str(cli_args[index])
+
+            if current not in allowed_flags:
+                raise ValueError(f"Unsupported benchmark argument: {current}")
+
+            sanitized.append(current)
+
+            if current in flags_with_values:
+                if index + 1 >= len(cli_args):
+                    raise ValueError(f"Missing value for benchmark argument: {current}")
+                value = self._validate_cli_arg_value(
+                    current, str(cli_args[index + 1])
+                )
+                sanitized.append(value)
+                index += 2
+                continue
+
+            index += 1
+
+        return sanitized
+
+    async def start_benchmark(self, cli_args: list[str]) -> bool:
+        """Starts a new benchmark process."""
         if self.is_running():
             logger.warning("Benchmark is already running")
             return False
-        if self.output_queue is None:
-            self.output_queue = asyncio.Queue()
+        if self._state.output_queue is None:
+            self._state.output_queue = asyncio.Queue()
         try:
-            self.output_queue = asyncio.Queue()
-            if self.output_task and not self.output_task.done():
-                self.output_task.cancel()
+            sanitized_args = self._sanitize_benchmark_args(cli_args)
+            self._state.output_queue = asyncio.Queue()
+            if self._state.output_task and not self._state.output_task.done():
+                self._state.output_task.cancel()
 
-            self.process = subprocess.Popen(
-                [sys.executable, str(BENCHMARK_SCRIPT)] + args,
+            self._state.process = subprocess.Popen(  # pylint: disable=consider-using-with
+                [sys.executable, str(BENCHMARK_SCRIPT)] + sanitized_args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
                 cwd=PROJECT_ROOT,
             )
-            self.status = "running"
-            self.start_time = datetime.now()
-            self.current_output = ""
+            self._state.status = "running"
+            self._state.start_time = datetime.now()
+            self._state.current_output = ""
             logs_dir = USER_LOGS_DIR
             logs_dir.mkdir(parents=True, exist_ok=True)
-            timestamp_str = self.start_time.strftime("%Y%m%d_%H%M%S")
+            timestamp_str = self._state.start_time.strftime("%Y%m%d_%H%M%S")
             filename = f"benchmark_{timestamp_str}.log"
-            self.benchmark_log_file = logs_dir / filename
-            self.output_task = asyncio.create_task(self._consume_output())
+            self._state.benchmark_log_file = logs_dir / filename
+            self._state.output_task = asyncio.create_task(self._consume_output())
 
-            logger.info(f"✅ Benchmark started with PID %s", self.process.pid)
+            logger.info("✅ Benchmark started with PID %s", self._state.process.pid)
             logger.info(
                 "📝 Benchmark log: %s",
-                format_path_for_logs(self.benchmark_log_file),
+                format_path_for_logs(self._state.benchmark_log_file),
             )
             return True
-        except Exception as e:
-            logger.error("❌ Error starting benchmark: %s", e)
-            self.status = "idle"
+        except (OSError, RuntimeError, ValueError) as start_error:
+            logger.error("❌ Error starting benchmark: %s", start_error)
+            self._state.status = "idle"
             return False
 
     def pause_benchmark(self) -> bool:
-        """Pauses running benchmark"""
+        """Pauses running benchmark."""
         if not self.is_running() or not self.process:
             logger.warning("No running benchmark")
             return False
         try:
             self.process.send_signal(signal.SIGSTOP)
-            self.status = "paused"
+            self._state.status = "paused"
             logger.info("⏸️ Benchmark paused")
             return True
-        except Exception as e:
-            logger.error("❌ Error pausing: %s", e)
+        except (OSError, ProcessLookupError, ValueError) as pause_error:
+            logger.error("❌ Error pausing: %s", pause_error)
             return False
 
     def resume_benchmark(self) -> bool:
-        """Resumes paused benchmark"""
+        """Resumes paused benchmark."""
         if self.status != "paused" or not self.process:
             logger.warning("No paused benchmark")
             return False
         try:
             self.process.send_signal(signal.SIGCONT)
-            self.status = "running"
+            self._state.status = "running"
             logger.info("▶️ Benchmark resumed")
             return True
-        except Exception as e:
-            logger.error("❌ Error resuming: %s", e)
+        except (OSError, ProcessLookupError, ValueError) as resume_error:
+            logger.error("❌ Error resuming: %s", resume_error)
             return False
 
     def stop_benchmark(self) -> bool:
-        """Stops running benchmark"""
+        """Stops running benchmark."""
         if not self.process:
             logger.warning("No running benchmark")
             return False
@@ -489,13 +650,13 @@ class BenchmarkManager:
                 self.process.wait()
                 logger.warning("⏹️ Benchmark forcefully stopped (SIGKILL)")
 
-            self.status = "stopped"
-            self.process = None
-            if self.output_task and not self.output_task.done():
-                self.output_task.cancel()
+            self._state.status = "stopped"
+            self._state.process = None
+            if self._state.output_task and not self._state.output_task.done():
+                self._state.output_task.cancel()
             return True
-        except Exception as e:
-            logger.error("❌ Error stopping: %s", e)
+        except (OSError, ProcessLookupError, ValueError) as stop_error:
+            logger.error("❌ Error stopping: %s", stop_error)
             return False
 
     def parse_hardware_metrics(self, output_line: str):
@@ -574,12 +735,12 @@ class BenchmarkManager:
 
             if lines:
                 combined_output = "".join(lines)
-                self.current_output += combined_output
+                self._state.current_output += combined_output
                 return combined_output
 
             return ""
-        except Exception as e:
-            logger.error("❌ Error reading output: %s", e)
+        except (OSError, RuntimeError, TypeError, ValueError) as read_error:
+            logger.error("❌ Error reading output: %s", read_error)
             return ""
 
 
@@ -605,12 +766,12 @@ async def run_metadata_scraper():
         logger.warning("⚠️ Scraper timeout reached (>=300s), aborting")
     except subprocess.CalledProcessError as scrape_err:
         logger.warning("⚠️ Scraper error: %s", scrape_err.stderr or scrape_err)
-    except Exception as scrape_exc:
+    except (OSError, RuntimeError, ValueError) as scrape_exc:
         logger.warning("⚠️ Scraper execution failed: %s", scrape_exc)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """Handle FastAPI startup/shutdown for benchmark manager."""
     try:
         asyncio.create_task(run_metadata_scraper())
@@ -785,7 +946,9 @@ def perform_ttest(
                 }
 
         if SCIPY_AVAILABLE and scipy_stats is not None:
-            t_stat, p_value = scipy_stats.ttest_ind(baseline_speeds, test_speeds)
+            ttest_result = scipy_stats.ttest_ind(baseline_speeds, test_speeds)
+            t_stat = float(ttest_result.statistic)
+            p_value = float(ttest_result.pvalue)
             return {
                 "test_name": "Welch's t-test",
                 "t_statistic": round(t_stat, 4),
@@ -820,9 +983,19 @@ def perform_ttest(
             "alpha": 0.05,
         }
 
-    except Exception as e:
-        logger.error("Error in t-test: %s", e)
-        return {"test_name": "t-test", "error": str(e), "significant": False}
+    except (
+        statistics.StatisticsError,
+        TypeError,
+        ValueError,
+        ZeroDivisionError,
+        OverflowError,
+    ) as ttest_error:
+        logger.error("Error in t-test: %s", ttest_error)
+        return {
+            "test_name": "t-test",
+            "error": str(ttest_error),
+            "significant": False,
+        }
 
 
 def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) -> bool:
@@ -928,14 +1101,14 @@ async def get_lmstudio_health() -> dict:
     """LM Studio Healthcheck - Live Status ohne Cache"""
     lmstudio_ports = LMSTUDIO_PORTS
 
-    for port in lmstudio_ports:
+    for lm_port in lmstudio_ports:
         try:
             with httpx.Client(timeout=1.5) as client:
-                resp = client.get(f"http://{LMSTUDIO_HOST}:{port}/v1/models")
+                resp = client.get(f"http://{LMSTUDIO_HOST}:{lm_port}/v1/models")
                 if resp.status_code == 200:
-                    status_msg = f"online ({LMSTUDIO_HOST}:{port})"
+                    status_msg = f"online ({LMSTUDIO_HOST}:{lm_port})"
                     return {"ok": True, "status": status_msg, "version": None}
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError):
             continue
 
     try:
@@ -976,96 +1149,96 @@ async def get_lmstudio_health() -> dict:
 @app.post("/api/benchmark/start")
 async def start_benchmark(params: BenchmarkParams) -> dict:
     """Start a new benchmark."""
-    args = []
+    benchmark_args = []
 
     if params.runs:
-        args.extend(["--runs", str(params.runs)])
+        benchmark_args.extend(["--runs", str(params.runs)])
     if params.context:
-        args.extend(["--context", str(params.context)])
+        benchmark_args.extend(["--context", str(params.context)])
     if params.limit:
-        args.extend(["--limit", str(params.limit)])
+        benchmark_args.extend(["--limit", str(params.limit)])
     if params.prompt:
-        args.extend(["--prompt", params.prompt])
+        benchmark_args.extend(["--prompt", params.prompt])
     if params.min_context:
-        args.extend(["--min-context", str(params.min_context)])
+        benchmark_args.extend(["--min-context", str(params.min_context)])
     if params.max_size:
-        args.extend(["--max-size", str(params.max_size)])
+        benchmark_args.extend(["--max-size", str(params.max_size)])
     if params.quants:
-        args.extend(["--quants", params.quants])
+        benchmark_args.extend(["--quants", params.quants])
     if params.arch:
-        args.extend(["--arch", params.arch])
+        benchmark_args.extend(["--arch", params.arch])
     if params.params:
-        args.extend(["--params", params.params])
+        benchmark_args.extend(["--params", params.params])
     if params.rank_by:
-        args.extend(["--rank-by", params.rank_by])
+        benchmark_args.extend(["--rank-by", params.rank_by])
     if params.include_models:
-        args.extend(["--include-models", params.include_models])
+        benchmark_args.extend(["--include-models", params.include_models])
     if params.exclude_models:
-        args.extend(["--exclude-models", params.exclude_models])
+        benchmark_args.extend(["--exclude-models", params.exclude_models])
     if params.only_vision:
-        args.append("--only-vision")
+        benchmark_args.append("--only-vision")
     if params.only_tools:
-        args.append("--only-tools")
+        benchmark_args.append("--only-tools")
     if params.retest:
-        args.append("--retest")
+        benchmark_args.append("--retest")
     if params.dev_mode:
-        args.append("--dev-mode")
+        benchmark_args.append("--dev-mode")
     if params.enable_profiling:
-        args.append("--enable-profiling")
+        benchmark_args.append("--enable-profiling")
     if params.disable_gtt:
-        args.append("--disable-gtt")
+        benchmark_args.append("--disable-gtt")
     if params.max_temp:
-        args.extend(["--max-temp", str(params.max_temp)])
+        benchmark_args.extend(["--max-temp", str(params.max_temp)])
     if params.max_power:
-        args.extend(["--max-power", str(params.max_power)])
+        benchmark_args.extend(["--max-power", str(params.max_power)])
     if params.temperature is not None:
-        args.extend(["--temperature", str(params.temperature)])
+        benchmark_args.extend(["--temperature", str(params.temperature)])
     if params.top_k_sampling is not None:
-        args.extend(["--top-k", str(params.top_k_sampling)])
+        benchmark_args.extend(["--top-k", str(params.top_k_sampling)])
     if params.top_p_sampling is not None:
-        args.extend(["--top-p", str(params.top_p_sampling)])
+        benchmark_args.extend(["--top-p", str(params.top_p_sampling)])
     if params.min_p_sampling is not None:
-        args.extend(["--min-p", str(params.min_p_sampling)])
+        benchmark_args.extend(["--min-p", str(params.min_p_sampling)])
     if params.repeat_penalty is not None:
-        args.extend(["--repeat-penalty", str(params.repeat_penalty)])
+        benchmark_args.extend(["--repeat-penalty", str(params.repeat_penalty)])
     if params.max_tokens is not None:
-        args.extend(["--max-tokens", str(params.max_tokens)])
+        benchmark_args.extend(["--max-tokens", str(params.max_tokens)])
     if params.n_gpu_layers is not None:
-        args.extend(["--n-gpu-layers", str(params.n_gpu_layers)])
+        benchmark_args.extend(["--n-gpu-layers", str(params.n_gpu_layers)])
     if params.n_batch is not None:
-        args.extend(["--n-batch", str(params.n_batch)])
+        benchmark_args.extend(["--n-batch", str(params.n_batch)])
     if params.n_threads is not None:
-        args.extend(["--n-threads", str(params.n_threads)])
+        benchmark_args.extend(["--n-threads", str(params.n_threads)])
     if params.flash_attention is not None:
         if params.flash_attention:
-            args.append("--flash-attention")
+            benchmark_args.append("--flash-attention")
         else:
-            args.append("--no-flash-attention")
+            benchmark_args.append("--no-flash-attention")
     if params.rope_freq_base is not None:
-        args.extend(["--rope-freq-base", str(params.rope_freq_base)])
+        benchmark_args.extend(["--rope-freq-base", str(params.rope_freq_base)])
     if params.rope_freq_scale is not None:
-        args.extend(["--rope-freq-scale", str(params.rope_freq_scale)])
+        benchmark_args.extend(["--rope-freq-scale", str(params.rope_freq_scale)])
     if params.use_mmap is not None:
         if params.use_mmap:
-            args.append("--use-mmap")
+            benchmark_args.append("--use-mmap")
         else:
-            args.append("--no-mmap")
+            benchmark_args.append("--no-mmap")
     if params.use_mlock is not None and params.use_mlock:
-        args.append("--use-mlock")
+        benchmark_args.append("--use-mlock")
     if params.kv_cache_quant:
-        args.extend(["--kv-cache-quant", params.kv_cache_quant])
+        benchmark_args.extend(["--kv-cache-quant", params.kv_cache_quant])
 
     if DEBUG_MODE:
-        args.append("--debug")
+        benchmark_args.append("--debug")
 
-    logger.info("🔧 Benchmark-Args: %s", args)
+    logger.info("🔧 Benchmark-Args: %s", benchmark_args)
     logger.info(
         "📊 enable_profiling=%s, disable_gtt=%s",
         params.enable_profiling,
         params.disable_gtt,
     )
 
-    success = await manager.start_benchmark(args)
+    success = await manager.start_benchmark(benchmark_args)
     message = "✅ Benchmark started" if success else "❌ Error starting"
     return {"success": success, "status": manager.status, "message": message}
 
@@ -1116,7 +1289,7 @@ async def shutdown_system() -> dict:
     try:
         success = manager.stop_benchmark()
         logger.info("✅ Benchmark stopped: %s", success)
-    except Exception as exc:
+    except (OSError, ProcessLookupError, RuntimeError, ValueError) as exc:
         logger.warning("Error stopping benchmark during shutdown: %s", exc)
 
     def _send_shutdown_signal() -> None:
@@ -1217,7 +1390,8 @@ async def get_results() -> dict:
             results_data.append(result_dict)
 
         return {"success": True, "count": len(results_data), "results": results_data}
-    except Exception as e:
+    except (AttributeError, OSError, RuntimeError, sqlite3.Error, TypeError,
+            ValueError) as e:
         logger.error("❌ Error loading results: %s", e)
         return {"success": False, "error": str(e), "results": []}
 
@@ -1269,7 +1443,14 @@ async def get_cache_stats() -> dict:
                 "db_size_mb": round(db_size_mb, 2),
             },
         }
-    except Exception as e:
+    except (
+        AttributeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error fetching cache statistics: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -1284,7 +1465,7 @@ async def delete_cache_entry(model_key: str) -> dict:
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT COUNT(*) FROM benchmark_results " "WHERE model_key = ?",
+            "SELECT COUNT(*) FROM benchmark_results WHERE model_key = ?",
             (model_key,),
         )
         count = cursor.fetchone()[0]
@@ -1294,7 +1475,7 @@ async def delete_cache_entry(model_key: str) -> dict:
             return {"success": False, "error": f"Model {model_key} not found in cache"}
 
         cursor.execute(
-            "DELETE FROM benchmark_results " "WHERE model_key = ?",
+            "DELETE FROM benchmark_results WHERE model_key = ?",
             (model_key,),
         )
         conn.commit()
@@ -1307,7 +1488,13 @@ async def delete_cache_entry(model_key: str) -> dict:
             "message": f"✅ {deleted_count} entry(ies) deleted",
             "model_key": model_key,
         }
-    except Exception as e:
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error deleting cache entry: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -1350,7 +1537,13 @@ async def clear_cache() -> dict:
             "deleted_count": count_before,
             "backup_file": str(backup_file) if backup_file else None,
         }
-    except Exception as e:
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error clearing cache: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -1392,7 +1585,7 @@ async def get_lmstudio_models() -> dict:
 
     except TimeoutExpired:
         return {"success": False, "error": "LM Studio CLI Timeout", "models": []}
-    except Exception as e:
+    except (OSError, RuntimeError, TypeError, ValueError) as e:
         logger.error("❌ Error fetching LM Studio models: %s", e)
         return {"success": False, "error": str(e), "models": []}
 
@@ -1454,7 +1647,13 @@ async def get_comparison_models() -> dict:
 
         conn.close()
         return {"success": True, "models": models}
-    except Exception as e:
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error fetching comparison models: %s", e)
         return {"success": False, "error": str(e), "models": []}
 
@@ -1538,7 +1737,14 @@ async def get_model_history(model_name: str) -> dict:
             "history": history,
             "stats": stats,
         }
-    except Exception as e:
+    except (
+        AttributeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error fetching model history: %s", e)
         return {"success": False, "error": str(e), "history": []}
 
@@ -1558,7 +1764,7 @@ async def export_comparison_csv(
         payload = {}
         try:
             payload = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
             payload = {}
 
         model_filter = payload.get("model_name", model_name)
@@ -1606,7 +1812,7 @@ async def export_comparison_csv(
         def safe_round(value, digits):
             try:
                 return round(value, digits)
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return value if value is not None else ""
 
         output = StringIO()
@@ -1679,7 +1885,15 @@ async def export_comparison_csv(
             },
             "csv_preview": csv_content.split("\n")[:5],
         }
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        UnicodeDecodeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ CSV Export Error: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -1694,7 +1908,7 @@ async def export_comparison_pdf(request: Request) -> dict:
         payload = {}
         try:
             payload = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
             payload = {}
 
         model_filter = payload.get("model_name")
@@ -3883,7 +4097,7 @@ async def websocket_benchmark(websocket: WebSocket):
             except WebSocketDisconnect:
                 logger.info("⚠️ WebSocket Client has disconnected")
                 break
-            except Exception as e:
+            except (OSError, RuntimeError, ValueError) as e:
                 logger.error("❌ WebSocket Receive Error: %s", e)
                 break
 
@@ -3894,46 +4108,40 @@ async def websocket_benchmark(websocket: WebSocket):
                         {"type": "output", "line": output, "status": manager.status}
                     )
                     heartbeat_count = 0
-                except Exception as e:
+                except (OSError, RuntimeError, ValueError) as e:
                     logger.error("❌ WebSocket Send Error: %s", e)
                     break
 
             if manager.is_running():
 
                 current_time = time.time()
-                if current_time - manager.last_hardware_send_time >= 2.0:
-                    if (
-                        manager.hardware_history["temperatures"]
-                        or manager.hardware_history["power"]
-                        or manager.hardware_history["vram"]
-                        or manager.hardware_history["gtt"]
-                        or manager.hardware_history["cpu"]
-                        or manager.hardware_history["ram"]
-                    ):
+                if current_time - manager._state.last_hardware_send_time >= 2.0:
+                    hw = manager.hardware_history
+                    has_hw_data = any([
+                        hw["temperatures"],
+                        hw["power"],
+                        hw["vram"],
+                        hw["gtt"],
+                        hw["cpu"],
+                        hw["ram"],
+                    ])
+                    if has_hw_data:
                         try:
                             max_history = 60
                             hardware_data = {
-                                "temperatures": (
-                                    manager.hardware_history["temperatures"][
-                                        -max_history:
-                                    ]
-                                ),
-                                "power": (
-                                    manager.hardware_history["power"][-max_history:]
-                                ),
-                                "vram": (
-                                    manager.hardware_history["vram"][-max_history:]
-                                ),
-                                "gtt": (manager.hardware_history["gtt"][-max_history:]),
-                                "cpu": (manager.hardware_history["cpu"][-max_history:]),
-                                "ram": (manager.hardware_history["ram"][-max_history:]),
+                                "temperatures": hw["temperatures"][-max_history:],
+                                "power": hw["power"][-max_history:],
+                                "vram": hw["vram"][-max_history:],
+                                "gtt": hw["gtt"][-max_history:],
+                                "cpu": hw["cpu"][-max_history:],
+                                "ram": hw["ram"][-max_history:],
                             }
 
                             await websocket.send_json(
                                 {"type": "hardware", "data": hardware_data}
                             )
-                            manager.last_hardware_send_time = current_time
-                        except Exception as e:
+                            manager._state.last_hardware_send_time = current_time
+                        except (OSError, RuntimeError, ValueError) as e:
                             logger.error(
                                 "❌ WebSocket Hardware Send Error: %s",
                                 e,
@@ -3949,7 +4157,7 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "running": manager.is_running(),
                             }
                         )
-                    except Exception as e:
+                    except (OSError, RuntimeError, ValueError) as e:
                         logger.error("❌ WebSocket Heartbeat Error: %s", e)
                         break
 
@@ -3961,13 +4169,13 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "message": "✅ Benchmark completed",
                             }
                         )
-                    except Exception as e:
+                    except (OSError, RuntimeError, ValueError) as e:
                         logger.warning(
                             "⚠️ Could not send Completion message: %s",
                             e,
                         )
                     finally:
-                        manager.status = "idle"
+                        manager._state.status = "idle"
 
                 if manager.status == "failed":
                     try:
@@ -3977,19 +4185,19 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "message": "❌ Benchmark failed",
                             }
                         )
-                    except Exception as e:
+                    except (OSError, RuntimeError, ValueError) as e:
                         logger.warning(
                             "⚠️ Could not send Failure message: %s",
                             e,
                         )
                     finally:
-                        manager.status = "idle"
+                        manager._state.status = "idle"
 
                 await asyncio.sleep(0.5)
 
     except WebSocketDisconnect:
         logger.info("ℹ️ WebSocket normal disconnect")
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         logger.error("❌ WebSocket Error: %s", e)
     finally:
         manager.connected_clients.discard(websocket)
@@ -4018,7 +4226,7 @@ async def get_latest_results() -> dict:
         latest_file = max(json_files, key=lambda x: x.stat().st_mtime)
 
         return {"latest": latest_file.name}
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         logger.error("Error finding latest results: %s", e)
         return {"latest": None}
 
@@ -4098,20 +4306,21 @@ if __name__ == "__main__":
         port = find_free_port()
         logger.info("🎲 Using automatically found free port: %s", port)
 
-    dashboard_url = f"http://localhost:{port}"
-    logger.info("🚀 Dashboard available at %s", dashboard_url)
-    logger.info("📊 API Docs: %s/docs", dashboard_url)
+    DASHBOARD_URL = f"http://localhost:{port}"
+    logger.info("🚀 Dashboard available at %s", DASHBOARD_URL)
+    logger.info("📊 API Docs: %s/docs", DASHBOARD_URL)
 
     def open_browser():
+        """Open the dashboard URL in the default web browser."""
         time.sleep(1.5)
         try:
-            logger.info("🌐 Opening browser: %s", dashboard_url)
-            webbrowser.open(dashboard_url)
-        except Exception as e:
+            logger.info("🌐 Opening browser: %s", DASHBOARD_URL)
+            webbrowser.open(DASHBOARD_URL)
+        except (OSError, webbrowser.Error) as e:
             logger.warning("⚠️ Could not open browser: %s", e)
 
     browser_thread = threading.Thread(target=open_browser, daemon=True)
     browser_thread.start()
 
-    uvicorn_log_level = "debug" if args.debug else "info"
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level=uvicorn_log_level)
+    UVICORN_LOG_LEVEL = "debug" if args.debug else "info"
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level=UVICORN_LOG_LEVEL)
