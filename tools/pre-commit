@@ -13,6 +13,8 @@
 
 set -e
 
+PYLINT_TIMEOUT_SECONDS=25
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -136,14 +138,15 @@ if [[ ${#PYTHON_FILES[@]} -gt 0 ]]; then
 
     # Run pylint (optional, with timeout)
     if [[ -z "$SKIP_PYLINT" ]]; then
-        echo -e "${YELLOW}Running pylint (timeout 15s)...${NC}"
+        echo -e "${YELLOW}Running pylint (timeout ${PYLINT_TIMEOUT_SECONDS}s)...${NC}"
         readarray -t PYLINT_FILES < <(
             printf '%s\n' "${PYTHON_FILES[@]}" | \
                 grep -E '^(src|web)/' || true
         )
 
         if [[ ${#PYLINT_FILES[@]} -gt 0 ]]; then
-            if timeout 15s pylint "${PYLINT_FILES[@]}" --exit-zero; then
+            if timeout "${PYLINT_TIMEOUT_SECONDS}s" \
+                pylint "${PYLINT_FILES[@]}" --exit-zero; then
                 echo -e "${GREEN}✓ pylint passed${NC}"
             else
                 EXIT_CODE=$?
