@@ -496,12 +496,8 @@ class TestTrayExpandShortFlagClusters:
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
         with patch("sys.argv", ["tray.py", "--help"]):
-            try:
-                import argparse
-                with pytest.raises(SystemExit):
-                    tray._parse_args()
-            except Exception:
-                pass
+            with pytest.raises(SystemExit):
+                tray._parse_args()
 
     def test_module_level_flags_unchanged(self, tmp_path: Path):
         """tray module-level constants are accessible."""

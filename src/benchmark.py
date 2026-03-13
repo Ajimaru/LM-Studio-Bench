@@ -26,6 +26,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+import httpx
 import psutil
 from tqdm import tqdm
 
@@ -151,7 +152,7 @@ def get_app_version() -> str:
         version_file = PROJECT_ROOT / "VERSION"
         if version_file.exists():
             return version_file.read_text().strip()
-    except Exception:
+    except OSError:
         pass
     return "unknown"
 
@@ -275,7 +276,7 @@ class HardwareMonitor:
                             if hwmon_paths:
                                 self._amd_hwmon_path = hwmon_paths[0]
                             break
-        except Exception:
+        except OSError:
             pass
 
     def start(self):
@@ -397,7 +398,7 @@ class HardwareMonitor:
                         logger.info("💾 RAM: %sGB", ram)
 
                 time.sleep(1)
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError, ValueError) as e:
                 logger.debug("Monitoring error: %s", e)
                 time.sleep(2)
         logger.info("🛑 Hardware-Monitor thread stopped")
@@ -452,7 +453,7 @@ class HardwareMonitor:
                                     return float(temp_str)
                                 except (ValueError, IndexError):
                                     pass
-        except (subprocess.TimeoutExpired, Exception):
+        except (subprocess.SubprocessError, OSError):
             pass
 
         return None
@@ -496,7 +497,7 @@ class HardwareMonitor:
                                 return float(power_str)
                             except (ValueError, IndexError):
                                 pass
-        except (subprocess.TimeoutExpired, Exception):
+        except (subprocess.SubprocessError, OSError):
             pass
 
         return None
@@ -542,7 +543,7 @@ class HardwareMonitor:
                                 if match:
                                     vram_bytes = float(match.group(1))
                                     return vram_bytes / (1024**3)
-        except (subprocess.TimeoutExpired, Exception):
+        except (subprocess.SubprocessError, OSError):
             pass
 
         return None
@@ -572,7 +573,7 @@ class HardwareMonitor:
                             if match:
                                 gtt_bytes = float(match.group(1))
                                 return gtt_bytes / (1024**3)
-        except (subprocess.TimeoutExpired, Exception):
+        except (subprocess.SubprocessError, OSError):
             pass
 
         return None
@@ -581,7 +582,7 @@ class HardwareMonitor:
         """Reads system CPU utilization in %"""
         try:
             return psutil.cpu_percent(interval=0.1)
-        except Exception:
+        except OSError:
             return None
 
     def _get_ram_usage(self) -> Optional[float]:
@@ -595,7 +596,7 @@ class HardwareMonitor:
                 self.ram_readings.pop(0)
 
             return sum(self.ram_readings) / len(self.ram_readings)
-        except Exception:
+        except OSError:
             return None
 
 
@@ -1010,7 +1011,7 @@ class BenchmarkCache:
             )
 
             conn.commit()
-        except Exception as e:
+        except sqlite3.Error as e:
             logger.error("❌ Error saving to cache: %s", e)
         finally:
             conn.close()
@@ -1192,7 +1193,7 @@ class BenchmarkCache:
                 results.append(result)
 
             return results
-        except Exception as e:
+        except (sqlite3.Error, IndexError, KeyError, TypeError, ValueError) as e:
             logger.error("❌ Error loading all results: %s", e)
             return []
         finally:
@@ -1293,7 +1294,7 @@ class GPUMonitor:
                         if vram_file.exists():
                             return str(Path(cardpath))
             return None
-        except Exception:
+        except OSError:
             return None
 
     def _detect_gpu(self):
@@ -1314,7 +1315,7 @@ class GPUMonitor:
                     self.gpu_model = result.stdout.strip().split("\n")[0]
                 else:
                     self.gpu_model = "NVIDIA GPU"
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 self.gpu_model = "NVIDIA GPU"
             logger.info(
                 "🟢 NVIDIA GPU detected: %s, Tool: %s",
@@ -1390,7 +1391,7 @@ class GPUMonitor:
                 model = radeon_part.split()[0]
                 if model:
                     return f"AMD Radeon {model}"
-        except Exception:
+        except (ImportError, OSError):
             pass
 
         device_id = None
@@ -1407,7 +1408,7 @@ class GPUMonitor:
                             if device_id in amd_device_mapping:
                                 return f"AMD {amd_device_mapping[device_id]}"
                             break
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             pass
 
         if self.gpu_tool:
@@ -1427,7 +1428,7 @@ class GPUMonitor:
                                 if gfx_code in amd_device_mapping:
                                     return f"AMD {amd_device_mapping[gfx_code]}"
                                 return f"AMD {gfx_code}"
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 pass
 
         if device_id:
@@ -1446,7 +1447,7 @@ class GPUMonitor:
                     parts = line.split(": ")
                     if len(parts) > 1:
                         return parts[1].split("[")[0].strip()
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             pass
         return "Intel GPU"
 
@@ -1501,7 +1502,7 @@ class GPUMonitor:
             elif self.gpu_type == "Intel":
                 return "N/A"
 
-        except (subprocess.TimeoutExpired, Exception) as e:
+        except (subprocess.SubprocessError, OSError, ValueError) as e:
             logger.warning("⚠️ VRAM measurement failed: %s", e)
 
         return "N/A"
@@ -1521,7 +1522,7 @@ class LMStudioServerManager:
             return result.returncode == 0 and (
                 "running" in output.lower() or "port" in output.lower()
             )
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.error("❌ Error checking server status: %s", e)
             return False
 
@@ -1546,7 +1547,7 @@ class LMStudioServerManager:
             logger.error("❌ Server start timeout after 60 seconds")
             return False
 
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.error("❌ Error starting server: %s", e)
             return False
 
@@ -1594,7 +1595,7 @@ class ModelDiscovery:
                                 "has_vision": model_data.get("vision", False),
                                 "has_tools": model_data.get("trainedForToolUse", False),
                             }
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError) as e:
                 logger.warning("⚠️ Error loading metadata cache: %s", e)
         return ModelDiscovery._metadata_cache
 
@@ -1631,7 +1632,7 @@ class ModelDiscovery:
             ).fetchone()
             conn.close()
             return dict(row) if row else {}
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             logger.warning("⚠️ Could not read scraped metadata: %s", e)
             return {}
 
@@ -1665,7 +1666,7 @@ class ModelDiscovery:
                     logger.info("  • %s", model)
             return models
 
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError) as e:
             logger.error("❌ Error fetching models: %s", e)
             return []
 
@@ -1777,13 +1778,13 @@ class LMStudioBenchmark:
                         pkg_ver = getattr(lmstudio, "__version__", None)
                         if pkg_ver:
                             return f"{pkg_ver} (commit:{commit})"
-                    except Exception:
+                    except ImportError:
                         pass
                     return f"commit:{commit}"
 
                 first_line = stdout.split("\n")[0] if stdout else None
                 return first_line if first_line else None
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.debug("Error fetching LM Studio version: %s", e)
         return None
 
@@ -1800,7 +1801,7 @@ class LMStudioBenchmark:
             if result.returncode == 0:
                 version = result.stdout.strip()
                 return version if version else None
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             logger.debug("NVIDIA driver not available")
         return None
 
@@ -1833,7 +1834,7 @@ class LMStudioBenchmark:
                                     return f"{version} (tool: {tool_version})"
                                 return version
                         return output if output else None
-                except Exception:
+                except (subprocess.SubprocessError, OSError):
                     pass
 
             try:
@@ -1849,7 +1850,7 @@ class LMStudioBenchmark:
                             parts = line.split()
                             if len(parts) >= 3:
                                 return f"{parts[2]} (package)"
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 pass
 
             try:
@@ -1861,10 +1862,10 @@ class LMStudioBenchmark:
                         if line.startswith("srcversion:"):
                             srcver = line.split(":")[1].strip()[:12]
                             return f"amdgpu:{srcver}"
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 pass
 
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             logger.debug("ROCm driver not available")
         return None
 
@@ -1882,7 +1883,7 @@ class LMStudioBenchmark:
                         if "version" in part.lower() and i + 1 < len(parts):
                             return parts[i + 1]
                     return line.strip()
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             logger.debug("Intel GPU driver not available")
         return None
 
@@ -1899,7 +1900,7 @@ class LMStudioBenchmark:
                     os_name = distro.name()
                     os_version = distro.version()
                     return os_name, os_version
-                except Exception:
+                except (ImportError, OSError):
                     os_name = os_system
                     os_version = platform.release()
                     return os_name, os_version
@@ -1907,7 +1908,7 @@ class LMStudioBenchmark:
                 os_name = os_system
                 os_version = platform.release()
                 return os_name, os_version
-        except Exception:
+        except OSError:
             logger.debug("OS info not available")
         return None, None
 
@@ -1920,7 +1921,7 @@ class LMStudioBenchmark:
             cpu = cpuinfo.get_cpu_info()
             brand = cpu.get("brand_raw", "")
             return brand if brand else None
-        except Exception:
+        except (ImportError, OSError):
             logger.debug("CPU info not available")
         return None
 
@@ -1933,7 +1934,7 @@ class LMStudioBenchmark:
                 f"{sys.version_info.minor}."
                 f"{sys.version_info.micro}"
             )
-        except Exception:
+        except AttributeError:
             logger.debug("Python version not available")
         return None
 
@@ -2078,7 +2079,7 @@ class LMStudioBenchmark:
         if self.rest_client:
             try:
                 self.rest_client.close()
-            except Exception:
+            except (OSError, RuntimeError):
                 pass
 
     def _get_available_vram_gb(self) -> Optional[float]:
@@ -2153,7 +2154,7 @@ class LMStudioBenchmark:
 
             return None
 
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, ValueError) as e:
             logger.debug("VRAM query failed: %s", e)
             return None
 
@@ -2192,7 +2193,7 @@ class LMStudioBenchmark:
 
             return round(optimal_offload, 1)
 
-        except Exception as e:
+        except (OSError, ValueError, ZeroDivisionError) as e:
             logger.debug("Offload prediction failed: %s", e)
             return 1.0
 
@@ -2242,7 +2243,7 @@ class LMStudioBenchmark:
 
             return None
 
-        except Exception as e:
+        except sqlite3.Error as e:
             logger.debug("Cache lookup failed: %s", e)
             return None
 
@@ -2305,7 +2306,7 @@ class LMStudioBenchmark:
                 len(self.previous_results),
                 json_file.name,
             )
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             logger.error("❌ Error loading previous results: %s", e)
 
     def _matches_filters(self, result: BenchmarkResult) -> bool:
@@ -2401,7 +2402,7 @@ class LMStudioBenchmark:
                         self._unload_model_rest(instance.instance_id)
                 logger.info("🧹 All models unloaded via REST")
                 time.sleep(1)
-            except Exception as e:
+            except (httpx.HTTPError, OSError, ConnectionError) as e:
                 logger.warning("⚠️ REST error unloading: %s", e)
         else:
             try:
@@ -2413,7 +2414,7 @@ class LMStudioBenchmark:
                 )
                 logger.info("🧹 All models unloaded")
                 time.sleep(1)
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 logger.warning("⚠️ Error unloading all models: %s", e)
 
         if "@" in model_key:
@@ -2443,13 +2444,13 @@ class LMStudioBenchmark:
                         self.rest_client.download_model(model_key)
                         time.sleep(3)
                         instance_id = self._load_model_rest(model_key, used_offload)
-                    except Exception as ex:
+                    except (httpx.HTTPError, OSError, ConnectionError) as ex:
                         logger.warning("⚠️ Download/Load via REST failed: %s", ex)
                 if instance_id:
                     logger.info("🧩 Using REST instance id: %s", instance_id)
                 else:
                     logger.warning("⚠️ Could not load model via REST: %s", model_key)
-            except Exception as e:
+            except (httpx.HTTPError, OSError, ConnectionError) as e:
                 logger.warning("⚠️ REST error while loading model: %s", e)
 
         try:
@@ -2637,7 +2638,7 @@ class LMStudioBenchmark:
                 try:
                     if self.use_rest_api and instance_id:
                         self._unload_model_rest(instance_id)
-                except Exception:
+                except (httpx.HTTPError, OSError):
                     pass
 
                 return result
@@ -2645,7 +2646,7 @@ class LMStudioBenchmark:
                 logger.error("❌ No successful measurements for %s", model_key)
                 return None
 
-        except Exception as e:
+        except (subprocess.SubprocessError, httpx.HTTPError, OSError, RuntimeError, ValueError) as e:
             logger.error("❌ Error benchmarking %s: %s", model_key, e)
             error_count += 1
             return None
@@ -2667,7 +2668,7 @@ class LMStudioBenchmark:
 
             return result.returncode == 0
 
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.error("❌ Error loading %s: %s", model_key, e)
             return False
 
@@ -2677,7 +2678,7 @@ class LMStudioBenchmark:
             subprocess.run(
                 ["lms", "unload", model_key], capture_output=True, timeout=30
             )
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.warning("⚠️ Error unloading %s: %s", model_key, e)
 
     def _run_inference(
@@ -2777,7 +2778,7 @@ class LMStudioBenchmark:
                 "completion_tokens": stats.predicted_tokens_count or 0,
             }
 
-        except Exception as e:
+        except (ImportError, RuntimeError, ConnectionError, OSError, ValueError) as e:
             logger.error("❌ Error during inference with %s: %s", model_key, e)
             return None
 
@@ -2819,7 +2820,7 @@ class LMStudioBenchmark:
                 "completion_tokens": stats.tokens_out,
             }
 
-        except Exception as e:
+        except (httpx.HTTPError, OSError, ConnectionError, KeyError, AttributeError) as e:
             logger.error("❌ REST error during inference with %s: %s", model_key, e)
             return None
 
@@ -2845,7 +2846,7 @@ class LMStudioBenchmark:
             logger.info("✓ Model loaded via REST: %s", instance_id)
             return instance_id
 
-        except Exception as e:
+        except (httpx.HTTPError, OSError, ConnectionError) as e:
             logger.error("❌ REST error loading %s: %s", model_key, e)
             return None
 
@@ -2858,7 +2859,7 @@ class LMStudioBenchmark:
             self.rest_client.unload_model(instance_id)
             logger.info("✓ Model unloaded via REST: %s", instance_id)
             return True
-        except Exception as e:
+        except (httpx.HTTPError, OSError, ConnectionError) as e:
             logger.warning("⚠️ REST error unloading: %s", e)
             return False
 
@@ -2988,7 +2989,7 @@ class LMStudioBenchmark:
                 cache_count = len(self.cache.list_cached_models())
                 logger.info("💽 Cache DB: %s", format_path_for_logs(DATABASE_FILE))
                 logger.info("💽 Cached entries available: %d", cache_count)
-            except Exception as e:
+            except sqlite3.Error as e:
                 logger.debug("Cache stats read failed: %s", e)
         if self.cache and self.use_cache:
             cached_models = []
@@ -3101,7 +3102,7 @@ class LMStudioBenchmark:
             )
             logger.info("🧹 All models unloaded (cleanup)")
             time.sleep(1)
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.warning("⚠️ Error unloading all models: %s", e)
 
         logger.info(
@@ -3171,7 +3172,7 @@ class LMStudioBenchmark:
                         if isinstance(result.vram_mb, str)
                         else float(result.vram_mb)
                     )
-                except BaseException:
+                except (ValueError, TypeError, AttributeError):
                     return 999999
 
             return sorted(self.results, key=get_vram_mb, reverse=False)
@@ -3198,7 +3199,7 @@ class LMStudioBenchmark:
                     else float(r.vram_mb)
                 )
                 vram_values.append(vram_mb)
-            except BaseException:
+            except (ValueError, TypeError, AttributeError):
                 pass
 
         stats = {}
@@ -3398,7 +3399,7 @@ class LMStudioBenchmark:
                             "vram": item.get("vram_mb", 0),
                         }
                     )
-            except Exception as e:
+            except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
                 logger.debug("Error loading %s: %s", json_file, e)
 
         return trends
@@ -3456,7 +3457,7 @@ class LMStudioBenchmark:
                 {"data": fig.to_dict()["data"], "layout": fig.to_dict()["layout"]}
             )
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             logger.debug("Error creating trend chart: %s", e)
             return None
 
@@ -3714,7 +3715,7 @@ class LMStudioBenchmark:
                             if isinstance(result.vram_mb, str)
                             else float(result.vram_mb)
                         )
-                    except BaseException:
+                    except (ValueError, TypeError, AttributeError):
                         return 999999
 
                 sorted_results = sorted(results, key=get_vram_mb, reverse=False)
@@ -4487,7 +4488,7 @@ class LMStudioBenchmark:
             doc.build(elements)
             logger.info("📑 PDF results saved: %s", pdf_file)
 
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
             logger.error("❌ Error creating PDF: %s", e)
 
     def _export_html(self, timestamp: str, results_to_export):
@@ -5033,7 +5034,7 @@ class LMStudioBenchmark:
 
             logger.info("🌐 HTML results saved: %s", html_file)
 
-        except Exception as e:
+        except (OSError, ValueError, TypeError, AttributeError) as e:
             logger.error("❌ Error creating HTML: %s", e)
 
 
@@ -5072,7 +5073,7 @@ def main():
             parent_cmdline = " ".join(parent_process.cmdline())
             if "web/app.py" in parent_cmdline:
                 is_webapp_subprocess = True
-        except BaseException:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             pass
 
     log_filename = (

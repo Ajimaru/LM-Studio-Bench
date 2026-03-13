@@ -9,6 +9,7 @@ WebSocket.
 import argparse
 import asyncio
 import base64
+import binascii
 from contextlib import asynccontextmanager
 import csv
 from dataclasses import dataclass, field
@@ -2066,7 +2067,7 @@ async def export_comparison_pdf(request: Request) -> dict:
                 "quantizations": quant_filters,
             },
         }
-    except Exception as e:
+    except (sqlite3.Error, OSError, ValueError, TypeError) as e:
         logger.error("❌ PDF Export Error: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -2201,7 +2202,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
                 "delta_pct": round(performance_delta, 2),
             },
         }
-    except Exception as e:
+    except (sqlite3.Error, ValueError, ZeroDivisionError, TypeError) as e:
         logger.error("❌ Advanced Statistics Error: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -2239,7 +2240,7 @@ async def list_presets() -> dict:
 
         logger.info("📜 Listed %s presets", len(all_presets))
         return result
-    except Exception as e:
+    except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error("❌ Error listing presets: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -2266,7 +2267,7 @@ async def get_preset(name: str) -> dict:
         }
     except FileNotFoundError:
         return {"success": False, "error": f"Preset not found: {name}"}
-    except Exception as e:
+    except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error("❌ Error loading preset %s: %s", name, e)
         return {"success": False, "error": str(e)}
 
@@ -2292,7 +2293,7 @@ async def save_preset(request: PresetSaveRequest) -> dict:
             "success": True,
             "message": f"Preset '{request.name}' saved successfully",
         }
-    except Exception as e:
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
         logger.error("❌ Error saving preset %s: %s", request.name, e)
         return {"success": False, "error": str(e)}
 
@@ -2314,7 +2315,7 @@ async def delete_preset(name: str) -> dict:
         return {"success": True, "message": f"Preset '{name}' deleted successfully"}
     except FileNotFoundError:
         return {"success": False, "error": f"Preset not found: {name}"}
-    except Exception as e:
+    except (OSError, PermissionError) as e:
         logger.error("❌ Error deleting preset %s: %s", name, e)
         return {"success": False, "error": str(e)}
 
@@ -2338,7 +2339,7 @@ async def compare_presets(request: PresetCompareRequest) -> dict:
         }
     except FileNotFoundError as e:
         return {"success": False, "error": f"Preset not found: {str(e)}"}
-    except Exception as e:
+    except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error(
             "❌ Error comparing presets %s vs %s: %s",
             request.preset_a,
@@ -2377,7 +2378,7 @@ async def export_presets() -> dict:
             "data": zip_base64,
             "count": len(user_presets),
         }
-    except Exception as e:
+    except (OSError, json.JSONDecodeError, ValueError, TypeError, zipfile.BadZipFile) as e:
         logger.error("❌ Error exporting presets: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -2423,7 +2424,7 @@ async def import_presets(request: Request) -> dict:
         logger.info("📥 Imported %s presets, skipped %s", imported_count, len(skipped))
 
         return {"success": True, "imported": imported_count, "skipped": skipped}
-    except Exception as e:
+    except (json.JSONDecodeError, ValueError, zipfile.BadZipFile, OSError, binascii.Error) as e:
         logger.error("❌ Error importing presets: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -2463,7 +2464,7 @@ async def create_experiment(request: CreateExperimentRequest) -> dict:
             "test_params": test_dict,
             "created_at": datetime.now().isoformat(),
         }
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError) as e:
         logger.error("❌ Experiment Creation Error: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -2658,7 +2659,7 @@ async def get_experiment_comparison(
                 ),
             },
         }
-    except Exception as e:
+    except (sqlite3.Error, ValueError, ZeroDivisionError, TypeError) as e:
         logger.error("❌ Experiment Comparison Error: %s", e)
         return {"success": False, "error": str(e), "comparison": {}}
 
@@ -2842,7 +2843,7 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
                 ),
             },
         }
-    except Exception as e:
+    except (json.JSONDecodeError, sqlite3.Error, ValueError, ZeroDivisionError, TypeError) as e:
         logger.error("❌ Experiment Comparison Error: %s", e)
         return {"success": False, "error": str(e), "comparison": {}}
 
@@ -3013,7 +3014,7 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
                 "url": f"/results/{export_file.name}",
             }
 
-    except Exception as e:
+    except (json.JSONDecodeError, OSError, ValueError, TypeError) as e:
         logger.error("❌ Experiment Export Error: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -3563,7 +3564,7 @@ async def run_experiment(request: Request) -> dict:
                 logger.info("📑 A/B Test PDF saved: %s", pdf_file)
             except ImportError:
                 logger.warning("⚠️ reportlab not installed - PDF export skipped")
-            except Exception as pdf_error:
+            except (OSError, ValueError, TypeError) as pdf_error:
                 logger.error("❌ PDF Export Error: %s", pdf_error)
 
             results_data["exports"] = {
@@ -3571,7 +3572,7 @@ async def run_experiment(request: Request) -> dict:
                 "csv": str(csv_file),
                 "html": str(html_file),
             }
-        except Exception as export_error:
+        except (OSError, ValueError, TypeError) as export_error:
             logger.error("❌ Export Error: %s", export_error)
 
         return results_data
@@ -3618,10 +3619,10 @@ async def get_dashboard_stats() -> dict:
                             capabilities_by_model[mk] = caps
                             for c in caps:
                                 distinct_capabilities.add(c)
-                    except Exception:
+                    except (json.JSONDecodeError, ValueError):
                         continue
                 mconn.close()
-        except Exception as _meta_err:
+        except sqlite3.Error as _meta_err:
             pass
 
         lmstudio_health = {"ok": False, "status": "offline"}
@@ -3638,7 +3639,7 @@ async def get_dashboard_stats() -> dict:
                             "version": None,
                         }
                         break
-            except Exception:
+            except (httpx.HTTPError, OSError):
                 continue
 
         if not lmstudio_health["ok"]:
@@ -3676,13 +3677,13 @@ async def get_dashboard_stats() -> dict:
                         "status": "online (cli)",
                         "version": None,
                     }
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 pass
 
         try:
             use_rest = CONFIG_DEFAULTS.get("lmstudio", {}).get("use_rest_api", False)
             lmstudio_health["mode"] = "REST API" if use_rest else "Python SDK"
-        except Exception:
+        except (KeyError, AttributeError):
             lmstudio_health["mode"] = "???"
 
         system_info = {
@@ -3702,7 +3703,7 @@ async def get_dashboard_stats() -> dict:
                 distro_version = distro.version()
                 if distro_name:
                     system_info["os"] = f"{distro_name} {distro_version}".strip()
-            except BaseException:
+            except (ImportError, OSError):
                 try:
                     with open("/etc/os-release", "r") as f:
                         os_release = {}
@@ -3717,7 +3718,7 @@ async def get_dashboard_stats() -> dict:
                             system_info["os"] = (
                                 f"{os_release['NAME']} {version}".strip()
                             )
-                except BaseException:
+                except OSError:
                     pass
 
         cpu_gpu_series = None
@@ -3735,7 +3736,7 @@ async def get_dashboard_stats() -> dict:
                     radeon_match = re.search(r"Radeon\s+(\d+[A-Za-z]*)", raw_cpu)
                     if radeon_match:
                         cpu_gpu_series = f"AMD Radeon {radeon_match.group(1)}"
-        except BaseException:
+        except (ImportError, OSError, KeyError):
             pass
 
         gpu_info = None
@@ -3780,7 +3781,7 @@ async def get_dashboard_stats() -> dict:
                         timeout=5,
                     )
                     gpu_model = model_output.decode().strip().split("\n")[0]
-                except Exception:
+                except (subprocess.SubprocessError, OSError):
                     gpu_model = "NVIDIA GPU"
 
             except (TimeoutExpired, FileNotFoundError, ValueError):
@@ -3852,7 +3853,7 @@ async def get_dashboard_stats() -> dict:
                                                                 detail_line.strip()
                                                             )
                                                             break
-                                        except BaseException:
+                                        except (subprocess.SubprocessError, OSError):
                                             pass
                                         break
                     except (FileNotFoundError, TimeoutExpired):
@@ -3867,7 +3868,7 @@ async def get_dashboard_stats() -> dict:
                                     dev_id_hex = f.read().strip()
                                     device_id = dev_id_hex.replace("0x", "")
                                     break
-                        except BaseException:
+                        except OSError:
                             pass
 
                     gfx_code = None
@@ -3885,7 +3886,7 @@ async def get_dashboard_stats() -> dict:
                                     if len(parts) > 1:
                                         gfx_code = parts[1].strip()
                                     break
-                    except Exception:
+                    except (subprocess.SubprocessError, OSError):
                         pass
 
                     if cpu_gpu_series:
@@ -3952,7 +3953,7 @@ async def get_dashboard_stats() -> dict:
                 ),
             }
 
-        except Exception:
+        except (subprocess.SubprocessError, OSError, ValueError):
             gpu_info = {
                 "type": "Unknown",
                 "vram_gb": None,
@@ -4040,7 +4041,7 @@ async def get_dashboard_stats() -> dict:
             "last_run": last_run_timestamp,
             "lmstudio": lmstudio_health,
         }
-    except Exception as e:
+    except (sqlite3.Error, subprocess.SubprocessError, httpx.HTTPError, OSError, ValueError, ImportError) as e:
         logger.error("❌ Error loading dashboard stats: %s", e)
         return {"success": False, "error": str(e)}
 

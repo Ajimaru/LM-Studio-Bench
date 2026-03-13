@@ -175,7 +175,7 @@ class TrayApp:
             exc_type = type(exc).__name__
             LOGGER.warning("API %s %s failed (%s): %s", method, endpoint, exc_type, exc)
             return None
-        except Exception as exc:
+        except OSError as exc:
             LOGGER.error("Unexpected error on API %s %s: %s", method, endpoint, exc)
             return None
 
@@ -419,7 +419,7 @@ class TrayApp:
                 update_available = self._check_for_updates()
                 if update_available and self.pending_update:
                     self._show_update_notification()
-        except Exception:
+        except (RuntimeError, OSError, AttributeError):
             LOGGER.exception("Error during status polling")
         return True
 
@@ -715,7 +715,7 @@ class TrayApp:
                 GLib.source_remove(self._polling_timer_id)
                 self._polling_timer_id = None
                 LOGGER.debug("Stopped status polling")
-            except Exception as exc:
+            except (RuntimeError, OSError) as exc:
                 LOGGER.warning("Failed to stop polling timer: %s", exc)
 
     def _on_quit(self, _item: Gtk.MenuItem) -> None:
@@ -742,7 +742,7 @@ class TrayApp:
                     if status in ("running", "paused"):
                         LOGGER.info("Stopping benchmark...")
                         self._call_api("/api/benchmark/stop", "POST")
-        except Exception as exc:
+        except (OSError, RuntimeError, AttributeError) as exc:
             LOGGER.warning("Error during shutdown: %s", exc)
 
         LOGGER.info("Benchmark Tray exiting")
@@ -829,7 +829,7 @@ def _run_tray(dashboard_url: str, debug: bool) -> None:
     try:
         app = TrayApp(dashboard_url=dashboard_url, debug=debug)
         app.run()
-    except Exception:
+    except (RuntimeError, OSError, ImportError):
         LOGGER.exception("Tray thread crashed")
 
 
@@ -923,7 +923,7 @@ def main() -> int:
     try:
         app = TrayApp(dashboard_url=args.url, debug=args.debug)
         app.run()
-    except Exception:
+    except (RuntimeError, OSError, ImportError):
         LOGGER.exception("Tray standalone startup failed")
         return 1
     return 0
