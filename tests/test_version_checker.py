@@ -1,5 +1,4 @@
 """Tests for src/version_checker.py."""
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx

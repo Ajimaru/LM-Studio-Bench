@@ -1,8 +1,9 @@
 """Tests for tools/scrape_metadata.py."""
+import importlib
 import json
+from pathlib import Path
 import sqlite3
 import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,13 +21,17 @@ def _import_scrape_metadata(tmp_path: Path):
     if "scrape_metadata" in sys.modules:
         del sys.modules["scrape_metadata"]
 
+    tools_dir = str(Path(__file__).parent.parent / "tools")
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+
     with patch("user_paths.USER_RESULTS_DIR", results_dir), \
             patch("user_paths.USER_LOGS_DIR", logs_dir):
-        import scrape_metadata as sm
-        sm.RESULTS_DIR = results_dir
-        sm.METADATA_DB = results_dir / "model_metadata.db"
-        sm.LOGS_DIR = logs_dir
-        sm.BACKUPS_DIR = backups_dir
+        sm = importlib.import_module("scrape_metadata")
+        setattr(sm, "RESULTS_DIR", results_dir)
+        setattr(sm, "METADATA_DB", results_dir / "model_metadata.db")
+        setattr(sm, "LOGS_DIR", logs_dir)
+        setattr(sm, "BACKUPS_DIR", backups_dir)
     return sm
 
 
@@ -192,6 +197,12 @@ class TestInferCapsFromDescription:
         assert "math" in caps
         assert "vision" in caps
 
+    def test_no_match_returns_empty(self, tmp_path: Path):
+        """Returns empty list when no keywords match."""
+        sm = _import_scrape_metadata(tmp_path)
+        result = sm.infer_caps_from_description("A generic language model")
+        assert isinstance(result, list)
+
 
 class TestInferCapabilities:
     """Tests for scrape_metadata.infer_capabilities()."""
@@ -225,6 +236,24 @@ class TestInferCapabilities:
         sm = _import_scrape_metadata(tmp_path)
         caps = sm.infer_capabilities("org/xyz-alpha", "XYZ Alpha")
         assert caps == []
+
+    def test_reasoning_from_r1_key(self, tmp_path: Path):
+        """Detects reasoning from deepseek-r1 in model key."""
+        sm = _import_scrape_metadata(tmp_path)
+        result = sm.infer_capabilities("deepseek-r1/model", "Model")
+        assert "reasoning" in result
+
+    def test_coding_from_coder(self, tmp_path: Path):
+        """Detects coding from coder in model key."""
+        sm = _import_scrape_metadata(tmp_path)
+        result = sm.infer_capabilities("org/qwen-coder", "Qwen Coder")
+        assert "coding" in result
+
+    def test_creative_from_writer(self, tmp_path: Path):
+        """Detects creative from writer in display name."""
+        sm = _import_scrape_metadata(tmp_path)
+        result = sm.infer_capabilities("org/model", "Story Writer Model")
+        assert "creative" in result
 
 
 class TestUpsertMetadata:
@@ -452,97 +481,6 @@ class TestFetchLmStudioReadme:
         assert isinstance(result, str)
 
 
-class TestInferCapsFromDescription:
-    """Tests for scrape_metadata.infer_caps_from_description()."""
-
-    def test_empty_returns_empty(self, tmp_path: Path):
-        """Empty description returns empty list."""
-        sm = _import_scrape_metadata(tmp_path)
-        assert sm.infer_caps_from_description("") == []
-
-    def test_coding_keyword(self, tmp_path: Path):
-        """Detects coding capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A great coding model")
-        assert "coding" in result
-
-    def test_math_keyword(self, tmp_path: Path):
-        """Detects math capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("Supports math and algebra")
-        assert "math" in result
-
-    def test_reasoning_keyword(self, tmp_path: Path):
-        """Detects reasoning capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("Uses chain-of-thought reasoning")
-        assert "reasoning" in result
-
-    def test_chat_keyword(self, tmp_path: Path):
-        """Detects chat capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A conversational assistant")
-        assert "chat" in result
-
-    def test_vision_keyword(self, tmp_path: Path):
-        """Detects vision capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A multimodal vision-language model")
-        assert "vision" in result
-
-    def test_tool_use_keyword(self, tmp_path: Path):
-        """Detects tool_use capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("Supports function calling and tools")
-        assert "tool_use" in result
-
-    def test_creative_keyword(self, tmp_path: Path):
-        """Detects creative capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A creative story writer")
-        assert "creative" in result
-
-    def test_no_match_returns_empty(self, tmp_path: Path):
-        """Returns empty list when no keywords match."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A generic language model")
-        assert isinstance(result, list)
-
-
-class TestInferCapabilities:
-    """Tests for scrape_metadata.infer_capabilities()."""
-
-    def test_reasoning_from_key(self, tmp_path: Path):
-        """Detects reasoning from deepseek-r1 in model key."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("deepseek-r1/model", "Model")
-        assert "reasoning" in result
-
-    def test_coding_from_coder(self, tmp_path: Path):
-        """Detects coding from coder in model key."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("org/qwen-coder", "Qwen Coder")
-        assert "coding" in result
-
-    def test_chat_from_instruct(self, tmp_path: Path):
-        """Detects chat from instruct in model key."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("org/model-instruct", "Model Instruct")
-        assert "chat" in result
-
-    def test_math_from_key(self, tmp_path: Path):
-        """Detects math from math in model key."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("org/mathmodel", "Math Model")
-        assert "math" in result
-
-    def test_creative_from_writer(self, tmp_path: Path):
-        """Detects creative from writer in display name."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("org/model", "Story Writer Model")
-        assert "creative" in result
-
-
 class TestFetchHfMetadata:
     """Tests for scrape_metadata.fetch_hf_metadata()."""
 
@@ -592,13 +530,13 @@ class TestFetchHfMetadata:
         assert result == {}
 
 
-class TestBackupMetadataDb:
-    """Tests for scrape_metadata.backup_metadata_db()."""
+class TestBackupMetadataDbExtended:
+    """Extended tests for scrape_metadata.backup_metadata_db()."""
 
     def test_no_op_when_db_missing(self, tmp_path: Path):
         """Does nothing when metadata DB does not exist."""
         sm = _import_scrape_metadata(tmp_path)
-        sm.METADATA_DB = tmp_path / "missing.db"
+        setattr(sm, "METADATA_DB", tmp_path / "missing.db")
         sm.backup_metadata_db()
 
     def test_creates_backup_file(self, tmp_path: Path):
@@ -606,10 +544,10 @@ class TestBackupMetadataDb:
         sm = _import_scrape_metadata(tmp_path)
         db_path = tmp_path / "results" / "model_metadata.db"
         db_path.write_bytes(b"dummy")
-        sm.METADATA_DB = db_path
+        setattr(sm, "METADATA_DB", db_path)
         backups_dir = tmp_path / "results" / "backups"
         backups_dir.mkdir(exist_ok=True)
-        sm.BACKUPS_DIR = backups_dir
+        setattr(sm, "BACKUPS_DIR", backups_dir)
         sm.backup_metadata_db()
         backup_files = list(backups_dir.glob("*_backup.db"))
         assert len(backup_files) == 1
@@ -619,6 +557,6 @@ class TestBackupMetadataDb:
         sm = _import_scrape_metadata(tmp_path)
         db_path = tmp_path / "results" / "model_metadata.db"
         db_path.write_bytes(b"dummy")
-        sm.METADATA_DB = db_path
+        setattr(sm, "METADATA_DB", db_path)
         with patch("shutil.copy2", side_effect=OSError("disk full")):
             sm.backup_metadata_db()

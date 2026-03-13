@@ -41,6 +41,8 @@ import uuid
 import webbrowser
 import zipfile
 
+import cpuinfo
+import distro
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -48,6 +50,32 @@ import httpx
 from jinja2 import Environment, FileSystemLoader
 import psutil
 from pydantic import BaseModel
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+
+    REPORTLAB_PAGE_SIZE = A4
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    colors = None
+    REPORTLAB_PAGE_SIZE = None
+    landscape = None
+    getSampleStyleSheet = None
+    Paragraph = None
+    SimpleDocTemplate = None
+    Spacer = None
+    Table = None
+    TableStyle = None
+    REPORTLAB_AVAILABLE = False
 
 from src.config_loader import DEFAULT_CONFIG
 from src.preset_manager import PresetManager
@@ -129,13 +157,7 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
             )
             return out_models
         return out_models
-    except (
-        json.JSONDecodeError,
-        OSError,
-        TimeoutExpired,
-        TypeError,
-        ValueError,
-    ):
+    except Exception:  # pylint: disable=broad-exception-caught
         return []
 
 
@@ -315,14 +337,7 @@ def _get_cached_latest_release() -> Optional[dict]:
             is_update,
         )
         return result
-    except (
-        httpx.HTTPError,
-        KeyError,
-        OSError,
-        RuntimeError,
-        TypeError,
-        ValueError,
-    ) as exc:
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         logger.error("Error in latest release check: %s", exc)
         return None
 
@@ -535,6 +550,7 @@ class BenchmarkManager:
             "--only-vision",
             "--only-tools",
             "--retest",
+            "--test",
             "--dev-mode",
             "--enable-profiling",
             "--disable-gtt",
@@ -571,6 +587,36 @@ class BenchmarkManager:
 
         return sanitized
 
+    @staticmethod
+    def _build_safe_command(sanitized_args: list[str]) -> list[str]:
+        """Build a fully-validated command list for subprocess execution.
+
+        Verifies that the Python interpreter and benchmark script are absolute
+        paths, and that no shell metacharacters remain in any argument.
+
+        Args:
+            sanitized_args: Pre-sanitized benchmark CLI arguments.
+
+        Returns:
+            A safe command list safe to pass to subprocess.Popen.
+
+        Raises:
+            ValueError: If any component contains shell-unsafe characters.
+        """
+        _SHELL_UNSAFE = re.compile(r"[;&|`$<>\\!]")
+
+        interpreter = str(sys.executable)
+        script = str(BENCHMARK_SCRIPT.resolve())
+
+        for component in [interpreter, script] + sanitized_args:
+            if _SHELL_UNSAFE.search(component):
+                raise ValueError(
+                    f"Shell-unsafe characters detected in argument: "
+                    f"{component!r}"
+                )
+
+        return [interpreter, script] + [str(a) for a in sanitized_args]
+
     async def start_benchmark(self, cli_args: list[str]) -> bool:
         """Starts a new benchmark process."""
         if self.is_running():
@@ -584,13 +630,16 @@ class BenchmarkManager:
             if self._state.output_task and not self._state.output_task.done():
                 self._state.output_task.cancel()
 
+            safe_cmd = self._build_safe_command(sanitized_args)
+
             self._state.process = subprocess.Popen(  # pylint: disable=consider-using-with
-                [sys.executable, str(BENCHMARK_SCRIPT)] + sanitized_args,
+                safe_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
                 cwd=PROJECT_ROOT,
+                shell=False,
             )
             self._state.status = "running"
             self._state.start_time = datetime.now()
@@ -749,6 +798,14 @@ class BenchmarkManager:
         except (OSError, RuntimeError, TypeError, ValueError) as read_error:
             logger.error("❌ Error reading output: %s", read_error)
             return ""
+
+    def update_last_hardware_send_time(self, current_time: float) -> None:
+        """Update timestamp of last hardware WebSocket send."""
+        self._state.last_hardware_send_time = current_time
+
+    def set_idle_status(self) -> None:
+        """Set benchmark status to idle."""
+        self._state.status = "idle"
 
 
 manager = BenchmarkManager()
@@ -919,6 +976,19 @@ def calculate_hash(params: Dict[str, Any]) -> str:
     return hashlib.sha256(params_str.encode()).hexdigest()[:16]
 
 
+def _to_float_scalar(value: Any) -> float:
+    """Convert scalar-like SciPy results to float safely."""
+    if isinstance(value, tuple):
+        if not value:
+            raise ValueError("Empty tuple cannot be converted to float")
+        value = value[0]
+    if isinstance(value, list):
+        if not value:
+            raise ValueError("Empty list cannot be converted to float")
+        value = value[0]
+    return float(value)
+
+
 def perform_ttest(
     baseline_speeds: List[float],
     test_speeds: List[float],
@@ -953,9 +1023,13 @@ def perform_ttest(
                 }
 
         if SCIPY_AVAILABLE and scipy_stats is not None:
-            ttest_result = scipy_stats.ttest_ind(baseline_speeds, test_speeds)
-            t_stat = float(ttest_result.statistic)
-            p_value = float(ttest_result.pvalue)
+            t_stat_raw, p_value_raw = scipy_stats.ttest_ind(
+                baseline_speeds,
+                test_speeds,
+                equal_var=False,
+            )
+            t_stat = _to_float_scalar(t_stat_raw)
+            p_value = _to_float_scalar(p_value_raw)
             return {
                 "test_name": "Welch's t-test",
                 "t_statistic": round(t_stat, 4),
@@ -1397,8 +1471,7 @@ async def get_results() -> dict:
             results_data.append(result_dict)
 
         return {"success": True, "count": len(results_data), "results": results_data}
-    except (AttributeError, OSError, RuntimeError, sqlite3.Error, TypeError,
-            ValueError) as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("❌ Error loading results: %s", e)
         return {"success": False, "error": str(e), "results": []}
 
@@ -1977,7 +2050,7 @@ async def export_comparison_pdf(request: Request) -> dict:
                 pdf_bytes.extend(content.encode("latin-1"))
 
             add_obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-            add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] " "/Count 1 >>\nendobj\n")
+            add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
 
             stream_lines = []
             y = 770
@@ -2378,7 +2451,13 @@ async def export_presets() -> dict:
             "data": zip_base64,
             "count": len(user_presets),
         }
-    except (OSError, json.JSONDecodeError, ValueError, TypeError, zipfile.BadZipFile) as e:
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        zipfile.BadZipFile,
+    ) as e:
         logger.error("❌ Error exporting presets: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -2424,7 +2503,13 @@ async def import_presets(request: Request) -> dict:
         logger.info("📥 Imported %s presets, skipped %s", imported_count, len(skipped))
 
         return {"success": True, "imported": imported_count, "skipped": skipped}
-    except (json.JSONDecodeError, ValueError, zipfile.BadZipFile, OSError, binascii.Error) as e:
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        zipfile.BadZipFile,
+        OSError,
+        binascii.Error,
+    ) as e:
         logger.error("❌ Error importing presets: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -2843,7 +2928,13 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
                 ),
             },
         }
-    except (json.JSONDecodeError, sqlite3.Error, ValueError, ZeroDivisionError, TypeError) as e:
+    except (
+        json.JSONDecodeError,
+        sqlite3.Error,
+        ValueError,
+        ZeroDivisionError,
+        TypeError,
+    ) as e:
         logger.error("❌ Experiment Comparison Error: %s", e)
         return {"success": False, "error": str(e), "comparison": {}}
 
@@ -2910,7 +3001,12 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
 
             csv_content = output.getvalue()
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            export_file = RESULTS_DIR / f"experiment_{experiment_id}_{timestamp}.csv"
+            safe_exp_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", experiment_id)
+            export_file = (
+                RESULTS_DIR / f"experiment_{safe_exp_id}_{timestamp}.csv"
+            ).resolve()
+            if not str(export_file).startswith(str(RESULTS_DIR.resolve())):
+                raise ValueError("Path traversal detected in experiment export")
 
             with open(export_file, "w", encoding="utf-8") as f:
                 f.write(csv_content)
@@ -2924,95 +3020,99 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
                 "url": f"/results/{export_file.name}",
             }
 
-        else:
-            lines = [
-                f"Experiment {experiment_id}",
-                f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                "",
-                "Baseline Results:",
-                f"  Mean: {baseline_data.get('mean')} "
-                f"± {baseline_data.get('std_dev')} tok/s",
-                f"  Range: {baseline_data.get('min')} - {baseline_data.get('max')}",
-                f"  Runs: {baseline_data.get('count')}",
-                "",
-                "Test Results:",
-                f"  Mean: {test_data.get('mean')} ± {test_data.get('std_dev')} tok/s",
-                f"  Range: {test_data.get('min')} - {test_data.get('max')}",
-                f"  Runs: {test_data.get('count')}",
-                "",
-                "Statistical Analysis:",
-                f"  p-value: {test_result.get('p_value', '-')}",
-                f"  Significant: {test_result.get('significant', False)}",
-                f"  Winner: {comparison.get('winner', '-')}",
-                f"  Performance Delta: {comparison.get('delta_pct', '-')}%",
-            ]
+        lines = [
+            f"Experiment {experiment_id}",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            "Baseline Results:",
+            f"  Mean: {baseline_data.get('mean')} "
+            f"± {baseline_data.get('std_dev')} tok/s",
+            f"  Range: {baseline_data.get('min')} - {baseline_data.get('max')}",
+            f"  Runs: {baseline_data.get('count')}",
+            "",
+            "Test Results:",
+            f"  Mean: {test_data.get('mean')} ± {test_data.get('std_dev')} tok/s",
+            f"  Range: {test_data.get('min')} - {test_data.get('max')}",
+            f"  Runs: {test_data.get('count')}",
+            "",
+            "Statistical Analysis:",
+            f"  p-value: {test_result.get('p_value', '-')}",
+            f"  Significant: {test_result.get('significant', False)}",
+            f"  Winner: {comparison.get('winner', '-')}",
+            f"  Performance Delta: {comparison.get('delta_pct', '-')}%",
+        ]
 
-            def generate_simple_pdf(text_lines):
-                pdf_bytes = bytearray()
-                pdf_bytes.extend(b"%PDF-1.4\n")
-                offsets = []
+        def generate_simple_pdf(text_lines):
+            pdf_bytes = bytearray()
+            pdf_bytes.extend(b"%PDF-1.4\n")
+            offsets = []
 
-                def add_obj(content: str):
-                    offsets.append(len(pdf_bytes))
-                    pdf_bytes.extend(content.encode("latin-1"))
+            def add_obj(content: str):
+                offsets.append(len(pdf_bytes))
+                pdf_bytes.extend(content.encode("latin-1"))
 
-                add_obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-                add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            add_obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
 
-                stream_lines = []
-                y = 770
-                for line in text_lines:
-                    safe_line = line.replace("(", "\\(").replace(")", "\\)")
-                    stream_lines.append(f"BT /F1 10 Tf 50 {y} Td ({safe_line}) Tj ET")
-                    y -= 12
-                stream_content = "\n".join(stream_lines).encode("latin-1")
+            stream_lines = []
+            y = 770
+            for line in text_lines:
+                safe_line = line.replace("(", "\\(").replace(")", "\\)")
+                stream_lines.append(f"BT /F1 10 Tf 50 {y} Td ({safe_line}) Tj ET")
+                y -= 12
+            stream_content = "\n".join(stream_lines).encode("latin-1")
 
-                add_obj(
-                    "3 0 obj\n"
-                    "<< /Type /Page /Parent 2 0 R "
-                    "/MediaBox [0 0 612 792] /Contents 4 0 R "
-                    "/Resources << /Font << /F1 5 0 R >> >> >>\n"
-                    "endobj\n"
-                )
-                add_obj(f"4 0 obj\n<< /Length {len(stream_content)} >>\nstream\n")
-                pdf_bytes.extend(stream_content)
-                pdf_bytes.extend(b"\nendstream\nendobj\n")
-                add_obj(
-                    "5 0 obj\n"
-                    "<< /Type /Font /Subtype /Type1 "
-                    "/BaseFont /Helvetica >>\n"
-                    "endobj\n"
-                )
+            add_obj(
+                "3 0 obj\n"
+                "<< /Type /Page /Parent 2 0 R "
+                "/MediaBox [0 0 612 792] /Contents 4 0 R "
+                "/Resources << /Font << /F1 5 0 R >> >> >>\n"
+                "endobj\n"
+            )
+            add_obj(f"4 0 obj\n<< /Length {len(stream_content)} >>\nstream\n")
+            pdf_bytes.extend(stream_content)
+            pdf_bytes.extend(b"\nendstream\nendobj\n")
+            add_obj(
+                "5 0 obj\n"
+                "<< /Type /Font /Subtype /Type1 "
+                "/BaseFont /Helvetica >>\n"
+                "endobj\n"
+            )
 
-                xref_offset = len(pdf_bytes)
-                pdf_bytes.extend(f"xref\n0 {len(offsets) + 1}\n".encode("latin-1"))
-                pdf_bytes.extend(b"0000000000 65535 f \n")
-                for off in offsets:
-                    pdf_bytes.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
-                pdf_bytes.extend(b"trailer\n")
-                pdf_bytes.extend(
-                    f"<< /Size {len(offsets) + 1} /Root 1 0 R >>\n".encode("latin-1")
-                )
-                pdf_bytes.extend(b"startxref\n")
-                pdf_bytes.extend(f"{xref_offset}\n".encode("latin-1"))
-                pdf_bytes.extend(b"%%EOF")
-                return bytes(pdf_bytes)
+            xref_offset = len(pdf_bytes)
+            pdf_bytes.extend(f"xref\n0 {len(offsets) + 1}\n".encode("latin-1"))
+            pdf_bytes.extend(b"0000000000 65535 f \n")
+            for off in offsets:
+                pdf_bytes.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
+            pdf_bytes.extend(b"trailer\n")
+            pdf_bytes.extend(
+                f"<< /Size {len(offsets) + 1} /Root 1 0 R >>\n".encode("latin-1")
+            )
+            pdf_bytes.extend(b"startxref\n")
+            pdf_bytes.extend(f"{xref_offset}\n".encode("latin-1"))
+            pdf_bytes.extend(b"%%EOF")
+            return bytes(pdf_bytes)
 
-            pdf_bytes = generate_simple_pdf(lines)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            export_file = RESULTS_DIR / f"experiment_{experiment_id}_{timestamp}.pdf"
+        pdf_bytes = generate_simple_pdf(lines)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_exp_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", experiment_id)
+        export_file = (
+            RESULTS_DIR / f"experiment_{safe_exp_id}_{timestamp}.pdf"
+        ).resolve()
+        if not str(export_file).startswith(str(RESULTS_DIR.resolve())):
+            raise ValueError("Path traversal detected in experiment export")
 
-            with open(export_file, "wb") as f:
-                f.write(pdf_bytes)
+        with open(export_file, "wb") as f:
+            f.write(pdf_bytes)
 
-            logger.info("📋 PDF Experiment Export: %s", export_file)
+        logger.info("📋 PDF Experiment Export: %s", export_file)
 
-            return {
-                "success": True,
-                "format": "pdf",
-                "file": str(export_file),
-                "url": f"/results/{export_file.name}",
-            }
+        return {
+            "success": True,
+            "format": "pdf",
+            "file": str(export_file),
+            "url": f"/results/{export_file.name}",
+        }
 
     except (json.JSONDecodeError, OSError, ValueError, TypeError) as e:
         logger.error("❌ Experiment Export Error: %s", e)
@@ -3047,54 +3147,66 @@ async def run_experiment(request: Request) -> dict:
         test_params.pop("name", None)
 
         def build_args(param_set: Dict[str, Any]) -> List[str]:
-            args: List[str] = []
-            args.extend(["--runs", str(runs)])
-            args.extend(["--context", str(context)])
-            args.extend(["--limit", "1"])
-            args.extend(["--prompt", prompt])
-            args.extend(["--include-models", model_name])
-            args.append("--retest")
+            benchmark_args: List[str] = []
+            benchmark_args.extend(["--runs", str(runs)])
+            benchmark_args.extend(["--context", str(context)])
+            benchmark_args.extend(["--limit", "1"])
+            benchmark_args.extend(["--prompt", prompt])
+            benchmark_args.extend(["--include-models", model_name])
+            benchmark_args.append("--retest")
             if param_set.get("temperature") is not None:
-                args.extend(["--temperature", str(param_set["temperature"])])
+                benchmark_args.extend(
+                    ["--temperature", str(param_set["temperature"])]
+                )
             if param_set.get("top_k") is not None:
-                args.extend(["--top-k", str(param_set["top_k"])])
+                benchmark_args.extend(["--top-k", str(param_set["top_k"])])
             if param_set.get("top_p") is not None:
-                args.extend(["--top-p", str(param_set["top_p"])])
+                benchmark_args.extend(["--top-p", str(param_set["top_p"])])
             if param_set.get("min_p") is not None:
-                args.extend(["--min-p", str(param_set["min_p"])])
+                benchmark_args.extend(["--min-p", str(param_set["min_p"])])
             if param_set.get("repeat_penalty") is not None:
-                args.extend(["--repeat-penalty", str(param_set["repeat_penalty"])])
+                benchmark_args.extend(
+                    ["--repeat-penalty", str(param_set["repeat_penalty"])]
+                )
             if param_set.get("max_tokens") is not None:
-                args.extend(["--max-tokens", str(param_set["max_tokens"])])
+                benchmark_args.extend(["--max-tokens", str(param_set["max_tokens"])])
             if param_set.get("n_gpu_layers") is not None:
-                args.extend(["--n-gpu-layers", str(param_set["n_gpu_layers"])])
+                benchmark_args.extend(
+                    ["--n-gpu-layers", str(param_set["n_gpu_layers"])]
+                )
             if param_set.get("n_batch") is not None:
-                args.extend(["--n-batch", str(param_set["n_batch"])])
+                benchmark_args.extend(["--n-batch", str(param_set["n_batch"])])
             if param_set.get("n_threads") is not None:
-                args.extend(["--n-threads", str(param_set["n_threads"])])
+                benchmark_args.extend(["--n-threads", str(param_set["n_threads"])])
             if param_set.get("flash_attention") is not None:
                 if param_set["flash_attention"]:
-                    args.append("--flash-attention")
+                    benchmark_args.append("--flash-attention")
                 else:
-                    args.append("--no-flash-attention")
+                    benchmark_args.append("--no-flash-attention")
             if param_set.get("rope_freq_base") is not None:
-                args.extend(["--rope-freq-base", str(param_set["rope_freq_base"])])
+                benchmark_args.extend(
+                    ["--rope-freq-base", str(param_set["rope_freq_base"])]
+                )
             if param_set.get("rope_freq_scale") is not None:
-                args.extend(["--rope-freq-scale", str(param_set["rope_freq_scale"])])
+                benchmark_args.extend(
+                    ["--rope-freq-scale", str(param_set["rope_freq_scale"])]
+                )
             if param_set.get("use_mmap") is not None:
                 if param_set["use_mmap"]:
-                    args.append("--use-mmap")
+                    benchmark_args.append("--use-mmap")
                 else:
-                    args.append("--no-mmap")
+                    benchmark_args.append("--no-mmap")
             if param_set.get("use_mlock") is not None and param_set["use_mlock"]:
-                args.append("--use-mlock")
+                benchmark_args.append("--use-mlock")
             if param_set.get("kv_cache_quant"):
-                args.extend(["--kv-cache-quant", param_set["kv_cache_quant"]])
-            args.append("--enable-profiling")
-            return args
+                benchmark_args.extend(
+                    ["--kv-cache-quant", param_set["kv_cache_quant"]]
+                )
+            benchmark_args.append("--enable-profiling")
+            return benchmark_args
 
-        async def run_once(args: List[str]) -> bool:
-            return await manager.start_benchmark(args)
+        async def run_once(cli_args: List[str]) -> bool:
+            return await manager.start_benchmark(cli_args)
 
         baseline_args = build_args(baseline_params)
         logger.info("🎯 Baseline Args: %s", baseline_args)
@@ -3107,11 +3219,8 @@ async def run_experiment(request: Request) -> dict:
             await asyncio.sleep(1.0)
         await asyncio.sleep(2.0)
 
-        baseline_end_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
         test_args = build_args(test_params)
         logger.info("🎯 Test Args: %s", test_args)
-        test_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         test_ok = await run_once(test_args)
         if not test_ok:
             return {"success": False, "error": "Could not start Test Benchmark"}
@@ -3470,102 +3579,155 @@ async def run_experiment(request: Request) -> dict:
                 f.write(html_content)
             logger.info("🌐 A/B Test HTML saved: %s", html_file)
 
-            try:
-                from reportlab.lib import colors
-                from reportlab.lib.pagesizes import A4, landscape
-                from reportlab.lib.styles import getSampleStyleSheet
-                from reportlab.platypus import (
-                    Paragraph,
-                    SimpleDocTemplate,
-                    Spacer,
-                    Table,
-                    TableStyle,
-                )
+            if REPORTLAB_AVAILABLE:
+                simple_doc_template = SimpleDocTemplate
+                landscape_fn = landscape
+                reportlab_page_size = REPORTLAB_PAGE_SIZE
+                stylesheet_factory = getSampleStyleSheet
+                paragraph_cls = Paragraph
+                spacer_cls = Spacer
+                table_cls = Table
+                table_style_cls = TableStyle
+                reportlab_colors = colors
 
-                pdf_file = results_dir / f"ab_test_results_{timestamp}.pdf"
-                doc = SimpleDocTemplate(str(pdf_file), pagesize=landscape(A4))
-                elements = []
-                styles = getSampleStyleSheet()
-
-                elements.append(Paragraph(f"<b>{experiment_name}</b>", styles["Title"]))
-                elements.append(Paragraph(f"Model: {model_name}", styles["Heading2"]))
-                elements.append(Spacer(1, 12))
-                timestamp_str = results_data["experiment_info"]["timestamp"]
-                elements.append(
-                    Paragraph(
-                        f"Timestamp: {timestamp_str}",
-                        styles["Normal"],
+                if (
+                    simple_doc_template is None
+                    or landscape_fn is None
+                    or reportlab_page_size is None
+                    or stylesheet_factory is None
+                    or paragraph_cls is None
+                    or spacer_cls is None
+                    or table_cls is None
+                    or table_style_cls is None
+                    or reportlab_colors is None
+                ):
+                    logger.warning(
+                        "⚠️ reportlab symbols unavailable - PDF export skipped"
                     )
-                )
-                elements.append(Spacer(1, 20))
+                else:
+                    try:
+                        pdf_file = results_dir / f"ab_test_results_{timestamp}.pdf"
+                        doc = simple_doc_template(
+                            str(pdf_file),
+                            pagesize=landscape_fn(reportlab_page_size),
+                        )
+                        elements = []
+                        styles = stylesheet_factory()
 
-                data = [
-                    ["Metric", "Baseline", "Test", "Delta"],
-                    [
-                        "Mean Speed (tok/s)",
-                        f"{baseline_stats['mean']}",
-                        f"{test_stats['mean']}",
-                        f"{results_data['comparison']['delta_pct']}%",
-                    ],
-                    [
-                        "Min Speed",
-                        f"{baseline_stats['min']}",
-                        f"{test_stats['min']}",
-                        "-",
-                    ],
-                    [
-                        "Max Speed",
-                        f"{baseline_stats['max']}",
-                        f"{test_stats['max']}",
-                        "-",
-                    ],
-                    [
-                        "Std Dev",
-                        f"±{baseline_stats['std_dev']}",
-                        f"±{test_stats['std_dev']}",
-                        "-",
-                    ],
-                    [
-                        "Count",
-                        str(baseline_stats["count"]),
-                        str(test_stats["count"]),
-                        "-",
-                    ],
-                ]
+                        elements.append(
+                            paragraph_cls(
+                                f"<b>{experiment_name}</b>",
+                                styles["Title"],
+                            )
+                        )
+                        elements.append(
+                            paragraph_cls(
+                                f"Model: {model_name}",
+                                styles["Heading2"],
+                            )
+                        )
+                        elements.append(spacer_cls(1, 12))
+                        timestamp_str = results_data["experiment_info"]["timestamp"]
+                        elements.append(
+                            paragraph_cls(
+                                f"Timestamp: {timestamp_str}",
+                                styles["Normal"],
+                            )
+                        )
+                        elements.append(spacer_cls(1, 20))
 
-                table = Table(data)
-                table.setStyle(
-                    TableStyle(
-                        [
-                            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                            ("FONTSIZE", (0, 0), (-1, 0), 12),
-                            ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-                            ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-                            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                        data = [
+                            ["Metric", "Baseline", "Test", "Delta"],
+                            [
+                                "Mean Speed (tok/s)",
+                                f"{baseline_stats['mean']}",
+                                f"{test_stats['mean']}",
+                                f"{results_data['comparison']['delta_pct']}%",
+                            ],
+                            [
+                                "Min Speed",
+                                f"{baseline_stats['min']}",
+                                f"{test_stats['min']}",
+                                "-",
+                            ],
+                            [
+                                "Max Speed",
+                                f"{baseline_stats['max']}",
+                                f"{test_stats['max']}",
+                                "-",
+                            ],
+                            [
+                                "Std Dev",
+                                f"±{baseline_stats['std_dev']}",
+                                f"±{test_stats['std_dev']}",
+                                "-",
+                            ],
+                            [
+                                "Count",
+                                str(baseline_stats["count"]),
+                                str(test_stats["count"]),
+                                "-",
+                            ],
                         ]
-                    )
-                )
-                elements.append(table)
-                elements.append(Spacer(1, 20))
-                elements.append(
-                    Paragraph(f"<b>Winner:</b> {winner.upper()}", styles["Heading2"])
-                )
-                elements.append(
-                    Paragraph(
-                        f"<b>Significant:</b> {test_result.get('significant', False)}",
-                        styles["Normal"],
-                    )
-                )
 
-                doc.build(elements)
-                logger.info("📑 A/B Test PDF saved: %s", pdf_file)
-            except ImportError:
+                        table = table_cls(data)
+                        table.setStyle(
+                            table_style_cls(
+                                [
+                                    (
+                                        "BACKGROUND",
+                                        (0, 0),
+                                        (-1, 0),
+                                        reportlab_colors.grey,
+                                    ),
+                                    (
+                                        "TEXTCOLOR",
+                                        (0, 0),
+                                        (-1, 0),
+                                        reportlab_colors.whitesmoke,
+                                    ),
+                                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                                    ("FONTSIZE", (0, 0), (-1, 0), 12),
+                                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                                    (
+                                        "BACKGROUND",
+                                        (0, 1),
+                                        (-1, -1),
+                                        reportlab_colors.beige,
+                                    ),
+                                    (
+                                        "GRID",
+                                        (0, 0),
+                                        (-1, -1),
+                                        1,
+                                        reportlab_colors.black,
+                                    ),
+                                ]
+                            )
+                        )
+                        elements.append(table)
+                        elements.append(spacer_cls(1, 20))
+                        elements.append(
+                            paragraph_cls(
+                                f"<b>Winner:</b> {winner.upper()}",
+                                styles["Heading2"],
+                            )
+                        )
+                        elements.append(
+                            paragraph_cls(
+                                f"<b>Significant:</b> "
+                                f"{test_result.get('significant', False)}",
+                                styles["Normal"],
+                            )
+                        )
+
+                        doc.build(elements)
+                        logger.info("📑 A/B Test PDF saved: %s", pdf_file)
+                    except (OSError, ValueError, TypeError) as pdf_error:
+                        logger.error("❌ PDF Export Error: %s", pdf_error)
+            else:
                 logger.warning("⚠️ reportlab not installed - PDF export skipped")
-            except (OSError, ValueError, TypeError) as pdf_error:
-                logger.error("❌ PDF Export Error: %s", pdf_error)
 
             results_data["exports"] = {
                 "json": str(json_file),
@@ -3622,20 +3784,20 @@ async def get_dashboard_stats() -> dict:
                     except (json.JSONDecodeError, ValueError):
                         continue
                 mconn.close()
-        except sqlite3.Error as _meta_err:
+        except sqlite3.Error:
             pass
 
         lmstudio_health = {"ok": False, "status": "offline"}
         lmstudio_ports = LMSTUDIO_PORTS
 
-        for port in lmstudio_ports:
+        for lm_port in lmstudio_ports:
             try:
                 with httpx.Client(timeout=1.5) as client:
-                    resp = client.get(f"http://{LMSTUDIO_HOST}:{port}/v1/models")
+                    resp = client.get(f"http://{LMSTUDIO_HOST}:{lm_port}/v1/models")
                     if resp.status_code == 200:
                         lmstudio_health = {
                             "ok": True,
-                            "status": f"online ({LMSTUDIO_HOST}:{port})",
+                            "status": f"online ({LMSTUDIO_HOST}:{lm_port})",
                             "version": None,
                         }
                         break
@@ -3645,7 +3807,11 @@ async def get_dashboard_stats() -> dict:
         if not lmstudio_health["ok"]:
             try:
                 result = subprocess.run(
-                    ["lms", "status"], capture_output=True, text=True, timeout=2
+                    ["lms", "status"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    check=False,
                 )
                 text = (result.stdout + result.stderr).lower()
                 offline_keywords = [
@@ -3697,7 +3863,6 @@ async def get_dashboard_stats() -> dict:
 
         if system_info["os"] == "Linux":
             try:
-                import distro
 
                 distro_name = distro.name()
                 distro_version = distro.version()
@@ -3705,7 +3870,7 @@ async def get_dashboard_stats() -> dict:
                     system_info["os"] = f"{distro_name} {distro_version}".strip()
             except (ImportError, OSError):
                 try:
-                    with open("/etc/os-release", "r") as f:
+                    with open("/etc/os-release", "r", encoding="utf-8") as f:
                         os_release = {}
                         for line in f:
                             if "=" in line:
@@ -3723,8 +3888,6 @@ async def get_dashboard_stats() -> dict:
 
         cpu_gpu_series = None
         try:
-            import cpuinfo
-
             cpu_data = cpuinfo.get_cpu_info()
             if "brand_raw" in cpu_data and cpu_data["brand_raw"]:
                 raw_cpu = (
@@ -3771,7 +3934,9 @@ async def get_dashboard_stats() -> dict:
                     ],
                     timeout=5,
                 )
-                vram_total_mb = int(output.decode().strip().split("\n")[0])
+                vram_total_mb = int(
+                    output.decode().strip().split("\n", maxsplit=1)[0]
+                )
                 vram_total_gb = round(vram_total_mb / 1024, 2)
                 gpu_type = "NVIDIA"
 
@@ -3780,7 +3945,9 @@ async def get_dashboard_stats() -> dict:
                         ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
                         timeout=5,
                     )
-                    gpu_model = model_output.decode().strip().split("\n")[0]
+                    gpu_model = model_output.decode().strip().split(
+                        "\n", maxsplit=1
+                    )[0]
                 except (subprocess.SubprocessError, OSError):
                     gpu_model = "NVIDIA GPU"
 
@@ -3826,6 +3993,7 @@ async def get_dashboard_stats() -> dict:
                             capture_output=True,
                             text=True,
                             timeout=5,
+                            check=False,
                         )
                         if lspci_output.returncode == 0 and lspci_output.stdout:
                             for line in lspci_output.stdout.strip().split("\n"):
@@ -3841,6 +4009,7 @@ async def get_dashboard_stats() -> dict:
                                                 capture_output=True,
                                                 text=True,
                                                 timeout=5,
+                                                check=False,
                                             )
                                             if detail_output.returncode == 0:
                                                 detail_text = detail_output.stdout
@@ -3864,7 +4033,7 @@ async def get_dashboard_stats() -> dict:
                             for gpu_path in Path("/sys/devices").glob(
                                 "**/pci*/*/0000:c7:00.0/device"
                             ):
-                                with open(gpu_path, "r") as f:
+                                with open(gpu_path, "r", encoding="utf-8") as f:
                                     dev_id_hex = f.read().strip()
                                     device_id = dev_id_hex.replace("0x", "")
                                     break
@@ -3878,6 +4047,7 @@ async def get_dashboard_stats() -> dict:
                             capture_output=True,
                             text=True,
                             timeout=5,
+                            check=False,
                         )
                         if result.returncode == 0:
                             for line in result.stdout.split("\n"):
@@ -3909,6 +4079,7 @@ async def get_dashboard_stats() -> dict:
                         capture_output=True,
                         text=True,
                         timeout=5,
+                        check=False,
                     )
 
                     if result.returncode == 0:
@@ -3927,6 +4098,7 @@ async def get_dashboard_stats() -> dict:
                             capture_output=True,
                             text=True,
                             timeout=5,
+                            check=False,
                         )
 
                         if result.returncode == 0:
@@ -4041,7 +4213,7 @@ async def get_dashboard_stats() -> dict:
             "last_run": last_run_timestamp,
             "lmstudio": lmstudio_health,
         }
-    except (sqlite3.Error, subprocess.SubprocessError, httpx.HTTPError, OSError, ValueError, ImportError) as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("❌ Error loading dashboard stats: %s", e)
         return {"success": False, "error": str(e)}
 
@@ -4103,7 +4275,7 @@ async def websocket_benchmark(websocket: WebSocket):
             if manager.is_running():
 
                 current_time = time.time()
-                if current_time - manager._state.last_hardware_send_time >= 2.0:
+                if current_time - manager.last_hardware_send_time >= 2.0:
                     hw = manager.hardware_history
                     has_hw_data = any([
                         hw["temperatures"],
@@ -4128,7 +4300,7 @@ async def websocket_benchmark(websocket: WebSocket):
                             await websocket.send_json(
                                 {"type": "hardware", "data": hardware_data}
                             )
-                            manager._state.last_hardware_send_time = current_time
+                            manager.update_last_hardware_send_time(current_time)
                         except (OSError, RuntimeError, ValueError) as e:
                             logger.error(
                                 "❌ WebSocket Hardware Send Error: %s",
@@ -4163,7 +4335,7 @@ async def websocket_benchmark(websocket: WebSocket):
                             e,
                         )
                     finally:
-                        manager._state.status = "idle"
+                        manager.set_idle_status()
 
                 if manager.status == "failed":
                     try:
@@ -4179,7 +4351,7 @@ async def websocket_benchmark(websocket: WebSocket):
                             e,
                         )
                     finally:
-                        manager._state.status = "idle"
+                        manager.set_idle_status()
 
                 await asyncio.sleep(0.5)
 

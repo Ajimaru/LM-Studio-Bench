@@ -2,7 +2,7 @@
 from dataclasses import asdict
 from pathlib import Path
 import sys
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -324,7 +324,7 @@ class TestBenchmarkCache:
         """BenchmarkCache creates SQLite database on init."""
         bm = _import_benchmark()
         db_path = tmp_path / "test.db"
-        cache = bm.BenchmarkCache(db_path=db_path)
+        bm.BenchmarkCache(db_path=db_path)
         assert db_path.exists()
 
     def test_compute_params_hash_is_consistent(self, tmp_path: Path):
@@ -809,7 +809,7 @@ class TestLMStudioBenchmarkStaticMethods:
             return_value=MagicMock(returncode=0, stdout="LM Studio v1.2.3\n"),
         ):
             result = bm.LMStudioBenchmark.get_lmstudio_version()
-        assert "v1.2.3" in result
+        assert result is not None and "v1.2.3" in result
 
     def test_get_lmstudio_version_commit_hash(self):
         """get_lmstudio_version returns commit hash string."""
@@ -839,7 +839,7 @@ class TestLMStudioBenchmarkStaticMethods:
             return_value=MagicMock(returncode=0, stdout="535.104.05\n"),
         ):
             result = bm.LMStudioBenchmark.get_nvidia_driver_version()
-        assert "535" in result
+        assert result is not None and "535" in result
 
     def test_get_nvidia_driver_version_returns_none_on_error(self):
         """get_nvidia_driver_version returns None when nvidia-smi fails."""

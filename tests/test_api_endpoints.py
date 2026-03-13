@@ -1,10 +1,10 @@
 """Comprehensive FastAPI endpoint tests for web/app.py."""
-import sys
+import importlib
 from pathlib import Path
-from typing import Any, Dict, Optional
+import sys
+from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -14,12 +14,12 @@ if "lmstudio" not in sys.modules:
     sys.modules["lmstudio"] = MagicMock()
 
 
-def _get_client():
+def _get_client() -> TestClient:
     """Return a TestClient for the FastAPI app."""
     if "app" in sys.modules:
         _app_mod = sys.modules["app"]
     else:
-        import app as _app_mod
+        _app_mod = importlib.import_module("app")
     return TestClient(_app_mod.app, raise_server_exceptions=False)
 
 
@@ -276,7 +276,7 @@ class TestCacheStatsEndpoint:
         """Returns real stats when cache has data."""
         app_mod = sys.modules["app"]
         if "benchmark" not in sys.modules:
-            import benchmark
+            importlib.import_module("benchmark")
         bm = sys.modules["benchmark"]
         client = _get_client()
         results = [
@@ -577,7 +577,7 @@ class TestExtraComparisonEndpoints:
         """Returns model history for existing model."""
         app_mod = sys.modules["app"]
         if "benchmark" not in sys.modules:
-            import benchmark
+            importlib.import_module("benchmark")
         bm = sys.modules["benchmark"]
         client = _get_client()
         result = bm.BenchmarkResult(
@@ -798,7 +798,7 @@ class TestDashboardStats:
         """Returns complete stats with result data."""
         app_mod = sys.modules["app"]
         if "benchmark" not in sys.modules:
-            import benchmark
+            importlib.import_module("benchmark")
         bm = sys.modules["benchmark"]
         client = _get_client()
         result = bm.BenchmarkResult(

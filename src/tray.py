@@ -24,11 +24,12 @@ try:
 
     gi.require_version("Gtk", "3.0")
     gi.require_version("AppIndicator3", "0.1")
-    from gi.repository import AppIndicator3, Gtk
+    from gi.repository import AppIndicator3, GLib, Gtk
 except (ImportError, ValueError, AttributeError) as import_exc:
     gi = None
     Gtk = None
     AppIndicator3 = None
+    GLib = None
     IMPORT_ERROR = import_exc
 else:
     IMPORT_ERROR = None
@@ -408,10 +409,9 @@ class TrayApp:
         try:
             self._refresh_menu_buttons()
 
-            # Check for updates (24h interval or when forced)
             now = time.time()
             time_since_last_check = now - self.last_update_check
-            check_interval = 24 * 3600  # 24 hours
+            check_interval = 24 * 3600
 
             if self.force_update_check or time_since_last_check >= check_interval:
                 self.last_update_check = now
@@ -432,9 +432,7 @@ class TrayApp:
         if self._polling_timer_id is not None:
             return
 
-        try:
-            from gi.repository import GLib
-        except ImportError:
+        if GLib is None:
             LOGGER.warning("GLib not available, status polling disabled")
             return
 
@@ -454,7 +452,7 @@ class TrayApp:
         """
         LOGGER.info("Manual update check triggered")
         self.force_update_check = True
-        self.last_update_check = 0.0  # Reset to trigger immediate check
+        self.last_update_check = 0.0
         update_available = self._check_for_updates()
 
         if update_available and self.pending_update:
@@ -710,9 +708,8 @@ class TrayApp:
         """
         if self._polling_timer_id is not None:
             try:
-                from gi.repository import GLib
-
-                GLib.source_remove(self._polling_timer_id)
+                if GLib is not None:
+                    GLib.source_remove(self._polling_timer_id)
                 self._polling_timer_id = None
                 LOGGER.debug("Stopped status polling")
             except (RuntimeError, OSError) as exc:

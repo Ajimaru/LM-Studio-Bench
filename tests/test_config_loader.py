@@ -1,10 +1,7 @@
 """Tests for src/config_loader.py."""
 import json
 from pathlib import Path
-from typing import Dict
 from unittest.mock import patch
-
-import pytest
 
 from config_loader import (
     BASE_DEFAULT_CONFIG,

@@ -23,13 +23,10 @@ import subprocess
 import sys
 import time
 
+from src.user_paths import USER_LOGS_DIR, format_path_for_logs
+
 project_root = Path(__file__).parent
 os.chdir(project_root)
-src_path = project_root / "src"
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
-
-from user_paths import USER_LOGS_DIR, format_path_for_logs
 
 
 def _resolve_python_executable() -> str:
@@ -289,12 +286,12 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
 
     sys.exit(0)
 
-has_web_flag = "--webapp" in CLI_ARGS or "-w" in CLI_ARGS
-debug_enabled = "--debug" in CLI_ARGS or "-d" in CLI_ARGS
+HAS_WEB_FLAG = "--webapp" in CLI_ARGS or "-w" in CLI_ARGS
+DEBUG_ENABLED = "--debug" in CLI_ARGS or "-d" in CLI_ARGS
 
 TRAY_PROCESS = None
 
-if has_web_flag:
+if HAS_WEB_FLAG:
     args = [arg for arg in CLI_ARGS if arg not in ("--webapp", "-w")]
     web_port = _extract_port(args)
     if web_port is None:
@@ -308,7 +305,7 @@ if has_web_flag:
         sys.exit(2)
 
     DASHBOARD_URL = f"http://localhost:{web_port}"
-    TRAY_PROCESS = _start_tray_process(DASHBOARD_URL, debug_enabled)
+    TRAY_PROCESS = _start_tray_process(DASHBOARD_URL, DEBUG_ENABLED)
 
     app_script = project_root / "web" / "app.py"
     if not app_script.exists():
@@ -328,7 +325,7 @@ if has_web_flag:
         _stop_tray_process(TRAY_PROCESS)
 else:
     benchmark_script = project_root / "src" / "benchmark.py"
-    TRAY_PROCESS = _start_tray_process("http://localhost:1234", debug_enabled)
+    TRAY_PROCESS = _start_tray_process("http://localhost:1234", DEBUG_ENABLED)
 
     if not benchmark_script.exists():
         print(f"❌ Error: {benchmark_script} not found")

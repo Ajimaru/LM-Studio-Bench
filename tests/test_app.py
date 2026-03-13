@@ -1,11 +1,8 @@
 """Tests for web/app.py."""
+import importlib
 import json
-import math
 import sys
-from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 def _import_app():
@@ -14,7 +11,7 @@ def _import_app():
         sys.modules["lmstudio"] = MagicMock()
 
     if "app" not in sys.modules:
-        import app
+        importlib.import_module("app")
     return sys.modules["app"]
 
 

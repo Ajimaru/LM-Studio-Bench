@@ -582,7 +582,7 @@ class HardwareMonitor:
         """Reads system CPU utilization in %"""
         try:
             return psutil.cpu_percent(interval=0.1)
-        except OSError:
+        except (OSError, RuntimeError):
             return None
 
     def _get_ram_usage(self) -> Optional[float]:
