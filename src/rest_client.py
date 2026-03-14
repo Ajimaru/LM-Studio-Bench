@@ -337,10 +337,10 @@ class LMStudioRESTClient:
                 if current_status == "completed":
                     logger.info("Download completed: %s", model_key)
                     return True
-                elif current_status == "failed":
+                if current_status == "failed":
                     logger.error("Download failed: %s", model_key)
                     return False
-                elif current_status == "already_downloaded":
+                if current_status == "already_downloaded":
                     logger.info("Model already downloaded: %s", model_key)
                     return True
 
