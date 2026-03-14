@@ -2799,9 +2799,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                     pass
 
                 return result
-            else:
-                logger.error("❌ No successful measurements for %s", model_key)
-                return None
+
+            logger.error("❌ No successful measurements for %s", model_key)
+            return None
 
         except (
             subprocess.SubprocessError,
@@ -3341,13 +3341,13 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             return sorted(
                 self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True
             )
-        elif rank_by == "efficiency":
+        if rank_by == "efficiency":
             return sorted(
                 self.results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True
             )
-        elif rank_by == "ttft":
+        if rank_by == "ttft":
             return sorted(self.results, key=lambda x: x.avg_ttft, reverse=False)
-        elif rank_by == "vram":
+        if rank_by == "vram":
 
             def get_vram_mb(result):
                 try:
@@ -3360,10 +3360,8 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                     return 999999
 
             return sorted(self.results, key=get_vram_mb, reverse=False)
-        else:
-            return sorted(
-                self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True
-            )
+
+        return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
 
     def calculate_percentile_stats(self) -> Dict[str, Dict]:
         """Calculates P50, P95, P99 statistics for benchmark metrics"""
@@ -3628,10 +3626,12 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                         y=speeds,
                         mode="lines+markers",
                         name=f"{model_name} ({quantization})",
-                        line=dict(
-                            color=chart_colors[color_idx % len(chart_colors)]
-                        ),
-                        marker=dict(size=6),
+                        line={
+                            "color": chart_colors[
+                                color_idx % len(chart_colors)
+                            ]
+                        },
+                        marker={"size": 6},
                     )
                 )
 
@@ -4759,13 +4759,17 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                             )
                             for r in results
                         ],
-                        marker=dict(
-                            size=[r.avg_tokens_per_sec / 2 for r in results],
-                            color=[r.tokens_per_sec_per_gb for r in results],
-                            colorscale="Viridis",
-                            showscale=True,
-                            colorbar=dict(title="Effizienz<br>(t/s pro GB)"),
-                        ),
+                        marker={
+                            "size": [
+                                r.avg_tokens_per_sec / 2 for r in results
+                            ],
+                            "color": [r.tokens_per_sec_per_gb for r in results],
+                            "colorscale": "Viridis",
+                            "showscale": True,
+                            "colorbar": {
+                                "title": "Effizienz<br>(t/s pro GB)"
+                            },
+                        },
                         hovertemplate="<b>%{text}</b><extra></extra>",
                     )
                 ]
@@ -4785,13 +4789,15 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                         y=[r.tokens_per_sec_per_billion_params for r in results],
                         mode="markers",
                         text=[f"{r.model_name} ({r.quantization})" for r in results],
-                        marker=dict(
-                            size=8,
-                            color=[r.avg_tokens_per_sec for r in results],
-                            colorscale="RdYlGn",
-                            showscale=True,
-                            colorbar=dict(title="Speed<br>(tokens/s)"),
-                        ),
+                        marker={
+                            "size": 8,
+                            "color": [r.avg_tokens_per_sec for r in results],
+                            "colorscale": "RdYlGn",
+                            "showscale": True,
+                            "colorbar": {
+                                "title": "Speed<br>(tokens/s)"
+                            },
+                        },
                         hovertemplate=(
                             "<b>%{text}</b><br>Per GB: %{x:.2f}<br>"
                             "Per Billion Params: %{y:.2f}<extra></extra>"
