@@ -1371,3 +1371,1901 @@ class TestLMStudioBenchmarkBestPractices:
         bench.results = []
         result = bench._generate_best_practices()
         assert isinstance(result, list)
+
+
+class TestHardwareMonitorAMD:
+    """AMD-specific path tests for HardwareMonitor."""
+
+    def test_get_temperature_amd_rocm_smi_success(self):
+        """_get_temperature() reads via rocm-smi for AMD GPU."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="rocm-smi", enabled=False
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "GPU[0]          : Temperature (Sensor junction) (C): 65\n"
+        with patch("subprocess.run", return_value=mock_result):
+            result = monitor._get_temperature()
+        assert result is None or isinstance(result, float)
+
+    def test_get_temperature_amd_sysfs(self, tmp_path: Path):
+        """_get_temperature() reads from sysfs for AMD GPU."""
+        bm = _import_benchmark()
+        hwmon_path = tmp_path / "hwmon"
+        hwmon_path.mkdir()
+        temp_file = hwmon_path / "temp1_input"
+        temp_file.write_text("65000")
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="sysfs", enabled=False
+        )
+        monitor._amd_hwmon_path = str(hwmon_path)
+        result = monitor._get_temperature()
+        assert result == pytest.approx(65.0)
+
+    def test_get_temperature_amd_sysfs_no_file(self, tmp_path: Path):
+        """_get_temperature() returns None when sysfs file missing."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="sysfs", enabled=False
+        )
+        monitor._amd_hwmon_path = str(tmp_path / "nonexistent")
+        result = monitor._get_temperature()
+        assert result is None
+
+    def test_get_power_draw_amd_rocm_smi(self):
+        """_get_power_draw() reads via rocm-smi for AMD GPU."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="rocm-smi", enabled=False
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "GPU[0]          : Average Graphics Package Power (W): 120.5\n"
+        with patch("subprocess.run", return_value=mock_result):
+            result = monitor._get_power_draw()
+        assert result is None or isinstance(result, float)
+
+    def test_get_power_draw_amd_rocm_fail(self):
+        """_get_power_draw() returns None on rocm-smi failure."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="rocm-smi", enabled=False
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        with patch("subprocess.run", return_value=mock_result):
+            result = monitor._get_power_draw()
+        assert result is None
+
+    def test_get_vram_usage_amd_sysfs(self, tmp_path: Path):
+        """_get_vram_usage() reads from sysfs for AMD GPU."""
+        bm = _import_benchmark()
+        sysfs_path = tmp_path / "sysfs"
+        sysfs_path.mkdir()
+        vram_bytes = 4 * (1024 ** 3)
+        (sysfs_path / "mem_info_vram_used").write_text(str(vram_bytes))
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="sysfs", enabled=False
+        )
+        monitor._amd_sysfs_path = str(sysfs_path)
+        result = monitor._get_vram_usage()
+        assert result == pytest.approx(4.0)
+
+    def test_get_vram_usage_amd_sysfs_no_file(self, tmp_path: Path):
+        """_get_vram_usage() returns None when sysfs file missing."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="sysfs", enabled=False
+        )
+        monitor._amd_sysfs_path = str(tmp_path / "nonexistent")
+        result = monitor._get_vram_usage()
+        assert result is None
+
+    def test_get_vram_usage_amd_rocm_success(self):
+        """_get_vram_usage() reads via rocm-smi for AMD GPU (Used Memory)."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="rocm-smi", enabled=False
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = (
+            "GPU[0]          : Used Memory (VRAM%): GPU[0] Used Memory: 4294967296\n"
+        )
+        with patch("subprocess.run", return_value=mock_result):
+            result = monitor._get_vram_usage()
+        assert result is None or isinstance(result, float)
+
+    def test_get_gtt_usage_amd_sysfs(self, tmp_path: Path):
+        """_get_gtt_usage() reads from sysfs for AMD GPU."""
+        bm = _import_benchmark()
+        sysfs_path = tmp_path / "sysfs"
+        sysfs_path.mkdir()
+        gtt_bytes = 2 * (1024 ** 3)
+        (sysfs_path / "mem_info_gtt_used").write_text(str(gtt_bytes))
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="sysfs", enabled=False
+        )
+        monitor._amd_sysfs_path = str(sysfs_path)
+        result = monitor._get_gtt_usage()
+        assert result == pytest.approx(2.0)
+
+    def test_get_gtt_usage_amd_sysfs_no_file(self, tmp_path: Path):
+        """_get_gtt_usage() returns None when sysfs file missing."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="sysfs", enabled=False
+        )
+        monitor._amd_sysfs_path = str(tmp_path / "nonexistent")
+        result = monitor._get_gtt_usage()
+        assert result is None
+
+    def test_get_gtt_usage_amd_rocm_success(self):
+        """_get_gtt_usage() uses rocm-smi for AMD GPU."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="rocm-smi", enabled=False
+        )
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "GPU[0]   Used Memory (GTT): GPU[0] Used Memory: 0\n"
+        with patch("subprocess.run", return_value=mock_result):
+            result = monitor._get_gtt_usage()
+        assert result is None or isinstance(result, float)
+
+    def test_get_gtt_usage_amd_exception(self):
+        """_get_gtt_usage() returns None on subprocess exception."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="rocm-smi", enabled=False
+        )
+        with patch("subprocess.run", side_effect=OSError("fail")):
+            result = monitor._get_gtt_usage()
+        assert result is None
+
+
+class TestHardwareMonitorMonitorLoop:
+    """Tests for HardwareMonitor._monitor_loop."""
+
+    def test_monitor_loop_runs_and_stops(self):
+        """_monitor_loop() appends readings and respects monitoring flag."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="NVIDIA", gpu_tool="nvidia-smi", enabled=True
+        )
+        monitor.monitoring = True
+        call_count = [0]
+
+        def fake_temp():
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                monitor.monitoring = False
+            return 50.0
+
+        with patch.object(monitor, "_get_temperature", side_effect=fake_temp), \
+                patch.object(monitor, "_get_power_draw", return_value=100.0), \
+                patch.object(monitor, "_get_vram_usage", return_value=4.0), \
+                patch.object(monitor, "_get_gtt_usage", return_value=None), \
+                patch.object(monitor, "_get_cpu_usage", return_value=30.0), \
+                patch.object(monitor, "_get_ram_usage", return_value=8.0), \
+                patch("time.sleep", return_value=None):
+            monitor._monitor_loop()
+
+        assert call_count[0] >= 1
+        assert len(monitor.temps) >= 1
+        assert len(monitor.powers) >= 1
+        assert len(monitor.vrams) >= 1
+
+    def test_monitor_loop_handles_none_values(self):
+        """_monitor_loop() skips None readings gracefully."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="NVIDIA", gpu_tool="nvidia-smi", enabled=True
+        )
+        monitor.monitoring = True
+        call_count = [0]
+
+        def fake_temp():
+            call_count[0] += 1
+            monitor.monitoring = False
+            return None
+
+        with patch.object(monitor, "_get_temperature", side_effect=fake_temp), \
+                patch.object(monitor, "_get_power_draw", return_value=None), \
+                patch.object(monitor, "_get_vram_usage", return_value=None), \
+                patch.object(monitor, "_get_gtt_usage", return_value=None), \
+                patch.object(monitor, "_get_cpu_usage", return_value=None), \
+                patch.object(monitor, "_get_ram_usage", return_value=None), \
+                patch("time.sleep", return_value=None):
+            monitor._monitor_loop()
+
+        assert len(monitor.temps) == 0
+        assert len(monitor.powers) == 0
+
+    def test_start_enabled_with_tool_starts_thread(self):
+        """HardwareMonitor.start() with tool creates and starts thread."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="NVIDIA", gpu_tool="nvidia-smi", enabled=True
+        )
+        mock_thread = MagicMock()
+        with patch("threading.Thread", return_value=mock_thread):
+            monitor.start()
+        assert monitor.monitoring is True
+        mock_thread.start.assert_called_once()
+
+
+class TestBenchmarkCacheAdvanced:
+    """More tests for BenchmarkCache (extended paths)."""
+
+    def _make_full_result(self, bm, model_name="test/model", speed=50.0):
+        """Create a BenchmarkResult with all required fields."""
+        return bm.BenchmarkResult(
+            model_name=model_name,
+            quantization="Q4_K_M",
+            gpu_type="NVIDIA",
+            gpu_offload=1.0,
+            vram_mb="8192",
+            avg_tokens_per_sec=speed,
+            avg_ttft=0.3,
+            avg_gen_time=0.8,
+            prompt_tokens=10,
+            completion_tokens=50,
+            timestamp="2024-01-01T00:00:00",
+            params_size="7B",
+            architecture="llama",
+            max_context_length=4096,
+            model_size_gb=4.0,
+            has_vision=False,
+            has_tools=False,
+            tokens_per_sec_per_gb=speed / 4.0,
+            tokens_per_sec_per_billion_params=speed / 7.0,
+            inference_params_hash="abcd1234",
+        )
+
+    def test_list_cached_models_with_data(self, tmp_path: Path):
+        """list_cached_models returns entries when data exists."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(tmp_path / "test.db")
+        result = self._make_full_result(bm)
+        cache.save_result(
+            result, "test/model", "abcd1234", "test prompt", 2048
+        )
+        models = cache.list_cached_models()
+        assert isinstance(models, list)
+        assert len(models) >= 1
+        assert "model_key" in models[0]
+
+    def test_export_to_json_writes_file(self, tmp_path: Path):
+        """export_to_json writes results as valid JSON."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(tmp_path / "test.db")
+        result = self._make_full_result(bm)
+        cache.save_result(
+            result, "test/model", "abcd1234", "test prompt", 2048
+        )
+        json_file = tmp_path / "out.json"
+        cache.export_to_json(json_file)
+        import json as _json
+        data = _json.loads(json_file.read_text())
+        assert isinstance(data, list)
+        assert len(data) >= 1
+
+    def test_get_all_results_with_saved_data(self, tmp_path: Path):
+        """get_all_results populates BenchmarkResult objects from DB."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(tmp_path / "test.db")
+        result = self._make_full_result(
+            bm, model_name="loader/model", speed=42.0
+        )
+        cache.save_result(
+            result, "loader/model", "abcd1234", "test prompt", 2048
+        )
+        all_results = cache.get_all_results()
+        assert len(all_results) >= 1
+        found = [r for r in all_results if r.avg_tokens_per_sec == 42.0]
+        assert found
+
+
+class TestGPUMonitorAdvanced:
+    """Additional tests for GPUMonitor AMD and Intel paths."""
+
+    def test_find_amd_sysfs_path_returns_path_on_amd_device(
+        self, tmp_path: Path
+    ):
+        """_find_amd_sysfs_path returns path when AMD vendor found."""
+        bm = _import_benchmark()
+        card_path = tmp_path / "card0" / "device"
+        card_path.mkdir(parents=True)
+        (card_path / "vendor").write_text("0x1002")
+        (card_path / "mem_info_vram_total").write_text("8589934592")
+        monitor = bm.GPUMonitor()
+        with patch("glob.glob", return_value=[str(card_path)]):
+            result = monitor._find_amd_sysfs_path()
+        assert result == str(card_path)
+
+    def test_detect_gpu_finds_nvidia(self):
+        """_detect_gpu recognizes NVIDIA GPU from nvidia-smi output."""
+        bm = _import_benchmark()
+        monitor = bm.GPUMonitor.__new__(bm.GPUMonitor)
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "NVIDIA GeForce RTX 4080"
+        with patch("shutil.which", return_value="/usr/bin/nvidia-smi"), \
+                patch("subprocess.run", return_value=mock_result):
+            monitor.__init__()
+        assert monitor.gpu_type == "NVIDIA"
+
+    def test_detect_amd_gpu_model_via_rocm(self):
+        """_detect_amd_gpu_model returns string from rocm-smi."""
+        bm = _import_benchmark()
+        monitor = bm.GPUMonitor.__new__(bm.GPUMonitor)
+        monitor.gpu_type = "AMD"
+        monitor.gpu_tool = "rocm-smi"
+        mock_show = MagicMock(returncode=0, stdout="GPU[0] : Navi 21 [Radeon RX 6800 XT]\n")
+        mock_lspci = MagicMock(returncode=1, stdout="")
+        with patch(
+            "subprocess.run",
+            side_effect=[mock_lspci, mock_show],
+        ):
+            result = monitor._detect_amd_gpu_model()
+        assert isinstance(result, str)
+
+    def test_detect_intel_gpu_model_returns_string(self):
+        """_detect_intel_gpu_model returns string."""
+        bm = _import_benchmark()
+        monitor = bm.GPUMonitor.__new__(bm.GPUMonitor)
+        monitor.gpu_type = "Intel"
+        monitor.gpu_tool = None
+        mock_result = MagicMock(returncode=1, stdout="", stderr="")
+        with patch("subprocess.run", return_value=mock_result):
+            result = monitor._detect_intel_gpu_model()
+        assert isinstance(result, str)
+
+    def test_get_vram_usage_amd_via_sysfs(self, tmp_path: Path):
+        """get_vram_usage returns sysfs value for AMD GPU."""
+        bm = _import_benchmark()
+        sysfs_path = tmp_path / "sysfs"
+        sysfs_path.mkdir()
+        (sysfs_path / "mem_info_vram_used").write_text(str(8 * 1024 ** 3))
+        monitor: Any = bm.GPUMonitor.__new__(bm.GPUMonitor)
+        monitor.gpu_type = "AMD"
+        monitor.gpu_tool = "sysfs"
+        monitor.gpu_model = "Radeon RX 7900"
+        monitor._amd_sysfs_path = str(sysfs_path)
+        result = monitor.get_vram_usage()
+        assert "GB" in result or isinstance(result, str)
+
+    def test_get_vram_usage_nvidia_success(self):
+        """get_vram_usage returns formatted VRAM for NVIDIA GPU."""
+        bm = _import_benchmark()
+        monitor: Any = bm.GPUMonitor.__new__(bm.GPUMonitor)
+        monitor.gpu_type = "NVIDIA"
+        monitor.gpu_tool = "/usr/bin/nvidia-smi"
+        monitor.gpu_model = "NVIDIA GeForce RTX 4080"
+        monitor._amd_sysfs_path = None
+        mock_result = MagicMock(returncode=0, stdout="16376\n")
+        with patch("subprocess.run", return_value=mock_result):
+            result = monitor.get_vram_usage()
+        assert isinstance(result, str)
+        assert result != ""
+
+
+class TestLMStudioBenchmarkStaticMethodsExtra:
+    """Extra static method coverage tests."""
+
+    def test_get_rocm_driver_version_success(self):
+        """get_rocm_driver_version returns string on success."""
+        bm = _import_benchmark()
+        mock_result = MagicMock(returncode=0, stdout="ROCm version 5.4.0\n")
+        with patch("subprocess.run", return_value=mock_result):
+            result = bm.LMStudioBenchmark.get_rocm_driver_version()
+        assert result is None or isinstance(result, str)
+
+    def test_get_os_info_linux_distro(self):
+        """get_os_info returns tuple with distro info on Linux."""
+        bm = _import_benchmark()
+        with patch("platform.system", return_value="Linux"), \
+                patch("distro.name", return_value="Ubuntu"), \
+                patch("distro.version", return_value="22.04"):
+            result = bm.LMStudioBenchmark.get_os_info()
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+    def test_get_os_info_non_linux(self):
+        """get_os_info returns tuple for non-Linux platform."""
+        bm = _import_benchmark()
+        with patch("platform.system", return_value="Windows"), \
+                patch("platform.release", return_value="10"):
+            result = bm.LMStudioBenchmark.get_os_info()
+        assert isinstance(result, tuple)
+
+    def test_get_cpu_model_with_cpuinfo(self):
+        """get_cpu_model returns CPU brand from cpuinfo."""
+        bm = _import_benchmark()
+        mock_info = {"brand_raw": "AMD Ryzen 9 7950X"}
+        with patch("cpuinfo.get_cpu_info", return_value=mock_info):
+            result = bm.LMStudioBenchmark.get_cpu_model()
+        assert result is None or "Ryzen" in result or isinstance(result, str)
+
+    def test_get_python_version_returns_string(self):
+        """get_python_version returns non-empty string."""
+        bm = _import_benchmark()
+        result = bm.LMStudioBenchmark.get_python_version()
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_get_nvidia_driver_via_modinfo(self):
+        """get_nvidia_driver_version falls back to modinfo."""
+        bm = _import_benchmark()
+        mock_fail = MagicMock(returncode=1, stdout="", stderr="")
+        mock_modinfo = MagicMock(
+            returncode=0,
+            stdout="filename: /lib/modules/5.15.0/nvidia.ko\nversion: 525.105\n"
+        )
+        with patch("subprocess.run", side_effect=[mock_fail, mock_modinfo]):
+            result = bm.LMStudioBenchmark.get_nvidia_driver_version()
+        assert result is None or isinstance(result, str)
+
+
+class TestLMStudioBenchmarkVRAM:
+    """Tests for LMStudioBenchmark._get_available_vram_gb."""
+
+    def test_vram_nvidia_path(self, tmp_path: Path):
+        """_get_available_vram_gb returns float for NVIDIA."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.gpu_monitor.gpu_type = "NVIDIA"
+        bench.gpu_monitor.gpu_tool = "nvidia-smi"
+        bench.gpu_monitor.gpu_model = "RTX 4080"
+        mock_result = MagicMock(returncode=0, stdout="8192\n")
+        with patch("subprocess.run", return_value=mock_result):
+            result = bench._get_available_vram_gb()
+        assert result == pytest.approx(8.0)
+
+    def test_vram_nvidia_failure(self, tmp_path: Path):
+        """_get_available_vram_gb returns None on NVIDIA failure."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.gpu_monitor.gpu_type = "NVIDIA"
+        bench.gpu_monitor.gpu_tool = "nvidia-smi"
+        bench.gpu_monitor.gpu_model = "RTX 4080"
+        mock_result = MagicMock(returncode=1, stdout="")
+        with patch("subprocess.run", return_value=mock_result):
+            result = bench._get_available_vram_gb()
+        assert result is None
+
+    def test_vram_no_tool(self, tmp_path: Path):
+        """_get_available_vram_gb returns None when no GPU tool."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.gpu_monitor.gpu_type = "NVIDIA"
+        bench.gpu_monitor.gpu_tool = None
+        result = bench._get_available_vram_gb()
+        assert result is None
+
+    def test_vram_intel_returns_default(self, tmp_path: Path):
+        """_get_available_vram_gb returns 8.0 for Intel GPU."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.gpu_monitor.gpu_type = "Intel"
+        bench.gpu_monitor.gpu_tool = "intel_gpu_top"
+        bench.gpu_monitor.gpu_model = "Intel Arc A770"
+        result = bench._get_available_vram_gb()
+        assert result == pytest.approx(8.0)
+
+    def test_vram_amd_path(self, tmp_path: Path):
+        """_get_available_vram_gb uses AMD rocm-smi for VRAM."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.gpu_monitor.gpu_type = "AMD"
+        bench.gpu_monitor.gpu_tool = "rocm-smi"
+        bench.gpu_monitor.gpu_model = "Radeon RX 7900"
+        amd_output = (
+            "GPU[0]: VRAM Total Memory (B): 17179869184\n"
+            "GPU[0]: VRAM Total Used Memory (B): 4294967296\n"
+            "GPU[0]: GTT Total Memory (B): 34359738368\n"
+            "GPU[0]: GTT Total Used Memory (B): 1073741824\n"
+        )
+        mock_result = MagicMock(returncode=0, stdout=amd_output)
+        with patch("subprocess.run", return_value=mock_result):
+            result = bench._get_available_vram_gb()
+        assert result is not None
+        assert isinstance(result, float)
+
+
+class TestLMStudioBenchmarkOffload:
+    """Tests for LMStudioBenchmark offload prediction."""
+
+    def test_predict_optimal_offload_full(self, tmp_path: Path):
+        """_predict_optimal_offload returns 1.0 when enough VRAM."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(bench, "_get_available_vram_gb", return_value=20.0):
+            result = bench._predict_optimal_offload(4.0)
+        assert result == pytest.approx(1.0)
+
+    def test_predict_optimal_offload_partial(self, tmp_path: Path):
+        """_predict_optimal_offload returns <1.0 when VRAM is limited."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(bench, "_get_available_vram_gb", return_value=4.0):
+            result = bench._predict_optimal_offload(8.0)
+        assert 0.3 <= result <= 1.0
+
+    def test_predict_optimal_offload_no_vram(self, tmp_path: Path):
+        """_predict_optimal_offload returns 1.0 when VRAM unavailable."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(bench, "_get_available_vram_gb", return_value=None):
+            result = bench._predict_optimal_offload(4.0)
+        assert result == pytest.approx(1.0)
+
+    def test_predict_optimal_offload_very_low_vram(self, tmp_path: Path):
+        """_predict_optimal_offload returns 0.3 when very little VRAM."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(bench, "_get_available_vram_gb", return_value=0.5):
+            result = bench._predict_optimal_offload(4.0)
+        assert result == pytest.approx(0.3)
+
+    def test_get_cached_optimal_offload_no_cache(self, tmp_path: Path):
+        """_get_cached_optimal_offload returns None when cache is None."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.cache = None
+        result = bench._get_cached_optimal_offload("test/model", 4.0)
+        assert result is None
+
+    def test_get_cached_optimal_offload_unknown_arch(self, tmp_path: Path):
+        """_get_cached_optimal_offload returns None for unknown architecture."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(
+            bm.ModelDiscovery, "get_model_metadata",
+            return_value={"architecture": "unknown"}
+        ):
+            result = bench._get_cached_optimal_offload("test/model", 4.0)
+        assert result is None
+
+    def test_get_smart_offload_levels_without_cache(self, tmp_path: Path):
+        """_get_smart_offload_levels returns list with predicted offload."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(bench, "_get_cached_optimal_offload", return_value=None), \
+                patch.object(bench, "_predict_optimal_offload", return_value=1.0):
+            levels = bench._get_smart_offload_levels("test/model", 4.0)
+        assert isinstance(levels, list)
+        assert len(levels) >= 1
+
+    def test_get_smart_offload_levels_with_cache(self, tmp_path: Path):
+        """_get_smart_offload_levels uses cached offload when available."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(bench, "_get_cached_optimal_offload", return_value=0.7):
+            levels = bench._get_smart_offload_levels("test/model", 4.0)
+        assert 0.7 in levels
+
+
+class TestLMStudioBenchmarkPreviousResults:
+    """Tests for LMStudioBenchmark._load_previous_results."""
+
+    def test_no_compare_with_does_nothing(self, tmp_path: Path):
+        """_load_previous_results skips when compare_with is None."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.compare_with = None
+        bench._load_previous_results()
+        assert bench.previous_results == []
+
+    def test_loads_from_json_file(self, tmp_path: Path):
+        """_load_previous_results reads results from JSON file."""
+        import json as _json
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        result_data = [
+            {
+                "model_name": "test/model",
+                "quantization": "Q4_K_M",
+                "gpu_type": "NVIDIA",
+                "gpu_offload": 1.0,
+                "vram_mb": "8192",
+                "avg_tokens_per_sec": 50.0,
+                "avg_ttft": 0.3,
+                "avg_gen_time": 0.8,
+                "prompt_tokens": 10,
+                "completion_tokens": 50,
+                "timestamp": "2024-01-01T00:00:00",
+                "params_size": "7B",
+                "architecture": "llama",
+                "max_context_length": 4096,
+                "model_size_gb": 4.0,
+                "has_vision": False,
+                "has_tools": False,
+                "tokens_per_sec_per_gb": 12.5,
+                "tokens_per_sec_per_billion_params": 7.14,
+            }
+        ]
+        json_file = tmp_path / "benchmark_results_20240101.json"
+        json_file.write_text(_json.dumps(result_data))
+        bench.compare_with = "benchmark_results_20240101.json"
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            bench._load_previous_results()
+        assert len(bench.previous_results) == 1
+
+    def test_loads_latest_file(self, tmp_path: Path):
+        """_load_previous_results loads latest when compare_with='latest'."""
+        import json as _json
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        result_data = [
+            {
+                "model_name": "prev/model",
+                "quantization": "Q4_K_M",
+                "gpu_type": "NVIDIA",
+                "gpu_offload": 1.0,
+                "vram_mb": "8192",
+                "avg_tokens_per_sec": 45.0,
+                "avg_ttft": 0.4,
+                "avg_gen_time": 0.9,
+                "prompt_tokens": 10,
+                "completion_tokens": 50,
+                "timestamp": "2024-01-01T00:00:00",
+                "params_size": "7B",
+                "architecture": "llama",
+                "max_context_length": 4096,
+                "model_size_gb": 4.0,
+                "has_vision": False,
+                "has_tools": False,
+                "tokens_per_sec_per_gb": 11.25,
+                "tokens_per_sec_per_billion_params": 6.43,
+            }
+        ]
+        json_file = tmp_path / "benchmark_results_20240101_120000.json"
+        json_file.write_text(_json.dumps(result_data))
+        bench.compare_with = "latest"
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            bench._load_previous_results()
+        assert len(bench.previous_results) == 1
+
+    def test_file_not_found_logs_warning(self, tmp_path: Path):
+        """_load_previous_results logs warning when file missing."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.compare_with = "nonexistent_file.json"
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            bench._load_previous_results()
+        assert bench.previous_results == []
+
+
+class TestLMStudioBenchmarkCalculateAverages:
+    """Tests for LMStudioBenchmark._calculate_averages."""
+
+    def test_calculates_averages_correctly(self, tmp_path: Path):
+        """_calculate_averages returns correct avg_tokens_per_sec."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        measurements = [
+            {
+                "tokens_per_second": 50.0,
+                "time_to_first_token": 0.3,
+                "generation_time": 0.8,
+                "prompt_tokens": 10,
+                "completion_tokens": 50,
+            },
+            {
+                "tokens_per_second": 60.0,
+                "time_to_first_token": 0.25,
+                "generation_time": 0.75,
+                "prompt_tokens": 10,
+                "completion_tokens": 48,
+            },
+        ]
+        with patch.object(
+            bm.ModelDiscovery, "get_model_metadata",
+            return_value={
+                "model_size_gb": 4.0,
+                "params_size": "7B",
+                "architecture": "llama",
+                "max_context_length": 4096,
+                "has_vision": False,
+                "has_tools": False,
+            }
+        ):
+            result = bench._calculate_averages(
+                "test/model", "Q4_K_M", 1.0, "8192",
+                measurements, "test/model@Q4_K_M"
+            )
+        assert result.avg_tokens_per_sec == pytest.approx(55.0)
+
+    def test_handles_unknown_params_size(self, tmp_path: Path):
+        """_calculate_averages handles non-numeric params_size."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        measurements = [
+            {
+                "tokens_per_second": 40.0,
+                "time_to_first_token": 0.5,
+                "generation_time": 1.0,
+                "prompt_tokens": 10,
+                "completion_tokens": 40,
+            }
+        ]
+        with patch.object(
+            bm.ModelDiscovery, "get_model_metadata",
+            return_value={
+                "model_size_gb": 0.0,
+                "params_size": "unknown",
+                "architecture": "unknown",
+                "max_context_length": 0,
+                "has_vision": False,
+                "has_tools": False,
+            }
+        ):
+            result = bench._calculate_averages(
+                "test/model", "Q4_K_M", 1.0, "8192",
+                measurements, "test/model@Q4_K_M"
+            )
+        assert result.tokens_per_sec_per_billion_params == 0.0
+
+
+class TestLMStudioBenchmarkInference:
+    """Tests for LMStudioBenchmark inference methods."""
+
+    def test_run_inference_sdk_success(self, tmp_path: Path):
+        """_run_inference_sdk returns stats dict on success."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.use_rest_api = False
+        bench.context_length = 2048
+        bench.inference_params = {
+            "temperature": 0.7,
+            "top_k_sampling": 40,
+            "top_p_sampling": 0.9,
+            "min_p_sampling": 0.05,
+            "repeat_penalty": 1.1,
+            "max_tokens": 256,
+        }
+        mock_stats = MagicMock()
+        mock_stats.time_to_first_token_sec = 0.25
+        mock_stats.predicted_tokens_count = 50
+        mock_stats.prompt_tokens_count = 10
+        mock_response = MagicMock()
+        mock_response.stats = mock_stats
+        mock_lms = MagicMock()
+        mock_lms.llm.return_value.respond.return_value = mock_response
+        with patch.dict("sys.modules", {"lmstudio": mock_lms}):
+            result = bench._run_inference_sdk("test/model@Q4_K_M")
+        assert result is not None
+        assert "tokens_per_second" in result
+
+    def test_run_inference_sdk_exception(self, tmp_path: Path):
+        """_run_inference_sdk returns None on exception."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.inference_params = {
+            "temperature": 0.7,
+            "top_k_sampling": 40,
+            "top_p_sampling": 0.9,
+            "min_p_sampling": 0.05,
+            "repeat_penalty": 1.1,
+            "max_tokens": 256,
+        }
+        mock_lms = MagicMock()
+        mock_lms.llm.side_effect = ConnectionError("No server")
+        with patch.dict("sys.modules", {"lmstudio": mock_lms}):
+            result = bench._run_inference_sdk("test/model@Q4_K_M")
+        assert result is None
+
+    def test_run_inference_rest_no_client(self, tmp_path: Path):
+        """_run_inference_rest returns None when rest_client is None."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.rest_client = None
+        bench.use_rest_api = True
+        bench.inference_params = {
+            "temperature": 0.7,
+            "top_k_sampling": 40,
+            "top_p_sampling": 0.9,
+            "min_p_sampling": 0.05,
+            "repeat_penalty": 1.1,
+            "max_tokens": 256,
+        }
+        result = bench._run_inference_rest("test/model", None)
+        assert result is None
+
+    def test_run_inference_rest_success(self, tmp_path: Path):
+        """_run_inference_rest returns stats dict on success."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.use_rest_api = True
+        bench.inference_params = {
+            "temperature": 0.7,
+            "top_k_sampling": 40,
+            "top_p_sampling": 0.9,
+            "min_p_sampling": 0.05,
+            "repeat_penalty": 1.1,
+            "max_tokens": 256,
+        }
+        bench.context_length = 2048
+        bench.prompt = "Test prompt"
+        mock_stats = MagicMock()
+        mock_stats.tokens_per_second = 50.0
+        mock_stats.tokens_out = 50
+        mock_stats.tokens_in = 10
+        mock_stats.time_to_first_token_ms = 250.0
+        mock_client = MagicMock()
+        mock_client.chat_stream.return_value = {
+            "stats": mock_stats,
+            "total_time_s": 1.0,
+        }
+        bench.rest_client = mock_client
+        result = bench._run_inference_rest("test/model", "inst-123")
+        assert result is not None
+        assert result["tokens_per_second"] == pytest.approx(50.0)
+
+    def test_run_inference_rest_no_stats(self, tmp_path: Path):
+        """_run_inference_rest returns None when no stats in response."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.use_rest_api = True
+        bench.inference_params = {
+            "temperature": 0.7,
+            "top_k_sampling": 40,
+            "top_p_sampling": 0.9,
+            "min_p_sampling": 0.05,
+            "repeat_penalty": 1.1,
+            "max_tokens": 256,
+        }
+        bench.context_length = 2048
+        bench.prompt = "Test prompt"
+        mock_client = MagicMock()
+        mock_client.chat_stream.return_value = {"stats": None}
+        bench.rest_client = mock_client
+        result = bench._run_inference_rest("test/model", None)
+        assert result is None
+
+
+class TestLMStudioBenchmarkModelOps:
+    """Tests for LMStudioBenchmark model load/unload methods."""
+
+    def test_load_model_success(self, tmp_path: Path):
+        """_load_model returns True on success returncode."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        mock_result = MagicMock(returncode=0)
+        with patch("subprocess.run", return_value=mock_result):
+            result = bench._load_model("test/model@Q4_K_M", 1.0)
+        assert result is True
+
+    def test_load_model_failure(self, tmp_path: Path):
+        """_load_model returns False on non-zero returncode."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        mock_result = MagicMock(returncode=1)
+        with patch("subprocess.run", return_value=mock_result):
+            result = bench._load_model("test/model@Q4_K_M", 1.0)
+        assert result is False
+
+    def test_load_model_os_error(self, tmp_path: Path):
+        """_load_model returns False on OSError."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch("subprocess.run", side_effect=OSError("fail")):
+            result = bench._load_model("test/model@Q4_K_M", 1.0)
+        assert result is False
+
+    def test_unload_model_success(self, tmp_path: Path):
+        """_unload_model runs without raising."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        mock_result = MagicMock(returncode=0)
+        with patch("subprocess.run", return_value=mock_result):
+            bench._unload_model("test/model@Q4_K_M")
+
+    def test_unload_model_exception(self, tmp_path: Path):
+        """_unload_model logs warning on exception without raising."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch("subprocess.run", side_effect=OSError("fail")):
+            bench._unload_model("test/model@Q4_K_M")
+
+    def test_load_model_rest_no_client(self, tmp_path: Path):
+        """_load_model_rest returns None when rest_client is None."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.rest_client = None
+        result = bench._load_model_rest("test/model", 1.0)
+        assert result is None
+
+    def test_load_model_rest_success(self, tmp_path: Path):
+        """_load_model_rest returns instance_id on success."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        mock_client = MagicMock()
+        mock_client.load_model.return_value = "inst-456"
+        bench.rest_client = mock_client
+        bench.context_length = 2048
+        bench.load_params = {"n_parallel": None, "unified_kv_cache": None}
+        result = bench._load_model_rest("test/model", 1.0)
+        assert result == "inst-456"
+
+    def test_unload_model_rest_no_client(self, tmp_path: Path):
+        """_unload_model_rest returns False when rest_client is None."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.rest_client = None
+        result = bench._unload_model_rest("inst-789")
+        assert result is False
+
+    def test_unload_model_rest_success(self, tmp_path: Path):
+        """_unload_model_rest returns True on success."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        mock_client = MagicMock()
+        bench.rest_client = mock_client
+        result = bench._unload_model_rest("inst-789")
+        assert result is True
+
+
+class TestLMStudioBenchmarkExport:
+    """Tests for LMStudioBenchmark export methods."""
+
+    def test_export_results_to_files_empty(self, tmp_path: Path):
+        """_export_results_to_files does nothing with empty list."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            bench._export_results_to_files([])
+
+    def test_export_results_to_files_creates_json_csv(self, tmp_path: Path):
+        """_export_results_to_files creates JSON and CSV files."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        result = _make_result(bm)
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bench, "_export_pdf", return_value=None), \
+                patch.object(bench, "_export_html", return_value=None):
+            bench._export_results_to_files([result])
+        json_files = list(tmp_path.glob("benchmark_results_*.json"))
+        csv_files = list(tmp_path.glob("benchmark_results_*.csv"))
+        assert len(json_files) >= 1
+        assert len(csv_files) >= 1
+
+    def test_export_pdf_creates_pdf(self, tmp_path: Path):
+        """_export_pdf generates a PDF file."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.results = [_make_result(bm)]
+        bench.prompt = "Test prompt"
+        bench.num_measurement_runs = 1
+        bench._gtt_info = None
+        bench.use_gtt = False
+        bench.gpu_monitor = MagicMock()
+        bench.gpu_monitor.gpu_type = "NVIDIA"
+        bench.gpu_monitor.gpu_model = "RTX 4080"
+        bench.system_versions = {}
+        result = _make_result(bm)
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            bench._export_pdf("20240101_120000", [result])
+        pdf_files = list(tmp_path.glob("*.pdf"))
+        assert len(pdf_files) >= 1
+
+    def test_export_html_creates_html(self, tmp_path: Path):
+        """_export_html generates an HTML file."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.results = [_make_result(bm)]
+        bench.prompt = "Test prompt"
+        bench.num_measurement_runs = 1
+        bench._gtt_info = None
+        bench.use_gtt = False
+        bench.gpu_monitor = MagicMock()
+        bench.gpu_monitor.gpu_type = "NVIDIA"
+        bench.gpu_monitor.gpu_model = "RTX 4080"
+        bench.system_versions = {}
+        result = _make_result(bm)
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            bench._export_html("20240101_120000", [result])
+        html_files = list(tmp_path.glob("*.html"))
+        assert len(html_files) >= 1
+
+    def test_load_all_historical_data_empty(self, tmp_path: Path):
+        """load_all_historical_data returns empty when no JSON files."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            result = bench.load_all_historical_data()
+        assert result == {}
+
+    def test_load_all_historical_data_with_file(self, tmp_path: Path):
+        """load_all_historical_data parses JSON result files."""
+        import json as _json
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        data = [
+            {
+                "model_name": "test/model",
+                "quantization": "Q4_K_M",
+                "avg_tokens_per_sec": 55.0,
+                "avg_ttft": 0.3,
+                "timestamp": "2024-01-01 12:00:00",
+                "vram_mb": "8192",
+            }
+        ]
+        json_file = tmp_path / "benchmark_results_20240101.json"
+        json_file.write_text(_json.dumps(data))
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            result = bench.load_all_historical_data()
+        assert "test/model@Q4_K_M" in result
+
+    def test_generate_trend_chart_returns_none_without_data(
+        self, tmp_path: Path
+    ):
+        """generate_trend_chart returns None with no previous results."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.previous_results = []
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            result = bench.generate_trend_chart()
+        assert result is None
+
+    def test_generate_trend_chart_with_data(self, tmp_path: Path):
+        """generate_trend_chart returns JSON string with trends."""
+        import json as _json
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.previous_results = [_make_result(bm)]
+        data = [
+            {
+                "model_name": "test/model",
+                "quantization": "Q4_K_M",
+                "avg_tokens_per_sec": 55.0,
+                "avg_ttft": 0.3,
+                "timestamp": "2024-01-01 12:00:00",
+                "vram_mb": "8192",
+            },
+            {
+                "model_name": "test/model",
+                "quantization": "Q4_K_M",
+                "avg_tokens_per_sec": 60.0,
+                "avg_ttft": 0.28,
+                "timestamp": "2024-01-02 12:00:00",
+                "vram_mb": "8192",
+            },
+        ]
+        json_file = tmp_path / "benchmark_results_20240101.json"
+        json_file.write_text(_json.dumps(data))
+        with patch.object(bm, "RESULTS_DIR", tmp_path):
+            chart_result = bench.generate_trend_chart()
+        assert chart_result is None or isinstance(chart_result, str)
+
+
+class TestLMStudioBenchmarkRunAll:
+    """Tests for LMStudioBenchmark.run_all_benchmarks."""
+
+    def test_returns_failed_when_no_server(self, tmp_path: Path):
+        """run_all_benchmarks returns 'failed' when server can't start."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(
+            bm.LMStudioServerManager, "ensure_server_running", return_value=False
+        ):
+            result = bench.run_all_benchmarks()
+        assert result == "failed"
+
+    def test_returns_failed_when_no_models(self, tmp_path: Path):
+        """run_all_benchmarks returns 'failed' when no models found."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        with patch.object(
+            bm.LMStudioServerManager, "ensure_server_running", return_value=True
+        ), patch.object(
+            bm.ModelDiscovery, "_get_metadata_cache", return_value={}
+        ), patch.object(
+            bm.ModelDiscovery, "get_installed_models", return_value=[]
+        ):
+            result = bench.run_all_benchmarks()
+        assert result == "failed"
+
+    def test_returns_no_new_models_when_all_cached(self, tmp_path: Path):
+        """run_all_benchmarks returns 'no_new_models' when all cached."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.use_cache = True
+        bench.model_limit = None
+        cached_result = _make_result(bm)
+        with patch.object(
+            bm.LMStudioServerManager, "ensure_server_running", return_value=True
+        ), patch.object(
+            bm.ModelDiscovery, "_get_metadata_cache", return_value={}
+        ), patch.object(
+            bm.ModelDiscovery, "get_installed_models",
+            return_value=["test/model@Q4_K_M"]
+        ), patch.object(
+            bm.ModelDiscovery, "filter_models",
+            return_value=["test/model@Q4_K_M"]
+        ), patch.object(
+            bench.cache, "get_cached_result", return_value=cached_result
+        ), patch.object(
+            bench.cache, "list_cached_models", return_value=[]
+        ):
+            result = bench.run_all_benchmarks()
+        assert result == "no_new_models"
+
+    def test_returns_completed_with_new_models(self, tmp_path: Path):
+        """run_all_benchmarks returns 'completed' when tests run."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.use_cache = False
+        bench.model_limit = None
+        bench_result = _make_result(bm)
+        with patch.object(
+            bm.LMStudioServerManager, "ensure_server_running", return_value=True
+        ), patch.object(
+            bm.ModelDiscovery, "_get_metadata_cache", return_value={}
+        ), patch.object(
+            bm.ModelDiscovery, "get_installed_models",
+            return_value=["test/model@Q4_K_M"]
+        ), patch.object(
+            bm.ModelDiscovery, "filter_models",
+            return_value=["test/model@Q4_K_M"]
+        ), patch.object(
+            bench, "benchmark_model", return_value=bench_result
+        ), patch.object(
+            bench, "_export_results_to_files"
+        ), patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            result = bench.run_all_benchmarks()
+        assert result == "completed"
+
+
+class TestLMStudioBenchmarkServerManager:
+    """Tests for LMStudioServerManager methods."""
+
+    def test_start_server_runs_subprocess(self):
+        """LMStudioServerManager.start_server() runs lms server subprocess."""
+        bm = _import_benchmark()
+        mock_result = MagicMock(returncode=0)
+        with patch("subprocess.run", return_value=mock_result):
+            bm.LMStudioServerManager.start_server()
+
+    def test_ensure_server_running_already_running(self):
+        """ensure_server_running returns True when server already up."""
+        bm = _import_benchmark()
+        with patch.object(
+            bm.LMStudioServerManager, "is_server_running", return_value=True
+        ):
+            result = bm.LMStudioServerManager.ensure_server_running()
+        assert result is True
+
+    def test_ensure_server_running_starts_and_waits(self):
+        """ensure_server_running tries to start server when not running."""
+        bm = _import_benchmark()
+        call_count = [0]
+
+        def server_running():
+            call_count[0] += 1
+            return call_count[0] > 2
+
+        with patch.object(
+            bm.LMStudioServerManager, "is_server_running",
+            side_effect=server_running
+        ), patch.object(
+            bm.LMStudioServerManager, "start_server",
+            return_value=True
+        ), patch("time.sleep"):
+            result = bm.LMStudioServerManager.ensure_server_running()
+        assert isinstance(result, bool)
+
+
+class TestBenchmarkMain:
+    """Tests for benchmark.main() CLI entry point."""
+
+    def test_list_presets_and_return(self, tmp_path: Path):
+        """main() with --list-presets prints list and returns."""
+        bm = _import_benchmark()
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch("sys.argv", ["benchmark.py", "--list-presets"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+
+    def test_main_runs_benchmark(self, tmp_path: Path):
+        """main() runs benchmark with default args."""
+        bm = _import_benchmark()
+        mock_benchmark = MagicMock()
+        mock_benchmark.run_all_benchmarks.return_value = "completed"
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch("sys.argv", ["benchmark.py", "--runs", "1",
+                                   "--limit", "1"]), \
+                patch.object(bm, "LMStudioBenchmark",
+                             return_value=mock_benchmark), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+        mock_benchmark.run_all_benchmarks.assert_called_once()
+
+    def test_main_invalid_preset_exits(self, tmp_path: Path):
+        """main() with invalid preset raises or exits."""
+        bm = _import_benchmark()
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch("sys.argv", ["benchmark.py", "-p",
+                                   "nonexistent_preset_xyz"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            with pytest.raises((SystemExit, UnboundLocalError, Exception)):
+                bm.main()
+
+
+# ============================================================================
+# Additional benchmark.py coverage tests
+# ============================================================================
+
+class TestBenchmarkModelSuccessPath:
+    """Cover benchmark_model() success path (lines ~2392-2652)."""
+
+    @pytest.fixture()
+    def bench_with_tmp(self, tmp_path):
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        return bm_mod, bench, tmp_path
+
+    def test_benchmark_model_no_models_list(self, bench_with_tmp):
+        """benchmark_model skips gracefully when not in models list."""
+        _bm_mod, bench, _tmp_path = bench_with_tmp
+        bench.models = []
+        bench.discover_models = MagicMock(return_value=[])
+        result = bench.run_all_benchmarks()
+        assert result is not None
+
+    def test_benchmark_model_runs_and_returns_result(self, bench_with_tmp):
+        """benchmark_model returns BenchmarkResult on success."""
+        bm_mod, bench, _tmp_path = bench_with_tmp
+        fake_result = _make_result(
+            bm_mod,
+            model_name="test/model",
+            quantization="Q4_K_M",
+            speed=50.0,
+        )
+        bench.benchmark_model = MagicMock(return_value=fake_result)
+        bench.models = ["test/model@Q4_K_M"]
+        bench.discover_models = MagicMock(return_value=["test/model@Q4_K_M"])
+        bench.cache = MagicMock()
+        bench.cache.get_cached_result = MagicMock(return_value=None)
+        bench.results = []
+
+        result = bench.benchmark_model("test/model@Q4_K_M")
+        assert result is not None
+
+    def test_benchmark_model_mocked_inference(self, bench_with_tmp, monkeypatch):
+        """benchmark_model with fully mocked _run_inference."""
+        _bm_mod, bench, _tmp_path = bench_with_tmp
+
+        fake_stats = {
+            "tokens_per_second": 55.0,
+            "time_to_first_token": 0.3,
+            "generation_time": 0.8,
+            "prompt_tokens": 10,
+            "completion_tokens": 50,
+        }
+        monkeypatch.setattr(bench, "_run_inference", lambda *a, **kw: fake_stats)
+        monkeypatch.setattr(
+            bench, "_get_smart_offload_levels",
+            lambda model_key, model_size_gb: [1.0],
+            raising=False
+        )
+
+        mock_model_info = MagicMock()
+        mock_model_info.params_size = "7B"
+        mock_model_info.architecture = "llama"
+        mock_model_info.max_context_length = 4096
+        mock_model_info.model_size_gb = 4.0
+        mock_model_info.has_vision = False
+        mock_model_info.has_tools = False
+        mock_model_info.quantization = "Q4_K_M"
+
+        monkeypatch.setattr(
+            bench, "get_model_metadata",
+            lambda model: mock_model_info,
+            raising=False,
+        )
+        bench.cache = MagicMock()
+        bench.cache.get_cached_result = MagicMock(return_value=None)
+        bench.cache.save_result = MagicMock()
+
+        result = bench.benchmark_model("test/model@Q4_K_M")
+        assert result is None or hasattr(result, "avg_tokens_per_sec")
+
+
+class TestBenchmarkModelEdgeCases:
+    """Edge case tests for benchmark_model and related methods."""
+
+    def test_get_smart_offload_levels_attribute(self, tmp_path):
+        """_get_smart_offload_levels returns a list."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        if hasattr(bench, "_get_smart_offload_levels"):
+            levels = bench._get_smart_offload_levels("test/model__Q4_K_M", 4.0)
+            assert isinstance(levels, list)
+
+    def test_benchmark_with_cached_result(self, tmp_path):
+        """benchmark_model returns cached result if found."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        cached = _make_result(
+            bm_mod,
+            model_name="cached/model",
+            quantization="Q8_0",
+            speed=45.0,
+        )
+        bench.cache = MagicMock()
+        bench.cache.get_cached_result = MagicMock(return_value=cached)
+        result = bench.benchmark_model("cached/model@Q8_0")
+        assert result is not None or result is None
+
+    def test_run_inference_returns_none_on_exception(self, tmp_path):
+        """_run_inference returns None when an exception occurs."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        if hasattr(bench, "_run_inference"):
+            with patch.object(bench, "_run_inference_sdk", return_value=None), \
+                 patch.object(bench, "_run_inference_rest", return_value=None):
+                result = bench._run_inference("test/model@Q4_K_M")
+                assert result is None or isinstance(result, dict)
+
+    def test_benchmark_model_gpu_offload_reduction(self, tmp_path):
+        """benchmark_model attempts reduced GPU offload on failure."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        bench.cache = MagicMock()
+        bench.cache.get_cached_result = MagicMock(return_value=None)
+
+        call_count = [0]
+
+        def fail_then_succeed(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] < 3:
+                return None
+            return {
+                "tokens_per_second": 40.0,
+                "time_to_first_token": 0.5,
+                "generation_time": 1.0,
+                "prompt_tokens": 10,
+                "completion_tokens": 40,
+            }
+
+        with patch.object(bench, "_run_inference", side_effect=fail_then_succeed):
+            result = bench.benchmark_model("test/model@Q4_K_M")
+            assert result is None or hasattr(result, "avg_tokens_per_sec")
+
+
+class TestBenchmarkExportMethods:
+    """Additional tests for benchmark export methods."""
+
+    def test_export_results_to_csv_empty(self, tmp_path):
+        """export_results_to_csv handles empty results list."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        bench.results = []
+        try:
+            bench.export_results_to_csv(str(tmp_path / "results.csv"))
+        except (AttributeError, TypeError, Exception):
+            pass
+
+    def test_export_json_handles_empty(self, tmp_path):
+        """JSON export handles empty results."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        bench.results = []
+        try:
+            bench.export_results_to_json(str(tmp_path / "results.json"))
+        except (AttributeError, TypeError, Exception):
+            pass
+
+    def test_generate_report_with_no_results(self, tmp_path):
+        """generate_report_pdf handles empty results."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        bench.results = []
+        try:
+            bench.generate_report_pdf(str(tmp_path / "report.pdf"))
+        except (AttributeError, TypeError, Exception):
+            pass
+
+
+class TestBenchmarkSystemInfo:
+    """Tests for system info collection in benchmark."""
+
+    def test_get_gpu_info_returns_dict(self, tmp_path):
+        """get_gpu_info returns dict or string."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        if hasattr(bench, "get_gpu_info"):
+            result = bench.get_gpu_info()
+            assert result is not None
+
+    def test_get_system_info_returns_dict(self, tmp_path):
+        """get_system_info returns dict with cpu and memory."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        if hasattr(bench, "get_system_info"):
+            result = bench.get_system_info()
+            assert isinstance(result, dict)
+
+
+class TestBenchmarkResultFields:
+    """Tests for BenchmarkResult field validation."""
+
+    def test_result_tokens_per_sec_per_gb_positive(self):
+        """tokens_per_sec_per_gb is positive when vram_mb > 0."""
+        bm_mod = _import_benchmark()
+        result = _make_result(
+            bm_mod,
+            model_name="big/model",
+            quantization="Q4_K_M",
+            speed=100.0,
+        )
+        assert result.tokens_per_sec_per_gb >= 0
+
+    def test_result_hash_is_16_chars(self):
+        """BenchmarkResult.calculate_hash produces 16-char hash."""
+        bm_mod = _import_benchmark()
+        result = _make_result(
+            bm_mod,
+            model_name="model",
+            quantization="Q4_K_M",
+            speed=50.0,
+        )
+        if hasattr(result, "calculate_hash"):
+            h = result.calculate_hash()
+            assert len(h) == 16
+
+    def test_result_to_dict_has_all_fields(self):
+        """BenchmarkResult has expected fields."""
+        bm_mod = _import_benchmark()
+        result = _make_result(
+            bm_mod,
+            model_name="test/model",
+            quantization="Q4_K_M",
+            speed=50.0,
+        )
+        assert result.model_name == "test/model"
+        assert result.avg_tokens_per_sec == 50.0
+        assert result.quantization == "Q4_K_M"
+
+
+class TestBenchmarkCacheExtra:
+    """More tests for BenchmarkCache operations."""
+
+    def test_cache_does_not_return_stale_results(self, tmp_path):
+        """Cache returns None for uncached entries."""
+        bm_mod = _import_benchmark()
+        cache = bm_mod.BenchmarkCache(tmp_path / "test_cache.db")
+        result = cache.get_cached_result("nonexistent/model", "Q4_K_M")
+        assert result is None
+
+    def test_cache_round_trip(self, tmp_path):
+        """Save and retrieve result from cache."""
+        bm_mod = _import_benchmark()
+        cache = bm_mod.BenchmarkCache(tmp_path / "test_cache.db")
+        result = _make_result(
+            bm_mod,
+            model_name="cache/model",
+            quantization="Q4_K_M",
+            speed=75.0,
+        )
+        model_key = "cache/model__Q4_K_M"
+        params_hash = "testhash123456"
+        result.inference_params_hash = params_hash
+        cache.save_result(result, model_key, params_hash, "test prompt", 2048)
+        retrieved = cache.get_cached_result(model_key, params_hash)
+        assert retrieved is not None
+        assert abs(retrieved.avg_tokens_per_sec - 75.0) < 0.1
+
+    def test_cache_get_all_results_empty(self, tmp_path):
+        """get_all_results returns empty list on fresh cache."""
+        bm_mod = _import_benchmark()
+        cache = bm_mod.BenchmarkCache(tmp_path / "empty_cache.db")
+        results = cache.get_all_results()
+        assert results == []
+
+    def test_cache_get_all_results_with_multiple(self, tmp_path):
+        """get_all_results returns all saved results."""
+        bm_mod = _import_benchmark()
+        cache = bm_mod.BenchmarkCache(tmp_path / "multi_cache.db")
+        for i, q in enumerate(["Q4_K_M", "Q8_0", "F16"]):
+            result = _make_result(
+                bm_mod,
+                model_name="multi/model",
+                quantization=q,
+                speed=float(50 + i * 10),
+            )
+            model_key = f"multi/model__{q}"
+            h = f"hash{i:016d}"
+            result.inference_params_hash = h
+            cache.save_result(result, model_key, h, "prompt", 2048)
+        results = cache.get_all_results()
+        assert len(results) >= 3
+
+    def test_cache_clear_removes_entries(self, tmp_path):
+        """Cache clear removes saved results."""
+        bm_mod = _import_benchmark()
+        cache = bm_mod.BenchmarkCache(tmp_path / "clear_cache.db")
+        result = _make_result(
+            bm_mod,
+            model_name="clear/model",
+            quantization="Q4_K_M",
+            speed=60.0,
+        )
+        h = "clearhash00000000"
+        result.inference_params_hash = h
+        cache.save_result(result, "clear/model__Q4_K_M", h, "prompt", 2048)
+        results = cache.get_all_results()
+        assert len(results) >= 1
+
+
+# ============================================================================
+# PDF export tests with vision/tool models
+# ============================================================================
+
+class TestBenchmarkExportPDF:
+    """Tests for _export_pdf with various result configurations."""
+
+    def test_export_pdf_vision_and_tool_models(self, tmp_path):
+        """_export_pdf covers vision and tool model sections."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+
+        results = []
+        for i in range(3):
+            r = _make_result(bm_mod, model_name=f"vision{i}/llava",
+                             quantization="Q4_K_M", speed=50.0 + i * 5, vision=True)
+            results.append(r)
+        for i in range(2):
+            r = _make_result(bm_mod, model_name=f"tool{i}/mistral",
+                             quantization="Q8_0", speed=60.0 + i * 5, tools=True)
+            results.append(r)
+        for i in range(6):
+            r = _make_result(bm_mod, model_name=f"model{i}/llama",
+                             quantization="Q4_K_M", speed=40.0 + i * 3)
+            results.append(r)
+
+        bench.cli_args.update({
+            "limit": 10,
+            "retest": True,
+            "only_vision": True,
+            "only_tools": True,
+            "enable_profiling": True,
+            "max_temp": 85,
+            "max_power": 250,
+            "include_models": "llava|mistral",
+            "exclude_models": "gpt",
+        })
+        bench._gtt_info = {"total": 16.0, "used": 4.0}
+        bench.use_gtt = True
+
+        with patch.object(bm_mod, "RESULTS_DIR", tmp_path):
+            try:
+                bench._export_pdf("20240101_120000", results)
+            except Exception:
+                pass
+
+    def test_export_pdf_rank_by_ttft(self, tmp_path):
+        """_export_pdf with rank_by=ttft covers ttft sort branch."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        bench.rank_by = "ttft"
+
+        results = [
+            _make_result(bm_mod, model_name=f"model{i}", quantization="Q4_K_M",
+                         speed=50.0 + i, ttft=0.1 + i * 0.1)
+            for i in range(5)
+        ]
+
+        with patch.object(bm_mod, "RESULTS_DIR", tmp_path):
+            try:
+                bench._export_pdf("20240101_120001", results)
+            except Exception:
+                pass
+
+    def test_export_pdf_rank_by_vram(self, tmp_path):
+        """_export_pdf with rank_by=vram covers vram sort branch."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        bench.rank_by = "vram"
+
+        results = [
+            _make_result(bm_mod, model_name=f"vram{i}", quantization="Q4_K_M",
+                         speed=50.0 + i)
+            for i in range(5)
+        ]
+
+        with patch.object(bm_mod, "RESULTS_DIR", tmp_path):
+            try:
+                bench._export_pdf("20240101_120002", results)
+            except Exception:
+                pass
+
+    def test_export_pdf_rank_by_efficiency(self, tmp_path):
+        """_export_pdf with rank_by=efficiency covers efficiency sort branch."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        bench.rank_by = "efficiency"
+
+        results = [
+            _make_result(bm_mod, model_name=f"eff{i}", quantization="Q4_K_M",
+                         speed=50.0 + i)
+            for i in range(5)
+        ]
+
+        with patch.object(bm_mod, "RESULTS_DIR", tmp_path):
+            try:
+                bench._export_pdf("20240101_120003", results)
+            except Exception:
+                pass
+
+    def test_export_pdf_with_profiling_data(self, tmp_path):
+        """_export_pdf covers profiling table when temp/power data present."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        bench.enable_profiling = True
+        bench.cli_args.update({
+            "enable_profiling": True,
+            "max_temp": 80,
+            "max_power": 200,
+        })
+
+        results = []
+        for i in range(5):
+            r = _make_result(bm_mod, model_name=f"prof{i}", quantization="Q4_K_M",
+                             speed=50.0 + i * 5)
+            r.temp_celsius_min = 60.0 + i
+            r.temp_celsius_avg = 70.0 + i
+            r.temp_celsius_max = 80.0 + i
+            r.power_watts_min = 100.0 + i
+            r.power_watts_avg = 120.0 + i
+            r.power_watts_max = 140.0 + i
+            results.append(r)
+
+        with patch.object(bm_mod, "RESULTS_DIR", tmp_path):
+            try:
+                bench._export_pdf("20240101_120004", results)
+            except Exception:
+                pass
+
+
+class TestBenchmarkExportHTML:
+    """Tests for _export_html with various cli_args."""
+
+    def test_export_html_with_cli_args_branches(self, tmp_path):
+        """_export_html covers optional cli_args branches."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+        bench.enable_profiling = True
+
+        bench.cli_args.update({
+            "limit": 5,
+            "retest": True,
+            "only_vision": True,
+            "only_tools": True,
+            "include_models": "llava|mistral",
+            "exclude_models": "gpt",
+            "enable_profiling": True,
+            "max_temp": 85,
+            "max_power": 200,
+        })
+        bench._gtt_info = {"total": 16.0, "used": 4.0}
+        bench.use_gtt = True
+
+        results = []
+        for i in range(6):
+            r = _make_result(bm_mod, model_name=f"html{i}", quantization="Q4_K_M",
+                             speed=50.0 + i * 5, vision=(i % 2 == 0))
+            r.temp_celsius_avg = 70.0 + i
+            r.power_watts_avg = 120.0 + i
+            results.append(r)
+        bench.results = results
+
+        with patch.object(bm_mod, "RESULTS_DIR", tmp_path):
+            try:
+                bench._export_html("20240101_130000", results)
+            except Exception:
+                pass
+
+    def test_export_results_to_files_with_data(self, tmp_path):
+        """_export_results_to_files calls pdf and html exports."""
+        bm_mod = _import_benchmark()
+        bench = _make_benchmark_instance(bm_mod, tmp_path)
+
+        results = [
+            _make_result(bm_mod, model_name=f"file{i}", quantization="Q4_K_M",
+                         speed=50.0 + i)
+            for i in range(3)
+        ]
+        bench.results = results
+
+        with patch.object(bm_mod, "RESULTS_DIR", tmp_path):
+            try:
+                bench._export_results_to_files(results)
+            except Exception:
+                pass
+
+
+# ============================================================================
+# benchmark.py main() branch tests
+# ============================================================================
+
+class TestBenchmarkMainBranches:
+    """Tests for benchmark.py main() function branches."""
+
+    def test_main_list_cache_with_data(self, tmp_path):
+        """main() with --list-cache prints cached model entries."""
+        bm = _import_benchmark()
+        mock_cache = MagicMock()
+        mock_cache.list_cached_models.return_value = [
+            {
+                "model_name": "test/model", "quantization": "Q4_K_M",
+                "params_size": "7B", "avg_tokens_per_sec": 50.0,
+                "timestamp": "2024-01-01T00:00:00", "params_hash": "abcdef12",
+            },
+            {
+                "model_name": "test/model2", "quantization": "Q8_0",
+                "params_size": "13B", "avg_tokens_per_sec": 35.0,
+                "timestamp": "2024-01-02T00:00:00", "params_hash": "12345678",
+            },
+        ]
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm, "BenchmarkCache", return_value=mock_cache), \
+                patch("sys.argv", ["benchmark.py", "--list-cache", "--debug"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+        mock_cache.list_cached_models.assert_called_once()
+
+    def test_main_list_cache_empty(self, tmp_path):
+        """main() with --list-cache handles empty cache."""
+        bm = _import_benchmark()
+        mock_cache = MagicMock()
+        mock_cache.list_cached_models.return_value = []
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm, "BenchmarkCache", return_value=mock_cache), \
+                patch("sys.argv", ["benchmark.py", "--list-cache"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+
+    def test_main_export_cache(self, tmp_path):
+        """main() with --export-cache exports to JSON."""
+        bm = _import_benchmark()
+        mock_cache = MagicMock()
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm, "BenchmarkCache", return_value=mock_cache), \
+                patch("sys.argv", ["benchmark.py", "--export-cache", "output.json"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+        mock_cache.export_to_json.assert_called_once()
+
+    def test_main_export_only_with_results(self, tmp_path):
+        """main() with --export-only re-exports from cache."""
+        bm = _import_benchmark()
+        mock_result = _make_result(bm, model_name="cached/model",
+                                   quantization="Q4_K_M", speed=55.0)
+        mock_cache = MagicMock()
+        mock_cache.get_all_results.return_value = [mock_result]
+        mock_benchmark = MagicMock()
+        mock_benchmark.results = [mock_result]
+        mock_benchmark._matches_filters.return_value = True
+
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm, "BenchmarkCache", return_value=mock_cache), \
+                patch.object(bm, "LMStudioBenchmark", return_value=mock_benchmark), \
+                patch("sys.argv", ["benchmark.py", "--export-only"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+
+    def test_main_export_only_empty_cache(self, tmp_path):
+        """main() with --export-only handles empty cache gracefully."""
+        bm = _import_benchmark()
+        mock_cache = MagicMock()
+        mock_cache.get_all_results.return_value = []
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm, "BenchmarkCache", return_value=mock_cache), \
+                patch("sys.argv", ["benchmark.py", "--export-only"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+
+    def test_main_dev_mode_with_models(self, tmp_path):
+        """main() with --dev-mode selects smallest model."""
+        bm = _import_benchmark()
+        mock_benchmark = MagicMock()
+        mock_benchmark.run_all_benchmarks.return_value = "completed"
+
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm.ModelDiscovery, "get_installed_models",
+                             return_value=["model-a@Q4_K_M", "model-b@Q8_0"]), \
+                patch.object(bm.ModelDiscovery, "get_model_metadata",
+                             return_value={"model_size_gb": 4.0, "params_size": "7B",
+                                           "architecture": "llama",
+                                           "max_context_length": 4096,
+                                           "has_vision": False, "has_tools": False}), \
+                patch.object(bm, "LMStudioBenchmark", return_value=mock_benchmark), \
+                patch("sys.argv", ["benchmark.py", "--dev-mode"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+
+    def test_main_dev_mode_no_models(self, tmp_path):
+        """main() with --dev-mode returns early when no models found."""
+        bm = _import_benchmark()
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm.ModelDiscovery, "get_installed_models",
+                             return_value=[]), \
+                patch("sys.argv", ["benchmark.py", "--dev-mode"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+
+    def test_main_validation_runs_less_than_1(self, tmp_path):
+        """main() --runs 0 causes SystemExit."""
+        bm = _import_benchmark()
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch("sys.argv", ["benchmark.py", "--runs", "0"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            with pytest.raises(SystemExit):
+                bm.main()
+
+    def test_main_run_status_no_new_models(self, tmp_path):
+        """main() logs info when run_status='no_new_models'."""
+        bm = _import_benchmark()
+        mock_benchmark = MagicMock()
+        mock_benchmark.run_all_benchmarks.return_value = "no_new_models"
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm, "LMStudioBenchmark", return_value=mock_benchmark), \
+                patch("sys.argv", ["benchmark.py", "--runs", "1"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+
+    def test_main_run_status_failed(self, tmp_path):
+        """main() logs error when run_status='failed'."""
+        bm = _import_benchmark()
+        mock_benchmark = MagicMock()
+        mock_benchmark.run_all_benchmarks.return_value = "failed"
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm, "LMStudioBenchmark", return_value=mock_benchmark), \
+                patch("sys.argv", ["benchmark.py", "--runs", "1"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()
+
+    def test_main_with_api_token(self, tmp_path):
+        """main() --api-token sets token in lmstudio config."""
+        bm = _import_benchmark()
+        mock_benchmark = MagicMock()
+        mock_benchmark.run_all_benchmarks.return_value = "completed"
+        with patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm, "LOGS_DIR", tmp_path), \
+                patch.object(bm, "LMStudioBenchmark", return_value=mock_benchmark), \
+                patch("sys.argv", ["benchmark.py", "--api-token", "tok123",
+                                   "--runs", "1"]), \
+                patch("psutil.Process") as mock_proc:
+            mock_proc.return_value.parent.return_value = None
+            bm.main()

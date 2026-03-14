@@ -32,9 +32,9 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 try:
-    from src.user_paths import USER_LOGS_DIR, USER_RESULTS_DIR  # noqa: E402
+    from src.user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
 except ModuleNotFoundError:
-    from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR  # noqa: E402
+    from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
 
 RESULTS_DIR = USER_RESULTS_DIR
 METADATA_DB = RESULTS_DIR / "model_metadata.db"

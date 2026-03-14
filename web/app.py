@@ -157,7 +157,7 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
             )
             return out_models
         return out_models
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception:
         return []
 
 
@@ -337,7 +337,7 @@ def _get_cached_latest_release() -> Optional[dict]:
             is_update,
         )
         return result
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         logger.error("Error in latest release check: %s", exc)
         return None
 
@@ -632,7 +632,7 @@ class BenchmarkManager:
 
             safe_cmd = self._build_safe_command(sanitized_args)
 
-            self._state.process = subprocess.Popen(  # pylint: disable=consider-using-with
+            self._state.process = subprocess.Popen(
                 safe_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -1471,7 +1471,7 @@ async def get_results() -> dict:
             results_data.append(result_dict)
 
         return {"success": True, "count": len(results_data), "results": results_data}
-    except Exception as e:  # pylint: disable=broad-exception-caught
+    except Exception as e:
         logger.error("❌ Error loading results: %s", e)
         return {"success": False, "error": str(e), "results": []}
 
@@ -4213,7 +4213,7 @@ async def get_dashboard_stats() -> dict:
             "last_run": last_run_timestamp,
             "lmstudio": lmstudio_health,
         }
-    except Exception as e:  # pylint: disable=broad-exception-caught
+    except Exception as e:
         logger.error("❌ Error loading dashboard stats: %s", e)
         return {"success": False, "error": str(e)}
 

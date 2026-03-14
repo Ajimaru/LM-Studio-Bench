@@ -96,7 +96,7 @@ def compare_versions(current: str, latest: str) -> bool:
 
     def parse_version(v: str) -> tuple:
         """Parse version string to tuple (major, minor, patch)."""
-        v_clean = v.lstrip("v").split("-")[0]  # Remove "v" prefix, ignore pre-release
+        v_clean = v.lstrip("v").split("-")[0]
         try:
             parts = v_clean.split(".")
             return tuple(int(p) for p in parts[:3])
