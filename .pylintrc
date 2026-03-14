@@ -22,6 +22,7 @@ disable=
     R0917,
     R0911,
     R0916,
+    R1732,
 
 [FORMAT]
 # Maximum line length (must match other tools)
