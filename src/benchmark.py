@@ -1285,26 +1285,28 @@ class BenchmarkCache:
 
         conn.close()
 
-        results_root = RESULTS_DIR.resolve()
-        resolved_input = output_file.expanduser().resolve()
-        if resolved_input.parent != results_root:
-            raise ValueError(
-                "Unsafe export path outside results directory: "
-                f"{output_file}"
-            )
+        requested_output = Path(output_file).expanduser()
 
-        filename = resolved_input.name
+        if requested_output.is_absolute() or requested_output.name != str(output_file):
+            raise ValueError("Export path must be a filename only")
+
+        filename = requested_output.name
         if not filename.lower().endswith(".json"):
             raise ValueError("Export filename must end with .json")
         if not re.fullmatch(r"[A-Za-z0-9._-]+", filename):
             raise ValueError("Export filename contains invalid characters")
 
+        results_root = RESULTS_DIR.resolve()
         resolved_output = (results_root / filename).resolve()
-        if not resolved_output.is_relative_to(results_root):
+
+        if resolved_output.parent != results_root:
             raise ValueError(
-                "Unsafe export path outside results directory: "
+                "Unsafe export path outside allowed directories: "
                 f"{filename}"
             )
+
+        if resolved_output.exists() and resolved_output.is_symlink():
+            raise ValueError("Refusing to overwrite symlinked export file")
 
         resolved_output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2869,7 +2871,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
     def _run_inference_sdk(self, model_key: str) -> Optional[Dict]:
         """Performs inference via SDK and returns stats."""
         try:
-            lms = _lmstudio_module
+            lms = sys.modules.get("lmstudio") or _lmstudio_module
             if lms is None:
                 logger.error("❌ lmstudio SDK not available")
                 return None
@@ -5775,9 +5777,9 @@ Examples:
 
     if args.export_cache:
         cache = BenchmarkCache()
-        output_file = RESULTS_DIR / args.export_cache
+        output_file = Path(args.export_cache)
         cache.export_to_json(output_file)
-        print(f"Cache exported to: {output_file}")
+        print(f"Cache exported to: {RESULTS_DIR / output_file.name}")
         return
 
     if args.export_only:

@@ -37,10 +37,10 @@ def _import_tray() -> tuple[types.ModuleType, MagicMock, MagicMock]:
         if "tray" in sys.modules:
             del sys.modules["tray"]
         import tray
-        tray.gi = gi_mock
-        tray.Gtk = gtk_mock
-        tray.AppIndicator3 = indicator_mock
-        tray.IMPORT_ERROR = None
+        setattr(tray, "gi", gi_mock)
+        setattr(tray, "Gtk", gtk_mock)
+        setattr(tray, "AppIndicator3", indicator_mock)
+        setattr(tray, "IMPORT_ERROR", None)
     sys.modules["tray"] = tray
     return tray, gtk_mock, indicator_mock
 

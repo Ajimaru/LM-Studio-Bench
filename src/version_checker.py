@@ -60,7 +60,9 @@ def fetch_latest_release() -> Optional[dict]:
         None - Errors are logged and None is returned (graceful
         degradation).
     """
-    url = "https://api.github.com/repos/Ajimaru/" "LM-Studio-Bench/releases/latest"
+    url = (
+        "https://api.github.com/repos/Ajimaru/LM-Studio-Bench/releases/latest"
+    )
 
     try:
         with httpx.Client(timeout=5.0) as client:
