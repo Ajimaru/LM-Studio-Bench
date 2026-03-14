@@ -480,11 +480,12 @@ class TestBenchmarkCache:
         assert cached is not None
         assert cached.model_name == "test-model"
 
-    def test_export_to_json(self, tmp_path: Path):
+    def test_export_to_json(self, tmp_path: Path, monkeypatch):
         """export_to_json creates a JSON file."""
         bm = _import_benchmark()
         cache = bm.BenchmarkCache(db_path=tmp_path / "cache.db")
         out_file = tmp_path / "export.json"
+        monkeypatch.chdir(tmp_path)
         cache.export_to_json(out_file)
         import json
         data = json.loads(out_file.read_text(encoding="utf-8"))
@@ -1637,7 +1638,7 @@ class TestBenchmarkCacheAdvanced:
         assert len(models) >= 1
         assert "model_key" in models[0]
 
-    def test_export_to_json_writes_file(self, tmp_path: Path):
+    def test_export_to_json_writes_file(self, tmp_path: Path, monkeypatch):
         """export_to_json writes results as valid JSON."""
         bm = _import_benchmark()
         cache = bm.BenchmarkCache(tmp_path / "test.db")
@@ -1646,6 +1647,7 @@ class TestBenchmarkCacheAdvanced:
             result, "test/model", "abcd1234", "test prompt", 2048
         )
         json_file = tmp_path / "out.json"
+        monkeypatch.chdir(tmp_path)
         cache.export_to_json(json_file)
         import json as _json
         data = _json.loads(json_file.read_text())

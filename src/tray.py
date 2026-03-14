@@ -23,10 +23,22 @@ try:
     import gi
 
     gi.require_version("Gtk", "3.0")
-    gi.require_version("AppIndicator3", "0.1")
     from gi import repository as gi_repository
 
-    APP_INDICATOR3: Any = getattr(gi_repository, "AppIndicator3")
+    APP_INDICATOR3: Any = None
+    for appindicator_module in ("AppIndicator3", "AyatanaAppIndicator3"):
+        try:
+            gi.require_version(appindicator_module, "0.1")
+            APP_INDICATOR3 = getattr(gi_repository, appindicator_module)
+            break
+        except (ValueError, AttributeError):
+            continue
+
+    if APP_INDICATOR3 is None:
+        raise ImportError(
+            "Neither AppIndicator3 nor AyatanaAppIndicator3 is available"
+        )
+
     GLIB: Any = getattr(gi_repository, "GLib")
     GTK: Any = getattr(gi_repository, "Gtk")
 except (ImportError, ValueError, AttributeError) as import_exc:
