@@ -17,6 +17,11 @@ disable=
     too-many-statements,
     too-many-lines,
     too-many-nested-blocks,
+    R0903,
+    R0902,
+    R0917,
+    R0911,
+    R0916,
 
 [FORMAT]
 # Maximum line length (must match other tools)
