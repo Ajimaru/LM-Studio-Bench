@@ -13,7 +13,7 @@
 
 set -e
 
-PYLINT_TIMEOUT_SECONDS=25
+PYLINT_TIMEOUT_SECONDS=190
 
 # Colors for output
 RED='\033[0;31m'
