@@ -333,17 +333,31 @@ class TrayApp:
     def _resolve_dashboard_url_for_open(self) -> str:
         """Resolve dashboard URL for browser action.
 
-        Prefer configured URL when the API responds there. If not,
-        try to recover latest active dashboard URL from log files.
+        Log discovery runs first because the webapp port is dynamic.
+        The configured default (port 1234) may belong to LM Studio's
+        own API, not the dashboard, so we cannot rely on an API probe
+        to distinguish them.  Only fall back to the configured URL
+        when no log entry is found.
         """
+        discovered_url = self._discover_dashboard_url_from_logs()
+        if discovered_url:
+            if discovered_url != self.dashboard_url:
+                LOGGER.info(
+                    "Dashboard URL updated from logs: %s -> %s",
+                    self.dashboard_url,
+                    discovered_url,
+                )
+                self._set_dashboard_url(discovered_url)
+            return self.dashboard_url
+
+        # No log entry found — verify the configured URL is reachable.
         if self._call_api("/api/status") is not None:
             return self.dashboard_url
 
-        discovered_url = self._discover_dashboard_url_from_logs()
-        if discovered_url:
-            LOGGER.info("Recovered dashboard URL from logs: %s", discovered_url)
-            self._set_dashboard_url(discovered_url)
-            return discovered_url
+        LOGGER.warning(
+            "Dashboard unreachable at %s and no log entry found",
+            self.dashboard_url,
+        )
         return self.dashboard_url
 
     def _call_api(

@@ -458,6 +458,38 @@ class TestTrayAppOnStartPauseStop:
 
         assert resolved == "http://localhost:1234"
 
+    def test_resolve_dashboard_url_prefers_log_over_api_response(
+        self,
+        tmp_path: Path,
+    ):
+        """Log discovery wins even when the configured URL's API responds.
+
+        Regression test: port 1234 is LM Studio's own API port.  When
+        LM Studio is running, _call_api("/api/status") would have
+        returned a non-None response, causing the tray to open the wrong
+        URL.  Log discovery must run first so the actual webapp port is
+        used.
+        """
+        tray, _, _ = _import_tray()
+        log_file = tmp_path / "webapp_20260315_120000.log"
+        log_file.write_text(
+            "INFO 🚀 Dashboard available at http://localhost:56789\n",
+            encoding="utf-8",
+        )
+
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:1234")
+            # Simulate LM Studio responding at port 1234
+            app._call_api = MagicMock(
+                return_value={"status": "ok"}
+            )
+            resolved = app._resolve_dashboard_url_for_open()
+
+        assert resolved == "http://localhost:56789"
+        assert app.dashboard_url == "http://localhost:56789"
+        # _call_api should NOT be called (log discovery succeeded first)
+        app._call_api.assert_not_called()
+
     def test_on_status_calls_api(self, tmp_path: Path):
         """_on_status calls the status API."""
         tray, _, _ = _import_tray()
