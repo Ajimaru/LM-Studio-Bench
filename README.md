@@ -109,17 +109,18 @@ quantizations to measure and compare tokens-per-second performance.
 
 ### Option 1: Use the AppImage
 
-Download `LM-Studio-Bench-x86_64.AppImage` from the latest release,
+Download the AppImage (for example,
+`LM-Studio-Bench-vX.Y.Z-x86_64.AppImage`) from the latest release,
 make it executable, and start it:
 
 ```bash
-chmod +x LM-Studio-Bench-x86_64.AppImage
+chmod +x LM-Studio-Bench-vX.Y.Z-x86_64.AppImage
 
 # Tray-only mode (default — no args)
-./LM-Studio-Bench-x86_64.AppImage
+./LM-Studio-Bench-vX.Y.Z-x86_64.AppImage
 
 # Web dashboard mode
-./LM-Studio-Bench-x86_64.AppImage --webapp
+./LM-Studio-Bench-vX.Y.Z-x86_64.AppImage --webapp
 ```
 
 Notes:
