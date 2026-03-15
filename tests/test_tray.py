@@ -437,6 +437,7 @@ class TestTrayAppOnStartPauseStop:
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:1234")
             app._call_api = MagicMock(return_value=None)
+            app._is_dashboard_url_reachable = MagicMock(return_value=True)
             resolved = app._resolve_dashboard_url_for_open()
 
         assert resolved == "http://localhost:46617"
@@ -479,16 +480,36 @@ class TestTrayAppOnStartPauseStop:
 
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:1234")
-            # Simulate LM Studio responding at port 1234
             app._call_api = MagicMock(
                 return_value={"status": "ok"}
             )
+            app._is_dashboard_url_reachable = MagicMock(return_value=True)
             resolved = app._resolve_dashboard_url_for_open()
 
         assert resolved == "http://localhost:56789"
         assert app.dashboard_url == "http://localhost:56789"
-        # _call_api should NOT be called (log discovery succeeded first)
         app._call_api.assert_not_called()
+
+    def test_resolve_dashboard_url_ignores_unreachable_log_url(
+        self,
+        tmp_path: Path,
+    ):
+        """Stale log URL is ignored when no webapp is currently reachable."""
+        tray, _, _ = _import_tray()
+        log_file = tmp_path / "webapp_20260315_182849.log"
+        log_file.write_text(
+            "INFO Dashboard available at http://localhost:46617\n",
+            encoding="utf-8",
+        )
+
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:1234")
+            app._is_dashboard_url_reachable = MagicMock(return_value=False)
+            app._call_api = MagicMock(return_value=None)
+            resolved = app._resolve_dashboard_url_for_open()
+
+        assert resolved == "http://localhost:1234"
+        assert app.dashboard_url == "http://localhost:1234"
 
     def test_on_status_calls_api(self, tmp_path: Path):
         """_on_status calls the status API."""

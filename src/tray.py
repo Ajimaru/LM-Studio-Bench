@@ -341,16 +341,21 @@ class TrayApp:
         """
         discovered_url = self._discover_dashboard_url_from_logs()
         if discovered_url:
-            if discovered_url != self.dashboard_url:
-                LOGGER.info(
-                    "Dashboard URL updated from logs: %s -> %s",
-                    self.dashboard_url,
-                    discovered_url,
-                )
-                self._set_dashboard_url(discovered_url)
-            return self.dashboard_url
+            if self._is_dashboard_url_reachable(discovered_url):
+                if discovered_url != self.dashboard_url:
+                    LOGGER.info(
+                        "Dashboard URL updated from logs: %s -> %s",
+                        self.dashboard_url,
+                        discovered_url,
+                    )
+                    self._set_dashboard_url(discovered_url)
+                return self.dashboard_url
 
-        # No log entry found — verify the configured URL is reachable.
+            LOGGER.warning(
+                "Ignoring unreachable dashboard URL from logs: %s",
+                discovered_url,
+            )
+
         if self._call_api("/api/status") is not None:
             return self.dashboard_url
 
@@ -359,6 +364,26 @@ class TrayApp:
             self.dashboard_url,
         )
         return self.dashboard_url
+
+    def _is_dashboard_url_reachable(self, dashboard_url: str) -> bool:
+        """Return whether dashboard /api/status is reachable at URL."""
+        parsed = urlparse(dashboard_url)
+        url = f"{parsed.scheme}://{parsed.netloc}/api/status"
+
+        try:
+            req = urllib_request.Request(url=url, method="GET")
+            with urllib_request.urlopen(req, timeout=1.5) as response:  # nosec B310
+                response_body = response.read().decode("utf-8")
+            data = json.loads(response_body) if response_body else {}
+            return isinstance(data, dict)
+        except (
+            urllib_error.URLError,
+            ValueError,
+            json.JSONDecodeError,
+            TimeoutError,
+            OSError,
+        ):
+            return False
 
     def _call_api(
         self,
