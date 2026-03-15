@@ -26,6 +26,13 @@ disable=
     R0911,
     R0916,
     R1732,
+    # False positives in Codacy's bundled pylint (Python 3.10 code):
+    # E1101: Path inherits PurePath but has .exists/.mkdir etc.
+    E1101,
+    # E1136: list[str] / dict[...] generics valid since Python 3.9
+    E1136,
+    # E0611: statistics.quantiles exists since Python 3.8
+    E0611,
 
 [FORMAT]
 # Maximum line length (must match other tools)
