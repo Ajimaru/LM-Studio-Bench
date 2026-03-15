@@ -380,13 +380,27 @@ See [REST API Features](docs/REST_API_FEATURES.md) for full documentation.
 
 ### Default settings
 
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
+
 - **Prompt**: "Is the sky blue?"
 - **Context length**: 2048 tokens
 - **Warmup**: 1 run
 - **Measurements**: 3 runs
 - **GPU offload**: automatic (1.0 → 0.7 → 0.5 → 0.3)
 
+</details>
+
+<!-- markdownlint-enable MD033 -->
+
 ### Optimized inference parameters
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
 
 For standardized and reproducible benchmarks the following sampling parameters are used:
 
@@ -398,6 +412,10 @@ For standardized and reproducible benchmarks the following sampling parameters a
 | **Min-P Sampling**  | 0.05  | Minimum probability threshold                              |
 | **Repeat Penalty**  | 1.2   | Reduces repetitions (default 1.1)                          |
 | **Max Tokens**      | 256   | Bounded output length for faster tests                     |
+
+</details>
+
+<!-- markdownlint-enable MD033 -->
 
 ## Customization
 
@@ -417,6 +435,11 @@ For ad-hoc runs you can override defaults on the command line. Example:
 
 ### Log files
 
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
+
 The tool uses separate log files for different components:
 
 ```text
@@ -430,7 +453,16 @@ logs/
 - Logs are only created when the corresponding component is active
 - Timestamps use the format `YYYYMMDD_HHMMSS`
 
+</details>
+
+<!-- markdownlint-enable MD033 -->
+
 ### Result files
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
 
 Benchmark reports are stored in the `results/` directory:
 
@@ -443,7 +475,16 @@ Benchmark reports are stored in the `results/` directory:
 **Note:** Reports contain only the **newly tested models** from the current run. The interactive results browser
 in the web dashboard shows all cached results for historical comparisons.
 
+</details>
+
+<!-- markdownlint-enable MD033 -->
+
 ### PDF report
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
 
 The PDF report is generated in **A4 landscape** and includes:
 
@@ -458,7 +499,16 @@ The PDF report is generated in **A4 landscape** and includes:
 - **Hardware profiling charts**: if `--enable-profiling` is used, includes GPU temperature and power draw
   charts for each model
 
+</details>
+
+<!-- markdownlint-enable MD033 -->
+
 ### Example CSV output
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
 
 ```csv
 model_name,quantization,gpu_type,gpu_offload,vram_mb,avg_tokens_per_sec,avg_ttft,avg_gen_time,prompt_tokens,completion_tokens,timestamp,params_size,architecture,max_context_length,model_size_gb,has_vision,has_tools,tokens_per_sec_per_gb,tokens_per_sec_per_billion_params
@@ -466,7 +516,16 @@ llama-3.2-3b-instruct,q4_k_m,NVIDIA,1.0,2048,51.43,0.111,0.954,10,49,2026-01-04 
 qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10:35:12,7B,qwen,131072,4.38,False,True,8.85,5.54
 ```
 
+</details>
+
+<!-- markdownlint-enable MD033 -->
+
 ### Logs
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
 
 - **Console**: real-time progress with a `tqdm` progress bar and emoji icons
   - 🚀 Start/Launch
@@ -484,7 +543,16 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 - **Filtered logs**: third-party libraries (httpx, lmstudio, urllib3, websockets) are limited to WARNING level
 - **JSON filtering**: WebSocket debug events are automatically filtered
 
+</details>
+
+<!-- markdownlint-enable MD033 -->
+
 ## Measured metrics
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
 
 | Metric | Description |
 | ------ | ----------- |
@@ -505,9 +573,18 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 | **temp_celsius_min/max/avg** | GPU temperature during the benchmark (°C) - only with `--enable-profiling` |
 | **power_watts_min/max/avg** | GPU power draw during the benchmark (W) - only with `--enable-profiling` |
 
+</details>
+
+<!-- markdownlint-enable MD033 -->
+
 ## Technical Details
 
 ### GPU Detection
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
 
 The tool searches for GPU monitoring tools in:
 
@@ -517,7 +594,16 @@ The tool searches for GPU monitoring tools in:
 - `/opt/rocm/bin` (AMD)
 - `/usr/lib/xpu` (Intel)
 
+</details>
+
+<!-- markdownlint-enable MD033 -->
+
 ### GPU Offload Strategy
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
 
 If loading fails, offload is automatically reduced:
 
@@ -527,7 +613,16 @@ If loading fails, offload is automatically reduced:
 4. 🔴 `gpuOffload: 0.3` (30% GPU)
 5. ❌ Error → Skip model + log
 
+</details>
+
+<!-- markdownlint-enable MD033 -->
+
 ### REST API Endpoints
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
 
 - `GET /` - Dashboard UI
 - `GET /api/status` - Benchmark status
@@ -538,6 +633,10 @@ If loading fails, offload is automatically reduced:
 - `POST /api/benchmark/stop` - Stop
 - `POST /api/system/shutdown` - Graceful full app shutdown
 - `WS /ws/benchmark` - WebSocket live streaming
+
+</details>
+
+<!-- markdownlint-enable MD033 -->
 
 ## Troubleshooting
 
@@ -706,7 +805,7 @@ Comprehensive guides and references:
 
 If you encounter problems:
 
-1. Check `logs/` for error logs
+1. Check `~/.local/share/lm-studio-bench/logs/` for error logs
 2. Make sure LM Studio is running
 3. Open an issue with logs and system info
 
