@@ -560,3 +560,210 @@ class TestBackupMetadataDbExtended:
         setattr(sm, "METADATA_DB", db_path)
         with patch("shutil.copy2", side_effect=OSError("disk full")):
             sm.backup_metadata_db()
+
+
+class TestScrapeWorkflow:
+    """Tests for scrape_metadata.scrape()."""
+
+    def _seed_row(self, sm, row):
+        """Insert one row into metadata DB for update/merge scenarios."""
+        conn = sqlite3.connect(sm.METADATA_DB)
+        sm.ensure_schema(conn)
+        sm.upsert_metadata(conn, [row])
+        conn.close()
+
+    def test_scrape_only_missing_updates_existing(self, tmp_path: Path):
+        """only_missing updates description/capabilities for existing row."""
+        sm = _import_scrape_metadata(tmp_path)
+        self._seed_row(
+            sm,
+            {
+                "model_key": "pub/existing@q4",
+                "display_name": "Existing",
+                "publisher": "pub",
+                "architecture": "llama",
+                "params": "7B",
+                "size_bytes": 1,
+                "max_context_length": 2048,
+                "vision": 0,
+                "tool_use": 0,
+                "capabilities": json.dumps([]),
+                "source_url": "",
+                "hf_tags": json.dumps([]),
+                "description": "",
+                "scraped_at": "2024-01-01T00:00:00+00:00",
+            },
+        )
+
+        models = [
+            {
+                "type": "llm",
+                "modelKey": "pub/existing@q4",
+                "displayName": "Existing",
+                "architecture": "llama",
+                "paramsString": "7B",
+                "sizeBytes": 10,
+                "maxContextLength": 4096,
+                "vision": True,
+                "trainedForToolUse": True,
+            },
+            {"type": "embedding", "modelKey": "pub/skip"},
+            {"type": "llm", "displayName": "No key"},
+        ]
+
+        with patch.object(sm, "backup_metadata_db"):
+            with patch.object(sm, "load_lms_models", return_value=models):
+                with patch.object(
+                    sm,
+                    "fetch_lmstudio_readme",
+                    return_value="A coding and math assistant",
+                ):
+                    sm.scrape(only_missing=True, enable_hf=True)
+
+        conn = sqlite3.connect(sm.METADATA_DB)
+        cur = conn.execute(
+            "SELECT description, source_url, capabilities "
+            "FROM model_metadata WHERE model_key=?",
+            ("pub/existing@q4",),
+        )
+        desc, source_url, caps_json = cur.fetchone()
+        caps = set(json.loads(caps_json))
+        conn.close()
+
+        assert "coding" in desc.lower()
+        assert source_url.endswith("pub/existing")
+        assert {"coding", "math", "vision", "tool_use"}.issubset(caps)
+
+    def test_scrape_insert_without_hf(self, tmp_path: Path):
+        """Full scrape inserts rows and skips HF when disabled."""
+        sm = _import_scrape_metadata(tmp_path)
+        models = [
+            {
+                "type": "llm",
+                "modelKey": "pub/new-model",
+                "displayName": "New Model",
+                "architecture": "mistral",
+                "paramsString": "8B",
+                "sizeBytes": 123,
+                "maxContextLength": 8192,
+                "vision": False,
+                "trainedForToolUse": False,
+            }
+        ]
+
+        with patch.object(sm, "backup_metadata_db"), \
+                patch.object(sm, "load_lms_models", return_value=models), \
+                patch.object(sm, "fetch_lmstudio_readme", return_value=""), \
+                patch.object(sm, "fetch_hf_metadata") as mock_hf:
+            sm.scrape(only_missing=False, enable_hf=False)
+
+        conn = sqlite3.connect(sm.METADATA_DB)
+        cur = conn.execute(
+            "SELECT model_key, hf_tags, description, source_url "
+            "FROM model_metadata WHERE model_key=?",
+            ("pub/new-model",),
+        )
+        row = cur.fetchone()
+        conn.close()
+
+        assert row is not None
+        assert row[0] == "pub/new-model"
+        assert row[1] == json.dumps([])
+        assert row[2] == ""
+        assert row[3].endswith("pub/new-model")
+        mock_hf.assert_not_called()
+
+    def test_scrape_insert_merges_existing_caps_and_hf_desc(
+        self,
+        tmp_path: Path,
+    ):
+        """Full scrape merges old capabilities and uses HF description fallback."""
+        sm = _import_scrape_metadata(tmp_path)
+        self._seed_row(
+            sm,
+            {
+                "model_key": "pub/model-a",
+                "display_name": "Model A",
+                "publisher": "pub",
+                "architecture": "llama",
+                "params": "7B",
+                "size_bytes": 1,
+                "max_context_length": 1024,
+                "vision": 0,
+                "tool_use": 0,
+                "capabilities": json.dumps(["creative"]),
+                "source_url": "https://example.com",
+                "hf_tags": json.dumps([]),
+                "description": "old",
+                "scraped_at": "2024-01-01T00:00:00+00:00",
+            },
+        )
+        models = [
+            {
+                "type": "llm",
+                "modelKey": "pub/model-a",
+                "displayName": "Model A Coder",
+                "architecture": "llama",
+                "paramsString": "7B",
+                "sizeBytes": 2,
+                "maxContextLength": 4096,
+                "vision": False,
+                "trainedForToolUse": False,
+            }
+        ]
+
+        with patch.object(sm, "backup_metadata_db"):
+            with patch.object(sm, "load_lms_models", return_value=models):
+                with patch.object(
+                    sm, "fetch_lmstudio_readme", return_value=""
+                ):
+                    with patch.object(
+                        sm,
+                        "fetch_hf_metadata",
+                        return_value={
+                            "hf_tags": ["llm"],
+                            "hf_pipeline_tag": "text-generation",
+                            "hf_description": "HF description",
+                        },
+                    ):
+                        sm.scrape(only_missing=False, enable_hf=True)
+
+        conn = sqlite3.connect(sm.METADATA_DB)
+        cur = conn.execute(
+            "SELECT capabilities, description, hf_tags "
+            "FROM model_metadata WHERE model_key=?",
+            ("pub/model-a",),
+        )
+        caps_json, description, hf_tags = cur.fetchone()
+        conn.close()
+
+        caps = set(json.loads(caps_json))
+        assert "creative" in caps
+        assert "coding" in caps
+        assert description == "HF description"
+        assert json.loads(hf_tags) == ["llm"]
+
+
+class TestMainCli:
+    """Tests for scrape_metadata.main()."""
+
+    def test_main_expands_cluster_flags(self, tmp_path: Path):
+        """Combined short flags are expanded and passed correctly to scrape."""
+        sm = _import_scrape_metadata(tmp_path)
+        with patch.object(sm, "setup_logger"), \
+                patch.object(sm, "scrape") as mock_scrape, \
+                patch.object(sys, "argv", ["scrape_metadata.py", "-rn"]):
+            sm.main()
+
+        mock_scrape.assert_called_once_with(only_missing=False, enable_hf=False)
+
+    def test_main_exits_on_runtime_error(self, tmp_path: Path):
+        """CLI exits with status 1 when scrape raises a handled exception."""
+        sm = _import_scrape_metadata(tmp_path)
+        with patch.object(sm, "setup_logger"), \
+                patch.object(sm, "scrape", side_effect=RuntimeError("boom")), \
+                patch.object(sys, "argv", ["scrape_metadata.py"]):
+            with pytest.raises(SystemExit) as exc:
+                sm.main()
+
+        assert exc.value.code == 1

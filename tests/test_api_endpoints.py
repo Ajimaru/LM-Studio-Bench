@@ -1,8 +1,10 @@
 """Comprehensive FastAPI endpoint tests for web/app.py."""
+import asyncio
 import importlib
 from pathlib import Path
 import sys
 import tempfile
+import time
 from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1426,12 +1428,20 @@ class TestPOSTExperimentComparisonWithData:
             "2024-01-01T00:00:00", 50.0, 0.3, 0.8,
             0.7, None, None, None, None, None, 3, 0,
         )
+        baseline_row_2 = (
+            "2024-01-01T00:01:00", 51.0, 0.31, 0.79,
+            0.7, None, None, None, None, None, 3, 0,
+        )
         test_row = (
             "2024-01-01T01:00:00", 60.0, 0.25, 0.7,
             0.9, None, None, None, None, None, 3, 0,
         )
+        test_row_2 = (
+            "2024-01-01T01:01:00", 61.0, 0.24, 0.69,
+            0.9, None, None, None, None, None, 3, 0,
+        )
         mock_cursor.fetchall.return_value = [
-            baseline_row, baseline_row, test_row, test_row
+            baseline_row, baseline_row_2, test_row, test_row_2
         ]
         mock_conn.cursor.return_value = mock_cursor
 
@@ -1851,6 +1861,116 @@ class TestDashboardStatsDetailed:
             response = client.get("/api/dashboard/stats")
         assert response.status_code == 200
 
+    def test_dashboard_stats_amd_rocm_and_metadata(self, tmp_path: Path):
+        """Dashboard stats parses AMD/ROCm info and capability catalog."""
+        import sqlite3 as _sqlite3
+
+        import httpx as _httpx
+
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        if "benchmark" not in sys.modules:
+            importlib.import_module("benchmark")
+        bm = sys.modules["benchmark"]
+        client = _get_client()
+
+        result = bm.BenchmarkResult(
+            model_name="pub/model-a@q4",
+            quantization="Q4_K_M",
+            gpu_type="AMD Radeon",
+            gpu_offload=1.0,
+            vram_mb="8192",
+            avg_tokens_per_sec=42.0,
+            avg_ttft=0.4,
+            avg_gen_time=1.0,
+            prompt_tokens=10,
+            completion_tokens=40,
+            timestamp="2024-01-01T00:00:00",
+            params_size="7B",
+            architecture="llama",
+            max_context_length=4096,
+            model_size_gb=4.0,
+            has_vision=False,
+            has_tools=False,
+            tokens_per_sec_per_gb=10.5,
+            tokens_per_sec_per_billion_params=6.0,
+        )
+        mock_cache = MagicMock()
+        mock_cache.get_all_results.return_value = [result]
+
+        metadata_db = tmp_path / "model_metadata.db"
+        conn = _sqlite3.connect(metadata_db)
+        conn.execute(
+            "CREATE TABLE model_metadata (model_key TEXT, capabilities TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO model_metadata VALUES (?, ?)",
+            ("pub/model-a", '["coding", "chat"]'),
+        )
+        conn.execute(
+            "INSERT INTO model_metadata VALUES (?, ?)",
+            ("broken", "{not-json"),
+        )
+        conn.commit()
+        conn.close()
+
+        mock_http_client = MagicMock()
+        mock_http_client.__enter__ = MagicMock(return_value=mock_http_client)
+        mock_http_client.__exit__ = MagicMock(return_value=False)
+        mock_http_client.get.side_effect = _httpx.ConnectError("offline")
+
+        def _cp(stdout: str, returncode: int = 0):
+            proc = MagicMock()
+            proc.returncode = returncode
+            proc.stdout = stdout
+            proc.stderr = ""
+            return proc
+
+        def _run_side_effect(cmd, **_kwargs):
+            _ = _kwargs
+            if cmd[:2] == ["lms", "status"]:
+                return _cp("server: on\n")
+            if cmd[:2] == ["lspci", "-d"]:
+                return _cp(
+                    "03:00.0 VGA compatible controller: "
+                    "Advanced Micro Devices, Inc. [AMD/ATI] Device 1002:5450\n"
+                )
+            if cmd[:2] == ["lspci", "-s"]:
+                return _cp("Device: Radeon RX 6800 XT\n")
+            if "--showproductname" in cmd:
+                return _cp("GPU[0] : gfx906\n")
+            if cmd[-2:] == ["--showmeminfo", "vram"]:
+                return _cp("VRAM Total Memory (B): 17179869184\n")
+            if cmd[-2:] == ["--showmeminfo", "gtt"]:
+                return _cp("GTT Total Memory (B): 8589934592\n")
+            return _cp("", returncode=1)
+
+        with (
+            patch.object(app_mod, "BenchmarkCache", return_value=mock_cache),
+            patch.object(app_mod, "METADATA_DATABASE_FILE", metadata_db),
+            patch("httpx.Client", return_value=mock_http_client),
+            patch(
+                "cpuinfo.get_cpu_info",
+                return_value={"brand_raw": "AMD Ryzen AI 9 HX 370"},
+            ),
+            patch(
+                "subprocess.check_output",
+                side_effect=FileNotFoundError("no nvidia"),
+            ),
+            patch("subprocess.run", side_effect=_run_side_effect),
+            patch("glob.glob", return_value=[]),
+        ):
+            response = client.get("/api/dashboard/stats")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["lmstudio"]["ok"] is True
+        assert data["gpu_info"]["type"] == "AMD"
+        assert data["gpu_info"]["vram_gb"] == 16.0
+        assert data["gpu_info"]["gtt_gb"] == 8.0
+        assert "coding" in data["capability_catalog"]
+        assert "chat" in data["capability_catalog"]
+
 
 class TestLatestResultsWithFiles:
     """Tests for GET /api/latest-results with actual file mocking."""
@@ -1875,13 +1995,12 @@ class TestLatestResultsWithFiles:
         """Returns most recent file when multiple JSON files exist."""
         app_mod = sys.modules.get("app") or importlib.import_module("app")
         client = _get_client()
-        import time as _time
 
         with tempfile.TemporaryDirectory() as tmpdir:
             real_dir = Path(tmpdir)
             f1 = real_dir / "benchmark_results_20240101_100000.json"
             f1.write_text("[]")
-            _time.sleep(0.01)
+            time.sleep(0.01)
             f2 = real_dir / "benchmark_results_20240101_120000.json"
             f2.write_text("[]")
             with patch.object(app_mod, "RESULTS_DIR", real_dir):
@@ -2084,8 +2203,8 @@ class TestStatisticalHelperFunctions:
     def test_perform_ttest_significant(self):
         """perform_ttest detects significant difference."""
         app_mod = self._app()
-        baseline = [50.0] * 10
-        test = [90.0] * 10
+        baseline = [49.5, 50.2, 50.1, 49.8, 50.4, 49.9, 50.3, 49.7, 50.0, 50.5]
+        test = [89.4, 90.1, 90.5, 89.8, 90.2, 89.7, 90.6, 89.9, 90.3, 90.0]
         result = app_mod.perform_ttest(baseline, test)
         assert "significant" in result
         assert result["significant"] is True
@@ -2174,8 +2293,226 @@ class TestDashboardStatsHTTPXMocking:
             response = client.get("/api/dashboard/stats")
 
         assert response.status_code == 200
-        data = response.json()
-        assert data.get("success") is False
+
+
+class _FakeWebSocket:
+    """Simple async websocket stub for direct handler tests."""
+
+    def __init__(self, events):
+        self._events = list(events)
+        self.accepted = False
+        self.sent = []
+
+    async def accept(self):
+        self.accepted = True
+
+    async def send_json(self, data):
+        self.sent.append(data)
+
+    async def receive_json(self):
+        if not self._events:
+            raise RuntimeError("no events left")
+        event = self._events.pop(0)
+        if isinstance(event, BaseException):
+            raise event
+        return event
+
+
+class _FailOnTypeWebSocket(_FakeWebSocket):
+    """WebSocket stub that raises on sending a specific message type."""
+
+    def __init__(self, events, fail_type, exc):
+        super().__init__(events)
+        self._fail_type = fail_type
+        self._exc = exc
+
+    async def send_json(self, data):
+        if data.get("type") == self._fail_type:
+            raise self._exc
+        await super().send_json(data)
+
+
+class TestBenchmarkWebSocket:
+    """Tests for websocket_benchmark live-stream handler."""
+
+    @pytest.mark.anyio
+    async def test_websocket_sends_output_and_disconnects(self):
+        """Handler sends status/output and removes disconnected client."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        disconnect_exc = app_mod.WebSocketDisconnect()
+        ws = _FakeWebSocket([asyncio.TimeoutError(), disconnect_exc])
+
+        mock_manager = MagicMock()
+        mock_manager.connected_clients = set()
+        mock_manager.status = "running"
+        mock_manager.is_running.side_effect = [True, True]
+        mock_manager.drain_output_queue.side_effect = ["line-1", ""]
+        mock_manager.hardware_history = {
+            "temperatures": [],
+            "power": [],
+            "vram": [],
+            "gtt": [],
+            "cpu": [],
+            "ram": [],
+        }
+        mock_manager.last_hardware_send_time = time.time()
+
+        with patch.object(app_mod, "manager", mock_manager):
+            await app_mod.websocket_benchmark(ws)
+
+        assert ws.accepted is True
+        assert any(m.get("type") == "status" for m in ws.sent)
+        assert any(m.get("type") == "output" for m in ws.sent)
+        assert ws not in mock_manager.connected_clients
+
+    @pytest.mark.anyio
+    async def test_websocket_sends_completed_event(self):
+        """Handler emits completed event and resets manager state."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        disconnect_exc = app_mod.WebSocketDisconnect()
+        ws = _FakeWebSocket([asyncio.TimeoutError(), disconnect_exc])
+
+        mock_manager = MagicMock()
+        mock_manager.connected_clients = set()
+        mock_manager.status = "completed"
+        mock_manager.is_running.return_value = False
+        mock_manager.drain_output_queue.return_value = ""
+
+        with patch.object(app_mod, "manager", mock_manager), \
+                patch("app.asyncio.sleep", new=AsyncMock(return_value=None)):
+            await app_mod.websocket_benchmark(ws)
+
+        assert any(m.get("type") == "completed" for m in ws.sent)
+        mock_manager.set_idle_status.assert_called()
+
+    @pytest.mark.anyio
+    async def test_websocket_sends_failed_event(self):
+        """Handler emits failure event and resets manager state."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        disconnect_exc = app_mod.WebSocketDisconnect()
+        ws = _FakeWebSocket([asyncio.TimeoutError(), disconnect_exc])
+
+        mock_manager = MagicMock()
+        mock_manager.connected_clients = set()
+        mock_manager.status = "failed"
+        mock_manager.is_running.return_value = False
+        mock_manager.drain_output_queue.return_value = ""
+
+        with patch.object(app_mod, "manager", mock_manager), \
+                patch("app.asyncio.sleep", new=AsyncMock(return_value=None)):
+            await app_mod.websocket_benchmark(ws)
+
+        assert any(m.get("type") == "error" for m in ws.sent)
+        mock_manager.set_idle_status.assert_called()
+
+    @pytest.mark.anyio
+    async def test_websocket_sends_hardware_data_when_running(self):
+        """Handler sends hardware payload while benchmark is running."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        disconnect_exc = app_mod.WebSocketDisconnect()
+        ws = _FakeWebSocket([asyncio.TimeoutError(), disconnect_exc])
+
+        mock_manager = MagicMock()
+        mock_manager.connected_clients = set()
+        mock_manager.status = "running"
+        mock_manager.is_running.side_effect = [True, True]
+        mock_manager.drain_output_queue.return_value = ""
+        mock_manager.hardware_history = {
+            "temperatures": [70],
+            "power": [120],
+            "vram": [8192],
+            "gtt": [0],
+            "cpu": [35],
+            "ram": [45],
+        }
+        mock_manager.last_hardware_send_time = 0
+
+        with patch.object(app_mod, "manager", mock_manager), \
+                patch("app.time.time", return_value=10.0):
+            await app_mod.websocket_benchmark(ws)
+
+        assert any(m.get("type") == "hardware" for m in ws.sent)
+        mock_manager.update_last_hardware_send_time.assert_called_once_with(10.0)
+
+    @pytest.mark.anyio
+    async def test_websocket_receive_error_breaks_loop(self):
+        """Receive errors are handled and loop exits gracefully."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        ws = _FakeWebSocket([ValueError("bad payload")])
+
+        mock_manager = MagicMock()
+        mock_manager.connected_clients = set()
+        mock_manager.status = "running"
+        mock_manager.is_running.return_value = True
+        mock_manager.drain_output_queue.return_value = ""
+        mock_manager.hardware_history = {
+            "temperatures": [],
+            "power": [],
+            "vram": [],
+            "gtt": [],
+            "cpu": [],
+            "ram": [],
+        }
+        mock_manager.last_hardware_send_time = 0
+
+        with patch.object(app_mod, "manager", mock_manager):
+            await app_mod.websocket_benchmark(ws)
+
+        assert ws.accepted is True
+        assert ws not in mock_manager.connected_clients
+
+    @pytest.mark.anyio
+    async def test_websocket_output_send_error_breaks_loop(self):
+        """Output send failures are handled and stop websocket loop."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        ws = _FailOnTypeWebSocket(
+            [asyncio.TimeoutError()],
+            "output",
+            RuntimeError("send failed"),
+        )
+
+        mock_manager = MagicMock()
+        mock_manager.connected_clients = set()
+        mock_manager.status = "running"
+        mock_manager.is_running.return_value = True
+        mock_manager.drain_output_queue.return_value = "line-1"
+        mock_manager.hardware_history = {
+            "temperatures": [],
+            "power": [],
+            "vram": [],
+            "gtt": [],
+            "cpu": [],
+            "ram": [],
+        }
+        mock_manager.last_hardware_send_time = time.time()
+
+        with patch.object(app_mod, "manager", mock_manager):
+            await app_mod.websocket_benchmark(ws)
+
+        assert any(m.get("type") == "status" for m in ws.sent)
+
+    @pytest.mark.anyio
+    async def test_websocket_heartbeat_send_error_breaks_loop(self):
+        """Heartbeat send errors are handled in idle/non-running mode."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        ws = _FailOnTypeWebSocket(
+            [asyncio.TimeoutError(), asyncio.TimeoutError()],
+            "status",
+            OSError("socket closed"),
+        )
+
+        mock_manager = MagicMock()
+        mock_manager.connected_clients = set()
+        mock_manager.status = "idle"
+        mock_manager.is_running.return_value = False
+        mock_manager.drain_output_queue.return_value = ""
+
+        with patch.object(app_mod, "manager", mock_manager), \
+                patch("app.asyncio.sleep", new=AsyncMock(return_value=None)):
+            await app_mod.websocket_benchmark(ws)
+
+        assert ws.accepted is True
+        assert ws not in mock_manager.connected_clients
 
     def test_dashboard_stats_httpx_fails_cli_online(self):
         """Covers httpx exception path and CLI health check 'online'."""

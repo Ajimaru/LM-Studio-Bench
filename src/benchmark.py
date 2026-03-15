@@ -227,9 +227,27 @@ class BenchmarkResult:
     power_watts_min: Optional[float] = None
     power_watts_max: Optional[float] = None
     power_watts_avg: Optional[float] = None
+    vram_gb_min: Optional[float] = None
+    vram_gb_max: Optional[float] = None
+    vram_gb_avg: Optional[float] = None
+    gtt_gb_min: Optional[float] = None
+    gtt_gb_max: Optional[float] = None
+    gtt_gb_avg: Optional[float] = None
+    cpu_percent_min: Optional[float] = None
+    cpu_percent_max: Optional[float] = None
+    cpu_percent_avg: Optional[float] = None
+    ram_gb_min: Optional[float] = None
+    ram_gb_max: Optional[float] = None
+    ram_gb_avg: Optional[float] = None
     gtt_enabled: Optional[bool] = None
     gtt_total_gb: Optional[float] = None
     gtt_used_gb: Optional[float] = None
+    tokens_per_sec_p50: Optional[float] = None
+    tokens_per_sec_p95: Optional[float] = None
+    tokens_per_sec_std: Optional[float] = None
+    ttft_p50: Optional[float] = None
+    ttft_p95: Optional[float] = None
+    ttft_std: Optional[float] = None
     temperature: Optional[float] = None
     top_k_sampling: Optional[int] = None
     top_p_sampling: Optional[float] = None
@@ -717,7 +735,31 @@ class BenchmarkCache:
                 rope_freq_scale REAL,
                 use_mmap INTEGER,
                 use_mlock INTEGER,
-                kv_cache_quant TEXT
+                kv_cache_quant TEXT,
+                temp_celsius_min REAL,
+                temp_celsius_max REAL,
+                temp_celsius_avg REAL,
+                power_watts_min REAL,
+                power_watts_max REAL,
+                power_watts_avg REAL,
+                vram_gb_min REAL,
+                vram_gb_max REAL,
+                vram_gb_avg REAL,
+                gtt_gb_min REAL,
+                gtt_gb_max REAL,
+                gtt_gb_avg REAL,
+                cpu_percent_min REAL,
+                cpu_percent_max REAL,
+                cpu_percent_avg REAL,
+                ram_gb_min REAL,
+                ram_gb_max REAL,
+                ram_gb_avg REAL,
+                tokens_per_sec_p50 REAL,
+                tokens_per_sec_p95 REAL,
+                tokens_per_sec_std REAL,
+                ttft_p50 REAL,
+                ttft_p95 REAL,
+                ttft_std REAL
             )
         """)
 
@@ -729,6 +771,44 @@ class BenchmarkCache:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_model_key_params_hash
             ON benchmark_results(model_key, params_hash)
+        """)
+
+        cursor.execute("DROP VIEW IF EXISTS benchmark_results_latest_per_model")
+        cursor.execute("""
+            CREATE VIEW benchmark_results_latest_per_model AS
+            WITH ranked AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY model_key, quantization, params_hash
+                        ORDER BY timestamp DESC, id DESC
+                    ) AS rn
+                FROM benchmark_results
+            )
+            SELECT *
+            FROM ranked
+            WHERE rn = 1
+        """)
+
+        cursor.execute(
+            "DROP VIEW IF EXISTS benchmark_results_latest_per_model_per_day"
+        )
+        cursor.execute("""
+            CREATE VIEW benchmark_results_latest_per_model_per_day AS
+            WITH ranked AS (
+                SELECT
+                    *,
+                    DATE(timestamp) AS day,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY model_key, quantization, params_hash,
+                        DATE(timestamp)
+                        ORDER BY timestamp DESC, id DESC
+                    ) AS rn
+                FROM benchmark_results
+            )
+            SELECT *
+            FROM ranked
+            WHERE rn = 1
         """)
 
         try:
@@ -749,6 +829,30 @@ class BenchmarkCache:
             ("use_mmap", "INTEGER"),
             ("use_mlock", "INTEGER"),
             ("kv_cache_quant", "TEXT"),
+            ("temp_celsius_min", "REAL"),
+            ("temp_celsius_max", "REAL"),
+            ("temp_celsius_avg", "REAL"),
+            ("power_watts_min", "REAL"),
+            ("power_watts_max", "REAL"),
+            ("power_watts_avg", "REAL"),
+            ("vram_gb_min", "REAL"),
+            ("vram_gb_max", "REAL"),
+            ("vram_gb_avg", "REAL"),
+            ("gtt_gb_min", "REAL"),
+            ("gtt_gb_max", "REAL"),
+            ("gtt_gb_avg", "REAL"),
+            ("cpu_percent_min", "REAL"),
+            ("cpu_percent_max", "REAL"),
+            ("cpu_percent_avg", "REAL"),
+            ("ram_gb_min", "REAL"),
+            ("ram_gb_max", "REAL"),
+            ("ram_gb_avg", "REAL"),
+            ("tokens_per_sec_p50", "REAL"),
+            ("tokens_per_sec_p95", "REAL"),
+            ("tokens_per_sec_std", "REAL"),
+            ("ttft_p50", "REAL"),
+            ("ttft_p95", "REAL"),
+            ("ttft_std", "REAL"),
         ]
         for col_name, col_type in new_columns:
             if not col_name.replace("_", "").isalnum():
@@ -876,6 +980,44 @@ class BenchmarkCache:
                 result_dict["use_mlock"] = bool(val) if val is not None else None
             if "kv_cache_quant" in columns:
                 result_dict["kv_cache_quant"] = row[columns["kv_cache_quant"]]
+            if "temp_celsius_min" in columns:
+                result_dict["temp_celsius_min"] = row[columns["temp_celsius_min"]]
+                result_dict["temp_celsius_max"] = row[columns["temp_celsius_max"]]
+                result_dict["temp_celsius_avg"] = row[columns["temp_celsius_avg"]]
+            if "power_watts_min" in columns:
+                result_dict["power_watts_min"] = row[columns["power_watts_min"]]
+                result_dict["power_watts_max"] = row[columns["power_watts_max"]]
+                result_dict["power_watts_avg"] = row[columns["power_watts_avg"]]
+            if "vram_gb_min" in columns:
+                result_dict["vram_gb_min"] = row[columns["vram_gb_min"]]
+                result_dict["vram_gb_max"] = row[columns["vram_gb_max"]]
+                result_dict["vram_gb_avg"] = row[columns["vram_gb_avg"]]
+            if "gtt_gb_min" in columns:
+                result_dict["gtt_gb_min"] = row[columns["gtt_gb_min"]]
+                result_dict["gtt_gb_max"] = row[columns["gtt_gb_max"]]
+                result_dict["gtt_gb_avg"] = row[columns["gtt_gb_avg"]]
+            if "cpu_percent_min" in columns:
+                result_dict["cpu_percent_min"] = row[columns["cpu_percent_min"]]
+                result_dict["cpu_percent_max"] = row[columns["cpu_percent_max"]]
+                result_dict["cpu_percent_avg"] = row[columns["cpu_percent_avg"]]
+            if "ram_gb_min" in columns:
+                result_dict["ram_gb_min"] = row[columns["ram_gb_min"]]
+                result_dict["ram_gb_max"] = row[columns["ram_gb_max"]]
+                result_dict["ram_gb_avg"] = row[columns["ram_gb_avg"]]
+            if "tokens_per_sec_p50" in columns:
+                result_dict["tokens_per_sec_p50"] = row[
+                    columns["tokens_per_sec_p50"]
+                ]
+                result_dict["tokens_per_sec_p95"] = row[
+                    columns["tokens_per_sec_p95"]
+                ]
+                result_dict["tokens_per_sec_std"] = row[
+                    columns["tokens_per_sec_std"]
+                ]
+            if "ttft_p50" in columns:
+                result_dict["ttft_p50"] = row[columns["ttft_p50"]]
+                result_dict["ttft_p95"] = row[columns["ttft_p95"]]
+                result_dict["ttft_std"] = row[columns["ttft_std"]]
 
             return BenchmarkResult(**result_dict)
         return None
@@ -946,6 +1088,44 @@ class BenchmarkCache:
                 result_dict["use_mlock"] = bool(val) if val is not None else None
             if "kv_cache_quant" in columns:
                 result_dict["kv_cache_quant"] = row[columns["kv_cache_quant"]]
+            if "temp_celsius_min" in columns:
+                result_dict["temp_celsius_min"] = row[columns["temp_celsius_min"]]
+                result_dict["temp_celsius_max"] = row[columns["temp_celsius_max"]]
+                result_dict["temp_celsius_avg"] = row[columns["temp_celsius_avg"]]
+            if "power_watts_min" in columns:
+                result_dict["power_watts_min"] = row[columns["power_watts_min"]]
+                result_dict["power_watts_max"] = row[columns["power_watts_max"]]
+                result_dict["power_watts_avg"] = row[columns["power_watts_avg"]]
+            if "vram_gb_min" in columns:
+                result_dict["vram_gb_min"] = row[columns["vram_gb_min"]]
+                result_dict["vram_gb_max"] = row[columns["vram_gb_max"]]
+                result_dict["vram_gb_avg"] = row[columns["vram_gb_avg"]]
+            if "gtt_gb_min" in columns:
+                result_dict["gtt_gb_min"] = row[columns["gtt_gb_min"]]
+                result_dict["gtt_gb_max"] = row[columns["gtt_gb_max"]]
+                result_dict["gtt_gb_avg"] = row[columns["gtt_gb_avg"]]
+            if "cpu_percent_min" in columns:
+                result_dict["cpu_percent_min"] = row[columns["cpu_percent_min"]]
+                result_dict["cpu_percent_max"] = row[columns["cpu_percent_max"]]
+                result_dict["cpu_percent_avg"] = row[columns["cpu_percent_avg"]]
+            if "ram_gb_min" in columns:
+                result_dict["ram_gb_min"] = row[columns["ram_gb_min"]]
+                result_dict["ram_gb_max"] = row[columns["ram_gb_max"]]
+                result_dict["ram_gb_avg"] = row[columns["ram_gb_avg"]]
+            if "tokens_per_sec_p50" in columns:
+                result_dict["tokens_per_sec_p50"] = row[
+                    columns["tokens_per_sec_p50"]
+                ]
+                result_dict["tokens_per_sec_p95"] = row[
+                    columns["tokens_per_sec_p95"]
+                ]
+                result_dict["tokens_per_sec_std"] = row[
+                    columns["tokens_per_sec_std"]
+                ]
+            if "ttft_p50" in columns:
+                result_dict["ttft_p50"] = row[columns["ttft_p50"]]
+                result_dict["ttft_p95"] = row[columns["ttft_p95"]]
+                result_dict["ttft_std"] = row[columns["ttft_std"]]
 
             return BenchmarkResult(**result_dict)
         return None
@@ -1025,9 +1205,33 @@ class BenchmarkCache:
                 int(result.use_mmap) if result.use_mmap is not None else None,
                 int(result.use_mlock) if result.use_mlock is not None else None,
                 result.kv_cache_quant,
+                result.temp_celsius_min,
+                result.temp_celsius_max,
+                result.temp_celsius_avg,
+                result.power_watts_min,
+                result.power_watts_max,
+                result.power_watts_avg,
+                result.vram_gb_min,
+                result.vram_gb_max,
+                result.vram_gb_avg,
+                result.gtt_gb_min,
+                result.gtt_gb_max,
+                result.gtt_gb_avg,
+                result.cpu_percent_min,
+                result.cpu_percent_max,
+                result.cpu_percent_avg,
+                result.ram_gb_min,
+                result.ram_gb_max,
+                result.ram_gb_avg,
+                result.tokens_per_sec_p50,
+                result.tokens_per_sec_p95,
+                result.tokens_per_sec_std,
+                result.ttft_p50,
+                result.ttft_p95,
+                result.ttft_std,
             )
 
-            logger.debug("📊 INSERT: %s values for 56 columns", len(values))
+            logger.debug("📊 INSERT with %s values", len(values))
 
             placeholders = ", ".join("?" for _ in values)
 
@@ -1046,7 +1250,15 @@ class BenchmarkCache:
                     intel_driver_version, prompt_hash, params_hash, os_name, os_version,
                     cpu_model, python_version, benchmark_duration_seconds, error_count,
                     n_gpu_layers, n_batch, n_threads, flash_attention, rope_freq_base,
-                    rope_freq_scale, use_mmap, use_mlock, kv_cache_quant
+                    rope_freq_scale, use_mmap, use_mlock, kv_cache_quant,
+                    temp_celsius_min, temp_celsius_max, temp_celsius_avg,
+                    power_watts_min, power_watts_max, power_watts_avg,
+                    vram_gb_min, vram_gb_max, vram_gb_avg,
+                    gtt_gb_min, gtt_gb_max, gtt_gb_avg,
+                    cpu_percent_min, cpu_percent_max, cpu_percent_avg,
+                    ram_gb_min, ram_gb_max, ram_gb_avg,
+                    tokens_per_sec_p50, tokens_per_sec_p95, tokens_per_sec_std,
+                    ttft_p50, ttft_p95, ttft_std
                 ) VALUES ({placeholders})
             """,
                 values,
@@ -1086,8 +1298,28 @@ class BenchmarkCache:
                 optional_cols.extend(
                     ["power_watts_min", "power_watts_max", "power_watts_avg"]
                 )
+            if "vram_gb_min" in columns:
+                optional_cols.extend(["vram_gb_min", "vram_gb_max", "vram_gb_avg"])
+            if "gtt_gb_min" in columns:
+                optional_cols.extend(["gtt_gb_min", "gtt_gb_max", "gtt_gb_avg"])
+            if "cpu_percent_min" in columns:
+                optional_cols.extend(
+                    ["cpu_percent_min", "cpu_percent_max", "cpu_percent_avg"]
+                )
+            if "ram_gb_min" in columns:
+                optional_cols.extend(["ram_gb_min", "ram_gb_max", "ram_gb_avg"])
             if "gtt_enabled" in columns:
                 optional_cols.extend(["gtt_enabled", "gtt_total_gb", "gtt_used_gb"])
+            if "tokens_per_sec_p50" in columns:
+                optional_cols.extend(
+                    [
+                        "tokens_per_sec_p50",
+                        "tokens_per_sec_p95",
+                        "tokens_per_sec_std",
+                    ]
+                )
+            if "ttft_p50" in columns:
+                optional_cols.extend(["ttft_p50", "ttft_p95", "ttft_std"])
             if "speed_delta_pct" in columns:
                 optional_cols.extend(["speed_delta_pct", "prev_timestamp"])
             if "temperature" in columns:
@@ -1180,12 +1412,48 @@ class BenchmarkCache:
                     result_dict["power_watts_avg"] = row[idx + 2]
                     idx += 3
 
+                if "vram_gb_min" in columns:
+                    result_dict["vram_gb_min"] = row[idx]
+                    result_dict["vram_gb_max"] = row[idx + 1]
+                    result_dict["vram_gb_avg"] = row[idx + 2]
+                    idx += 3
+
+                if "gtt_gb_min" in columns:
+                    result_dict["gtt_gb_min"] = row[idx]
+                    result_dict["gtt_gb_max"] = row[idx + 1]
+                    result_dict["gtt_gb_avg"] = row[idx + 2]
+                    idx += 3
+
+                if "cpu_percent_min" in columns:
+                    result_dict["cpu_percent_min"] = row[idx]
+                    result_dict["cpu_percent_max"] = row[idx + 1]
+                    result_dict["cpu_percent_avg"] = row[idx + 2]
+                    idx += 3
+
+                if "ram_gb_min" in columns:
+                    result_dict["ram_gb_min"] = row[idx]
+                    result_dict["ram_gb_max"] = row[idx + 1]
+                    result_dict["ram_gb_avg"] = row[idx + 2]
+                    idx += 3
+
                 if "gtt_enabled" in columns:
                     result_dict["gtt_enabled"] = (
                         bool(row[idx]) if row[idx] is not None else None
                     )
                     result_dict["gtt_total_gb"] = row[idx + 1]
                     result_dict["gtt_used_gb"] = row[idx + 2]
+                    idx += 3
+
+                if "tokens_per_sec_p50" in columns:
+                    result_dict["tokens_per_sec_p50"] = row[idx]
+                    result_dict["tokens_per_sec_p95"] = row[idx + 1]
+                    result_dict["tokens_per_sec_std"] = row[idx + 2]
+                    idx += 3
+
+                if "ttft_p50" in columns:
+                    result_dict["ttft_p50"] = row[idx]
+                    result_dict["ttft_p95"] = row[idx + 1]
+                    result_dict["ttft_std"] = row[idx + 2]
                     idx += 3
 
                 if "speed_delta_pct" in columns:
@@ -2669,6 +2937,18 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                     result.power_watts_min = profiling_stats.get("power_watts_min")
                     result.power_watts_max = profiling_stats.get("power_watts_max")
                     result.power_watts_avg = profiling_stats.get("power_watts_avg")
+                    result.vram_gb_min = profiling_stats.get("vram_gb_min")
+                    result.vram_gb_max = profiling_stats.get("vram_gb_max")
+                    result.vram_gb_avg = profiling_stats.get("vram_gb_avg")
+                    result.gtt_gb_min = profiling_stats.get("gtt_gb_min")
+                    result.gtt_gb_max = profiling_stats.get("gtt_gb_max")
+                    result.gtt_gb_avg = profiling_stats.get("gtt_gb_avg")
+                    result.cpu_percent_min = profiling_stats.get("cpu_percent_min")
+                    result.cpu_percent_max = profiling_stats.get("cpu_percent_max")
+                    result.cpu_percent_avg = profiling_stats.get("cpu_percent_avg")
+                    result.ram_gb_min = profiling_stats.get("ram_gb_min")
+                    result.ram_gb_max = profiling_stats.get("ram_gb_max")
+                    result.ram_gb_avg = profiling_stats.get("ram_gb_avg")
 
                     if (
                         self.max_temp
@@ -2748,11 +3028,35 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                             has_tools=result.has_tools,
                             tokens_per_sec_per_gb=tps_per_gb,
                             tokens_per_sec_per_billion_params=tps_per_billion,
+                            tokens_per_sec_p50=result.tokens_per_sec_p50,
+                            tokens_per_sec_p95=result.tokens_per_sec_p95,
+                            tokens_per_sec_std=result.tokens_per_sec_std,
+                            ttft_p50=result.ttft_p50,
+                            ttft_p95=result.ttft_p95,
+                            ttft_std=result.ttft_std,
                             lmstudio_version=result.lmstudio_version,
                             nvidia_driver_version=result.nvidia_driver_version,
                             rocm_driver_version=result.rocm_driver_version,
                             intel_driver_version=result.intel_driver_version,
                             temperature=result.temperature,
+                            temp_celsius_min=result.temp_celsius_min,
+                            temp_celsius_max=result.temp_celsius_max,
+                            temp_celsius_avg=result.temp_celsius_avg,
+                            power_watts_min=result.power_watts_min,
+                            power_watts_max=result.power_watts_max,
+                            power_watts_avg=result.power_watts_avg,
+                            vram_gb_min=result.vram_gb_min,
+                            vram_gb_max=result.vram_gb_max,
+                            vram_gb_avg=result.vram_gb_avg,
+                            gtt_gb_min=result.gtt_gb_min,
+                            gtt_gb_max=result.gtt_gb_max,
+                            gtt_gb_avg=result.gtt_gb_avg,
+                            cpu_percent_min=result.cpu_percent_min,
+                            cpu_percent_max=result.cpu_percent_max,
+                            cpu_percent_avg=result.cpu_percent_avg,
+                            ram_gb_min=result.ram_gb_min,
+                            ram_gb_max=result.ram_gb_max,
+                            ram_gb_avg=result.ram_gb_avg,
                             top_k_sampling=result.top_k_sampling,
                             top_p_sampling=result.top_p_sampling,
                             min_p_sampling=result.min_p_sampling,
@@ -3060,6 +3364,23 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
         model_key: str,
     ) -> BenchmarkResult:
         """Calculates average values from measurements"""
+        def _percentile(values: List[float], pct: float) -> Optional[float]:
+            if not values:
+                return None
+            sorted_vals = sorted(values)
+            if len(sorted_vals) == 1:
+                return sorted_vals[0]
+            pos = (len(sorted_vals) - 1) * (pct / 100.0)
+            lower_idx = int(pos)
+            upper_idx = min(lower_idx + 1, len(sorted_vals) - 1)
+            fraction = pos - lower_idx
+            lower = sorted_vals[lower_idx]
+            upper = sorted_vals[upper_idx]
+            return lower + (upper - lower) * fraction
+
+        tps_values = [float(m["tokens_per_second"]) for m in measurements]
+        ttft_values = [float(m["time_to_first_token"]) for m in measurements]
+
         avg_tokens_per_sec = sum(m["tokens_per_second"] for m in measurements) / len(
             measurements
         )
@@ -3091,6 +3412,15 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
         except (ValueError, AttributeError):
             tokens_per_sec_per_billion_params = 0.0
 
+        tps_mean = sum(tps_values) / len(tps_values)
+        ttft_mean = sum(ttft_values) / len(ttft_values)
+        tps_std = (
+            sum((val - tps_mean) ** 2 for val in tps_values) / len(tps_values)
+        ) ** 0.5
+        ttft_std = (
+            sum((val - ttft_mean) ** 2 for val in ttft_values) / len(ttft_values)
+        ) ** 0.5
+
         result = BenchmarkResult(
             model_name=model_name,
             quantization=quantization,
@@ -3113,6 +3443,12 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             has_tools=metadata.get("has_tools", False),
             tokens_per_sec_per_gb=tokens_per_sec_per_gb,
             tokens_per_sec_per_billion_params=tokens_per_sec_per_billion_params,
+            tokens_per_sec_p50=round(_percentile(tps_values, 50) or 0.0, 3),
+            tokens_per_sec_p95=round(_percentile(tps_values, 95) or 0.0, 3),
+            tokens_per_sec_std=round(tps_std, 3),
+            ttft_p50=round(_percentile(ttft_values, 50) or 0.0, 3),
+            ttft_p95=round(_percentile(ttft_values, 95) or 0.0, 3),
+            ttft_std=round(ttft_std, 3),
             gtt_enabled=self.use_gtt if self._gtt_info else None,
             gtt_total_gb=(
                 round(self._gtt_info.get("total", 0), 2) if self._gtt_info else None

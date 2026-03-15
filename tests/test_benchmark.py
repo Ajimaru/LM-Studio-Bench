@@ -1671,6 +1671,124 @@ class TestBenchmarkCacheAdvanced:
         found = [r for r in all_results if r.avg_tokens_per_sec == 42.0]
         assert found
 
+    def test_extended_metrics_roundtrip(self, tmp_path: Path):
+        """Extended metrics are persisted and reloaded from SQLite."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(tmp_path / "test.db")
+        result = self._make_full_result(bm, model_name="metrics/model", speed=70.0)
+        result.temp_celsius_min = 60.0
+        result.temp_celsius_max = 72.0
+        result.temp_celsius_avg = 66.0
+        result.power_watts_min = 45.0
+        result.power_watts_max = 62.0
+        result.power_watts_avg = 53.5
+        result.vram_gb_min = 2.1
+        result.vram_gb_max = 3.4
+        result.vram_gb_avg = 2.8
+        result.gtt_gb_min = 0.1
+        result.gtt_gb_max = 0.7
+        result.gtt_gb_avg = 0.4
+        result.cpu_percent_min = 12.0
+        result.cpu_percent_max = 49.0
+        result.cpu_percent_avg = 31.0
+        result.ram_gb_min = 4.2
+        result.ram_gb_max = 5.1
+        result.ram_gb_avg = 4.6
+        result.tokens_per_sec_p50 = 69.9
+        result.tokens_per_sec_p95 = 73.2
+        result.tokens_per_sec_std = 1.8
+        result.ttft_p50 = 0.21
+        result.ttft_p95 = 0.32
+        result.ttft_std = 0.05
+
+        cache.save_result(
+            result, "metrics/model", "abcd1234", "test prompt", 2048
+        )
+        loaded = cache.get_latest_result_for_model("metrics/model")
+
+        assert loaded is not None
+        assert loaded.temp_celsius_avg == pytest.approx(66.0)
+        assert loaded.power_watts_avg == pytest.approx(53.5)
+        assert loaded.vram_gb_avg == pytest.approx(2.8)
+        assert loaded.gtt_gb_avg == pytest.approx(0.4)
+        assert loaded.cpu_percent_avg == pytest.approx(31.0)
+        assert loaded.ram_gb_avg == pytest.approx(4.6)
+        assert loaded.tokens_per_sec_p95 == pytest.approx(73.2)
+        assert loaded.ttft_p95 == pytest.approx(0.32)
+
+    def test_latest_view_returns_newest_row(self, tmp_path: Path):
+        """Latest-per-model view keeps only the newest matching row."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(tmp_path / "test.db")
+        model_key = "view/model"
+        params_hash = "viewhash"
+
+        older = self._make_full_result(bm, model_name="view/model", speed=20.0)
+        older.timestamp = "2024-01-01 00:00:00"
+        newer = self._make_full_result(bm, model_name="view/model", speed=30.0)
+        newer.timestamp = "2024-01-02 00:00:00"
+
+        cache.save_result(older, model_key, params_hash, "prompt", 2048)
+        cache.save_result(newer, model_key, params_hash, "prompt", 2048)
+
+        import sqlite3 as _sqlite3
+
+        conn = _sqlite3.connect(cache.db_path)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT avg_tokens_per_sec
+            FROM benchmark_results_latest_per_model
+            WHERE model_key = ? AND quantization = ? AND params_hash = ?
+            """,
+            (model_key, newer.quantization, params_hash),
+        )
+        rows = cur.fetchall()
+        conn.close()
+
+        assert len(rows) == 1
+        assert rows[0][0] == pytest.approx(30.0)
+
+    def test_latest_view_per_day_returns_newest_rows(self, tmp_path: Path):
+        """Latest-per-day view keeps one newest row per calendar day."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(tmp_path / "test.db")
+        model_key = "view/day-model"
+        params_hash = "dayhash"
+
+        d1_old = self._make_full_result(bm, model_name="view/day-model", speed=10.0)
+        d1_old.timestamp = "2024-01-01 10:00:00"
+        d1_new = self._make_full_result(bm, model_name="view/day-model", speed=11.0)
+        d1_new.timestamp = "2024-01-01 23:00:00"
+        d2_new = self._make_full_result(bm, model_name="view/day-model", speed=20.0)
+        d2_new.timestamp = "2024-01-02 09:00:00"
+
+        cache.save_result(d1_old, model_key, params_hash, "prompt", 2048)
+        cache.save_result(d1_new, model_key, params_hash, "prompt", 2048)
+        cache.save_result(d2_new, model_key, params_hash, "prompt", 2048)
+
+        import sqlite3 as _sqlite3
+
+        conn = _sqlite3.connect(cache.db_path)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT day, avg_tokens_per_sec
+            FROM benchmark_results_latest_per_model_per_day
+            WHERE model_key = ? AND quantization = ? AND params_hash = ?
+            ORDER BY day ASC
+            """,
+            (model_key, d2_new.quantization, params_hash),
+        )
+        rows = cur.fetchall()
+        conn.close()
+
+        assert len(rows) == 2
+        assert rows[0][0] == "2024-01-01"
+        assert rows[0][1] == pytest.approx(11.0)
+        assert rows[1][0] == "2024-01-02"
+        assert rows[1][1] == pytest.approx(20.0)
+
 
 class TestGPUMonitorAdvanced:
     """Additional tests for GPUMonitor AMD and Intel paths."""
@@ -2082,6 +2200,12 @@ class TestLMStudioBenchmarkCalculateAverages:
                 measurements, "test/model@Q4_K_M"
             )
         assert result.avg_tokens_per_sec == pytest.approx(55.0)
+        assert result.tokens_per_sec_p50 == pytest.approx(55.0)
+        assert result.tokens_per_sec_p95 == pytest.approx(59.5)
+        assert result.tokens_per_sec_std == pytest.approx(5.0)
+        assert result.ttft_p50 == pytest.approx(0.275)
+        assert result.ttft_p95 == pytest.approx(0.297)
+        assert result.ttft_std == pytest.approx(0.025)
 
     def test_handles_unknown_params_size(self, tmp_path: Path):
         """_calculate_averages handles non-numeric params_size."""
