@@ -423,8 +423,11 @@ class TestTrayAppOnStartPauseStop:
             app._on_open_webapp(MagicMock())
         mock_open.assert_called_once_with("http://localhost:8080")
 
-    def test_on_open_webapp_skips_unreachable_url(self, tmp_path: Path):
-        """_on_open_webapp shows a warning dialog if URL is unreachable."""
+    def test_on_open_webapp_starts_webapp_when_unreachable(
+        self,
+        tmp_path: Path,
+    ):
+        """_on_open_webapp starts webapp and opens started URL."""
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
@@ -432,6 +435,30 @@ class TestTrayAppOnStartPauseStop:
             return_value="http://localhost:1234"
         )
         app._is_dashboard_url_reachable = MagicMock(return_value=False)
+        app._start_webapp_for_open = MagicMock(
+            return_value="http://localhost:56789"
+        )
+        app._show_info_dialog = MagicMock()
+
+        with patch("tray.webbrowser.open") as mock_open:
+            app._on_open_webapp(MagicMock())
+
+        mock_open.assert_called_once_with("http://localhost:56789")
+        app._show_info_dialog.assert_not_called()
+
+    def test_on_open_webapp_shows_error_when_auto_start_fails(
+        self,
+        tmp_path: Path,
+    ):
+        """_on_open_webapp shows error dialog when auto-start fails."""
+        tray, _, _ = _import_tray()
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+        app._resolve_dashboard_url_for_open = MagicMock(
+            return_value="http://localhost:1234"
+        )
+        app._is_dashboard_url_reachable = MagicMock(return_value=False)
+        app._start_webapp_for_open = MagicMock(return_value=None)
         app._show_info_dialog = MagicMock()
 
         with patch("tray.webbrowser.open") as mock_open:

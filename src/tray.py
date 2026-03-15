@@ -11,6 +11,8 @@ import logging
 import os
 from pathlib import Path
 import re
+import socket
+import subprocess
 import sys
 import threading
 import time
@@ -240,6 +242,72 @@ class TrayApp:
         self.last_update_check: float = 0.0
         self.force_update_check: bool = False
         self.pending_update: Optional[dict] = None
+
+    def _build_webapp_env(self) -> dict[str, str]:
+        """Build environment for launching the webapp subprocess."""
+        env = os.environ.copy()
+        project_root = Path(__file__).resolve().parent.parent
+        src_dir = project_root / "src"
+        entries = [str(project_root), str(src_dir)]
+        existing = env.get("PYTHONPATH", "")
+        if existing:
+            entries.append(existing)
+        env["PYTHONPATH"] = ":".join(entries)
+        return env
+
+    def _find_free_local_port(self) -> int:
+        """Find a free localhost TCP port."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return int(sock.getsockname()[1])
+
+    def _start_webapp_for_open(self) -> Optional[str]:
+        """Start webapp in background and return reachable dashboard URL."""
+        project_root = Path(__file__).resolve().parent.parent
+        app_script = project_root / "web" / "app.py"
+        if not app_script.exists():
+            LOGGER.error("Webapp script not found: %s", app_script)
+            return None
+
+        port = self._find_free_local_port()
+        dashboard_url = f"http://localhost:{port}"
+        cmd = [
+            sys.executable,
+            str(app_script),
+            "--port",
+            str(port),
+            "--no-browser",
+        ]
+        if self.debug:
+            cmd.append("--debug")
+
+        LOGGER.info("Starting webapp for tray open: %s", dashboard_url)
+        try:
+            subprocess.Popen(  # nosec B603
+                cmd,
+                cwd=project_root,
+                env=self._build_webapp_env(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as exc:
+            LOGGER.error("Failed to start webapp subprocess: %s", exc)
+            return None
+
+        for _ in range(20):
+            if self._is_dashboard_url_reachable(dashboard_url):
+                self._set_dashboard_url(dashboard_url)
+                return dashboard_url
+
+            discovered_url = self._discover_dashboard_url_from_logs()
+            if discovered_url and self._is_dashboard_url_reachable(discovered_url):
+                self._set_dashboard_url(discovered_url)
+                return discovered_url
+
+            time.sleep(0.25)
+
+        LOGGER.warning("Started webapp but URL did not become reachable in time")
+        return None
 
     def _build_api_url(self, endpoint: str) -> Optional[str]:
         """Build and validate API URL for endpoint.
@@ -737,16 +805,15 @@ class TrayApp:
         dashboard_url = self._resolve_dashboard_url_for_open()
 
         if not self._is_dashboard_url_reachable(dashboard_url):
-            LOGGER.warning(
-                "Webapp not reachable, refusing to open: %s",
-                dashboard_url,
-            )
-            self._show_info_dialog(
-                "Webapp Not Running",
-                "No reachable dashboard found.\n"
-                "Start it with --webapp (or -w) and try again.",
-            )
-            return
+            LOGGER.info("Webapp offline at %s, trying to start it", dashboard_url)
+            started_url = self._start_webapp_for_open()
+            if not started_url:
+                self._show_info_dialog(
+                    "Webapp Start Failed",
+                    "Could not start the dashboard automatically.",
+                )
+                return
+            dashboard_url = started_url
 
         LOGGER.info("Opening webapp: %s", dashboard_url)
         webbrowser.open(dashboard_url)
