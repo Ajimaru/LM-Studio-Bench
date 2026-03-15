@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import sys
 import threading
 import time
@@ -22,36 +23,39 @@ import webbrowser
 from user_paths import USER_LOGS_DIR
 from version_checker import fetch_latest_release
 
-
 _LATEST_RELEASE_LOCK = threading.Lock()
-_LATEST_RELEASE_DATA: Optional[dict[str, Any]] = None
-_LATEST_RELEASE_FETCH_STARTED = False
+_LATEST_RELEASE_STATE: dict[str, Any] = {
+    "data": None,
+    "fetch_started": False,
+}
 
 
 def _fetch_latest_release_background() -> None:
     """Fetch latest release info in a background thread and cache result."""
-    global _LATEST_RELEASE_DATA
-
     try:
         release_data = fetch_latest_release()
-    except Exception as exc:  # noqa: BLE001
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        urllib_error.URLError,
+        json.JSONDecodeError,
+    ) as exc:
         logging.getLogger(__name__).debug(
             "Background fetch_latest_release failed: %s", exc
         )
         return
 
     with _LATEST_RELEASE_LOCK:
-        _LATEST_RELEASE_DATA = release_data
+        _LATEST_RELEASE_STATE["data"] = release_data
 
 
 def _ensure_latest_release_fetch_started() -> None:
     """Start background fetch thread once, if not already running."""
-    global _LATEST_RELEASE_FETCH_STARTED
-
     with _LATEST_RELEASE_LOCK:
-        if _LATEST_RELEASE_FETCH_STARTED:
+        if bool(_LATEST_RELEASE_STATE["fetch_started"]):
             return
-        _LATEST_RELEASE_FETCH_STARTED = True
+        _LATEST_RELEASE_STATE["fetch_started"] = True
 
     thread = threading.Thread(
         target=_fetch_latest_release_background,
@@ -70,7 +74,7 @@ def get_cached_latest_release() -> Optional[dict[str, Any]]:
     """
     _ensure_latest_release_fetch_started()
     with _LATEST_RELEASE_LOCK:
-        return _LATEST_RELEASE_DATA
+        return cast(Optional[dict[str, Any]], _LATEST_RELEASE_STATE["data"])
 
 
 def _prepend_env_paths(var_name: str, paths: list[str]) -> None:
@@ -156,6 +160,7 @@ else:
 
 LOGGER = logging.getLogger("tray")
 _TRAY_STATE: dict[str, Optional[threading.Thread]] = {"thread": None}
+_WEBAPP_URL_RE = re.compile(r"Dashboard available at (http://localhost:\d+)")
 
 
 def _normalize_dashboard_url(dashboard_url: str) -> str:
@@ -264,6 +269,82 @@ class TrayApp:
             return None
 
         return url
+
+    def _set_dashboard_url(self, dashboard_url: str) -> None:
+        """Update dashboard URL and derived API base fields."""
+        normalized = _normalize_dashboard_url(dashboard_url)
+        parsed = urlparse(normalized)
+        self.dashboard_url = normalized
+        self.api_base = f"{parsed.scheme}://{parsed.netloc}"
+        self._api_scheme = parsed.scheme
+        self._api_netloc = parsed.netloc
+
+    def _extract_dashboard_url_from_log(
+        self,
+        log_path: Path,
+    ) -> Optional[str]:
+        """Extract last dashboard URL from a webapp log file."""
+        try:
+            content = log_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+        matches = _WEBAPP_URL_RE.findall(content)
+        if not matches:
+            return None
+
+        candidate = matches[-1].strip()
+        try:
+            return _normalize_dashboard_url(candidate)
+        except ValueError:
+            return None
+
+    def _discover_dashboard_url_from_logs(self) -> Optional[str]:
+        """Find the latest dashboard URL from recent webapp logs."""
+        latest_link = USER_LOGS_DIR / "webapp_latest.log"
+        candidates: list[Path] = []
+
+        if latest_link.exists():
+            candidates.append(latest_link)
+
+        try:
+            recent_logs = sorted(
+                USER_LOGS_DIR.glob("webapp_*.log"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            recent_logs = []
+
+        candidates.extend(recent_logs[:5])
+
+        seen: set[Path] = set()
+        for candidate_path in candidates:
+            resolved_path = candidate_path.resolve()
+            if resolved_path in seen:
+                continue
+            seen.add(resolved_path)
+
+            dashboard_url = self._extract_dashboard_url_from_log(resolved_path)
+            if dashboard_url:
+                return dashboard_url
+        return None
+
+    def _resolve_dashboard_url_for_open(self) -> str:
+        """Resolve dashboard URL for browser action.
+
+        Prefer configured URL when the API responds there. If not,
+        try to recover latest active dashboard URL from log files.
+        """
+        if self._call_api("/api/status") is not None:
+            return self.dashboard_url
+
+        discovered_url = self._discover_dashboard_url_from_logs()
+        if discovered_url:
+            LOGGER.info("Recovered dashboard URL from logs: %s", discovered_url)
+            self._set_dashboard_url(discovered_url)
+            return discovered_url
+        return self.dashboard_url
 
     def _call_api(
         self,
@@ -613,8 +694,9 @@ class TrayApp:
 
     def _on_open_webapp(self, _item: Any) -> None:
         """Open dashboard URL in default browser."""
-        LOGGER.info("Opening webapp: %s", self.dashboard_url)
-        webbrowser.open(self.dashboard_url)
+        dashboard_url = self._resolve_dashboard_url_for_open()
+        LOGGER.info("Opening webapp: %s", dashboard_url)
+        webbrowser.open(dashboard_url)
 
     def _on_check_updates_clicked(self, _item: Any) -> None:
         """Handle "Check for Updates" menu item click.

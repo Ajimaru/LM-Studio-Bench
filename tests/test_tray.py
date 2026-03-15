@@ -288,7 +288,7 @@ class TestTrayAppGetAboutVersionStatus:
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        with patch("tray.fetch_latest_release", return_value=None):
+        with patch("tray.get_cached_latest_release", return_value=None):
             assert app._get_about_version_status("v1.0.0") == "unknown"
 
     def test_returns_update_available(self, tmp_path: Path):
@@ -296,7 +296,10 @@ class TestTrayAppGetAboutVersionStatus:
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        with patch("tray.fetch_latest_release", return_value={"tag_name": "v2.0.0"}):
+        with patch(
+            "tray.get_cached_latest_release",
+            return_value={"tag_name": "v2.0.0"},
+        ):
             result = app._get_about_version_status("v1.0.0")
         assert "update" in result.lower() or "avai" in result.lower()
 
@@ -305,7 +308,10 @@ class TestTrayAppGetAboutVersionStatus:
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        with patch("tray.fetch_latest_release", return_value={"tag_name": "v1.0.0"}):
+        with patch(
+            "tray.get_cached_latest_release",
+            return_value={"tag_name": "v1.0.0"},
+        ):
             assert app._get_about_version_status("v1.0.0") == "no update"
 
     def test_returns_ahead_when_newer_than_release(self, tmp_path: Path):
@@ -313,7 +319,10 @@ class TestTrayAppGetAboutVersionStatus:
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        with patch("tray.fetch_latest_release", return_value={"tag_name": "v1.0.0"}):
+        with patch(
+            "tray.get_cached_latest_release",
+            return_value={"tag_name": "v1.0.0"},
+        ):
             assert app._get_about_version_status("v2.0.0") == "Ahead of release"
 
 
@@ -406,9 +415,48 @@ class TestTrayAppOnStartPauseStop:
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
+        app._resolve_dashboard_url_for_open = MagicMock(
+            return_value="http://localhost:8080"
+        )
         with patch("tray.webbrowser.open") as mock_open:
             app._on_open_webapp(MagicMock())
         mock_open.assert_called_once_with("http://localhost:8080")
+
+    def test_resolve_dashboard_url_recovers_from_webapp_log(
+        self,
+        tmp_path: Path,
+    ):
+        """Fallback resolves latest dashboard URL from webapp logs."""
+        tray, _, _ = _import_tray()
+        log_file = tmp_path / "webapp_20260315_123456.log"
+        log_file.write_text(
+            "INFO Dashboard available at http://localhost:46617\n",
+            encoding="utf-8",
+        )
+
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:1234")
+            app._call_api = MagicMock(return_value=None)
+            resolved = app._resolve_dashboard_url_for_open()
+
+        assert resolved == "http://localhost:46617"
+        assert app.dashboard_url == "http://localhost:46617"
+
+    def test_resolve_dashboard_url_keeps_default_when_no_log_match(
+        self,
+        tmp_path: Path,
+    ):
+        """Fallback keeps configured URL when no log URL can be found."""
+        tray, _, _ = _import_tray()
+        log_file = tmp_path / "webapp_20260315_123456.log"
+        log_file.write_text("INFO no dashboard url here\n", encoding="utf-8")
+
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:1234")
+            app._call_api = MagicMock(return_value=None)
+            resolved = app._resolve_dashboard_url_for_open()
+
+        assert resolved == "http://localhost:1234"
 
     def test_on_status_calls_api(self, tmp_path: Path):
         """_on_status calls the status API."""
