@@ -356,7 +356,7 @@ class TrayApp:
                 discovered_url,
             )
 
-        if self._call_api("/api/status") is not None:
+        if self._is_dashboard_url_reachable(self.dashboard_url):
             return self.dashboard_url
 
         LOGGER.warning(
@@ -375,7 +375,8 @@ class TrayApp:
             with urllib_request.urlopen(req, timeout=1.5) as response:  # nosec B310
                 response_body = response.read().decode("utf-8")
             data = json.loads(response_body) if response_body else {}
-            return isinstance(data, dict)
+            required_keys = {"status", "running", "connected_clients"}
+            return isinstance(data, dict) and required_keys.issubset(data.keys())
         except (
             urllib_error.URLError,
             ValueError,
@@ -734,6 +735,19 @@ class TrayApp:
     def _on_open_webapp(self, _item: Any) -> None:
         """Open dashboard URL in default browser."""
         dashboard_url = self._resolve_dashboard_url_for_open()
+
+        if not self._is_dashboard_url_reachable(dashboard_url):
+            LOGGER.warning(
+                "Webapp not reachable, refusing to open: %s",
+                dashboard_url,
+            )
+            self._show_info_dialog(
+                "Webapp Not Running",
+                "No reachable dashboard found.\n"
+                "Start it with --webapp (or -w) and try again.",
+            )
+            return
+
         LOGGER.info("Opening webapp: %s", dashboard_url)
         webbrowser.open(dashboard_url)
 
