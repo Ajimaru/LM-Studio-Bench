@@ -10,7 +10,17 @@ CONTAINER_NAME="${CONTAINER_NAME:-lmstudio-bench-appimage-build-cache}"
 REUSE_CONTAINER="${REUSE_CONTAINER:-1}"
 FAST_MODE="${FAST_MODE:-0}"
 VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION" 2>/dev/null || echo 'unknown')"
-APPIMAGE_NAME="${APPIMAGE_NAME:-LM-Studio-Bench-${VERSION}-x86_64.AppImage}"
+ORIG_APPIMAGE_NAME="${APPIMAGE_NAME:-}"
+CANONICAL_APPIMAGE_NAME="LM-Studio-Bench-${VERSION}-x86_64.AppImage"
+if [ -n "$ORIG_APPIMAGE_NAME" ] && \
+    [ "$ORIG_APPIMAGE_NAME" != "$CANONICAL_APPIMAGE_NAME" ]; then
+    echo "Error: APPIMAGE_NAME ('$ORIG_APPIMAGE_NAME') does not match" >&2
+    echo "expected name derived from VERSION ('$CANONICAL_APPIMAGE_NAME')." >&2
+    echo "The AppImage name must be consistent with the VERSION file" >&2
+    echo "used inside the Docker build environment." >&2
+    exit 1
+fi
+APPIMAGE_NAME="$CANONICAL_APPIMAGE_NAME"
 BUILD_CONTEXT_DIR=""
 
 # Check if Docker is available
