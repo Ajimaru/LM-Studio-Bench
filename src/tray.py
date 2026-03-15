@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import importlib
 import json
 import logging
+import os
 from pathlib import Path
 import sys
 import threading
@@ -19,28 +21,66 @@ import webbrowser
 
 from user_paths import USER_LOGS_DIR
 
+
+def _prepend_env_paths(var_name: str, paths: list[str]) -> None:
+    """Prepend existing directories to colon-separated environment var."""
+    valid_paths = [path for path in paths if path and Path(path).is_dir()]
+    if not valid_paths:
+        return
+
+    current = os.environ.get(var_name, "")
+    current_parts = [part for part in current.split(":") if part]
+    merged = valid_paths + [part for part in current_parts if part not in valid_paths]
+    os.environ[var_name] = ":".join(merged)
+
+
+def _bootstrap_gi_runtime_paths() -> None:
+    """Ensure GI typelibs and shared libs are discoverable in AppImage mode."""
+    project_root = Path(__file__).resolve().parent.parent
+    appdir_candidate = project_root.parents[2]
+
+    app_lib_dir = appdir_candidate / "usr" / "lib"
+    app_arch_lib_dir = app_lib_dir / "x86_64-linux-gnu"
+
+    gi_paths = [
+        str(app_arch_lib_dir / "girepository-1.0"),
+        str(app_lib_dir / "girepository-1.0"),
+        "/usr/lib/x86_64-linux-gnu/girepository-1.0",
+        "/usr/lib/girepository-1.0",
+        "/usr/lib64/girepository-1.0",
+    ]
+
+    _prepend_env_paths("GI_TYPELIB_PATH", gi_paths)
+
+
+_bootstrap_gi_runtime_paths()
+
 try:
     import gi
 
     gi.require_version("Gtk", "3.0")
-    from gi import repository as gi_repository
+    GTK: Any = importlib.import_module("gi.repository.Gtk")
+
+    try:
+        GLIB: Any = importlib.import_module("gi.repository.GLib")
+    except (ImportError, ModuleNotFoundError, ValueError):
+        GLIB = None
 
     APP_INDICATOR3: Any = None
     for appindicator_module in ("AppIndicator3", "AyatanaAppIndicator3"):
         try:
             gi.require_version(appindicator_module, "0.1")
-            APP_INDICATOR3 = getattr(gi_repository, appindicator_module)
+            APP_INDICATOR3 = importlib.import_module(
+                f"gi.repository.{appindicator_module}"
+            )
             break
-        except (ValueError, AttributeError):
+        except (
+            ValueError,
+            ImportError,
+            ModuleNotFoundError,
+            AttributeError,
+        ):
             continue
-
-    if APP_INDICATOR3 is None:
-        raise ImportError(
-            "Neither AppIndicator3 nor AyatanaAppIndicator3 is available"
-        )
-
-    GLIB: Any = getattr(gi_repository, "GLib")
-    GTK: Any = getattr(gi_repository, "Gtk")
 except (ImportError, ValueError, AttributeError) as import_exc:
     gi = None
     GTK = None
@@ -112,6 +152,7 @@ class TrayApp:
         self.stop_item: Optional[Any] = None
         self._polling_timer_id: Optional[int] = None
         self.appindicator: Optional[Any] = None
+        self.status_icon: Optional[Any] = None
         self.icon_dir: Optional[Path] = None
         self.last_update_check: float = 0.0
         self.force_update_check: bool = False
@@ -267,7 +308,7 @@ class TrayApp:
             status: Benchmark status (running/paused/idle/etc).
             api_reachable: Whether API call succeeded.
         """
-        if not self.appindicator or not self.icon_dir:
+        if not self.icon_dir:
             return
 
         if not api_reachable:
@@ -280,8 +321,30 @@ class TrayApp:
             color = "gray"
 
         icon_name = f"lmstudio-bench-tray-{color}"
-        self.appindicator.set_icon_full(icon_name, "")
+        if self.appindicator is not None:
+            self.appindicator.set_icon_full(icon_name, "")
+        elif self.status_icon is not None:
+            self.status_icon.set_from_icon_name(icon_name)
         LOGGER.debug("Updated tray icon: %s (status=%s)", color, status)
+
+    def _on_status_icon_popup(
+        self,
+        _icon: Any,
+        button: int,
+        activate_time: int,
+    ) -> None:
+        """Show context menu for Gtk.StatusIcon fallback."""
+        if self.menu is None:
+            return
+
+        self.menu.popup(
+            None,
+            None,
+            GTK.StatusIcon.position_menu,
+            self.status_icon,
+            button,
+            activate_time,
+        )
 
     def _refresh_menu_buttons(self) -> None:
         """Refresh menu button states based on benchmark status.
@@ -777,6 +840,8 @@ class TrayApp:
             LOGGER.warning("Error during shutdown: %s", exc)
 
         LOGGER.info("Benchmark Tray exiting")
+        if self.status_icon is not None:
+            self.status_icon.set_visible(False)
         GTK.main_quit()
 
     def _build_menu(self) -> Any:
@@ -838,31 +903,44 @@ class TrayApp:
         return menu
 
     def run(self) -> None:
-        """Initialize AppIndicator3 and run GTK loop."""
+        """Initialize tray icon and run GTK loop."""
         project_root = Path(__file__).resolve().parent.parent
         self.icon_dir = project_root / "assets" / "icons"
 
-        indicator: Any = APP_INDICATOR3.Indicator.new(
-            "lm-studio-benchmark",
-            "lmstudio-bench-tray-gray",
-            APP_INDICATOR3.IndicatorCategory.APPLICATION_STATUS,
-        )
-        if indicator is None:
-            raise RuntimeError("Failed to create AppIndicator3 indicator")
-        self.appindicator = cast(Any, indicator)
-        if self.appindicator is None:
-            raise RuntimeError("Failed to initialize AppIndicator3 indicator")
-        self.appindicator.set_icon_theme_path(str(self.icon_dir))
-        self.appindicator.set_status(APP_INDICATOR3.IndicatorStatus.ACTIVE)
-
         self.menu = self._build_menu()
-        self.appindicator.set_menu(self.menu)
-        self._refresh_menu_buttons()
 
-        LOGGER.info(
-            "AppIndicator3 tray started for dashboard: %s",
-            self.dashboard_url,
-        )
+        if APP_INDICATOR3 is not None:
+            indicator: Any = APP_INDICATOR3.Indicator.new(
+                "lm-studio-benchmark",
+                "lmstudio-bench-tray-gray",
+                APP_INDICATOR3.IndicatorCategory.APPLICATION_STATUS,
+            )
+            if indicator is None:
+                raise RuntimeError("Failed to create AppIndicator3 indicator")
+            self.appindicator = cast(Any, indicator)
+            self.appindicator.set_icon_theme_path(str(self.icon_dir))
+            self.appindicator.set_status(APP_INDICATOR3.IndicatorStatus.ACTIVE)
+            self.appindicator.set_menu(self.menu)
+            LOGGER.info(
+                "AppIndicator tray started for dashboard: %s",
+                self.dashboard_url,
+            )
+        else:
+            LOGGER.warning(
+                "AppIndicator bindings unavailable; using Gtk.StatusIcon "
+                "fallback"
+            )
+            status_icon: Any = GTK.StatusIcon.new_from_icon_name(
+                "lmstudio-bench-tray-gray"
+            )
+            if status_icon is None:
+                raise RuntimeError("Failed to create Gtk.StatusIcon fallback")
+            self.status_icon = cast(Any, status_icon)
+            self.status_icon.set_visible(True)
+            self.status_icon.set_tooltip_text("LM Studio Benchmark")
+            self.status_icon.connect("popup-menu", self._on_status_icon_popup)
+
+        self._refresh_menu_buttons()
 
         self._start_status_polling()
 

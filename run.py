@@ -90,11 +90,46 @@ def _build_subprocess_env() -> dict[str, str]:
     env.pop("LD_LIBRARY_PATH", None)
     env.pop("LD_PRELOAD", None)
     src_dir = str(project_root / "src")
+    root_dir = str(project_root)
+    pythonpath_entries = [root_dir, src_dir]
     existing_path = env.get("PYTHONPATH", "")
     if existing_path:
-        env["PYTHONPATH"] = f"{src_dir}:{existing_path}"
-    else:
-        env["PYTHONPATH"] = src_dir
+        pythonpath_entries.append(existing_path)
+    env["PYTHONPATH"] = ":".join(pythonpath_entries)
+
+    appdir_candidate = project_root.parents[2]
+    app_lib_dir = appdir_candidate / "usr" / "lib"
+    app_lib_arch_dir = app_lib_dir / "x86_64-linux-gnu"
+    app_gi_arch_dir = app_lib_arch_dir / "girepository-1.0"
+    app_gi_dir = app_lib_dir / "girepository-1.0"
+
+    is_appimage_runtime = (
+        app_lib_dir.is_dir()
+        or app_lib_arch_dir.is_dir()
+        or "/.mount_" in str(project_root)
+    )
+
+    if not is_appimage_runtime:
+        return env
+
+    gi_paths = [
+        str(path)
+        for path in (app_gi_arch_dir, app_gi_dir)
+        if path.is_dir()
+    ]
+    for system_gi in (
+        "/usr/lib/x86_64-linux-gnu/girepository-1.0",
+        "/usr/lib/girepository-1.0",
+        "/usr/lib64/girepository-1.0",
+    ):
+        if Path(system_gi).is_dir() and system_gi not in gi_paths:
+            gi_paths.append(system_gi)
+    if gi_paths:
+        existing_gi = env.get("GI_TYPELIB_PATH", "")
+        if existing_gi:
+            env["GI_TYPELIB_PATH"] = ":".join(gi_paths + [existing_gi])
+        else:
+            env["GI_TYPELIB_PATH"] = ":".join(gi_paths)
 
     return env
 
