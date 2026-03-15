@@ -874,9 +874,10 @@ class TrayApp:
         LOGGER.info("Benchmark Tray exiting")
         if self.status_icon is not None:
             self.status_icon.set_visible(False)
-        levels = GTK.main_level() if GTK is not None else 1
-        for _ in range(max(levels, 1)):
-            GTK.main_quit()
+        if GTK is not None:
+            levels = GTK.main_level()
+            for _ in range(max(levels, 1)):
+                GTK.main_quit()
 
     def _build_menu(self) -> Any:
         """Build tray menu with benchmark actions."""
