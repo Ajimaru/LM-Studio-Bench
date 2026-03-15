@@ -5,6 +5,9 @@
 # Load plugins
 load-plugins = pylint.extensions.docparams
 
+# Target runtime version for type analysis
+py-version = 3.10
+
 # Ignore patterns (test files and generated code)
 ignore-patterns = test_.*?\.py
 
