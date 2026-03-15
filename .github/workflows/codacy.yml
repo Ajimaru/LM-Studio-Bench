@@ -42,10 +42,7 @@ jobs:
         with:
           # Check https://github.com/codacy/codacy-analysis-cli#project-token to get your project token from your Codacy repository
           # You can also omit the token and run the tools that support default configurations
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           verbose: true
-          # Upload disabled: CODACY_PROJECT_TOKEN secret not configured.
-          # Analysis still runs; results are visible via the Codacy OAuth
-          # integration (Codacy Static Code Analysis check).
-          upload: false
-          # Never fail due to issue count
+          upload: true
           max-allowed-issues: 2147483647
