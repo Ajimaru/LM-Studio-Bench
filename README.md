@@ -110,10 +110,15 @@ quantizations to measure and compare tokens-per-second performance.
 ### Option 1: Use the AppImage
 
 Download `LM-Studio-Bench-x86_64.AppImage` from the latest release,
-make it executable, and start it directly:
+make it executable, and start it:
 
 ```bash
 chmod +x LM-Studio-Bench-x86_64.AppImage
+
+# Tray-only mode (default — no args)
+./LM-Studio-Bench-x86_64.AppImage
+
+# Web dashboard mode
 ./LM-Studio-Bench-x86_64.AppImage --webapp
 ```
 
@@ -122,6 +127,8 @@ Notes:
 - No repository clone or Python setup is required for the AppImage.
 - LM Studio still needs to be installed on the host system.
 - The `lms` CLI must be available in `PATH`.
+- **Running without arguments** starts only the system tray icon.
+  Use `--webapp` or any benchmark flag to launch the full application.
 
 <!-- markdownlint-disable MD033 -->
 <details>
@@ -199,6 +206,18 @@ lms --help
 The AppImage is the preferred way to use LM-Studio-Bench.
 All examples below use `LM-Studio-Bench-x86_64.AppImage`.
 The same CLI options also work with `./run.py`.
+
+### 🔔 System Tray (quick access)
+
+Launching the AppImage **without any arguments** starts only the system tray
+icon. The tray stays in the panel until you quit it via its menu.
+
+```bash
+./LM-Studio-Bench-x86_64.AppImage
+```
+
+Add `--debug` / `-d` to enable verbose tray logging while still staying in
+tray-only mode.
 
 ### 🌐 Web Dashboard
 

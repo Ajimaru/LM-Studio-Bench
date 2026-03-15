@@ -12,7 +12,7 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     env:
-      APPIMAGE_NAME: LM-Studio-Bench-x86_64.AppImage
+      APPIMAGE_NAME: LM-Studio-Bench-${{ github.ref_name }}-x86_64.AppImage
 
     steps:
       - name: Checkout repository

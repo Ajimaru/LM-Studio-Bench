@@ -6,7 +6,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
 APPDIR="$DIST_DIR/AppDir"
-APPIMAGE_NAME="${APPIMAGE_NAME:-LM-Studio-Bench-x86_64.AppImage}"
+VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION" 2>/dev/null || echo 'unknown')"
+APPIMAGE_NAME="${APPIMAGE_NAME:-LM-Studio-Bench-${VERSION}-x86_64.AppImage}"
 APPIMAGE_OUT="$DIST_DIR/$APPIMAGE_NAME"
 PROJECT_DIR="$APPDIR/usr/share/lm-studio-bench"
 VENV_DIR="$APPDIR/usr/venv"
@@ -86,7 +87,25 @@ else
 fi
 
 export PYTHONPATH="$PROJECT_DIR/src:$PROJECT_DIR"
-exec "$APPDIR/usr/venv/bin/python" "$PROJECT_DIR/run.py" "$@"
+
+# When started with no real arguments (--debug/-d are exempt), launch only
+# the tray app so it stays in the system tray without auto-running a
+# benchmark.  With any other argument, delegate to run.py as usual.
+HAS_REAL_ARGS=0
+for _arg in "$@"; do
+    case "$_arg" in
+        --debug|-d) ;;
+        *) HAS_REAL_ARGS=1; break ;;
+    esac
+done
+
+if [ "$HAS_REAL_ARGS" -eq 0 ]; then
+    exec "$APPDIR/usr/venv/bin/python" \
+        "$PROJECT_DIR/src/tray.py" "$@"
+else
+    exec "$APPDIR/usr/venv/bin/python" \
+        "$PROJECT_DIR/run.py" "$@"
+fi
 EOF
 chmod +x "$APPDIR/usr/bin/lmstudio-bench"
 

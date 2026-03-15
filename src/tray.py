@@ -20,6 +20,7 @@ from urllib import request as urllib_request
 import webbrowser
 
 from user_paths import USER_LOGS_DIR
+from version_checker import fetch_latest_release
 
 
 def _prepend_env_paths(var_name: str, paths: list[str]) -> None:
@@ -535,7 +536,11 @@ class TrayApp:
                 self.force_update_check = False
                 update_available = self._check_for_updates()
                 if update_available and self.pending_update:
-                    self._show_update_notification()
+                    latest = self.pending_update.get("latest", "?")
+                    LOGGER.info(
+                        "Update available: %s (use 'Check for Updates')",
+                        latest,
+                    )
         except (RuntimeError, OSError, AttributeError):
             LOGGER.exception("Error during status polling")
         return True
@@ -617,7 +622,7 @@ class TrayApp:
         - GitHub version invalid/unavailable -> unknown
         - local == GitHub -> no update
         - local > GitHub -> Ahead of release
-        - GitHub > local -> update avaiable
+        - GitHub > local -> update available
 
         Args:
             local_version: Local VERSION file value.
@@ -629,17 +634,17 @@ class TrayApp:
         if local_tuple is None:
             return "dev"
 
-        update_data = self._call_api("/api/system/latest-release")
-        if not update_data or not update_data.get("success"):
+        release_data = fetch_latest_release()
+        if not release_data:
             return "unknown"
 
-        github_version = str(update_data.get("latest_version", "")).strip()
+        github_version = str(release_data.get("tag_name", "")).strip()
         github_tuple = self._parse_version_tuple(github_version)
         if github_tuple is None:
             return "unknown"
 
         if github_tuple > local_tuple:
-            return "update avaiable"
+            return "update available"
         if local_tuple > github_tuple:
             return "Ahead of release"
         return "no update"
@@ -869,7 +874,9 @@ class TrayApp:
         LOGGER.info("Benchmark Tray exiting")
         if self.status_icon is not None:
             self.status_icon.set_visible(False)
-        GTK.main_quit()
+        levels = GTK.main_level() if GTK is not None else 1
+        for _ in range(max(levels, 1)):
+            GTK.main_quit()
 
     def _build_menu(self) -> Any:
         """Build tray menu with benchmark actions."""

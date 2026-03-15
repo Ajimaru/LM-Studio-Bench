@@ -284,23 +284,20 @@ class TestTrayAppGetAboutVersionStatus:
         assert app._get_about_version_status("dev-branch") == "dev"
 
     def test_returns_unknown_when_api_fails(self, tmp_path: Path):
-        """Returns 'unknown' when API call fails."""
+        """Returns 'unknown' when GitHub release fetch fails."""
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        app._call_api = MagicMock(return_value=None)
-        assert app._get_about_version_status("v1.0.0") == "unknown"
+        with patch("tray.fetch_latest_release", return_value=None):
+            assert app._get_about_version_status("v1.0.0") == "unknown"
 
     def test_returns_update_available(self, tmp_path: Path):
         """Returns update message when newer version exists."""
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        app._call_api = MagicMock(return_value={
-            "success": True,
-            "latest_version": "v2.0.0",
-        })
-        result = app._get_about_version_status("v1.0.0")
+        with patch("tray.fetch_latest_release", return_value={"tag_name": "v2.0.0"}):
+            result = app._get_about_version_status("v1.0.0")
         assert "update" in result.lower() or "avai" in result.lower()
 
     def test_returns_no_update_when_current(self, tmp_path: Path):
@@ -308,22 +305,16 @@ class TestTrayAppGetAboutVersionStatus:
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        app._call_api = MagicMock(return_value={
-            "success": True,
-            "latest_version": "v1.0.0",
-        })
-        assert app._get_about_version_status("v1.0.0") == "no update"
+        with patch("tray.fetch_latest_release", return_value={"tag_name": "v1.0.0"}):
+            assert app._get_about_version_status("v1.0.0") == "no update"
 
     def test_returns_ahead_when_newer_than_release(self, tmp_path: Path):
         """Returns 'Ahead of release' when local version is newer."""
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        app._call_api = MagicMock(return_value={
-            "success": True,
-            "latest_version": "v1.0.0",
-        })
-        assert app._get_about_version_status("v2.0.0") == "Ahead of release"
+        with patch("tray.fetch_latest_release", return_value={"tag_name": "v1.0.0"}):
+            assert app._get_about_version_status("v2.0.0") == "Ahead of release"
 
 
 class TestTrayAppOnPollingTick:

@@ -9,7 +9,8 @@ IMAGE_TAG="ubuntu24.04"
 CONTAINER_NAME="${CONTAINER_NAME:-lmstudio-bench-appimage-build-cache}"
 REUSE_CONTAINER="${REUSE_CONTAINER:-1}"
 FAST_MODE="${FAST_MODE:-0}"
-APPIMAGE_NAME="${APPIMAGE_NAME:-LM-Studio-Bench-x86_64.AppImage}"
+VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION" 2>/dev/null || echo 'unknown')"
+APPIMAGE_NAME="${APPIMAGE_NAME:-LM-Studio-Bench-${VERSION}-x86_64.AppImage}"
 BUILD_CONTEXT_DIR=""
 
 # Check if Docker is available
