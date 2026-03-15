@@ -765,6 +765,7 @@ check_python_requirements() {
 
     if [[ -z "${VIRTUAL_ENV:-}" ]] && [[ -d "${PROJECT_ROOT}/.venv" ]]; then
         log "INFO" "Activating .venv internally for installation..."
+        # shellcheck source=/dev/null
         if source "${PROJECT_ROOT}/.venv/bin/activate" 2>/dev/null; then
             log "OK" "venv internally activated: $(sanitize_path "${VIRTUAL_ENV}")"
         else

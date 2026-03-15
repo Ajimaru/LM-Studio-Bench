@@ -105,16 +105,16 @@ copy_matches() {
     local target_dir="$2"
     local matched=1
     local -a matches
-    shopt -s nullglob
-    matches=( $pattern )
-    shopt -u nullglob
+
+    mapfile -t matches < <(compgen -G "$pattern")
+
     for source_file in "${matches[@]}"; do
         if [ -f "$source_file" ]; then
             cp -a "$source_file" "$target_dir/"
             matched=0
         fi
     done
-    return $matched
+    return "$matched"
 }
 
 TYPELIB_DIR="/usr/lib/x86_64-linux-gnu/girepository-1.0"

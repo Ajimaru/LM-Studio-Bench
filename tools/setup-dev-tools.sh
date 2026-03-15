@@ -29,11 +29,13 @@ echo -e "${YELLOW}Checking Python environment...${NC}"
 if [[ -z "${VIRTUAL_ENV}" ]]; then
     if [[ -f ".venv/bin/activate" ]]; then
         echo -e "${YELLOW}Activating virtual environment...${NC}"
-        source .venv/bin/activate
+        # shellcheck source=/dev/null
+        source "$PROJECT_ROOT/.venv/bin/activate"
     else
         echo -e "${YELLOW}Creating virtual environment...${NC}"
         python3 -m venv .venv
-        source .venv/bin/activate
+        # shellcheck source=/dev/null
+        source "$PROJECT_ROOT/.venv/bin/activate"
     fi
 fi
 echo -e "${GREEN}✓ Python environment: $VIRTUAL_ENV${NC}"
