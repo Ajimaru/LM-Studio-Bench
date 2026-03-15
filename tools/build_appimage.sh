@@ -104,7 +104,12 @@ copy_matches() {
     local pattern="$1"
     local target_dir="$2"
     local matched=1
-    for source_file in $pattern; do
+    local -a matches
+    shopt -s nullglob
+    # shellcheck disable=SC2206
+    matches=( $pattern )
+    shopt -u nullglob
+    for source_file in "${matches[@]}"; do
         if [ -f "$source_file" ]; then
             cp -a "$source_file" "$target_dir/"
             matched=0
