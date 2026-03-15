@@ -23,6 +23,56 @@ from user_paths import USER_LOGS_DIR
 from version_checker import fetch_latest_release
 
 
+_LATEST_RELEASE_LOCK = threading.Lock()
+_LATEST_RELEASE_DATA: Optional[dict[str, Any]] = None
+_LATEST_RELEASE_FETCH_STARTED = False
+
+
+def _fetch_latest_release_background() -> None:
+    """Fetch latest release info in a background thread and cache result."""
+    global _LATEST_RELEASE_DATA
+
+    try:
+        release_data = fetch_latest_release()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).debug(
+            "Background fetch_latest_release failed: %s", exc
+        )
+        return
+
+    with _LATEST_RELEASE_LOCK:
+        _LATEST_RELEASE_DATA = release_data
+
+
+def _ensure_latest_release_fetch_started() -> None:
+    """Start background fetch thread once, if not already running."""
+    global _LATEST_RELEASE_FETCH_STARTED
+
+    with _LATEST_RELEASE_LOCK:
+        if _LATEST_RELEASE_FETCH_STARTED:
+            return
+        _LATEST_RELEASE_FETCH_STARTED = True
+
+    thread = threading.Thread(
+        target=_fetch_latest_release_background,
+        name="latest-release-fetch",
+        daemon=True,
+    )
+    thread.start()
+
+
+def get_cached_latest_release() -> Optional[dict[str, Any]]:
+    """Return cached latest release data, starting background fetch if needed.
+
+    The first call triggers a non-blocking background fetch and returns the
+    current cache value (which may be None). Subsequent calls will return the
+    fetched data once available.
+    """
+    _ensure_latest_release_fetch_started()
+    with _LATEST_RELEASE_LOCK:
+        return _LATEST_RELEASE_DATA
+
+
 def _prepend_env_paths(var_name: str, paths: list[str]) -> None:
     """Prepend existing directories to colon-separated environment var."""
     valid_paths = [path for path in paths if path and Path(path).is_dir()]
@@ -634,7 +684,7 @@ class TrayApp:
         if local_tuple is None:
             return "dev"
 
-        release_data = fetch_latest_release()
+        release_data = get_cached_latest_release()
         if not release_data:
             return "unknown"
 
