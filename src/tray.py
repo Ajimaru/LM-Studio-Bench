@@ -917,10 +917,11 @@ class TrayApp:
             )
             if indicator is None:
                 raise RuntimeError("Failed to create AppIndicator3 indicator")
-            self.appindicator = cast(Any, indicator)
-            self.appindicator.set_icon_theme_path(str(self.icon_dir))
-            self.appindicator.set_status(APP_INDICATOR3.IndicatorStatus.ACTIVE)
-            self.appindicator.set_menu(self.menu)
+            appindicator: Any = cast(Any, indicator)
+            self.appindicator = appindicator
+            appindicator.set_icon_theme_path(str(self.icon_dir))
+            appindicator.set_status(APP_INDICATOR3.IndicatorStatus.ACTIVE)
+            appindicator.set_menu(self.menu)
             LOGGER.info(
                 "AppIndicator tray started for dashboard: %s",
                 self.dashboard_url,
@@ -935,10 +936,11 @@ class TrayApp:
             )
             if status_icon is None:
                 raise RuntimeError("Failed to create Gtk.StatusIcon fallback")
-            self.status_icon = cast(Any, status_icon)
-            self.status_icon.set_visible(True)
-            self.status_icon.set_tooltip_text("LM Studio Benchmark")
-            self.status_icon.connect("popup-menu", self._on_status_icon_popup)
+            si: Any = cast(Any, status_icon)
+            self.status_icon = si
+            si.set_visible(True)
+            si.set_tooltip_text("LM Studio Benchmark")
+            si.connect("popup-menu", self._on_status_icon_popup)
 
         self._refresh_menu_buttons()
 
