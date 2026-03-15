@@ -157,7 +157,13 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
             )
             return out_models
         return out_models
-    except Exception:
+    except (
+        json.JSONDecodeError,
+        OSError,
+        subprocess.SubprocessError,
+        TypeError,
+        ValueError,
+    ):
         return []
 
 
@@ -337,7 +343,14 @@ def _get_cached_latest_release() -> Optional[dict]:
             is_update,
         )
         return result
-    except Exception as exc:
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
         logger.error("Error in latest release check: %s", exc)
         return None
 
@@ -603,13 +616,13 @@ class BenchmarkManager:
         Raises:
             ValueError: If any component contains shell-unsafe characters.
         """
-        _SHELL_UNSAFE = re.compile(r"[;&|`$<>\\!]")
+        shell_unsafe_pattern = re.compile(r"[;&|`$<>\\!]")
 
         interpreter = str(sys.executable)
         script = str(BENCHMARK_SCRIPT.resolve())
 
         for component in [interpreter, script] + sanitized_args:
-            if _SHELL_UNSAFE.search(component):
+            if shell_unsafe_pattern.search(component):
                 raise ValueError(
                     f"Shell-unsafe characters detected in argument: "
                     f"{component!r}"
@@ -1471,7 +1484,14 @@ async def get_results() -> dict:
             results_data.append(result_dict)
 
         return {"success": True, "count": len(results_data), "results": results_data}
-    except Exception as e:
+    except (
+        AttributeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error loading results: %s", e)
         return {"success": False, "error": str(e), "results": []}
 
@@ -4143,7 +4163,31 @@ async def get_dashboard_stats() -> dict:
             ),
         }
 
+        def calc_percentile(values: List[float], percentile: float) -> float:
+            """Calculate percentile with linear interpolation."""
+            if not values:
+                return 0.0
+            sorted_values = sorted(values)
+            if len(sorted_values) == 1:
+                return float(sorted_values[0])
+            position = (len(sorted_values) - 1) * percentile
+            lower_idx = int(math.floor(position))
+            upper_idx = int(math.ceil(position))
+            if lower_idx == upper_idx:
+                return float(sorted_values[lower_idx])
+            lower_val = sorted_values[lower_idx]
+            upper_val = sorted_values[upper_idx]
+            weight = position - lower_idx
+            return float(lower_val + (upper_val - lower_val) * weight)
+
         perf_stats = {}
+        speed_summary = {
+            "min": 0,
+            "p50": 0,
+            "avg": 0,
+            "p95": 0,
+            "max": 0,
+        }
         if results:
             speeds = [r.avg_tokens_per_sec for r in results]
             perf_stats = {
@@ -4151,8 +4195,28 @@ async def get_dashboard_stats() -> dict:
                 "max_speed": round(max(speeds), 2),
                 "min_speed": round(min(speeds), 2),
             }
+            speed_summary = {
+                "min": round(min(speeds), 2),
+                "p50": round(calc_percentile(speeds, 0.5), 2),
+                "avg": round(sum(speeds) / len(speeds), 2),
+                "p95": round(calc_percentile(speeds, 0.95), 2),
+                "max": round(max(speeds), 2),
+            }
+
+        quantization_distribution: Dict[str, int] = {}
+        architecture_distribution: Dict[str, int] = {}
+        for result in results:
+            quant_key = result.quantization or "unknown"
+            arch_key = result.architecture or "unknown"
+            quantization_distribution[quant_key] = (
+                quantization_distribution.get(quant_key, 0) + 1
+            )
+            architecture_distribution[arch_key] = (
+                architecture_distribution.get(arch_key, 0) + 1
+            )
 
         top_models = []
+        top_models_extended = []
         fastest_model = None
         if results:
             sorted_results = sorted(
@@ -4177,6 +4241,48 @@ async def get_dashboard_stats() -> dict:
                         "speed": round(r.avg_tokens_per_sec, 2),
                         "capabilities": capabilities_by_model.get(r.model_name, []),
                     }
+
+            for r in sorted_results[:10]:
+                base_key = r.model_name.split("@")[0]
+                top_models_extended.append(
+                    {
+                        "model_name": r.model_name,
+                        "quantization": r.quantization,
+                        "speed": round(r.avg_tokens_per_sec, 2),
+                        "vram_mb": r.vram_mb,
+                        "params_size": r.params_size,
+                        "architecture": r.architecture,
+                        "capabilities": capabilities_by_model.get(
+                            r.model_name, []
+                        ),
+                        "source_url": f"https://lmstudio.ai/models/{base_key}",
+                    }
+                )
+
+        efficiency_top = []
+        if results:
+            efficiency_results = [
+                r
+                for r in results
+                if getattr(r, "tokens_per_sec_per_gb", None) is not None
+            ]
+            efficiency_sorted = sorted(
+                efficiency_results,
+                key=lambda r: float(r.tokens_per_sec_per_gb),
+                reverse=True,
+            )
+            for r in efficiency_sorted[:5]:
+                efficiency_top.append(
+                    {
+                        "model_name": r.model_name,
+                        "quantization": r.quantization,
+                        "tokens_per_sec_per_gb": round(
+                            float(r.tokens_per_sec_per_gb), 2
+                        ),
+                        "speed": round(r.avg_tokens_per_sec, 2),
+                        "vram_mb": r.vram_mb,
+                    }
+                )
 
         recent_runs = []
         last_run_timestamp = None
@@ -4204,16 +4310,32 @@ async def get_dashboard_stats() -> dict:
             "gpu_info": gpu_info,
             "cache_stats": cache_stats,
             "perf_stats": perf_stats,
+            "speed_summary": speed_summary,
             "top_models": top_models,
+            "top_models_extended": top_models_extended,
             "recent_runs": recent_runs,
             "fastest_model": fastest_model,
+            "quantization_distribution": quantization_distribution,
+            "architecture_distribution": architecture_distribution,
+            "efficiency_top": efficiency_top,
             "capability_catalog": (
                 sorted(list(distinct_capabilities)) if distinct_capabilities else []
             ),
             "last_run": last_run_timestamp,
             "lmstudio": lmstudio_health,
         }
-    except Exception as e:
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+        subprocess.SubprocessError,
+        psutil.Error,
+        statistics.StatisticsError,
+    ) as e:
         logger.error("❌ Error loading dashboard stats: %s", e)
         return {"success": False, "error": str(e)}
 

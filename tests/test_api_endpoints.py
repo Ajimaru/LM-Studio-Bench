@@ -253,7 +253,10 @@ class TestResultsEndpoints:
         """Returns error on cache exception."""
         app_mod = sys.modules["app"]
         client = _get_client()
-        with patch.object(app_mod, "BenchmarkCache", side_effect=Exception("db error")):
+        with patch.object(
+            app_mod, "BenchmarkCache",
+            side_effect=RuntimeError("db error"),
+        ):
             response = client.get("/api/results")
         assert response.status_code == 200
         data = response.json()

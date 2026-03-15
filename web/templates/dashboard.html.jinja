@@ -1283,6 +1283,54 @@
                   </div>
                   <div style="margin-top: 1rem;
                               padding-top: 1rem;
+                              border-top: 1px solid rgba(0,0,0,0.1)">
+                    <div style="display: grid;
+                                grid-template-columns: repeat(2, minmax(120px, 1fr));
+                                gap: 0.5rem;
+                                margin-bottom: 0.75rem">
+                      <div style="background: var(--bg);
+                                  border: 1px solid var(--border);
+                                  border-radius: 0.5rem;
+                                  padding: 0.5rem">
+                        <div style="font-size: 0.8rem; color: var(--text-light)">Median (P50)</div>
+                        <div id="home-speed-p50" style="font-weight: 600; color: var(--text)">--</div>
+                      </div>
+                      <div style="background: var(--bg);
+                                  border: 1px solid var(--border);
+                                  border-radius: 0.5rem;
+                                  padding: 0.5rem">
+                        <div style="font-size: 0.8rem; color: var(--text-light)">P95 Speed</div>
+                        <div id="home-speed-p95" style="font-weight: 600; color: var(--text)">--</div>
+                      </div>
+                      <div style="background: var(--bg);
+                                  border: 1px solid var(--border);
+                                  border-radius: 0.5rem;
+                                  padding: 0.5rem">
+                        <div style="font-size: 0.8rem; color: var(--text-light)">Architectures</div>
+                        <div id="home-arch-count" style="font-weight: 600; color: var(--text)">--</div>
+                      </div>
+                      <div style="background: var(--bg);
+                                  border: 1px solid var(--border);
+                                  border-radius: 0.5rem;
+                                  padding: 0.5rem">
+                        <div style="font-size: 0.8rem; color: var(--text-light)">Quantizations</div>
+                        <div id="home-quant-count" style="font-weight: 600; color: var(--text)">--</div>
+                      </div>
+                    </div>
+                    <div id="home-top10-chart"
+                         style="height: 240px;
+                                border: 1px solid var(--border);
+                                border-radius: 0.5rem;
+                                overflow: hidden"></div>
+                    <div id="home-quant-donut"
+                         style="height: 220px;
+                                margin-top: 0.75rem;
+                                border: 1px solid var(--border);
+                                border-radius: 0.5rem;
+                                overflow: hidden"></div>
+                  </div>
+                  <div style="margin-top: 1rem;
+                              padding-top: 1rem;
                               border-top: 1px solid rgba(0,0,0,0.1);
                               display: flex;
                               flex-direction: column;
@@ -1330,11 +1378,12 @@
                     <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Quantization</th>
                     <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Tokens/s</th>
                     <th style="padding: 0.75rem; text-align: right; font-weight: 600;">VRAM (MB)</th>
+                    <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Action</th>
                   </tr>
                 </thead>
                 <tbody id="home-top-models">
                   <tr>
-                    <td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Loading data...</td>
+                    <td colspan="5" style="text-align: center; padding: 2rem; opacity: 0.6;">Loading data...</td>
                   </tr>
                 </tbody>
               </table>
@@ -1355,11 +1404,12 @@
                     <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Quantization</th>
                     <th style="padding: 0.75rem; text-align: right; font-weight: 600;">Tokens/s</th>
                     <th style="padding: 0.75rem; text-align: left; font-weight: 600;">Timestamp</th>
+                    <th style="padding: 0.75rem; text-align: center; font-weight: 600;">Action</th>
                   </tr>
                 </thead>
                 <tbody id="home-recent-runs">
                   <tr>
-                    <td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">Loading data...</td>
+                    <td colspan="5" style="text-align: center; padding: 2rem; opacity: 0.6;">Loading data...</td>
                   </tr>
                 </tbody>
               </table>
@@ -2174,6 +2224,23 @@
                           onclick="clearCache()"
                           style="padding: 0.4rem 0.8rem;
                                  font-size: 0.85rem">🗑️ Clear Cache</button>
+                </div>
+              </div>
+              <div style="display: grid;
+                          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                          gap: 1rem;
+                          margin-bottom: 1rem">
+                <div style="border: 1px solid var(--border);
+                            border-radius: 0.5rem;
+                            overflow: hidden;
+                            background: var(--bg)">
+                  <div id="results-speed-vram-chart" style="height: 320px;"></div>
+                </div>
+                <div style="border: 1px solid var(--border);
+                            border-radius: 0.5rem;
+                            overflow: hidden;
+                            background: var(--bg)">
+                  <div id="results-heatmap-chart" style="height: 320px;"></div>
                 </div>
               </div>
               <div style="overflow-x: auto;">
@@ -3676,6 +3743,33 @@
                     document.getElementById('home-fastest-speed').textContent = '--';
                 }
 
+                // Speed summary + distributions
+                const speedSummary = data.speed_summary || {};
+                const p50El = document.getElementById('home-speed-p50');
+                const p95El = document.getElementById('home-speed-p95');
+                const archCountEl = document.getElementById('home-arch-count');
+                const quantCountEl = document.getElementById('home-quant-count');
+
+                if (p50El) {
+                    p50El.textContent = speedSummary.p50 ? `${speedSummary.p50} tok/s` : '--';
+                }
+                if (p95El) {
+                    p95El.textContent = speedSummary.p95 ? `${speedSummary.p95} tok/s` : '--';
+                }
+
+                const archDistribution = data.architecture_distribution || {};
+                const quantDistribution = data.quantization_distribution || {};
+
+                if (archCountEl) {
+                    archCountEl.textContent = Object.keys(archDistribution).length || '--';
+                }
+                if (quantCountEl) {
+                    quantCountEl.textContent = Object.keys(quantDistribution).length || '--';
+                }
+
+                renderHomeTopModelsChart(data.top_models_extended || data.top_models || []);
+                renderHomeQuantizationDonut(quantDistribution);
+
                 // Capability Filter UI (Home)
                 const capFilterHost = document.getElementById('home-capability-filters');
                 capFilterHost.innerHTML = '';
@@ -3728,10 +3822,13 @@
                             <td style="padding: 0.75rem;">${model.quantization}</td>
                             <td style="padding: 0.75rem; text-align: right; font-weight: 600; color: var(--success);">${model.speed}</td>
                             <td style="padding: 0.75rem; text-align: right;">${model.vram_mb}</td>
+                            <td style="padding: 0.75rem; text-align: center;">
+                                <button onclick="openComparisonForModel(${JSON.stringify(model.model_name || '')})" class="btn-primary" title="Open model history and trends" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Compare</button>
+                            </td>
                         </tr>`;
                     }).join('');
                 } else {
-                    topModelsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">No data available</td></tr>';
+                    topModelsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 2rem; opacity: 0.6;">No data available</td></tr>';
                 }
                 
                 // Recent Runs Table
@@ -3751,16 +3848,128 @@
                             <td style="padding: 0.75rem;">${run.quantization}</td>
                             <td style="padding: 0.75rem; text-align: right; font-weight: 600;">${run.speed}</td>
                             <td style="padding: 0.75rem;">${new Date(run.timestamp).toLocaleString('de-DE')}</td>
+                            <td style="padding: 0.75rem; text-align: center;">
+                                <button onclick="openComparisonForModel(${JSON.stringify(run.model_name || '')})" class="btn-primary" title="Open model history and trends" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Compare</button>
+                            </td>
                         </tr>`;
                     }).join('');
                 } else {
-                    recentRunsBody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 2rem; opacity: 0.6;">No data available</td></tr>';
+                    recentRunsBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 2rem; opacity: 0.6;">No data available</td></tr>';
                 }
                 
             } catch (error) {
                 console.error('Error loading dashboard stats:', error);
                 showToast('Error loading dashboard statistics', 'error');
             }
+        }
+
+        function renderHomeTopModelsChart(topModels) {
+            const chartHost = document.getElementById('home-top10-chart');
+            if (!chartHost || typeof Plotly === 'undefined') {
+                return;
+            }
+
+            if (!Array.isArray(topModels) || topModels.length === 0) {
+                chartHost.innerHTML = '<div style="padding: 0.75rem; color: var(--text-light);">No ranking data available</div>';
+                return;
+            }
+
+            const sorted = [...topModels]
+                .sort((a, b) => Number(a.speed || 0) - Number(b.speed || 0))
+                .slice(-10);
+
+            const labels = sorted.map(entry => `${entry.model_name} (${entry.quantization})`);
+            const speeds = sorted.map(entry => Number(entry.speed || 0));
+
+            const trace = {
+                type: 'bar',
+                orientation: 'h',
+                x: speeds,
+                y: labels,
+                marker: {
+                    color: '#10b981'
+                },
+                hovertemplate: '%{y}<br>%{x:.2f} tok/s<extra></extra>'
+            };
+
+            const layout = {
+                title: {
+                    text: 'Top 10 Modelle nach Geschwindigkeit',
+                    font: { size: 14 }
+                },
+                margin: { l: 170, r: 15, t: 40, b: 40 },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                font: {
+                    color: document.body.classList.contains('dark-mode')
+                        ? '#f3f4f6'
+                        : '#1f2937',
+                    size: 11
+                },
+                xaxis: {
+                    title: 'tok/s',
+                    gridcolor: 'rgba(128,128,128,0.15)'
+                },
+                yaxis: {
+                    automargin: true
+                }
+            };
+
+            Plotly.newPlot(
+                'home-top10-chart',
+                [trace],
+                layout,
+                { responsive: true, displayModeBar: false }
+            );
+        }
+
+        function renderHomeQuantizationDonut(distribution) {
+            const chartHost = document.getElementById('home-quant-donut');
+            if (!chartHost || typeof Plotly === 'undefined') {
+                return;
+            }
+
+            const labels = Object.keys(distribution || {});
+            const values = labels.map(label => Number(distribution[label] || 0));
+
+            if (!labels.length) {
+                chartHost.innerHTML = '<div style="padding: 0.75rem; color: var(--text-light);">No quantization data available</div>';
+                return;
+            }
+
+            const trace = {
+                type: 'pie',
+                labels,
+                values,
+                hole: 0.58,
+                textinfo: 'label+percent',
+                hovertemplate: '%{label}<br>%{value} Runs<extra></extra>'
+            };
+
+            const layout = {
+                title: {
+                    text: 'Quantization-Verteilung',
+                    font: { size: 14 }
+                },
+                margin: { l: 10, r: 10, t: 40, b: 10 },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: {
+                    color: document.body.classList.contains('dark-mode')
+                        ? '#f3f4f6'
+                        : '#1f2937'
+                },
+                legend: {
+                    orientation: 'h',
+                    y: -0.1
+                }
+            };
+
+            Plotly.newPlot(
+                'home-quant-donut',
+                [trace],
+                layout,
+                { responsive: true, displayModeBar: false }
+            );
         }
 
         // Capability Badge Style (scoped via class)
@@ -4101,6 +4310,153 @@
             }
         }
 
+        function clearResultsCharts() {
+            const speedVramHost = document.getElementById(
+                'results-speed-vram-chart'
+            );
+            const heatmapHost = document.getElementById('results-heatmap-chart');
+
+            if (speedVramHost) {
+                speedVramHost.innerHTML =
+                    '<div style="padding: 0.75rem; color: var(--text-light);">' +
+                    'No data available</div>';
+            }
+            if (heatmapHost) {
+                heatmapHost.innerHTML =
+                    '<div style="padding: 0.75rem; color: var(--text-light);">' +
+                    'No data available</div>';
+            }
+        }
+
+        function renderResultsOverviewCharts(rows) {
+            if (typeof Plotly === 'undefined') {
+                return;
+            }
+            if (!Array.isArray(rows) || rows.length === 0) {
+                clearResultsCharts();
+                return;
+            }
+
+            const isDark = document.body.classList.contains('dark-mode');
+            const labelColor = isDark ? '#f3f4f6' : '#1f2937';
+            const gridColor = 'rgba(128,128,128,0.18)';
+
+            const scatterTrace = {
+                x: rows.map((row) => Number(row.vram_mb) || 0),
+                y: rows.map((row) => Number(row.avg_tokens_per_sec) || 0),
+                text: rows.map((row) => row.model_name || 'n/a'),
+                mode: 'markers',
+                type: 'scatter',
+                marker: {
+                    size: 10,
+                    color: rows.map((row) => row.quantization || 'unknown'),
+                    colorscale: 'Viridis',
+                    opacity: 0.85,
+                },
+                customdata: rows.map((row) => [
+                    row.model_name || 'n/a',
+                    row.quantization || 'n/a',
+                    Number(row.gpu_offload) || 0,
+                ]),
+                hovertemplate:
+                    '%{customdata[0]}<br>' +
+                    'Quant: %{customdata[1]}<br>' +
+                    'VRAM: %{x:.0f} MB<br>' +
+                    'Speed: %{y:.2f} tok/s<br>' +
+                    'GPU Offload: %{customdata[2]:.2f}<extra></extra>',
+            };
+
+            const scatterLayout = {
+                title: {
+                    text: 'Speed vs VRAM',
+                    font: { size: 14 },
+                },
+                margin: { l: 55, r: 20, t: 40, b: 45 },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                font: { color: labelColor },
+                xaxis: {
+                    title: 'VRAM (MB)',
+                    gridcolor: gridColor,
+                },
+                yaxis: {
+                    title: 'Tokens/s',
+                    gridcolor: gridColor,
+                },
+            };
+
+            Plotly.newPlot(
+                'results-speed-vram-chart',
+                [scatterTrace],
+                scatterLayout,
+                { responsive: true, displayModeBar: false }
+            );
+
+            const models = [...new Set(rows.map((row) => row.model_name || 'n/a'))];
+            const quants = [
+                ...new Set(rows.map((row) => row.quantization || 'unknown')),
+            ];
+
+            const grouped = {};
+            rows.forEach((row) => {
+                const model = row.model_name || 'n/a';
+                const quant = row.quantization || 'unknown';
+                const key = `${model}__${quant}`;
+                if (!grouped[key]) {
+                    grouped[key] = [];
+                }
+                grouped[key].push(Number(row.avg_tokens_per_sec) || 0);
+            });
+
+            const heatmapZ = models.map((model) => {
+                return quants.map((quant) => {
+                    const key = `${model}__${quant}`;
+                    const values = grouped[key] || [];
+                    if (!values.length) {
+                        return null;
+                    }
+                    const sum = values.reduce((acc, val) => acc + val, 0);
+                    return Number((sum / values.length).toFixed(2));
+                });
+            });
+
+            const heatmapTrace = {
+                z: heatmapZ,
+                x: quants,
+                y: models,
+                type: 'heatmap',
+                colorscale: 'Turbo',
+                hovertemplate:
+                    'Model: %{y}<br>Quant: %{x}<br>' +
+                    'Avg Speed: %{z} tok/s<extra></extra>',
+            };
+
+            const heatmapLayout = {
+                title: {
+                    text: 'Avg Speed by Model x Quantization',
+                    font: { size: 14 },
+                },
+                margin: { l: 130, r: 20, t: 40, b: 65 },
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                font: { color: labelColor },
+                xaxis: {
+                    title: 'Quantization',
+                },
+                yaxis: {
+                    title: 'Model',
+                    automargin: true,
+                },
+            };
+
+            Plotly.newPlot(
+                'results-heatmap-chart',
+                [heatmapTrace],
+                heatmapLayout,
+                { responsive: true, displayModeBar: false }
+            );
+        }
+
         function renderResults() {
             const tbody = document.getElementById('results-tbody');
             if (!tbody) {
@@ -4110,6 +4466,7 @@
 
             if (!Array.isArray(resultsData) || resultsData.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 2rem; opacity: 0.6;">No results in cache. Start a benchmark!</td></tr>';
+                clearResultsCharts();
                 return;
             }
 
@@ -4132,6 +4489,8 @@
                 return sortAscending ? aVal - bVal : bVal - aVal;
             });
 
+            renderResultsOverviewCharts(sorted);
+
             try {
                 const rowsHtml = sorted.map(row => {
                     const tok = Number(row.avg_tokens_per_sec) || 0;
@@ -4153,6 +4512,7 @@
                     <td style="padding: 0.75rem; text-align: right;">${(offload * 100).toFixed(0)}%</td>
                     <td style="padding: 0.75rem;">${gpu}</td>
                     <td style="padding: 0.75rem; text-align: center;">
+                        <button onclick="openComparisonForModel(${JSON.stringify(model)})" class="btn-primary" title="Open model history and trends" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; margin-right: 0.25rem;">Compare</button>
                         <button onclick="deleteResult('${key}')" class="btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">🗑️</button>
                     </td>
                 </tr>`;
@@ -4189,6 +4549,38 @@
                 sortAscending = false;
             }
             renderResults();
+        }
+
+        async function openComparisonForModel(modelName) {
+            if (!modelName) {
+                return;
+            }
+
+            showView('comparison');
+
+            try {
+                await loadComparisonData();
+                const select = document.getElementById('comparison-model-select');
+                if (!select) {
+                    return;
+                }
+
+                const hasOption = Array.from(select.options).some(
+                    (entry) => entry.value === modelName
+                );
+                if (!hasOption) {
+                    const option = document.createElement('option');
+                    option.value = modelName;
+                    option.textContent = modelName;
+                    select.appendChild(option);
+                }
+
+                select.value = modelName;
+                await loadModelHistory(modelName);
+            } catch (error) {
+                console.error('Error opening comparison view:', error);
+                showToast('Could not open comparison for model', 'error');
+            }
         }
 
         async function deleteResult(modelKey) {

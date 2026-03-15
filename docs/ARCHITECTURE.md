@@ -693,6 +693,46 @@ response = client.chat(
 
 ---
 
+### 6. web/app.py + dashboard.html.jinja (Dashboard Analytics)
+
+**Responsibilities:**
+
+- Aggregate benchmark history for fast visual summaries
+- Serve chart-ready payloads via `/api/dashboard/stats`
+- Render Home/Results overview charts in the browser with Plotly
+- Support quick navigation from ranking tables to model comparison
+
+**Home View (Executive Summary):**
+
+- KPI cards: cached models, avg speed, median (P50), P95, architectures,
+  quantizations
+- Top 10 bar chart (speed ranking)
+- Quantization donut chart (distribution)
+
+**Results View (Exploration):**
+
+- Scatter: `Speed vs VRAM`
+- Heatmap: `Model x Quantization -> avg tokens/s`
+- Shared data source with table (`/api/results`), so table and charts stay
+  consistent
+
+**Quick Compare Flow:**
+
+- Compare actions in Home and Results tables call
+  `openComparisonForModel(modelName)`
+- Function opens Comparison view, selects the model, then loads full
+  historical trends via `/api/comparison/{model_name}`
+
+**Dashboard Summary Fields (`/api/dashboard/stats`):**
+
+- `speed_summary` (`min`, `p50`, `avg`, `p95`, `max`)
+- `top_models_extended` (Top 10 models)
+- `quantization_distribution`
+- `architecture_distribution`
+- `efficiency_top`
+
+---
+
 ## Data Flow Summary
 
 ```mermaid
@@ -772,7 +812,7 @@ graph TB
 ### Test Coverage by Component
 
 | Component | Test Module | Test Count | Coverage |
-|-----------|-------------|------------|----------|
+| --------- | ----------- | ---------- | -------- |
 | Benchmark Engine | `test_benchmark.py` | 55+ | High |
 | Web Dashboard | `test_app.py` | 23+ | Medium |
 | API Endpoints | `test_api_endpoints.py` | 32+ | High |
@@ -788,18 +828,21 @@ graph TB
 ### Testing Approach
 
 **Unit Testing:**
+
 - Mock external dependencies (LM Studio API, system commands, file I/O)
 - Isolated test cases that can run in any order
 - Fast execution (no real API calls or file system operations)
 - Use pytest fixtures for common setup and teardown
 
 **Test Fixtures (`conftest.py`):**
+
 - Mock LM Studio client and server responses
 - Temporary directories for file operations
 - Mock system commands (nvidia-smi, rocm-smi, etc.)
 - Sample configuration and model data
 
 **Continuous Integration:**
+
 - GitHub Actions runs full test suite on every PR
 - Code quality checks (flake8, pylint)
 - Security scans (Bandit, CodeQL, Snyk)
