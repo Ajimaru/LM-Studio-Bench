@@ -12,7 +12,7 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     env:
-      APPIMAGE_NAME: LM-Studio-Bench-${{ github.ref_name }}-x86_64.AppImage
+      APPIMAGE_NAME: ""
 
     steps:
       - name: Checkout repository
@@ -30,6 +30,28 @@ jobs:
             echo "Expected format: vX.Y.Z or vX.Y.Z-{alpha|beta|rc|dev|test}"
             exit 1
           fi
+
+      - name: Validate VERSION matches tag and set APPIMAGE_NAME
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f VERSION ]]; then
+            echo "VERSION file not found in repository root"
+            exit 1
+          fi
+          VERSION_FILE="$(cat VERSION)"
+          VERSION_FILE="${VERSION_FILE##v}"
+          TAG_STRIPPED="${TAG_NAME##v}"
+          if [[ "$VERSION_FILE" != "$TAG_STRIPPED" ]]; then
+            echo "Tag ($TAG_NAME) does not match VERSION file ($VERSION_FILE)"
+            exit 1
+          fi
+          APPIMAGE_NAME="LM-Studio-Bench-${VERSION_FILE}-x86_64.AppImage"
+          {
+            echo "VERSION=$VERSION_FILE"
+            echo "APPIMAGE_NAME=$APPIMAGE_NAME"
+          } >> "$GITHUB_ENV"
 
       - name: Ensure build scripts are executable
         run: |
