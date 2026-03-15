@@ -99,7 +99,7 @@ When the AppImage is executed, the bundled `lmstudio-bench` shell script runs
 ```mermaid
 flowchart TD
     AppImg([LM-Studio-Bench.AppImage args]) --> CheckArgs{Real args<br/>besides --debug/-d?}
-    CheckArgs -->|No args| TrayOnly[exec tray.py --url localhost:1234<br/>stays in system tray]
+    CheckArgs -->|No args| TrayOnly[exec tray.py --url http://localhost:1234<br/>stays in system tray]
     CheckArgs -->|Any other arg| RunPy[delegate to run.py + args]
 
     style AppImg fill:#d0e8ff
