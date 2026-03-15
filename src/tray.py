@@ -10,6 +10,9 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
+import socket
+import subprocess
 import sys
 import threading
 import time
@@ -20,6 +23,60 @@ from urllib import request as urllib_request
 import webbrowser
 
 from user_paths import USER_LOGS_DIR
+from version_checker import fetch_latest_release
+
+_LATEST_RELEASE_LOCK = threading.Lock()
+_LATEST_RELEASE_STATE: dict[str, Any] = {
+    "data": None,
+    "fetch_started": False,
+}
+
+
+def _fetch_latest_release_background() -> None:
+    """Fetch latest release info in a background thread and cache result."""
+    try:
+        release_data = fetch_latest_release()
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        urllib_error.URLError,
+        json.JSONDecodeError,
+    ) as exc:
+        logging.getLogger(__name__).debug(
+            "Background fetch_latest_release failed: %s", exc
+        )
+        return
+
+    with _LATEST_RELEASE_LOCK:
+        _LATEST_RELEASE_STATE["data"] = release_data
+
+
+def _ensure_latest_release_fetch_started() -> None:
+    """Start background fetch thread once, if not already running."""
+    with _LATEST_RELEASE_LOCK:
+        if bool(_LATEST_RELEASE_STATE["fetch_started"]):
+            return
+        _LATEST_RELEASE_STATE["fetch_started"] = True
+
+    thread = threading.Thread(
+        target=_fetch_latest_release_background,
+        name="latest-release-fetch",
+        daemon=True,
+    )
+    thread.start()
+
+
+def get_cached_latest_release() -> Optional[dict[str, Any]]:
+    """Return cached latest release data, starting background fetch if needed.
+
+    The first call triggers a non-blocking background fetch and returns the
+    current cache value (which may be None). Subsequent calls will return the
+    fetched data once available.
+    """
+    _ensure_latest_release_fetch_started()
+    with _LATEST_RELEASE_LOCK:
+        return cast(Optional[dict[str, Any]], _LATEST_RELEASE_STATE["data"])
 
 
 def _prepend_env_paths(var_name: str, paths: list[str]) -> None:
@@ -105,6 +162,7 @@ else:
 
 LOGGER = logging.getLogger("tray")
 _TRAY_STATE: dict[str, Optional[threading.Thread]] = {"thread": None}
+_WEBAPP_URL_RE = re.compile(r"Dashboard available at (http://localhost:\d+)")
 
 
 def _normalize_dashboard_url(dashboard_url: str) -> str:
@@ -185,6 +243,72 @@ class TrayApp:
         self.force_update_check: bool = False
         self.pending_update: Optional[dict] = None
 
+    def _build_webapp_env(self) -> dict[str, str]:
+        """Build environment for launching the webapp subprocess."""
+        env = os.environ.copy()
+        project_root = Path(__file__).resolve().parent.parent
+        src_dir = project_root / "src"
+        entries = [str(project_root), str(src_dir)]
+        existing = env.get("PYTHONPATH", "")
+        if existing:
+            entries.append(existing)
+        env["PYTHONPATH"] = ":".join(entries)
+        return env
+
+    def _find_free_local_port(self) -> int:
+        """Find a free localhost TCP port."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return int(sock.getsockname()[1])
+
+    def _start_webapp_for_open(self) -> Optional[str]:
+        """Start webapp in background and return reachable dashboard URL."""
+        project_root = Path(__file__).resolve().parent.parent
+        app_script = project_root / "web" / "app.py"
+        if not app_script.exists():
+            LOGGER.error("Webapp script not found: %s", app_script)
+            return None
+
+        port = self._find_free_local_port()
+        dashboard_url = f"http://localhost:{port}"
+        cmd = [
+            sys.executable,
+            str(app_script),
+            "--port",
+            str(port),
+            "--no-browser",
+        ]
+        if self.debug:
+            cmd.append("--debug")
+
+        LOGGER.info("Starting webapp for tray open: %s", dashboard_url)
+        try:
+            subprocess.Popen(  # nosec B603
+                cmd,
+                cwd=project_root,
+                env=self._build_webapp_env(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as exc:
+            LOGGER.error("Failed to start webapp subprocess: %s", exc)
+            return None
+
+        for _ in range(20):
+            if self._is_dashboard_url_reachable(dashboard_url):
+                self._set_dashboard_url(dashboard_url)
+                return dashboard_url
+
+            discovered_url = self._discover_dashboard_url_from_logs()
+            if discovered_url and self._is_dashboard_url_reachable(discovered_url):
+                self._set_dashboard_url(discovered_url)
+                return discovered_url
+
+            time.sleep(0.25)
+
+        LOGGER.warning("Started webapp but URL did not become reachable in time")
+        return None
+
     def _build_api_url(self, endpoint: str) -> Optional[str]:
         """Build and validate API URL for endpoint.
 
@@ -213,6 +337,122 @@ class TrayApp:
             return None
 
         return url
+
+    def _set_dashboard_url(self, dashboard_url: str) -> None:
+        """Update dashboard URL and derived API base fields."""
+        normalized = _normalize_dashboard_url(dashboard_url)
+        parsed = urlparse(normalized)
+        self.dashboard_url = normalized
+        self.api_base = f"{parsed.scheme}://{parsed.netloc}"
+        self._api_scheme = parsed.scheme
+        self._api_netloc = parsed.netloc
+
+    def _extract_dashboard_url_from_log(
+        self,
+        log_path: Path,
+    ) -> Optional[str]:
+        """Extract last dashboard URL from a webapp log file."""
+        try:
+            content = log_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+        matches = _WEBAPP_URL_RE.findall(content)
+        if not matches:
+            return None
+
+        candidate = matches[-1].strip()
+        try:
+            return _normalize_dashboard_url(candidate)
+        except ValueError:
+            return None
+
+    def _discover_dashboard_url_from_logs(self) -> Optional[str]:
+        """Find the latest dashboard URL from recent webapp logs."""
+        latest_link = USER_LOGS_DIR / "webapp_latest.log"
+        candidates: list[Path] = []
+
+        if latest_link.exists():
+            candidates.append(latest_link)
+
+        try:
+            recent_logs = sorted(
+                USER_LOGS_DIR.glob("webapp_*.log"),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+        except OSError:
+            recent_logs = []
+
+        candidates.extend(recent_logs[:5])
+
+        seen: set[Path] = set()
+        for candidate_path in candidates:
+            resolved_path = candidate_path.resolve()
+            if resolved_path in seen:
+                continue
+            seen.add(resolved_path)
+
+            dashboard_url = self._extract_dashboard_url_from_log(resolved_path)
+            if dashboard_url:
+                return dashboard_url
+        return None
+
+    def _resolve_dashboard_url_for_open(self) -> str:
+        """Resolve dashboard URL for browser action.
+
+        Log discovery runs first because the webapp port is dynamic.
+        The configured default (port 1234) may belong to LM Studio's
+        own API, not the dashboard, so we cannot rely on an API probe
+        to distinguish them.  Only fall back to the configured URL
+        when no log entry is found.
+        """
+        discovered_url = self._discover_dashboard_url_from_logs()
+        if discovered_url:
+            if self._is_dashboard_url_reachable(discovered_url):
+                if discovered_url != self.dashboard_url:
+                    LOGGER.info(
+                        "Dashboard URL updated from logs: %s -> %s",
+                        self.dashboard_url,
+                        discovered_url,
+                    )
+                    self._set_dashboard_url(discovered_url)
+                return self.dashboard_url
+
+            LOGGER.warning(
+                "Ignoring unreachable dashboard URL from logs: %s",
+                discovered_url,
+            )
+
+        if self._is_dashboard_url_reachable(self.dashboard_url):
+            return self.dashboard_url
+
+        LOGGER.warning(
+            "Dashboard unreachable at %s and no log entry found",
+            self.dashboard_url,
+        )
+        return self.dashboard_url
+
+    def _is_dashboard_url_reachable(self, dashboard_url: str) -> bool:
+        """Return whether dashboard /api/status is reachable at URL."""
+        parsed = urlparse(dashboard_url)
+        url = f"{parsed.scheme}://{parsed.netloc}/api/status"
+
+        try:
+            req = urllib_request.Request(url=url, method="GET")
+            with urllib_request.urlopen(req, timeout=1.5) as response:  # nosec B310
+                response_body = response.read().decode("utf-8")
+            data = json.loads(response_body) if response_body else {}
+            required_keys = {"status", "running", "connected_clients"}
+            return isinstance(data, dict) and required_keys.issubset(data.keys())
+        except (
+            urllib_error.URLError,
+            ValueError,
+            json.JSONDecodeError,
+            TimeoutError,
+            OSError,
+        ):
+            return False
 
     def _call_api(
         self,
@@ -535,7 +775,11 @@ class TrayApp:
                 self.force_update_check = False
                 update_available = self._check_for_updates()
                 if update_available and self.pending_update:
-                    self._show_update_notification()
+                    latest = self.pending_update.get("latest", "?")
+                    LOGGER.info(
+                        "Update available: %s (use 'Check for Updates')",
+                        latest,
+                    )
         except (RuntimeError, OSError, AttributeError):
             LOGGER.exception("Error during status polling")
         return True
@@ -558,8 +802,21 @@ class TrayApp:
 
     def _on_open_webapp(self, _item: Any) -> None:
         """Open dashboard URL in default browser."""
-        LOGGER.info("Opening webapp: %s", self.dashboard_url)
-        webbrowser.open(self.dashboard_url)
+        dashboard_url = self._resolve_dashboard_url_for_open()
+
+        if not self._is_dashboard_url_reachable(dashboard_url):
+            LOGGER.info("Webapp offline at %s, trying to start it", dashboard_url)
+            started_url = self._start_webapp_for_open()
+            if not started_url:
+                self._show_info_dialog(
+                    "Webapp Start Failed",
+                    "Could not start the dashboard automatically.",
+                )
+                return
+            dashboard_url = started_url
+
+        LOGGER.info("Opening webapp: %s", dashboard_url)
+        webbrowser.open(dashboard_url)
 
     def _on_check_updates_clicked(self, _item: Any) -> None:
         """Handle "Check for Updates" menu item click.
@@ -617,7 +874,7 @@ class TrayApp:
         - GitHub version invalid/unavailable -> unknown
         - local == GitHub -> no update
         - local > GitHub -> Ahead of release
-        - GitHub > local -> update avaiable
+        - GitHub > local -> update available
 
         Args:
             local_version: Local VERSION file value.
@@ -629,17 +886,17 @@ class TrayApp:
         if local_tuple is None:
             return "dev"
 
-        update_data = self._call_api("/api/system/latest-release")
-        if not update_data or not update_data.get("success"):
+        release_data = get_cached_latest_release()
+        if not release_data:
             return "unknown"
 
-        github_version = str(update_data.get("latest_version", "")).strip()
+        github_version = str(release_data.get("tag_name", "")).strip()
         github_tuple = self._parse_version_tuple(github_version)
         if github_tuple is None:
             return "unknown"
 
         if github_tuple > local_tuple:
-            return "update avaiable"
+            return "update available"
         if local_tuple > github_tuple:
             return "Ahead of release"
         return "no update"
@@ -869,7 +1126,10 @@ class TrayApp:
         LOGGER.info("Benchmark Tray exiting")
         if self.status_icon is not None:
             self.status_icon.set_visible(False)
-        GTK.main_quit()
+        if GTK is not None:
+            levels = GTK.main_level()
+            for _ in range(max(levels, 1)):
+                GTK.main_quit()
 
     def _build_menu(self) -> Any:
         """Build tray menu with benchmark actions."""

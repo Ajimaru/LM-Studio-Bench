@@ -284,23 +284,23 @@ class TestTrayAppGetAboutVersionStatus:
         assert app._get_about_version_status("dev-branch") == "dev"
 
     def test_returns_unknown_when_api_fails(self, tmp_path: Path):
-        """Returns 'unknown' when API call fails."""
+        """Returns 'unknown' when GitHub release fetch fails."""
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        app._call_api = MagicMock(return_value=None)
-        assert app._get_about_version_status("v1.0.0") == "unknown"
+        with patch("tray.get_cached_latest_release", return_value=None):
+            assert app._get_about_version_status("v1.0.0") == "unknown"
 
     def test_returns_update_available(self, tmp_path: Path):
         """Returns update message when newer version exists."""
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        app._call_api = MagicMock(return_value={
-            "success": True,
-            "latest_version": "v2.0.0",
-        })
-        result = app._get_about_version_status("v1.0.0")
+        with patch(
+            "tray.get_cached_latest_release",
+            return_value={"tag_name": "v2.0.0"},
+        ):
+            result = app._get_about_version_status("v1.0.0")
         assert "update" in result.lower() or "avai" in result.lower()
 
     def test_returns_no_update_when_current(self, tmp_path: Path):
@@ -308,22 +308,22 @@ class TestTrayAppGetAboutVersionStatus:
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        app._call_api = MagicMock(return_value={
-            "success": True,
-            "latest_version": "v1.0.0",
-        })
-        assert app._get_about_version_status("v1.0.0") == "no update"
+        with patch(
+            "tray.get_cached_latest_release",
+            return_value={"tag_name": "v1.0.0"},
+        ):
+            assert app._get_about_version_status("v1.0.0") == "no update"
 
     def test_returns_ahead_when_newer_than_release(self, tmp_path: Path):
         """Returns 'Ahead of release' when local version is newer."""
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        app._call_api = MagicMock(return_value={
-            "success": True,
-            "latest_version": "v1.0.0",
-        })
-        assert app._get_about_version_status("v2.0.0") == "Ahead of release"
+        with patch(
+            "tray.get_cached_latest_release",
+            return_value={"tag_name": "v1.0.0"},
+        ):
+            assert app._get_about_version_status("v2.0.0") == "Ahead of release"
 
 
 class TestTrayAppOnPollingTick:
@@ -415,9 +415,146 @@ class TestTrayAppOnStartPauseStop:
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
+        app._resolve_dashboard_url_for_open = MagicMock(
+            return_value="http://localhost:8080"
+        )
+        app._is_dashboard_url_reachable = MagicMock(return_value=True)
         with patch("tray.webbrowser.open") as mock_open:
             app._on_open_webapp(MagicMock())
         mock_open.assert_called_once_with("http://localhost:8080")
+
+    def test_on_open_webapp_starts_webapp_when_unreachable(
+        self,
+        tmp_path: Path,
+    ):
+        """_on_open_webapp starts webapp and opens started URL."""
+        tray, _, _ = _import_tray()
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+        app._resolve_dashboard_url_for_open = MagicMock(
+            return_value="http://localhost:1234"
+        )
+        app._is_dashboard_url_reachable = MagicMock(return_value=False)
+        app._start_webapp_for_open = MagicMock(
+            return_value="http://localhost:56789"
+        )
+        app._show_info_dialog = MagicMock()
+
+        with patch("tray.webbrowser.open") as mock_open:
+            app._on_open_webapp(MagicMock())
+
+        mock_open.assert_called_once_with("http://localhost:56789")
+        app._show_info_dialog.assert_not_called()
+
+    def test_on_open_webapp_shows_error_when_auto_start_fails(
+        self,
+        tmp_path: Path,
+    ):
+        """_on_open_webapp shows error dialog when auto-start fails."""
+        tray, _, _ = _import_tray()
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+        app._resolve_dashboard_url_for_open = MagicMock(
+            return_value="http://localhost:1234"
+        )
+        app._is_dashboard_url_reachable = MagicMock(return_value=False)
+        app._start_webapp_for_open = MagicMock(return_value=None)
+        app._show_info_dialog = MagicMock()
+
+        with patch("tray.webbrowser.open") as mock_open:
+            app._on_open_webapp(MagicMock())
+
+        mock_open.assert_not_called()
+        app._show_info_dialog.assert_called_once()
+
+    def test_resolve_dashboard_url_recovers_from_webapp_log(
+        self,
+        tmp_path: Path,
+    ):
+        """Fallback resolves latest dashboard URL from webapp logs."""
+        tray, _, _ = _import_tray()
+        log_file = tmp_path / "webapp_20260315_123456.log"
+        log_file.write_text(
+            "INFO Dashboard available at http://localhost:46617\n",
+            encoding="utf-8",
+        )
+
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:1234")
+            app._call_api = MagicMock(return_value=None)
+            app._is_dashboard_url_reachable = MagicMock(return_value=True)
+            resolved = app._resolve_dashboard_url_for_open()
+
+        assert resolved == "http://localhost:46617"
+        assert app.dashboard_url == "http://localhost:46617"
+
+    def test_resolve_dashboard_url_keeps_default_when_no_log_match(
+        self,
+        tmp_path: Path,
+    ):
+        """Fallback keeps configured URL when no log URL can be found."""
+        tray, _, _ = _import_tray()
+        log_file = tmp_path / "webapp_20260315_123456.log"
+        log_file.write_text("INFO no dashboard url here\n", encoding="utf-8")
+
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:1234")
+            app._is_dashboard_url_reachable = MagicMock(return_value=False)
+            resolved = app._resolve_dashboard_url_for_open()
+
+        assert resolved == "http://localhost:1234"
+
+    def test_resolve_dashboard_url_prefers_log_over_api_response(
+        self,
+        tmp_path: Path,
+    ):
+        """Log discovery wins even when the configured URL's API responds.
+
+        Regression test: port 1234 is LM Studio's own API port.  When
+        LM Studio is running, _call_api("/api/status") would have
+        returned a non-None response, causing the tray to open the wrong
+        URL.  Log discovery must run first so the actual webapp port is
+        used.
+        """
+        tray, _, _ = _import_tray()
+        log_file = tmp_path / "webapp_20260315_120000.log"
+        log_file.write_text(
+            "INFO 🚀 Dashboard available at http://localhost:56789\n",
+            encoding="utf-8",
+        )
+
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:1234")
+            app._call_api = MagicMock(
+                return_value={"status": "ok"}
+            )
+            app._is_dashboard_url_reachable = MagicMock(return_value=True)
+            resolved = app._resolve_dashboard_url_for_open()
+
+        assert resolved == "http://localhost:56789"
+        assert app.dashboard_url == "http://localhost:56789"
+        app._call_api.assert_not_called()
+
+    def test_resolve_dashboard_url_ignores_unreachable_log_url(
+        self,
+        tmp_path: Path,
+    ):
+        """Stale log URL is ignored when no webapp is currently reachable."""
+        tray, _, _ = _import_tray()
+        log_file = tmp_path / "webapp_20260315_182849.log"
+        log_file.write_text(
+            "INFO Dashboard available at http://localhost:46617\n",
+            encoding="utf-8",
+        )
+
+        with patch("tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:1234")
+            app._is_dashboard_url_reachable = MagicMock(return_value=False)
+            app._call_api = MagicMock(return_value=None)
+            resolved = app._resolve_dashboard_url_for_open()
+
+        assert resolved == "http://localhost:1234"
+        assert app.dashboard_url == "http://localhost:1234"
 
     def test_on_status_calls_api(self, tmp_path: Path):
         """_on_status calls the status API."""

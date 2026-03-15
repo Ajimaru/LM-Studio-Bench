@@ -13,7 +13,9 @@
   - [Table of Contents](#table-of-contents)
   - [System Architecture Overview](#system-architecture-overview)
   - [Startup Flow](#startup-flow)
-  - [Setup Flow (Installation & Configuration)](#setup-flow-installation--configuration)
+    - [AppImage Entry Point](#appimage-entry-point)
+    - [run.py Flow](#runpy-flow)
+  - [Setup Flow (Installation \& Configuration)](#setup-flow-installation--configuration)
   - [Tray Control Flow (Linux)](#tray-control-flow-linux)
   - [Tray Quit Sequence (Linux)](#tray-quit-sequence-linux)
   - [Configuration Loading](#configuration-loading)
@@ -26,8 +28,12 @@
     - [3. benchmark.py (Main Engine)](#3-benchmarkpy-main-engine)
     - [4. rest\_client.py (REST API Client)](#4-rest_clientpy-rest-api-client)
     - [5. tray.py (Linux Tray Controller)](#5-traypy-linux-tray-controller)
+    - [6. web/app.py + dashboard.html.jinja (Dashboard Analytics)](#6-webapppy--dashboardhtmljinja-dashboard-analytics)
   - [Data Flow Summary](#data-flow-summary)
   - [Testing Architecture](#testing-architecture)
+    - [Test Organization](#test-organization)
+    - [Test Coverage by Component](#test-coverage-by-component)
+    - [Testing Approach](#testing-approach)
   - [See Also](#see-also)
 
 ---
@@ -85,6 +91,27 @@ graph TB
 
 ## Startup Flow
 
+### AppImage Entry Point
+
+When the AppImage is executed, the bundled `lmstudio-bench` shell script runs
+**before** `run.py` and splits on whether real arguments are present:
+
+```mermaid
+flowchart TD
+    AppImg([LM-Studio-Bench.AppImage args]) --> CheckArgs{Real args<br/>besides --debug/-d?}
+    CheckArgs -->|No args| TrayOnly[exec tray.py --url http://localhost:1234<br/>stays in system tray]
+    CheckArgs -->|Any other arg| RunPy[delegate to run.py + args]
+
+    style AppImg fill:#d0e8ff
+    style TrayOnly fill:#e1ffe1
+    style RunPy fill:#ffe1ff
+```
+
+> `--debug` / `-d` is exempt: `./AppImage --debug` still enters tray-only mode
+> with verbose logging.
+
+### run.py Flow
+
 ```mermaid
 flowchart TD
     Start([./run.py args]) --> CheckHelp{--help or -h?}
@@ -97,30 +124,37 @@ flowchart TD
     StartTrayWeb --> FindWebApp{web/app.py<br/>exists?}
     FindWebApp -->|Yes| StartWeb[subprocess.call<br/>python web/app.py + args]
     FindWebApp -->|No| ErrorWeb[Error: app.py not found]
-    
+
     CheckWebFlag -->|No| StartTrayCLI[start tray.py<br/>with localhost:1234]
     StartTrayCLI --> FindBenchmark{src/benchmark.py<br/>exists?}
     FindBenchmark -->|Yes| StartBenchmark[subprocess.call<br/>python src/benchmark.py + args]
     FindBenchmark -->|No| ErrorBench[Error: benchmark.py not found]
-    
+
     ShowHelp --> Exit1([exit 0])
     StartWeb --> Exit2([exit with app.py status])
     StartBenchmark --> Exit3([exit with benchmark.py status])
     ErrorWeb --> Exit4([exit 1])
     ErrorBench --> Exit5([exit 1])
-    
+
     style Start fill:#e1f5ff
     style StartWeb fill:#ffe1ff
     style StartBenchmark fill:#ffe1e1
 ```
 
-**Decision Logic:**
+**Decision Logic (run.py):**
 
 1. **Help Mode** (`--help`/`-h`): Displays extended help combining run.py explanation + benchmark.py CLI options
 2. **Web Mode** (`--webapp`/`-w`): Launches tray + FastAPI dashboard on a free
    local port
 3. **Benchmark Mode** (default): Launches tray + benchmark.py with all CLI
    arguments
+
+**AppImage vs. run.py — default behaviour difference:**
+
+| Invocation | No-argument default |
+| --- | --- |
+| `./LM-Studio-Bench.AppImage` | Tray-only (stays in panel, no benchmark) |
+| `./run.py` | Tray + benchmark.py (runs full benchmark) |
 
 ---
 

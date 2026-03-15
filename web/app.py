@@ -4568,6 +4568,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable DEBUG logging for detailed output",
     )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Do not auto-open browser on startup",
+    )
     normalized_args = _expand_short_flag_clusters(
         sys.argv[1:],
         combinable={"d", "h"},
@@ -4616,8 +4621,11 @@ if __name__ == "__main__":
         except (OSError, webbrowser.Error) as e:
             logger.warning("⚠️ Could not open browser: %s", e)
 
-    browser_thread = threading.Thread(target=open_browser, daemon=True)
-    browser_thread.start()
+    if args.no_browser:
+        logger.info("🌐 Browser auto-open disabled (--no-browser)")
+    else:
+        browser_thread = threading.Thread(target=open_browser, daemon=True)
+        browser_thread.start()
 
     UVICORN_LOG_LEVEL = "debug" if args.debug else "info"
     uvicorn.run(app, host="0.0.0.0", port=port, log_level=UVICORN_LOG_LEVEL)
