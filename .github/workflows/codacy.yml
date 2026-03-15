@@ -34,7 +34,7 @@ jobs:
     steps:
       # Checkout the repository to the GitHub Actions runner
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Execute Codacy Analysis CLI and upload results directly to Codacy
       - name: Run Codacy Analysis CLI

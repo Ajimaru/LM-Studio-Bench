@@ -42,7 +42,7 @@ jobs:
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check SNYK_TOKEN configuration
         id: snyk_token
@@ -56,7 +56,7 @@ jobs:
 
       - name: Set up Python
         if: steps.snyk_token.outputs.configured == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10'
 
