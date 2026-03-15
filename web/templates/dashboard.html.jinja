@@ -1180,11 +1180,11 @@
           </div>
 
           <!-- Cache & Performance Stats -->
-          <div class="grid" style="grid-template-columns: 1fr; gap: 2rem;">
-            <!-- RIGHT COLUMN: HARDWARE & BENCHMARK -->
+          <div class="grid" style="grid-template-columns: 1fr; gap: 1rem;">
+            <!-- TOP ROW: HARDWARE & BENCHMARK -->
             <div class="card">
               <div style="display: grid;
-                          grid-template-columns: 1fr 1fr;
+                          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
                           gap: 2rem;
                           font-size: 0.9rem">
                 <!-- LEFT COLUMN: HARDWARE -->
@@ -1243,7 +1243,7 @@
                   </div>
                 </div>
 
-                <!-- RIGHT COLUMN: BENCHMARK (with additional details) -->
+                <!-- RIGHT COLUMN: BENCHMARK -->
                 <div>
                   <div style="color: #e74c3c;
                               font-weight: 600;
@@ -1287,7 +1287,7 @@
                     <div style="display: grid;
                                 grid-template-columns: repeat(2, minmax(120px, 1fr));
                                 gap: 0.5rem;
-                                margin-bottom: 0.75rem">
+                                margin-bottom: 0">
                       <div style="background: var(--bg);
                                   border: 1px solid var(--border);
                                   border-radius: 0.5rem;
@@ -1317,45 +1317,80 @@
                         <div id="home-quant-count" style="font-weight: 600; color: var(--text)">--</div>
                       </div>
                     </div>
-                    <div id="home-top10-chart"
-                         style="height: 240px;
-                                border: 1px solid var(--border);
-                                border-radius: 0.5rem;
-                                overflow: hidden"></div>
-                    <div id="home-quant-donut"
-                         style="height: 220px;
-                                margin-top: 0.75rem;
-                                border: 1px solid var(--border);
-                                border-radius: 0.5rem;
-                                overflow: hidden"></div>
-                  </div>
-                  <div style="margin-top: 1rem;
-                              padding-top: 1rem;
-                              border-top: 1px solid rgba(0,0,0,0.1);
-                              display: flex;
-                              flex-direction: column;
-                              gap: 0.75rem">
-                    <button onclick="showView('benchmark')"
-                            style="padding: 0.5rem;
-                                   background: var(--primary);
-                                   color: white;
-                                   border: none;
-                                   border-radius: 0.5rem;
-                                   cursor: pointer;
-                                   font-weight: 500;
-                                   transition: opacity 0.2s">⚡ Start Benchmark</button>
-                    <button onclick="showView('results')"
-                            style="padding: 0.5rem;
-                                   background: var(--success);
-                                   color: white;
-                                   border: none;
-                                   border-radius: 0.5rem;
-                                   cursor: pointer;
-                                   font-weight: 500;
-                                   transition: opacity 0.2s">📊 Results</button>
                   </div>
                 </div>
               </div>
+            </div>
+
+            <!-- SECOND ROW: EXECUTIVE SUMMARY -->
+            <div class="card">
+              <div style="color: var(--warning);
+                          font-weight: 600;
+                          margin-bottom: 0.75rem;
+                          padding-bottom: 0.5rem;
+                          border-bottom: 2px solid var(--warning)">📈 EXECUTIVE SUMMARY</div>
+              <div style="display: grid;
+                          grid-template-columns: minmax(420px, 2fr) minmax(260px, 1fr);
+                          gap: 1rem;
+                          align-items: stretch">
+                <div id="home-quant-donut"
+                     style="height: 360px;
+                            border: 1px solid var(--border);
+                            border-radius: 0.5rem;
+                            overflow: hidden"></div>
+                <div style="display: flex; flex-direction: column; gap: 0.75rem">
+                  <div style="background: var(--bg);
+                              border: 1px solid var(--border);
+                              border-radius: 0.5rem;
+                              padding: 0.75rem;
+                              color: var(--text-light)">
+                    <div style="font-size: 0.8rem;
+                                color: var(--text-light);
+                                margin-bottom: 0.4rem">Agenda</div>
+                    <ul style="margin: 0; padding-left: 1.1rem; line-height: 1.6">
+                      <li>
+                        P50: <span id="home-speed-p50-summary">--</span>
+                      </li>
+                      <li>
+                        P95: <span id="home-speed-p95-summary">--</span>
+                      </li>
+                      <li>
+                        Architectures: <span id="home-arch-count-summary">--</span>
+                      </li>
+                      <li>
+                        Quantizations: <span id="home-quant-count-summary">--</span>
+                      </li>
+                    </ul>
+                  </div>
+                  <button onclick="showView('benchmark')"
+                          style="padding: 0.6rem;
+                                 background: var(--primary);
+                                 color: white;
+                                 border: none;
+                                 border-radius: 0.5rem;
+                                 cursor: pointer;
+                                 font-weight: 500;
+                                 transition: opacity 0.2s">⚡ Start Benchmark</button>
+                  <button onclick="showView('results')"
+                          style="padding: 0.6rem;
+                                 background: var(--success);
+                                 color: white;
+                                 border: none;
+                                 border-radius: 0.5rem;
+                                 cursor: pointer;
+                                 font-weight: 500;
+                                 transition: opacity 0.2s">📊 Results</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- THIRD ROW: FULL-WIDTH OVERVIEW -->
+            <div class="card">
+              <div id="home-top10-chart"
+                   style="height: 280px;
+                          border: 1px solid var(--border);
+                          border-radius: 0.5rem;
+                          overflow: hidden"></div>
             </div>
           </div>
 
@@ -3749,12 +3784,22 @@
                 const p95El = document.getElementById('home-speed-p95');
                 const archCountEl = document.getElementById('home-arch-count');
                 const quantCountEl = document.getElementById('home-quant-count');
+                const p50SummaryEl = document.getElementById('home-speed-p50-summary');
+                const p95SummaryEl = document.getElementById('home-speed-p95-summary');
+                const archCountSummaryEl = document.getElementById('home-arch-count-summary');
+                const quantCountSummaryEl = document.getElementById('home-quant-count-summary');
 
                 if (p50El) {
                     p50El.textContent = speedSummary.p50 ? `${speedSummary.p50} tok/s` : '--';
                 }
                 if (p95El) {
                     p95El.textContent = speedSummary.p95 ? `${speedSummary.p95} tok/s` : '--';
+                }
+                if (p50SummaryEl) {
+                    p50SummaryEl.textContent = speedSummary.p50 ? `${speedSummary.p50} tok/s` : '--';
+                }
+                if (p95SummaryEl) {
+                    p95SummaryEl.textContent = speedSummary.p95 ? `${speedSummary.p95} tok/s` : '--';
                 }
 
                 const archDistribution = data.architecture_distribution || {};
@@ -3765,6 +3810,12 @@
                 }
                 if (quantCountEl) {
                     quantCountEl.textContent = Object.keys(quantDistribution).length || '--';
+                }
+                if (archCountSummaryEl) {
+                    archCountSummaryEl.textContent = Object.keys(archDistribution).length || '--';
+                }
+                if (quantCountSummaryEl) {
+                    quantCountSummaryEl.textContent = Object.keys(quantDistribution).length || '--';
                 }
 
                 renderHomeTopModelsChart(data.top_models_extended || data.top_models || []);
