@@ -2006,8 +2006,6 @@ class TestLatestResultsWithFiles:
             f1.write_text("[]")
             f2 = real_dir / "benchmark_results_20240101_120000.json"
             f2.write_text("[]")
-            # Set explicit mtimes to avoid filesystem timestamp resolution issues;
-            # values only need to be distinct integers (seconds since epoch).
             os.utime(f1, (1_000_000, 1_000_000))
             os.utime(f2, (2_000_000, 2_000_000))
             with patch.object(app_mod, "RESULTS_DIR", real_dir):
