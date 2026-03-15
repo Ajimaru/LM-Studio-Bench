@@ -40,7 +40,8 @@ venv.bak/
 htmlcov/
 .tox/
 .nox/
-.coverage*
+.coverage
+.coveragerc
 .coverage.*
 .cache
 nosetests.xml

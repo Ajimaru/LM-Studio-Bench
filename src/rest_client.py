@@ -7,6 +7,7 @@ and capability detection.
 """
 
 from dataclasses import dataclass
+import hashlib
 import json
 import logging
 import time
@@ -55,7 +56,7 @@ class ModelInfo:
     quantization: Optional[Quantization] = None
     size_bytes: int = 0
     params_string: Optional[str] = None
-    loaded_instances: List[LoadedInstance] = None
+    loaded_instances: Optional[List[LoadedInstance]] = None
     max_context_length: int = 0
     format: Optional[str] = None
     capabilities: Optional[ModelCapabilities] = None
@@ -121,8 +122,8 @@ class LMStudioRESTClient:
         try:
             response = self.client.get(f"{self.base_url}/", timeout=5.0)
             return response.status_code == 200
-        except Exception as e:
-            logger.debug("Health check failed: %s", e)
+        except httpx.HTTPError as exc:
+            logger.debug("Health check failed: %s", exc)
             return False
 
     def list_models(self) -> List[ModelInfo]:
@@ -219,6 +220,12 @@ class LMStudioRESTClient:
 
         if context_length is not None:
             payload["context_length"] = context_length
+
+        if n_parallel is not None:
+            payload["n_parallel"] = n_parallel
+
+        if unified_kv_cache is not None:
+            payload["unified_kv_cache"] = unified_kv_cache
 
         if gpu_offload is not None:
             payload["offload_kv_cache_to_gpu"] = bool(gpu_offload)
@@ -330,17 +337,17 @@ class LMStudioRESTClient:
                 if current_status == "completed":
                     logger.info("Download completed: %s", model_key)
                     return True
-                elif current_status == "failed":
+                if current_status == "failed":
                     logger.error("Download failed: %s", model_key)
                     return False
-                elif current_status == "already_downloaded":
+                if current_status == "already_downloaded":
                     logger.info("Model already downloaded: %s", model_key)
                     return True
 
                 time.sleep(2)
 
-            except Exception as e:
-                logger.warning("Error polling download status: %s", e)
+            except httpx.HTTPError as exc:
+                logger.warning("Error polling download status: %s", exc)
                 time.sleep(2)
 
     def download_status(self, model_key: str) -> Dict[str, Any]:
@@ -418,7 +425,7 @@ class LMStudioRESTClient:
             try:
                 input_text = "\n\n".join([m.get("content", "") for m in messages])
                 payload["input"] = input_text
-            except Exception:
+            except (TypeError, AttributeError):
                 payload["input"] = ""
 
         if use_stateful and self.last_response_id:
@@ -512,8 +519,9 @@ class LMStudioRESTClient:
             logger.debug("Cached response (cache size: %s)", len(_RESPONSE_CACHE))
 
         logger.info(
-            f"Chat complete: {result.get('stats', ChatStats()).tokens_out} "
-            f"tokens in {total_time:.2f}s"
+            "Chat complete: %s tokens in %.2fs",
+            result.get("stats", ChatStats()).tokens_out,
+            total_time,
         )
 
         return result
@@ -535,7 +543,6 @@ class LMStudioRESTClient:
         Returns:
             Cache key string
         """
-        import hashlib
 
         content = json.dumps(
             {"messages": messages, "model": model, "temp": temperature}, sort_keys=True

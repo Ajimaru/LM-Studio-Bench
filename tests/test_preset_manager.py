@@ -1,7 +1,6 @@
 """Tests for src/preset_manager.py."""
 import json
 from pathlib import Path
-from typing import Any, Dict
 
 import pytest
 
@@ -24,7 +23,7 @@ class TestPresetManagerInit:
     def test_creates_missing_presets_dir(self, tmp_path: Path):
         """Non-existent presets dir is created on init."""
         new_dir = tmp_path / "my_presets"
-        pm = PresetManager(presets_dir=new_dir)
+        PresetManager(presets_dir=new_dir)
         assert new_dir.exists()
 
 

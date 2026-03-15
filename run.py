@@ -18,18 +18,16 @@ from datetime import datetime
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
 
+from src.user_paths import USER_LOGS_DIR, format_path_for_logs
+
 project_root = Path(__file__).parent
 os.chdir(project_root)
-src_path = project_root / "src"
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
-
-from user_paths import USER_LOGS_DIR, format_path_for_logs
 
 
 def _resolve_python_executable() -> str:
@@ -49,16 +47,24 @@ PYTHON_EXECUTABLE = _resolve_python_executable()
 
 def _tray_python_candidates() -> list[str]:
     """Return Python candidates for tray startup."""
-    candidates = [
+    raw_candidates = [
         PYTHON_EXECUTABLE,
         sys.executable,
         "/usr/bin/python3",
         "python3",
     ]
     unique_candidates: list[str] = []
-    for candidate in candidates:
-        if candidate and candidate not in unique_candidates:
-            unique_candidates.append(candidate)
+    for candidate in raw_candidates:
+        if not candidate:
+            continue
+        resolved_candidate = candidate
+        candidate_path = Path(candidate)
+        if not candidate_path.is_absolute():
+            resolved_candidate = shutil.which(candidate) or ""
+        if not resolved_candidate:
+            continue
+        if resolved_candidate not in unique_candidates:
+            unique_candidates.append(resolved_candidate)
     return unique_candidates
 
 
@@ -93,11 +99,46 @@ def _build_subprocess_env() -> dict[str, str]:
     env.pop("LD_LIBRARY_PATH", None)
     env.pop("LD_PRELOAD", None)
     src_dir = str(project_root / "src")
+    root_dir = str(project_root)
+    pythonpath_entries = [root_dir, src_dir]
     existing_path = env.get("PYTHONPATH", "")
     if existing_path:
-        env["PYTHONPATH"] = f"{src_dir}:{existing_path}"
-    else:
-        env["PYTHONPATH"] = src_dir
+        pythonpath_entries.append(existing_path)
+    env["PYTHONPATH"] = ":".join(pythonpath_entries)
+
+    appdir_candidate = project_root.parents[2]
+    app_lib_dir = appdir_candidate / "usr" / "lib"
+    app_lib_arch_dir = app_lib_dir / "x86_64-linux-gnu"
+    app_gi_arch_dir = app_lib_arch_dir / "girepository-1.0"
+    app_gi_dir = app_lib_dir / "girepository-1.0"
+
+    is_appimage_runtime = (
+        app_lib_dir.is_dir()
+        or app_lib_arch_dir.is_dir()
+        or "/.mount_" in str(project_root)
+    )
+
+    if not is_appimage_runtime:
+        return env
+
+    gi_paths = [
+        str(path)
+        for path in (app_gi_arch_dir, app_gi_dir)
+        if path.is_dir()
+    ]
+    for system_gi in (
+        "/usr/lib/x86_64-linux-gnu/girepository-1.0",
+        "/usr/lib/girepository-1.0",
+        "/usr/lib64/girepository-1.0",
+    ):
+        if Path(system_gi).is_dir() and system_gi not in gi_paths:
+            gi_paths.append(system_gi)
+    if gi_paths:
+        existing_gi = env.get("GI_TYPELIB_PATH", "")
+        if existing_gi:
+            env["GI_TYPELIB_PATH"] = ":".join(gi_paths + [existing_gi])
+        else:
+            env["GI_TYPELIB_PATH"] = ":".join(gi_paths)
 
     return env
 
@@ -178,7 +219,7 @@ def _start_tray_process(
         try:
             with open(launcher_log, "a", encoding="utf-8") as log_handle:
                 log_handle.write(f"CMD: {' '.join(tray_cmd)}\n")
-                tray_proc = subprocess.Popen(
+                tray_proc = subprocess.Popen(  # nosec B603
                     tray_cmd,
                     cwd=project_root,
                     stdout=log_handle,
@@ -272,7 +313,7 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
 
     benchmark_script = project_root / "src" / "benchmark.py"
     if benchmark_script.exists():
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             [PYTHON_EXECUTABLE, str(benchmark_script), "--help"],
             capture_output=True,
             text=True,
@@ -289,12 +330,12 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
 
     sys.exit(0)
 
-has_web_flag = "--webapp" in CLI_ARGS or "-w" in CLI_ARGS
-debug_enabled = "--debug" in CLI_ARGS or "-d" in CLI_ARGS
+HAS_WEB_FLAG = "--webapp" in CLI_ARGS or "-w" in CLI_ARGS
+DEBUG_ENABLED = "--debug" in CLI_ARGS or "-d" in CLI_ARGS
 
 TRAY_PROCESS = None
 
-if has_web_flag:
+if HAS_WEB_FLAG:
     args = [arg for arg in CLI_ARGS if arg not in ("--webapp", "-w")]
     web_port = _extract_port(args)
     if web_port is None:
@@ -308,7 +349,7 @@ if has_web_flag:
         sys.exit(2)
 
     DASHBOARD_URL = f"http://localhost:{web_port}"
-    TRAY_PROCESS = _start_tray_process(DASHBOARD_URL, debug_enabled)
+    TRAY_PROCESS = _start_tray_process(DASHBOARD_URL, DEBUG_ENABLED)
 
     app_script = project_root / "web" / "app.py"
     if not app_script.exists():
@@ -328,7 +369,7 @@ if has_web_flag:
         _stop_tray_process(TRAY_PROCESS)
 else:
     benchmark_script = project_root / "src" / "benchmark.py"
-    TRAY_PROCESS = _start_tray_process("http://localhost:1234", debug_enabled)
+    TRAY_PROCESS = _start_tray_process("http://localhost:1234", DEBUG_ENABLED)
 
     if not benchmark_script.exists():
         print(f"❌ Error: {benchmark_script} not found")

@@ -2,7 +2,9 @@
 
 ## Overview
 
-The benchmark tool now supports LM Studio's native REST API v1 (`/api/v1/*`) in addition to the existing Python SDK/CLI mode. This enables advanced features such as stateful chats, parallel requests, and more precise metrics.
+The benchmark tool now supports LM Studio's native REST API v1 (`/api/v1/*`)
+in addition to the existing Python SDK/CLI mode. This enables advanced
+features such as stateful chats, parallel requests, and more precise metrics.
 
 ## New Features
 
@@ -97,6 +99,48 @@ Then simply:
 | Authentication | ❌ | ✅ (permission keys) |
 
 ## API Response Format
+
+### Dashboard summary API (`/api/dashboard/stats`)
+
+The web dashboard now exposes additional summary fields for quick visual
+analysis of benchmark history. The endpoint is consumed by the Home and
+Results views to render KPI cards and charts.
+
+New response fields:
+
+- `speed_summary`: `min`, `p50`, `avg`, `p95`, `max` tokens/s
+- `top_models_extended`: Top 10 models by speed (model, quantization,
+  speed, VRAM, architecture)
+- `quantization_distribution`: count per quantization
+- `architecture_distribution`: count per architecture
+- `efficiency_top`: top models ranked by `tokens_per_sec_per_gb`
+
+Example (excerpt):
+
+```json
+{
+  "speed_summary": {
+    "min": 22.44,
+    "p50": 48.17,
+    "avg": 51.26,
+    "p95": 86.11,
+    "max": 93.88
+  },
+  "top_models_extended": [
+    {
+      "model_name": "qwen/qwen3-4b@q4_k_m",
+      "quantization": "q4_k_m",
+      "speed": 93.88,
+      "vram_mb": "6144",
+      "architecture": "qwen3"
+    }
+  ],
+  "quantization_distribution": {
+    "q4_k_m": 22,
+    "q5_k_m": 13
+  }
+}
+```
 
 ### `/api/v1/chat` stats
 

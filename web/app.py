@@ -8,16 +8,21 @@ WebSocket.
 
 import argparse
 import asyncio
+import base64
+import binascii
 from contextlib import asynccontextmanager
 import csv
+from dataclasses import dataclass, field
 from datetime import datetime
+import glob
 import hashlib
-from io import StringIO
+from io import BytesIO, StringIO
 import json
 import logging
 import math
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import signal
@@ -29,21 +34,52 @@ from subprocess import TimeoutExpired
 import sys
 import threading
 import time
+import traceback
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import unquote
 import uuid
 import webbrowser
+import zipfile
 
+import cpuinfo
+import distro
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 from jinja2 import Environment, FileSystemLoader
+import psutil
 from pydantic import BaseModel
 
-from config_loader import DEFAULT_CONFIG
-from preset_manager import PresetManager
-from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+
+    REPORTLAB_PAGE_SIZE = A4
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    colors = None
+    REPORTLAB_PAGE_SIZE = None
+    landscape = None
+    getSampleStyleSheet = None
+    Paragraph = None
+    SimpleDocTemplate = None
+    Spacer = None
+    Table = None
+    TableStyle = None
+    REPORTLAB_AVAILABLE = False
+
+from src.config_loader import DEFAULT_CONFIG
+from src.preset_manager import PresetManager
+from src.user_paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
 
 try:
     from scipy import stats as scipy_stats
@@ -52,8 +88,6 @@ except ImportError:
 
 PROJECT_ROOT = Path(__file__).parent.parent
 SRC_DIR = PROJECT_ROOT / "src"
-sys.path.insert(0, str(SRC_DIR))
-
 
 SCIPY_AVAILABLE = scipy_stats is not None
 
@@ -61,6 +95,20 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+GENERIC_API_ERROR = "Internal server error"
+
+
+def _safe_api_error(
+    extras: Optional[Dict[str, Any]] = None,
+    message: str = GENERIC_API_ERROR,
+) -> Dict[str, Any]:
+    """Build a sanitized API error response without exposing internals."""
+    response: Dict[str, Any] = {"success": False, "error": message}
+    if extras:
+        response.update(extras)
+    return response
 
 
 # ============================================================================
@@ -83,10 +131,10 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
             capture_output=True,
             text=True,
             timeout=20,
+            check=False,
         )
         if result.returncode != 0:
             return []
-        import json
 
         data = json.loads(result.stdout)
         out_models: list[dict] = []
@@ -123,7 +171,13 @@ def _collect_lms_variants(base_model: str) -> list[dict]:
             )
             return out_models
         return out_models
-    except Exception:
+    except (
+        json.JSONDecodeError,
+        OSError,
+        subprocess.SubprocessError,
+        TypeError,
+        ValueError,
+    ):
         return []
 
 
@@ -192,10 +246,10 @@ def setup_webapp_logger():
 def find_free_port() -> int:
     """Finds a free port on the system"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
+        s.bind(("127.0.0.1", 0))
         s.listen(1)
-        port = s.getsockname()[1]
-    return port
+        free_port = s.getsockname()[1]
+    return free_port
 
 
 BENCHMARK_SCRIPT = SRC_DIR / "benchmark.py"
@@ -208,11 +262,10 @@ SCRAPER_SCRIPT = PROJECT_ROOT / "tools" / "scrape_metadata.py"
 
 sys.path.insert(0, str(SRC_DIR))
 try:
-    from benchmark import BenchmarkCache, BenchmarkResult
+    from benchmark import BenchmarkCache
 except ImportError as e:
     logger.error("❌ Could not import benchmark.py: %s", e)
     BenchmarkCache = None
-    BenchmarkResult = None
 
 try:
     from version_checker import (
@@ -231,10 +284,7 @@ except ImportError as e:
 CONFIG_DEFAULTS = DEFAULT_CONFIG
 LMSTUDIO_HOST = CONFIG_DEFAULTS.get("lmstudio", {}).get("host", "localhost")
 LMSTUDIO_PORTS = CONFIG_DEFAULTS.get("lmstudio", {}).get("ports", [1234, 1235])
-template_env = Environment(
-    loader=FileSystemLoader(TEMPLATES_DIR),
-    autoescape=True
-)
+template_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
 DEBUG_MODE = False
 
 LATEST_RELEASE_CACHE: Dict[str, Any] = {
@@ -263,30 +313,33 @@ def _get_cached_latest_release() -> Optional[dict]:
 
     logger.debug("Cache miss or expired, fetching from GitHub")
 
-    if not all(
-        [
-            get_current_version,
-            fetch_latest_release,
-            compare_versions,
-            format_release_url,
-        ]
+    current_version_fn = get_current_version
+    fetch_latest_release_fn = fetch_latest_release
+    compare_versions_fn = compare_versions
+    format_release_url_fn = format_release_url
+
+    if (
+        current_version_fn is None
+        or fetch_latest_release_fn is None
+        or compare_versions_fn is None
+        or format_release_url_fn is None
     ):
         logger.warning(
-            "Version checker functions not available, " "skipping update check"
+            "Version checker functions not available, skipping update check"
         )
         return None
 
     try:
-        current = get_current_version()
-        latest_data = fetch_latest_release()
+        current = current_version_fn()
+        latest_data = fetch_latest_release_fn()
 
         if latest_data is None:
             logger.warning("Failed to fetch latest release from GitHub")
             return None
 
-        latest_version = latest_data.get("tag_name", "unknown")
-        is_update = compare_versions(current, latest_version)
-        download_url = format_release_url(latest_version)
+        latest_version = str(latest_data.get("tag_name", "unknown"))
+        is_update = compare_versions_fn(current, latest_version)
+        download_url = format_release_url_fn(latest_version)
 
         result = {
             "current_version": current,
@@ -304,22 +357,32 @@ def _get_cached_latest_release() -> Optional[dict]:
             is_update,
         )
         return result
-    except Exception as exc:
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
         logger.error("Error in latest release check: %s", exc)
         return None
 
 
-class BenchmarkManager:
-    def __init__(self):
-        self.process: Optional[subprocess.Popen] = None
-        self.status = "idle"
-        self.start_time: Optional[datetime] = None
-        self.current_output = ""
-        self.connected_clients = set()
-        self.benchmark_log_file: Optional[Path] = None
-        self.output_queue: Optional[asyncio.Queue[str]] = None
-        self.output_task: Optional[asyncio.Task] = None
-        self.hardware_history = {
+@dataclass
+class _BenchmarkManagerState:
+    """Mutable runtime state for the benchmark process lifecycle."""
+
+    process: Optional[subprocess.Popen] = None
+    status: str = "idle"
+    start_time: Optional[datetime] = None
+    current_output: str = ""
+    connected_clients: set[WebSocket] = field(default_factory=set)
+    benchmark_log_file: Optional[Path] = None
+    output_queue: Optional[asyncio.Queue[str]] = None
+    output_task: Optional[asyncio.Task] = None
+    hardware_history: Dict[str, List[Dict[str, Union[str, float]]]] = field(
+        default_factory=lambda: {
             "temperatures": [],
             "power": [],
             "vram": [],
@@ -327,15 +390,45 @@ class BenchmarkManager:
             "cpu": [],
             "ram": [],
         }
-        self.last_hardware_send_time: float = 0
+    )
+    last_hardware_send_time: float = 0.0
+
+
+class BenchmarkManager:
+    """Manage benchmark execution, streaming output, and runtime telemetry."""
+
+    def __init__(self):
+        self._state = _BenchmarkManagerState()
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate state fields to the internal runtime state object."""
+        state = object.__getattribute__(self, "_state")
+        if hasattr(state, name):
+            return getattr(state, name)
+        raise AttributeError(f"{type(self).__name__!s} has no attribute {name!r}")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Route state field updates to the internal runtime state object."""
+        if name == "_state":
+            object.__setattr__(self, name, value)
+            return
+        if "_state" in self.__dict__ and hasattr(self._state, name):
+            setattr(self._state, name, value)
+            return
+        object.__setattr__(self, name, value)
 
     def is_running(self) -> bool:
+        """Return whether the benchmark process is currently active.
+
+        Returns:
+            True if a process exists and has not exited, otherwise False.
+        """
         return self.process is not None and self.process.poll() is None
 
     async def _consume_output(self):
         """Continuously reads stdout and puts new chunks into output_queue."""
-        if self.output_queue is None:
-            self.output_queue = asyncio.Queue()
+        if self._state.output_queue is None:
+            self._state.output_queue = asyncio.Queue()
 
         logger.info("🔄 Output consumer task started")
 
@@ -354,46 +447,52 @@ class BenchmarkManager:
                     if not line:
                         break
 
-                    if self.benchmark_log_file:
+                    if self._state.benchmark_log_file:
                         try:
                             with open(
-                                self.benchmark_log_file, "a", encoding="utf-8"
+                                self._state.benchmark_log_file, "a", encoding="utf-8"
                             ) as f:
                                 f.write(line)
-                        except Exception as log_error:
+                        except (OSError, UnicodeError, ValueError) as log_error:
                             logger.error("❌ Log write error: %s", log_error)
 
                     self.parse_hardware_metrics(line)
 
-                    await self.output_queue.put(line)
-                    self.current_output += line
+                    await self._state.output_queue.put(line)
+                    self._state.current_output += line
 
-                except Exception as read_error:
+                except (OSError, RuntimeError, ValueError) as read_error:
                     logger.error("❌ Read error: %s", read_error)
                     break
 
             if self.process is not None:
                 return_code = self.process.poll()
                 if return_code == 0:
-                    self.status = "completed"
+                    self._state.status = "completed"
                 else:
-                    self.status = "failed"
+                    self._state.status = "failed"
                     failure_msg = (
                         f"❌ Benchmark process exited with code {return_code}\n"
                     )
-                    await self.output_queue.put(failure_msg)
-                    self.current_output += failure_msg
+                    await self._state.output_queue.put(failure_msg)
+                    self._state.current_output += failure_msg
 
             logger.info("🔄 Output consumer task ended (EOF reached)")
 
-            if self.benchmark_log_file and self.benchmark_log_file.exists():
+            if (
+                self._state.benchmark_log_file
+                and self._state.benchmark_log_file.exists()
+            ):
                 logger.info(
                     "✅ Benchmark-Log: %s",
-                    format_path_for_logs(self.benchmark_log_file),
+                    format_path_for_logs(self._state.benchmark_log_file),
                 )
 
-        except Exception as e:
-            logger.error("❌ Error in output consumer: %s", e)
+        except asyncio.CancelledError:
+            logger.info("ℹ️ Output consumer task cancelled")
+            raise
+        except (OSError, RuntimeError, TypeError, ValueError) as consume_error:
+            logger.error("❌ Error in output consumer: %s", consume_error)
 
     def drain_output_queue(self) -> str:
         """Fetches all currently available output chunks without blocking."""
@@ -407,77 +506,219 @@ class BenchmarkManager:
             pass
         return "".join(chunks)
 
-    async def start_benchmark(self, args: list) -> bool:
-        """Starts a new benchmark process"""
+    def _validate_cli_arg_value(self, flag: str, value: str) -> str:
+        """Validate and sanitize benchmark CLI argument values."""
+        if any(char in value for char in ("\x00", "\n", "\r")):
+            raise ValueError(f"Invalid control characters in {flag}")
+        if len(value) > 2000:
+            raise ValueError(f"Value too long for {flag}")
+
+        int_flags = {
+            "--runs",
+            "--context",
+            "--limit",
+            "--min-context",
+            "--top-k",
+            "--max-tokens",
+            "--n-gpu-layers",
+            "--n-batch",
+            "--n-threads",
+        }
+        float_flags = {
+            "--max-size",
+            "--max-temp",
+            "--max-power",
+            "--temperature",
+            "--top-p",
+            "--min-p",
+            "--repeat-penalty",
+            "--rope-freq-base",
+            "--rope-freq-scale",
+        }
+
+        if flag in int_flags:
+            int(value)
+        elif flag in float_flags:
+            float(value)
+
+        return value
+
+    def _sanitize_benchmark_args(self, cli_args: list[str]) -> list[str]:
+        """Whitelist and sanitize CLI args before subprocess execution."""
+        flags_with_values = {
+            "--runs",
+            "--context",
+            "--limit",
+            "--prompt",
+            "--min-context",
+            "--max-size",
+            "--quants",
+            "--arch",
+            "--params",
+            "--rank-by",
+            "--include-models",
+            "--exclude-models",
+            "--max-temp",
+            "--max-power",
+            "--temperature",
+            "--top-k",
+            "--top-p",
+            "--min-p",
+            "--repeat-penalty",
+            "--max-tokens",
+            "--n-gpu-layers",
+            "--n-batch",
+            "--n-threads",
+            "--rope-freq-base",
+            "--rope-freq-scale",
+            "--kv-cache-quant",
+        }
+        flags_without_values = {
+            "--only-vision",
+            "--only-tools",
+            "--retest",
+            "--test",
+            "--dev-mode",
+            "--enable-profiling",
+            "--disable-gtt",
+            "--flash-attention",
+            "--no-flash-attention",
+            "--use-mmap",
+            "--no-mmap",
+            "--use-mlock",
+            "--debug",
+        }
+        allowed_flags = flags_with_values | flags_without_values
+
+        sanitized: list[str] = []
+        index = 0
+        while index < len(cli_args):
+            current = str(cli_args[index])
+
+            if current not in allowed_flags:
+                raise ValueError(f"Unsupported benchmark argument: {current}")
+
+            sanitized.append(current)
+
+            if current in flags_with_values:
+                if index + 1 >= len(cli_args):
+                    raise ValueError(f"Missing value for benchmark argument: {current}")
+                value = self._validate_cli_arg_value(
+                    current, str(cli_args[index + 1])
+                )
+                sanitized.append(value)
+                index += 2
+                continue
+
+            index += 1
+
+        return sanitized
+
+    @staticmethod
+    def _build_safe_command(sanitized_args: list[str]) -> list[str]:
+        """Build a fully-validated command list for subprocess execution.
+
+        Verifies that the Python interpreter and benchmark script are absolute
+        paths, and that no shell metacharacters remain in any argument.
+
+        Args:
+            sanitized_args: Pre-sanitized benchmark CLI arguments.
+
+        Returns:
+            A safe command list safe to pass to subprocess.Popen.
+
+        Raises:
+            ValueError: If any component contains shell-unsafe characters.
+        """
+        shell_unsafe_pattern = re.compile(r"[;&|`$<>\\!]")
+
+        interpreter = str(sys.executable)
+        script = str(BENCHMARK_SCRIPT.resolve())
+
+        for component in [interpreter, script] + sanitized_args:
+            if shell_unsafe_pattern.search(component):
+                raise ValueError(
+                    f"Shell-unsafe characters detected in argument: "
+                    f"{component!r}"
+                )
+
+        return [interpreter, script] + [str(a) for a in sanitized_args]
+
+    async def start_benchmark(self, cli_args: list[str]) -> bool:
+        """Starts a new benchmark process."""
         if self.is_running():
             logger.warning("Benchmark is already running")
             return False
-        if self.output_queue is None:
-            self.output_queue = asyncio.Queue()
+        if self._state.output_queue is None:
+            self._state.output_queue = asyncio.Queue()
         try:
-            self.output_queue = asyncio.Queue()
-            if self.output_task and not self.output_task.done():
-                self.output_task.cancel()
+            sanitized_args = self._sanitize_benchmark_args(cli_args)
+            self._state.output_queue = asyncio.Queue()
+            if self._state.output_task and not self._state.output_task.done():
+                self._state.output_task.cancel()
 
-            self.process = subprocess.Popen(
-                [sys.executable, str(BENCHMARK_SCRIPT)] + args,
+            safe_cmd = self._build_safe_command(sanitized_args)
+
+            self._state.process = subprocess.Popen(
+                safe_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
                 cwd=PROJECT_ROOT,
+                shell=False,
             )
-            self.status = "running"
-            self.start_time = datetime.now()
-            self.current_output = ""
+            self._state.status = "running"
+            self._state.start_time = datetime.now()
+            self._state.current_output = ""
             logs_dir = USER_LOGS_DIR
             logs_dir.mkdir(parents=True, exist_ok=True)
-            timestamp_str = self.start_time.strftime("%Y%m%d_%H%M%S")
+            timestamp_str = self._state.start_time.strftime("%Y%m%d_%H%M%S")
             filename = f"benchmark_{timestamp_str}.log"
-            self.benchmark_log_file = logs_dir / filename
-            self.output_task = asyncio.create_task(self._consume_output())
+            self._state.benchmark_log_file = logs_dir / filename
+            self._state.output_task = asyncio.create_task(self._consume_output())
 
-            logger.info(f"✅ Benchmark started with PID %s", self.process.pid)
+            logger.info("✅ Benchmark started with PID %s", self._state.process.pid)
             logger.info(
                 "📝 Benchmark log: %s",
-                format_path_for_logs(self.benchmark_log_file),
+                format_path_for_logs(self._state.benchmark_log_file),
             )
             return True
-        except Exception as e:
-            logger.error("❌ Error starting benchmark: %s", e)
-            self.status = "idle"
+        except (OSError, RuntimeError, ValueError) as start_error:
+            logger.error("❌ Error starting benchmark: %s", start_error)
+            self._state.status = "idle"
             return False
 
     def pause_benchmark(self) -> bool:
-        """Pauses running benchmark"""
+        """Pauses running benchmark."""
         if not self.is_running() or not self.process:
             logger.warning("No running benchmark")
             return False
         try:
             self.process.send_signal(signal.SIGSTOP)
-            self.status = "paused"
+            self._state.status = "paused"
             logger.info("⏸️ Benchmark paused")
             return True
-        except Exception as e:
-            logger.error("❌ Error pausing: %s", e)
+        except (OSError, ProcessLookupError, ValueError) as pause_error:
+            logger.error("❌ Error pausing: %s", pause_error)
             return False
 
     def resume_benchmark(self) -> bool:
-        """Resumes paused benchmark"""
+        """Resumes paused benchmark."""
         if self.status != "paused" or not self.process:
             logger.warning("No paused benchmark")
             return False
         try:
             self.process.send_signal(signal.SIGCONT)
-            self.status = "running"
+            self._state.status = "running"
             logger.info("▶️ Benchmark resumed")
             return True
-        except Exception as e:
-            logger.error("❌ Error resuming: %s", e)
+        except (OSError, ProcessLookupError, ValueError) as resume_error:
+            logger.error("❌ Error resuming: %s", resume_error)
             return False
 
     def stop_benchmark(self) -> bool:
-        """Stops running benchmark"""
+        """Stops running benchmark."""
         if not self.process:
             logger.warning("No running benchmark")
             return False
@@ -492,13 +733,13 @@ class BenchmarkManager:
                 self.process.wait()
                 logger.warning("⏹️ Benchmark forcefully stopped (SIGKILL)")
 
-            self.status = "stopped"
-            self.process = None
-            if self.output_task and not self.output_task.done():
-                self.output_task.cancel()
+            self._state.status = "stopped"
+            self._state.process = None
+            if self._state.output_task and not self._state.output_task.done():
+                self._state.output_task.cancel()
             return True
-        except Exception as e:
-            logger.error("❌ Error stopping: %s", e)
+        except (OSError, ProcessLookupError, ValueError) as stop_error:
+            logger.error("❌ Error stopping: %s", stop_error)
             return False
 
     def parse_hardware_metrics(self, output_line: str):
@@ -577,13 +818,21 @@ class BenchmarkManager:
 
             if lines:
                 combined_output = "".join(lines)
-                self.current_output += combined_output
+                self._state.current_output += combined_output
                 return combined_output
 
             return ""
-        except Exception as e:
-            logger.error("❌ Error reading output: %s", e)
+        except (OSError, RuntimeError, TypeError, ValueError) as read_error:
+            logger.error("❌ Error reading output: %s", read_error)
             return ""
+
+    def update_last_hardware_send_time(self, current_time: float) -> None:
+        """Update timestamp of last hardware WebSocket send."""
+        self._state.last_hardware_send_time = current_time
+
+    def set_idle_status(self) -> None:
+        """Set benchmark status to idle."""
+        self._state.status = "idle"
 
 
 manager = BenchmarkManager()
@@ -608,12 +857,12 @@ async def run_metadata_scraper():
         logger.warning("⚠️ Scraper timeout reached (>=300s), aborting")
     except subprocess.CalledProcessError as scrape_err:
         logger.warning("⚠️ Scraper error: %s", scrape_err.stderr or scrape_err)
-    except Exception as scrape_exc:
+    except (OSError, RuntimeError, ValueError) as scrape_exc:
         logger.warning("⚠️ Scraper execution failed: %s", scrape_exc)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """Handle FastAPI startup/shutdown for benchmark manager."""
     try:
         asyncio.create_task(run_metadata_scraper())
@@ -754,6 +1003,19 @@ def calculate_hash(params: Dict[str, Any]) -> str:
     return hashlib.sha256(params_str.encode()).hexdigest()[:16]
 
 
+def _to_float_scalar(value: Any) -> float:
+    """Convert scalar-like SciPy results to float safely."""
+    if isinstance(value, tuple):
+        if not value:
+            raise ValueError("Empty tuple cannot be converted to float")
+        value = value[0]
+    if isinstance(value, list):
+        if not value:
+            raise ValueError("Empty list cannot be converted to float")
+        value = value[0]
+    return float(value)
+
+
 def perform_ttest(
     baseline_speeds: List[float],
     test_speeds: List[float],
@@ -788,7 +1050,13 @@ def perform_ttest(
                 }
 
         if SCIPY_AVAILABLE and scipy_stats is not None:
-            t_stat, p_value = scipy_stats.ttest_ind(baseline_speeds, test_speeds)
+            t_stat_raw, p_value_raw = scipy_stats.ttest_ind(
+                baseline_speeds,
+                test_speeds,
+                equal_var=False,
+            )
+            t_stat = _to_float_scalar(t_stat_raw)
+            p_value = _to_float_scalar(p_value_raw)
             return {
                 "test_name": "Welch's t-test",
                 "t_statistic": round(t_stat, 4),
@@ -823,9 +1091,19 @@ def perform_ttest(
             "alpha": 0.05,
         }
 
-    except Exception as e:
-        logger.error("Error in t-test: %s", e)
-        return {"test_name": "t-test", "error": str(e), "significant": False}
+    except (
+        statistics.StatisticsError,
+        TypeError,
+        ValueError,
+        ZeroDivisionError,
+        OverflowError,
+    ) as ttest_error:
+        logger.error("Error in t-test: %s", ttest_error)
+        return {
+            "test_name": "t-test",
+            "error": str(ttest_error),
+            "significant": False,
+        }
 
 
 def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) -> bool:
@@ -929,17 +1207,16 @@ async def get_status() -> dict:
 @app.get("/api/lmstudio/health")
 async def get_lmstudio_health() -> dict:
     """LM Studio Healthcheck - Live Status ohne Cache"""
-    lmstudio_health = {"ok": False, "status": "offline"}
     lmstudio_ports = LMSTUDIO_PORTS
 
-    for port in lmstudio_ports:
+    for lm_port in lmstudio_ports:
         try:
             with httpx.Client(timeout=1.5) as client:
-                resp = client.get(f"http://{LMSTUDIO_HOST}:{port}/v1/models")
+                resp = client.get(f"http://{LMSTUDIO_HOST}:{lm_port}/v1/models")
                 if resp.status_code == 200:
-                    status_msg = f"online ({LMSTUDIO_HOST}:{port})"
+                    status_msg = f"online ({LMSTUDIO_HOST}:{lm_port})"
                     return {"ok": True, "status": status_msg, "version": None}
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError):
             continue
 
     try:
@@ -980,96 +1257,96 @@ async def get_lmstudio_health() -> dict:
 @app.post("/api/benchmark/start")
 async def start_benchmark(params: BenchmarkParams) -> dict:
     """Start a new benchmark."""
-    args = []
+    benchmark_args = []
 
     if params.runs:
-        args.extend(["--runs", str(params.runs)])
+        benchmark_args.extend(["--runs", str(params.runs)])
     if params.context:
-        args.extend(["--context", str(params.context)])
+        benchmark_args.extend(["--context", str(params.context)])
     if params.limit:
-        args.extend(["--limit", str(params.limit)])
+        benchmark_args.extend(["--limit", str(params.limit)])
     if params.prompt:
-        args.extend(["--prompt", params.prompt])
+        benchmark_args.extend(["--prompt", params.prompt])
     if params.min_context:
-        args.extend(["--min-context", str(params.min_context)])
+        benchmark_args.extend(["--min-context", str(params.min_context)])
     if params.max_size:
-        args.extend(["--max-size", str(params.max_size)])
+        benchmark_args.extend(["--max-size", str(params.max_size)])
     if params.quants:
-        args.extend(["--quants", params.quants])
+        benchmark_args.extend(["--quants", params.quants])
     if params.arch:
-        args.extend(["--arch", params.arch])
+        benchmark_args.extend(["--arch", params.arch])
     if params.params:
-        args.extend(["--params", params.params])
+        benchmark_args.extend(["--params", params.params])
     if params.rank_by:
-        args.extend(["--rank-by", params.rank_by])
+        benchmark_args.extend(["--rank-by", params.rank_by])
     if params.include_models:
-        args.extend(["--include-models", params.include_models])
+        benchmark_args.extend(["--include-models", params.include_models])
     if params.exclude_models:
-        args.extend(["--exclude-models", params.exclude_models])
+        benchmark_args.extend(["--exclude-models", params.exclude_models])
     if params.only_vision:
-        args.append("--only-vision")
+        benchmark_args.append("--only-vision")
     if params.only_tools:
-        args.append("--only-tools")
+        benchmark_args.append("--only-tools")
     if params.retest:
-        args.append("--retest")
+        benchmark_args.append("--retest")
     if params.dev_mode:
-        args.append("--dev-mode")
+        benchmark_args.append("--dev-mode")
     if params.enable_profiling:
-        args.append("--enable-profiling")
+        benchmark_args.append("--enable-profiling")
     if params.disable_gtt:
-        args.append("--disable-gtt")
+        benchmark_args.append("--disable-gtt")
     if params.max_temp:
-        args.extend(["--max-temp", str(params.max_temp)])
+        benchmark_args.extend(["--max-temp", str(params.max_temp)])
     if params.max_power:
-        args.extend(["--max-power", str(params.max_power)])
+        benchmark_args.extend(["--max-power", str(params.max_power)])
     if params.temperature is not None:
-        args.extend(["--temperature", str(params.temperature)])
+        benchmark_args.extend(["--temperature", str(params.temperature)])
     if params.top_k_sampling is not None:
-        args.extend(["--top-k", str(params.top_k_sampling)])
+        benchmark_args.extend(["--top-k", str(params.top_k_sampling)])
     if params.top_p_sampling is not None:
-        args.extend(["--top-p", str(params.top_p_sampling)])
+        benchmark_args.extend(["--top-p", str(params.top_p_sampling)])
     if params.min_p_sampling is not None:
-        args.extend(["--min-p", str(params.min_p_sampling)])
+        benchmark_args.extend(["--min-p", str(params.min_p_sampling)])
     if params.repeat_penalty is not None:
-        args.extend(["--repeat-penalty", str(params.repeat_penalty)])
+        benchmark_args.extend(["--repeat-penalty", str(params.repeat_penalty)])
     if params.max_tokens is not None:
-        args.extend(["--max-tokens", str(params.max_tokens)])
+        benchmark_args.extend(["--max-tokens", str(params.max_tokens)])
     if params.n_gpu_layers is not None:
-        args.extend(["--n-gpu-layers", str(params.n_gpu_layers)])
+        benchmark_args.extend(["--n-gpu-layers", str(params.n_gpu_layers)])
     if params.n_batch is not None:
-        args.extend(["--n-batch", str(params.n_batch)])
+        benchmark_args.extend(["--n-batch", str(params.n_batch)])
     if params.n_threads is not None:
-        args.extend(["--n-threads", str(params.n_threads)])
+        benchmark_args.extend(["--n-threads", str(params.n_threads)])
     if params.flash_attention is not None:
         if params.flash_attention:
-            args.append("--flash-attention")
+            benchmark_args.append("--flash-attention")
         else:
-            args.append("--no-flash-attention")
+            benchmark_args.append("--no-flash-attention")
     if params.rope_freq_base is not None:
-        args.extend(["--rope-freq-base", str(params.rope_freq_base)])
+        benchmark_args.extend(["--rope-freq-base", str(params.rope_freq_base)])
     if params.rope_freq_scale is not None:
-        args.extend(["--rope-freq-scale", str(params.rope_freq_scale)])
+        benchmark_args.extend(["--rope-freq-scale", str(params.rope_freq_scale)])
     if params.use_mmap is not None:
         if params.use_mmap:
-            args.append("--use-mmap")
+            benchmark_args.append("--use-mmap")
         else:
-            args.append("--no-mmap")
+            benchmark_args.append("--no-mmap")
     if params.use_mlock is not None and params.use_mlock:
-        args.append("--use-mlock")
+        benchmark_args.append("--use-mlock")
     if params.kv_cache_quant:
-        args.extend(["--kv-cache-quant", params.kv_cache_quant])
+        benchmark_args.extend(["--kv-cache-quant", params.kv_cache_quant])
 
     if DEBUG_MODE:
-        args.append("--debug")
+        benchmark_args.append("--debug")
 
-    logger.info("🔧 Benchmark-Args: %s", args)
+    logger.info("🔧 Benchmark-Args: %s", benchmark_args)
     logger.info(
         "📊 enable_profiling=%s, disable_gtt=%s",
         params.enable_profiling,
         params.disable_gtt,
     )
 
-    success = await manager.start_benchmark(args)
+    success = await manager.start_benchmark(benchmark_args)
     message = "✅ Benchmark started" if success else "❌ Error starting"
     return {"success": success, "status": manager.status, "message": message}
 
@@ -1120,7 +1397,7 @@ async def shutdown_system() -> dict:
     try:
         success = manager.stop_benchmark()
         logger.info("✅ Benchmark stopped: %s", success)
-    except Exception as exc:
+    except (OSError, ProcessLookupError, RuntimeError, ValueError) as exc:
         logger.warning("Error stopping benchmark during shutdown: %s", exc)
 
     def _send_shutdown_signal() -> None:
@@ -1221,9 +1498,16 @@ async def get_results() -> dict:
             results_data.append(result_dict)
 
         return {"success": True, "count": len(results_data), "results": results_data}
-    except Exception as e:
+    except (
+        AttributeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error loading results: %s", e)
-        return {"success": False, "error": str(e), "results": []}
+        return _safe_api_error({"results": []})
 
 
 @app.get("/api/cache/stats")
@@ -1273,9 +1557,16 @@ async def get_cache_stats() -> dict:
                 "db_size_mb": round(db_size_mb, 2),
             },
         }
-    except Exception as e:
+    except (
+        AttributeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error fetching cache statistics: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.delete("/api/cache/{model_key}")
@@ -1288,7 +1579,7 @@ async def delete_cache_entry(model_key: str) -> dict:
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT COUNT(*) FROM benchmark_results " "WHERE model_key = ?",
+            "SELECT COUNT(*) FROM benchmark_results WHERE model_key = ?",
             (model_key,),
         )
         count = cursor.fetchone()[0]
@@ -1298,7 +1589,7 @@ async def delete_cache_entry(model_key: str) -> dict:
             return {"success": False, "error": f"Model {model_key} not found in cache"}
 
         cursor.execute(
-            "DELETE FROM benchmark_results " "WHERE model_key = ?",
+            "DELETE FROM benchmark_results WHERE model_key = ?",
             (model_key,),
         )
         conn.commit()
@@ -1311,9 +1602,15 @@ async def delete_cache_entry(model_key: str) -> dict:
             "message": f"✅ {deleted_count} entry(ies) deleted",
             "model_key": model_key,
         }
-    except Exception as e:
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error deleting cache entry: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/cache/clear")
@@ -1354,9 +1651,15 @@ async def clear_cache() -> dict:
             "deleted_count": count_before,
             "backup_file": str(backup_file) if backup_file else None,
         }
-    except Exception as e:
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error clearing cache: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/lmstudio/models")
@@ -1396,9 +1699,9 @@ async def get_lmstudio_models() -> dict:
 
     except TimeoutExpired:
         return {"success": False, "error": "LM Studio CLI Timeout", "models": []}
-    except Exception as e:
+    except (OSError, RuntimeError, TypeError, ValueError) as e:
         logger.error("❌ Error fetching LM Studio models: %s", e)
-        return {"success": False, "error": str(e), "models": []}
+        return _safe_api_error({"models": []})
 
 
 @app.get("/api/comparison/models")
@@ -1458,9 +1761,15 @@ async def get_comparison_models() -> dict:
 
         conn.close()
         return {"success": True, "models": models}
-    except Exception as e:
+    except (
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error fetching comparison models: %s", e)
-        return {"success": False, "error": str(e), "models": []}
+        return _safe_api_error({"models": []})
 
 
 @app.get("/api/comparison/{model_name:path}")
@@ -1542,9 +1851,16 @@ async def get_model_history(model_name: str) -> dict:
             "history": history,
             "stats": stats,
         }
-    except Exception as e:
+    except (
+        AttributeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ Error fetching model history: %s", e)
-        return {"success": False, "error": str(e), "history": []}
+        return _safe_api_error({"history": []})
 
 
 @app.post("/api/comparison/export/csv")
@@ -1562,7 +1878,7 @@ async def export_comparison_csv(
         payload = {}
         try:
             payload = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
             payload = {}
 
         model_filter = payload.get("model_name", model_name)
@@ -1610,7 +1926,7 @@ async def export_comparison_csv(
         def safe_round(value, digits):
             try:
                 return round(value, digits)
-            except Exception:
+            except (TypeError, ValueError, OverflowError):
                 return value if value is not None else ""
 
         output = StringIO()
@@ -1683,9 +1999,17 @@ async def export_comparison_csv(
             },
             "csv_preview": csv_content.split("\n")[:5],
         }
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        UnicodeDecodeError,
+        ValueError,
+        sqlite3.Error,
+    ) as e:
         logger.error("❌ CSV Export Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/comparison/export/pdf")
@@ -1698,7 +2022,7 @@ async def export_comparison_pdf(request: Request) -> dict:
         payload = {}
         try:
             payload = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
             payload = {}
 
         model_filter = payload.get("model_name")
@@ -1760,7 +2084,7 @@ async def export_comparison_pdf(request: Request) -> dict:
                 pdf_bytes.extend(content.encode("latin-1"))
 
             add_obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-            add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] " "/Count 1 >>\nendobj\n")
+            add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
 
             stream_lines = []
             y = 770
@@ -1850,9 +2174,9 @@ async def export_comparison_pdf(request: Request) -> dict:
                 "quantizations": quant_filters,
             },
         }
-    except Exception as e:
+    except (sqlite3.Error, OSError, ValueError, TypeError) as e:
         logger.error("❌ PDF Export Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/comparison/statistics/{model_name:path}")
@@ -1985,9 +2309,9 @@ async def get_advanced_statistics(model_name: str) -> dict:
                 "delta_pct": round(performance_delta, 2),
             },
         }
-    except Exception as e:
+    except (sqlite3.Error, ValueError, ZeroDivisionError, TypeError) as e:
         logger.error("❌ Advanced Statistics Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/output")
@@ -2023,9 +2347,9 @@ async def list_presets() -> dict:
 
         logger.info("📜 Listed %s presets", len(all_presets))
         return result
-    except Exception as e:
+    except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error("❌ Error listing presets: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/presets/{name}")
@@ -2050,9 +2374,9 @@ async def get_preset(name: str) -> dict:
         }
     except FileNotFoundError:
         return {"success": False, "error": f"Preset not found: {name}"}
-    except Exception as e:
+    except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error("❌ Error loading preset %s: %s", name, e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/presets")
@@ -2076,9 +2400,9 @@ async def save_preset(request: PresetSaveRequest) -> dict:
             "success": True,
             "message": f"Preset '{request.name}' saved successfully",
         }
-    except Exception as e:
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
         logger.error("❌ Error saving preset %s: %s", request.name, e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.delete("/api/presets/{name}")
@@ -2098,9 +2422,9 @@ async def delete_preset(name: str) -> dict:
         return {"success": True, "message": f"Preset '{name}' deleted successfully"}
     except FileNotFoundError:
         return {"success": False, "error": f"Preset not found: {name}"}
-    except Exception as e:
+    except (OSError, PermissionError) as e:
         logger.error("❌ Error deleting preset %s: %s", name, e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/presets/compare")
@@ -2122,22 +2446,20 @@ async def compare_presets(request: PresetCompareRequest) -> dict:
         }
     except FileNotFoundError as e:
         return {"success": False, "error": f"Preset not found: {str(e)}"}
-    except Exception as e:
+    except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error(
-            f"❌ Error comparing presets "
-            f"{request.preset_a} vs {request.preset_b}: {e}"
+            "❌ Error comparing presets %s vs %s: %s",
+            request.preset_a,
+            request.preset_b,
+            e,
         )
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/presets/export")
 async def export_presets() -> dict:
     """Export all user presets as ZIP archive"""
     try:
-        import base64
-        from io import BytesIO
-        import zipfile
-
         zip_buffer = BytesIO()
 
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -2163,19 +2485,21 @@ async def export_presets() -> dict:
             "data": zip_base64,
             "count": len(user_presets),
         }
-    except Exception as e:
+    except (
+        OSError,
+        json.JSONDecodeError,
+        ValueError,
+        TypeError,
+        zipfile.BadZipFile,
+    ) as e:
         logger.error("❌ Error exporting presets: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/presets/import")
 async def import_presets(request: Request) -> dict:
     """Import user presets from ZIP archive"""
     try:
-        import base64
-        from io import BytesIO
-        import zipfile
-
         body = await request.json()
         zip_base64 = body.get("data", "")
 
@@ -2210,12 +2534,18 @@ async def import_presets(request: Request) -> dict:
                 preset_mgr.save_preset(preset_name, preset_config)
                 imported_count += 1
 
-        logger.info(f"📥 Imported {imported_count} presets, " f"skipped {len(skipped)}")
+        logger.info("📥 Imported %s presets, skipped %s", imported_count, len(skipped))
 
         return {"success": True, "imported": imported_count, "skipped": skipped}
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        ValueError,
+        zipfile.BadZipFile,
+        OSError,
+        binascii.Error,
+    ) as e:
         logger.error("❌ Error importing presets: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 # ============================================================================
@@ -2253,9 +2583,9 @@ async def create_experiment(request: CreateExperimentRequest) -> dict:
             "test_params": test_dict,
             "created_at": datetime.now().isoformat(),
         }
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError) as e:
         logger.error("❌ Experiment Creation Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/experiments/{experiment_id}/comparison")
@@ -2288,18 +2618,19 @@ async def get_experiment_comparison(
                 repeat_penalty, max_tokens, num_runs, error_count
             FROM benchmark_results
             WHERE model_name = ?
-            ORDER BY timestamp ASC
         """
-        params = [model_name]
+        params: List[Any] = [model_name]
 
         if start_date:
-            query = query.replace(
-                "ORDER BY", f"AND timestamp >= '{start_date}' ORDER BY"
-            )
+            query += " AND timestamp >= ?"
+            params.append(start_date)
         if end_date:
-            query = query.replace("ORDER BY", f"AND timestamp <= '{end_date}' ORDER BY")
+            query += " AND timestamp <= ?"
+            params.append(end_date)
 
-        cursor.execute(query, params)
+        query += " ORDER BY timestamp ASC"
+
+        cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
         conn.close()
 
@@ -2325,8 +2656,8 @@ async def get_experiment_comparison(
                 minp,
                 penalty,
                 maxts,
-                runs,
-                errors,
+                _runs,
+                _errors,
             ) = row
 
             params_dict = {
@@ -2416,14 +2747,16 @@ async def get_experiment_comparison(
             )
 
         logger.info("🧪 Experiment %s: %s", experiment_id, winner.upper())
-        logger.info("   Baseline: %s ± %s tok/s", 
-                baseline_stats['mean'], 
-                baseline_stats['std_dev'])
-        logger.info("   Test: %s ± %s tok/s", test_stats['mean'], test_stats['std_dev'])
+        logger.info(
+            "   Baseline: %s ± %s tok/s",
+            baseline_stats["mean"],
+            baseline_stats["std_dev"],
+        )
+        logger.info("   Test: %s ± %s tok/s", test_stats["mean"], test_stats["std_dev"])
         delta_str = (
             f"{delta_pct:.1f}%" if isinstance(delta_pct, (int, float)) else "n/a"
         )
-        logger.info("   Delta: %s | p-value: %s", delta_str, test_result.get('p_value'))
+        logger.info("   Delta: %s | p-value: %s", delta_str, test_result.get("p_value"))
 
         return {
             "success": True,
@@ -2446,9 +2779,9 @@ async def get_experiment_comparison(
                 ),
             },
         }
-    except Exception as e:
+    except (sqlite3.Error, ValueError, ZeroDivisionError, TypeError) as e:
         logger.error("❌ Experiment Comparison Error: %s", e)
-        return {"success": False, "error": str(e), "comparison": {}}
+        return _safe_api_error({"comparison": {}})
 
 
 @app.post("/api/experiments/{experiment_id}/comparison")
@@ -2521,8 +2854,8 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
                 minp,
                 penalty,
                 maxts,
-                runs,
-                errors,
+                _runs,
+                _errors,
             ) = row
             params_dict = {
                 "temperature": temp,
@@ -2630,18 +2963,21 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
                 ),
             },
         }
-    except Exception as e:
+    except (
+        json.JSONDecodeError,
+        sqlite3.Error,
+        ValueError,
+        ZeroDivisionError,
+        TypeError,
+    ) as e:
         logger.error("❌ Experiment Comparison Error: %s", e)
-        return {"success": False, "error": str(e), "comparison": {}}
+        return _safe_api_error({"comparison": {}})
 
 
 @app.post("/api/experiments/{experiment_id}/export")
 async def export_experiment(experiment_id: str, request: Request) -> dict:
     """Exports experiment results as CSV/PDF"""
     try:
-        import csv
-        from io import StringIO
-
         payload = await request.json()
         export_format = payload.get("format", "csv")
         baseline_data = payload.get("baseline", {})
@@ -2699,10 +3035,13 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
             writer.writerow(["Delta %", comparison.get("delta_pct", "-")])
 
             csv_content = output.getvalue()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_exp_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", experiment_id)
             export_file = (
-                RESULTS_DIR
-                / f"experiment_{experiment_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            )
+                RESULTS_DIR / f"experiment_{safe_exp_id}_{timestamp}.csv"
+            ).resolve()
+            if not str(export_file).startswith(str(RESULTS_DIR.resolve())):
+                raise ValueError("Path traversal detected in experiment export")
 
             with open(export_file, "w", encoding="utf-8") as f:
                 f.write(csv_content)
@@ -2716,93 +3055,103 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
                 "url": f"/results/{export_file.name}",
             }
 
-        else:
-            lines = [
-                f"Experiment {experiment_id}",
-                f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                "",
-                "Baseline Results:",
-                f"  Mean: {baseline_data.get('mean')} ± {baseline_data.get('std_dev')} tok/s",
-                f"  Range: {baseline_data.get('min')} - {baseline_data.get('max')}",
-                f"  Runs: {baseline_data.get('count')}",
-                "",
-                "Test Results:",
-                f"  Mean: {test_data.get('mean')} ± {test_data.get('std_dev')} tok/s",
-                f"  Range: {test_data.get('min')} - {test_data.get('max')}",
-                f"  Runs: {test_data.get('count')}",
-                "",
-                "Statistical Analysis:",
-                f"  p-value: {test_result.get('p_value', '-')}",
-                f"  Significant: {test_result.get('significant', False)}",
-                f"  Winner: {comparison.get('winner', '-')}",
-                f"  Performance Delta: {comparison.get('delta_pct', '-')}%",
-            ]
+        lines = [
+            f"Experiment {experiment_id}",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            "Baseline Results:",
+            f"  Mean: {baseline_data.get('mean')} "
+            f"± {baseline_data.get('std_dev')} tok/s",
+            f"  Range: {baseline_data.get('min')} - {baseline_data.get('max')}",
+            f"  Runs: {baseline_data.get('count')}",
+            "",
+            "Test Results:",
+            f"  Mean: {test_data.get('mean')} ± {test_data.get('std_dev')} tok/s",
+            f"  Range: {test_data.get('min')} - {test_data.get('max')}",
+            f"  Runs: {test_data.get('count')}",
+            "",
+            "Statistical Analysis:",
+            f"  p-value: {test_result.get('p_value', '-')}",
+            f"  Significant: {test_result.get('significant', False)}",
+            f"  Winner: {comparison.get('winner', '-')}",
+            f"  Performance Delta: {comparison.get('delta_pct', '-')}%",
+        ]
 
-            def generate_simple_pdf(text_lines):
-                pdf_bytes = bytearray()
-                pdf_bytes.extend(b"%PDF-1.4\n")
-                offsets = []
+        def generate_simple_pdf(text_lines):
+            pdf_bytes = bytearray()
+            pdf_bytes.extend(b"%PDF-1.4\n")
+            offsets = []
 
-                def add_obj(content: str):
-                    offsets.append(len(pdf_bytes))
-                    pdf_bytes.extend(content.encode("latin-1"))
+            def add_obj(content: str):
+                offsets.append(len(pdf_bytes))
+                pdf_bytes.extend(content.encode("latin-1"))
 
-                add_obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-                add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            add_obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
 
-                stream_lines = []
-                y = 770
-                for line in text_lines:
-                    safe_line = line.replace("(", "\\(").replace(")", "\\)")
-                    stream_lines.append(f"BT /F1 10 Tf 50 {y} Td ({safe_line}) Tj ET")
-                    y -= 12
-                stream_content = "\n".join(stream_lines).encode("latin-1")
+            stream_lines = []
+            y = 770
+            for line in text_lines:
+                safe_line = line.replace("(", "\\(").replace(")", "\\)")
+                stream_lines.append(f"BT /F1 10 Tf 50 {y} Td ({safe_line}) Tj ET")
+                y -= 12
+            stream_content = "\n".join(stream_lines).encode("latin-1")
 
-                add_obj(
-                    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
-                )
-                add_obj(f"4 0 obj\n<< /Length {len(stream_content)} >>\nstream\n")
-                pdf_bytes.extend(stream_content)
-                pdf_bytes.extend(b"\nendstream\nendobj\n")
-                add_obj(
-                    "5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
-                )
-
-                xref_offset = len(pdf_bytes)
-                pdf_bytes.extend(f"xref\n0 {len(offsets) + 1}\n".encode("latin-1"))
-                pdf_bytes.extend(b"0000000000 65535 f \n")
-                for off in offsets:
-                    pdf_bytes.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
-                pdf_bytes.extend(b"trailer\n")
-                pdf_bytes.extend(
-                    f"<< /Size {len(offsets) + 1} /Root 1 0 R >>\n".encode("latin-1")
-                )
-                pdf_bytes.extend(b"startxref\n")
-                pdf_bytes.extend(f"{xref_offset}\n".encode("latin-1"))
-                pdf_bytes.extend(b"%%EOF")
-                return bytes(pdf_bytes)
-
-            pdf_bytes = generate_simple_pdf(lines)
-            export_file = (
-                RESULTS_DIR
-                / f"experiment_{experiment_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            add_obj(
+                "3 0 obj\n"
+                "<< /Type /Page /Parent 2 0 R "
+                "/MediaBox [0 0 612 792] /Contents 4 0 R "
+                "/Resources << /Font << /F1 5 0 R >> >> >>\n"
+                "endobj\n"
+            )
+            add_obj(f"4 0 obj\n<< /Length {len(stream_content)} >>\nstream\n")
+            pdf_bytes.extend(stream_content)
+            pdf_bytes.extend(b"\nendstream\nendobj\n")
+            add_obj(
+                "5 0 obj\n"
+                "<< /Type /Font /Subtype /Type1 "
+                "/BaseFont /Helvetica >>\n"
+                "endobj\n"
             )
 
-            with open(export_file, "wb") as f:
-                f.write(pdf_bytes)
+            xref_offset = len(pdf_bytes)
+            pdf_bytes.extend(f"xref\n0 {len(offsets) + 1}\n".encode("latin-1"))
+            pdf_bytes.extend(b"0000000000 65535 f \n")
+            for off in offsets:
+                pdf_bytes.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
+            pdf_bytes.extend(b"trailer\n")
+            pdf_bytes.extend(
+                f"<< /Size {len(offsets) + 1} /Root 1 0 R >>\n".encode("latin-1")
+            )
+            pdf_bytes.extend(b"startxref\n")
+            pdf_bytes.extend(f"{xref_offset}\n".encode("latin-1"))
+            pdf_bytes.extend(b"%%EOF")
+            return bytes(pdf_bytes)
 
-            logger.info("📋 PDF Experiment Export: %s", export_file)
+        pdf_bytes = generate_simple_pdf(lines)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_exp_id = re.sub(r"[^a-zA-Z0-9_\-]", "_", experiment_id)
+        export_file = (
+            RESULTS_DIR / f"experiment_{safe_exp_id}_{timestamp}.pdf"
+        ).resolve()
+        if not str(export_file).startswith(str(RESULTS_DIR.resolve())):
+            raise ValueError("Path traversal detected in experiment export")
 
-            return {
-                "success": True,
-                "format": "pdf",
-                "file": str(export_file),
-                "url": f"/results/{export_file.name}",
-            }
+        with open(export_file, "wb") as f:
+            f.write(pdf_bytes)
 
-    except Exception as e:
+        logger.info("📋 PDF Experiment Export: %s", export_file)
+
+        return {
+            "success": True,
+            "format": "pdf",
+            "file": str(export_file),
+            "url": f"/results/{export_file.name}",
+        }
+
+    except (json.JSONDecodeError, OSError, ValueError, TypeError) as e:
         logger.error("❌ Experiment Export Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/experiments/run")
@@ -2833,54 +3182,66 @@ async def run_experiment(request: Request) -> dict:
         test_params.pop("name", None)
 
         def build_args(param_set: Dict[str, Any]) -> List[str]:
-            args: List[str] = []
-            args.extend(["--runs", str(runs)])
-            args.extend(["--context", str(context)])
-            args.extend(["--limit", "1"])
-            args.extend(["--prompt", prompt])
-            args.extend(["--include-models", model_name])
-            args.append("--retest")
+            benchmark_args: List[str] = []
+            benchmark_args.extend(["--runs", str(runs)])
+            benchmark_args.extend(["--context", str(context)])
+            benchmark_args.extend(["--limit", "1"])
+            benchmark_args.extend(["--prompt", prompt])
+            benchmark_args.extend(["--include-models", model_name])
+            benchmark_args.append("--retest")
             if param_set.get("temperature") is not None:
-                args.extend(["--temperature", str(param_set["temperature"])])
+                benchmark_args.extend(
+                    ["--temperature", str(param_set["temperature"])]
+                )
             if param_set.get("top_k") is not None:
-                args.extend(["--top-k", str(param_set["top_k"])])
+                benchmark_args.extend(["--top-k", str(param_set["top_k"])])
             if param_set.get("top_p") is not None:
-                args.extend(["--top-p", str(param_set["top_p"])])
+                benchmark_args.extend(["--top-p", str(param_set["top_p"])])
             if param_set.get("min_p") is not None:
-                args.extend(["--min-p", str(param_set["min_p"])])
+                benchmark_args.extend(["--min-p", str(param_set["min_p"])])
             if param_set.get("repeat_penalty") is not None:
-                args.extend(["--repeat-penalty", str(param_set["repeat_penalty"])])
+                benchmark_args.extend(
+                    ["--repeat-penalty", str(param_set["repeat_penalty"])]
+                )
             if param_set.get("max_tokens") is not None:
-                args.extend(["--max-tokens", str(param_set["max_tokens"])])
+                benchmark_args.extend(["--max-tokens", str(param_set["max_tokens"])])
             if param_set.get("n_gpu_layers") is not None:
-                args.extend(["--n-gpu-layers", str(param_set["n_gpu_layers"])])
+                benchmark_args.extend(
+                    ["--n-gpu-layers", str(param_set["n_gpu_layers"])]
+                )
             if param_set.get("n_batch") is not None:
-                args.extend(["--n-batch", str(param_set["n_batch"])])
+                benchmark_args.extend(["--n-batch", str(param_set["n_batch"])])
             if param_set.get("n_threads") is not None:
-                args.extend(["--n-threads", str(param_set["n_threads"])])
+                benchmark_args.extend(["--n-threads", str(param_set["n_threads"])])
             if param_set.get("flash_attention") is not None:
                 if param_set["flash_attention"]:
-                    args.append("--flash-attention")
+                    benchmark_args.append("--flash-attention")
                 else:
-                    args.append("--no-flash-attention")
+                    benchmark_args.append("--no-flash-attention")
             if param_set.get("rope_freq_base") is not None:
-                args.extend(["--rope-freq-base", str(param_set["rope_freq_base"])])
+                benchmark_args.extend(
+                    ["--rope-freq-base", str(param_set["rope_freq_base"])]
+                )
             if param_set.get("rope_freq_scale") is not None:
-                args.extend(["--rope-freq-scale", str(param_set["rope_freq_scale"])])
+                benchmark_args.extend(
+                    ["--rope-freq-scale", str(param_set["rope_freq_scale"])]
+                )
             if param_set.get("use_mmap") is not None:
                 if param_set["use_mmap"]:
-                    args.append("--use-mmap")
+                    benchmark_args.append("--use-mmap")
                 else:
-                    args.append("--no-mmap")
+                    benchmark_args.append("--no-mmap")
             if param_set.get("use_mlock") is not None and param_set["use_mlock"]:
-                args.append("--use-mlock")
+                benchmark_args.append("--use-mlock")
             if param_set.get("kv_cache_quant"):
-                args.extend(["--kv-cache-quant", param_set["kv_cache_quant"]])
-            args.append("--enable-profiling")
-            return args
+                benchmark_args.extend(
+                    ["--kv-cache-quant", param_set["kv_cache_quant"]]
+                )
+            benchmark_args.append("--enable-profiling")
+            return benchmark_args
 
-        async def run_once(args: List[str]) -> bool:
-            return await manager.start_benchmark(args)
+        async def run_once(cli_args: List[str]) -> bool:
+            return await manager.start_benchmark(cli_args)
 
         baseline_args = build_args(baseline_params)
         logger.info("🎯 Baseline Args: %s", baseline_args)
@@ -2893,11 +3254,8 @@ async def run_experiment(request: Request) -> dict:
             await asyncio.sleep(1.0)
         await asyncio.sleep(2.0)
 
-        baseline_end_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
         test_args = build_args(test_params)
         logger.info("🎯 Test Args: %s", test_args)
-        test_start_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         test_ok = await run_once(test_args)
         if not test_ok:
             return {"success": False, "error": "Could not start Test Benchmark"}
@@ -2985,7 +3343,10 @@ async def run_experiment(request: Request) -> dict:
                     }
                 )
                 logger.info(
-                    f"✅ Baseline Match: run_index={run_idx}, speed={speed}, params={row_params}"
+                    "✅ Baseline Match: run_index=%s, speed=%s, params=%s",
+                    run_idx,
+                    speed,
+                    row_params,
                 )
             elif match_parameters(row_params, test_params):
                 test_data.append(
@@ -2998,13 +3359,18 @@ async def run_experiment(request: Request) -> dict:
                     }
                 )
                 logger.info(
-                    f"✅ Test Match: run_index={run_idx}, speed={speed}, params={row_params}"
+                    "✅ Test Match: run_index=%s, speed=%s, params=%s",
+                    run_idx,
+                    speed,
+                    row_params,
                 )
             else:
                 logger.info("❌ No Match: run_index=%s, params=%s", run_idx, row_params)
 
         logger.info(
-            f"🔍 After filtering: Baseline={len(baseline_data)}, Test={len(test_data)}"
+            "🔍 After filtering: Baseline=%s, Test=%s",
+            len(baseline_data),
+            len(test_data),
         )
 
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
@@ -3130,10 +3496,12 @@ async def run_experiment(request: Request) -> dict:
                     f"{test_params.get('temperature', 'N/A')},-\n"
                 )
                 f.write(
-                    f"Top-K,{baseline_params.get('top_k', 'N/A')},{test_params.get('top_k', 'N/A')},-\n"
+                    f"Top-K,{baseline_params.get('top_k', 'N/A')},"
+                    f"{test_params.get('top_k', 'N/A')},-\n"
                 )
                 f.write(
-                    f"Top-P,{baseline_params.get('top_p', 'N/A')},{test_params.get('top_p', 'N/A')},-\n"
+                    f"Top-P,{baseline_params.get('top_p', 'N/A')},"
+                    f"{test_params.get('top_p', 'N/A')},-\n"
                 )
                 f.write(f"Winner,-,-,{winner}\n")
                 f.write(f"Significant,-,-,{test_result.get('significant', False)}\n")
@@ -3147,7 +3515,11 @@ async def run_experiment(request: Request) -> dict:
     <title>{experiment_name} - {model_name}</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }}
-        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .container {{
+            max-width: 1200px; margin: 0 auto; background: white;
+            padding: 30px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }}
         h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }}
         h2 {{ color: #34495e; margin-top: 30px; }}
         table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
@@ -3156,14 +3528,18 @@ async def run_experiment(request: Request) -> dict:
         tr:hover {{ background-color: #f5f5f5; }}
         .winner {{ font-weight: bold; color: #27ae60; font-size: 1.2em; }}
         .metric {{ font-weight: 600; }}
-        .params {{ background: #ecf0f1; padding: 15px; border-radius: 5px; margin: 10px 0; }}
+        .params {{
+            background: #ecf0f1; padding: 15px;
+            border-radius: 5px; margin: 10px 0;
+        }}
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🧪 {experiment_name}</h1>
         <p><strong>Model:</strong> {model_name}</p>
-        <p><strong>Timestamp:</strong> {results_data['experiment_info']['timestamp']}</p>
+        <p><strong>Timestamp:</strong>
+        {results_data['experiment_info']['timestamp']}</p>
 
         <h2>📊 Performance Comparison</h2>
         <table>
@@ -3208,18 +3584,29 @@ async def run_experiment(request: Request) -> dict:
         <h2>⚙️ Parameters</h2>
         <div class="params">
             <h3>Baseline</h3>
-            <p>Temperature: {baseline_params.get('temperature', 'N/A')}, Top-K: {baseline_params.get('top_k', 'N/A')}, Top-P: {baseline_params.get('top_p', 'N/A')}</p>
+            <p>
+                Temperature: {baseline_params.get('temperature', 'N/A')},
+                Top-K: {baseline_params.get('top_k', 'N/A')},
+                Top-P: {baseline_params.get('top_p', 'N/A')}
+            </p>
         </div>
         <div class="params">
             <h3>Test</h3>
-            <p>Temperature: {test_params.get('temperature', 'N/A')}, Top-K: {test_params.get('top_k', 'N/A')}, Top-P: {test_params.get('top_p', 'N/A')}</p>
+            <p>
+                Temperature: {test_params.get('temperature', 'N/A')},
+                Top-K: {test_params.get('top_k', 'N/A')},
+                Top-P: {test_params.get('top_p', 'N/A')}
+            </p>
         </div>
 
         <h2>📈 Statistical Analysis</h2>
         <p><strong>Winner:</strong> <span class="winner">{winner.upper()}</span></p>
-        <p><strong>Statistically Significant:</strong> {test_result.get('significant', False)}</p>
+        <p><strong>Statistically Significant:</strong>
+        {test_result.get('significant', False)}</p>
         <p><strong>p-value:</strong> {test_result.get('p_value', 'N/A')}</p>
-        <p><strong>Effect Size (Cohen's d):</strong> {effect_size.get('cohens_d', 'N/A')} ({effect_size.get('effect_magnitude', 'N/A')})</p>
+        <p><strong>Effect Size (Cohen's d):</strong>
+        {effect_size.get('cohens_d', 'N/A')}
+        ({effect_size.get('effect_magnitude', 'N/A')})</p>
     </div>
 </body>
 </html>"""
@@ -3227,109 +3614,162 @@ async def run_experiment(request: Request) -> dict:
                 f.write(html_content)
             logger.info("🌐 A/B Test HTML saved: %s", html_file)
 
-            try:
-                from reportlab.lib import colors
-                from reportlab.lib.pagesizes import A4, landscape
-                from reportlab.lib.styles import getSampleStyleSheet
-                from reportlab.platypus import (
-                    Paragraph,
-                    SimpleDocTemplate,
-                    Spacer,
-                    Table,
-                    TableStyle,
-                )
+            if REPORTLAB_AVAILABLE:
+                simple_doc_template = SimpleDocTemplate
+                landscape_fn = landscape
+                reportlab_page_size = REPORTLAB_PAGE_SIZE
+                stylesheet_factory = getSampleStyleSheet
+                paragraph_cls = Paragraph
+                spacer_cls = Spacer
+                table_cls = Table
+                table_style_cls = TableStyle
+                reportlab_colors = colors
 
-                pdf_file = results_dir / f"ab_test_results_{timestamp}.pdf"
-                doc = SimpleDocTemplate(str(pdf_file), pagesize=landscape(A4))
-                elements = []
-                styles = getSampleStyleSheet()
-
-                elements.append(Paragraph(f"<b>{experiment_name}</b>", styles["Title"]))
-                elements.append(Paragraph(f"Model: {model_name}", styles["Heading2"]))
-                elements.append(Spacer(1, 12))
-                timestamp_str = results_data["experiment_info"]["timestamp"]
-                elements.append(
-                    Paragraph(
-                        f"Timestamp: {timestamp_str}",
-                        styles["Normal"],
+                if (
+                    simple_doc_template is None
+                    or landscape_fn is None
+                    or reportlab_page_size is None
+                    or stylesheet_factory is None
+                    or paragraph_cls is None
+                    or spacer_cls is None
+                    or table_cls is None
+                    or table_style_cls is None
+                    or reportlab_colors is None
+                ):
+                    logger.warning(
+                        "⚠️ reportlab symbols unavailable - PDF export skipped"
                     )
-                )
-                elements.append(Spacer(1, 20))
+                else:
+                    try:
+                        pdf_file = results_dir / f"ab_test_results_{timestamp}.pdf"
+                        doc = simple_doc_template(
+                            str(pdf_file),
+                            pagesize=landscape_fn(reportlab_page_size),
+                        )
+                        elements = []
+                        styles = stylesheet_factory()
 
-                data = [
-                    ["Metric", "Baseline", "Test", "Delta"],
-                    [
-                        "Mean Speed (tok/s)",
-                        f"{baseline_stats['mean']}",
-                        f"{test_stats['mean']}",
-                        f"{results_data['comparison']['delta_pct']}%",
-                    ],
-                    [
-                        "Min Speed",
-                        f"{baseline_stats['min']}",
-                        f"{test_stats['min']}",
-                        "-",
-                    ],
-                    [
-                        "Max Speed",
-                        f"{baseline_stats['max']}",
-                        f"{test_stats['max']}",
-                        "-",
-                    ],
-                    [
-                        "Std Dev",
-                        f"±{baseline_stats['std_dev']}",
-                        f"±{test_stats['std_dev']}",
-                        "-",
-                    ],
-                    [
-                        "Count",
-                        str(baseline_stats["count"]),
-                        str(test_stats["count"]),
-                        "-",
-                    ],
-                ]
+                        elements.append(
+                            paragraph_cls(
+                                f"<b>{experiment_name}</b>",
+                                styles["Title"],
+                            )
+                        )
+                        elements.append(
+                            paragraph_cls(
+                                f"Model: {model_name}",
+                                styles["Heading2"],
+                            )
+                        )
+                        elements.append(spacer_cls(1, 12))
+                        timestamp_str = results_data["experiment_info"]["timestamp"]
+                        elements.append(
+                            paragraph_cls(
+                                f"Timestamp: {timestamp_str}",
+                                styles["Normal"],
+                            )
+                        )
+                        elements.append(spacer_cls(1, 20))
 
-                table = Table(data)
-                table.setStyle(
-                    TableStyle(
-                        [
-                            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                            ("FONTSIZE", (0, 0), (-1, 0), 12),
-                            ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-                            ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-                            ("GRID", (0, 0), (-1, -1), 1, colors.black),
+                        data = [
+                            ["Metric", "Baseline", "Test", "Delta"],
+                            [
+                                "Mean Speed (tok/s)",
+                                f"{baseline_stats['mean']}",
+                                f"{test_stats['mean']}",
+                                f"{results_data['comparison']['delta_pct']}%",
+                            ],
+                            [
+                                "Min Speed",
+                                f"{baseline_stats['min']}",
+                                f"{test_stats['min']}",
+                                "-",
+                            ],
+                            [
+                                "Max Speed",
+                                f"{baseline_stats['max']}",
+                                f"{test_stats['max']}",
+                                "-",
+                            ],
+                            [
+                                "Std Dev",
+                                f"±{baseline_stats['std_dev']}",
+                                f"±{test_stats['std_dev']}",
+                                "-",
+                            ],
+                            [
+                                "Count",
+                                str(baseline_stats["count"]),
+                                str(test_stats["count"]),
+                                "-",
+                            ],
                         ]
-                    )
-                )
-                elements.append(table)
-                elements.append(Spacer(1, 20))
-                elements.append(
-                    Paragraph(f"<b>Winner:</b> {winner.upper()}", styles["Heading2"])
-                )
-                elements.append(
-                    Paragraph(
-                        f"<b>Significant:</b> {test_result.get('significant', False)}",
-                        styles["Normal"],
-                    )
-                )
 
-                doc.build(elements)
-                logger.info("📑 A/B Test PDF saved: %s", pdf_file)
-            except ImportError:
+                        table = table_cls(data)
+                        table.setStyle(
+                            table_style_cls(
+                                [
+                                    (
+                                        "BACKGROUND",
+                                        (0, 0),
+                                        (-1, 0),
+                                        reportlab_colors.grey,
+                                    ),
+                                    (
+                                        "TEXTCOLOR",
+                                        (0, 0),
+                                        (-1, 0),
+                                        reportlab_colors.whitesmoke,
+                                    ),
+                                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                                    ("FONTSIZE", (0, 0), (-1, 0), 12),
+                                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                                    (
+                                        "BACKGROUND",
+                                        (0, 1),
+                                        (-1, -1),
+                                        reportlab_colors.beige,
+                                    ),
+                                    (
+                                        "GRID",
+                                        (0, 0),
+                                        (-1, -1),
+                                        1,
+                                        reportlab_colors.black,
+                                    ),
+                                ]
+                            )
+                        )
+                        elements.append(table)
+                        elements.append(spacer_cls(1, 20))
+                        elements.append(
+                            paragraph_cls(
+                                f"<b>Winner:</b> {winner.upper()}",
+                                styles["Heading2"],
+                            )
+                        )
+                        elements.append(
+                            paragraph_cls(
+                                f"<b>Significant:</b> "
+                                f"{test_result.get('significant', False)}",
+                                styles["Normal"],
+                            )
+                        )
+
+                        doc.build(elements)
+                        logger.info("📑 A/B Test PDF saved: %s", pdf_file)
+                    except (OSError, ValueError, TypeError) as pdf_error:
+                        logger.error("❌ PDF Export Error: %s", pdf_error)
+            else:
                 logger.warning("⚠️ reportlab not installed - PDF export skipped")
-            except Exception as pdf_error:
-                logger.error("❌ PDF Export Error: %s", pdf_error)
 
             results_data["exports"] = {
                 "json": str(json_file),
                 "csv": str(csv_file),
                 "html": str(html_file),
             }
-        except Exception as export_error:
+        except (OSError, ValueError, TypeError) as export_error:
             logger.error("❌ Export Error: %s", export_error)
 
         return results_data
@@ -3343,11 +3783,9 @@ async def run_experiment(request: Request) -> dict:
         ValueError,
         sqlite3.Error,
     ) as e:
-        import traceback
-
         logger.error("❌ Experiment Run Error: %s", e)
         logger.error("Traceback: %s", traceback.format_exc())
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/dashboard/stats")
@@ -3357,14 +3795,6 @@ async def get_dashboard_stats() -> dict:
         return {"success": False, "error": "BenchmarkCache not available"}
 
     try:
-        from datetime import datetime
-        import json
-        import platform
-        import sqlite3
-        import subprocess
-
-        import psutil
-
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
 
@@ -3375,7 +3805,9 @@ async def get_dashboard_stats() -> dict:
                 mconn = sqlite3.connect(METADATA_DATABASE_FILE)
                 mcur = mconn.cursor()
                 mcur.execute(
-                    "SELECT model_key, capabilities FROM model_metadata WHERE capabilities IS NOT NULL AND TRIM(capabilities) <> ''"
+                    "SELECT model_key, capabilities FROM model_metadata "
+                    "WHERE capabilities IS NOT NULL "
+                    "AND TRIM(capabilities) <> ''"
                 )
                 for mk, caps_json in mcur.fetchall():
                     try:
@@ -3384,33 +3816,37 @@ async def get_dashboard_stats() -> dict:
                             capabilities_by_model[mk] = caps
                             for c in caps:
                                 distinct_capabilities.add(c)
-                    except Exception:
+                    except (json.JSONDecodeError, ValueError):
                         continue
                 mconn.close()
-        except Exception as _meta_err:
+        except sqlite3.Error:
             pass
 
         lmstudio_health = {"ok": False, "status": "offline"}
         lmstudio_ports = LMSTUDIO_PORTS
 
-        for port in lmstudio_ports:
+        for lm_port in lmstudio_ports:
             try:
                 with httpx.Client(timeout=1.5) as client:
-                    resp = client.get(f"http://{LMSTUDIO_HOST}:{port}/v1/models")
+                    resp = client.get(f"http://{LMSTUDIO_HOST}:{lm_port}/v1/models")
                     if resp.status_code == 200:
                         lmstudio_health = {
                             "ok": True,
-                            "status": f"online ({LMSTUDIO_HOST}:{port})",
+                            "status": f"online ({LMSTUDIO_HOST}:{lm_port})",
                             "version": None,
                         }
                         break
-            except Exception:
+            except (httpx.HTTPError, OSError):
                 continue
 
         if not lmstudio_health["ok"]:
             try:
                 result = subprocess.run(
-                    ["lms", "status"], capture_output=True, text=True, timeout=2
+                    ["lms", "status"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    check=False,
                 )
                 text = (result.stdout + result.stderr).lower()
                 offline_keywords = [
@@ -3442,13 +3878,13 @@ async def get_dashboard_stats() -> dict:
                         "status": "online (cli)",
                         "version": None,
                     }
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 pass
 
         try:
             use_rest = CONFIG_DEFAULTS.get("lmstudio", {}).get("use_rest_api", False)
             lmstudio_health["mode"] = "REST API" if use_rest else "Python SDK"
-        except Exception:
+        except (KeyError, AttributeError):
             lmstudio_health["mode"] = "???"
 
         system_info = {
@@ -3462,15 +3898,14 @@ async def get_dashboard_stats() -> dict:
 
         if system_info["os"] == "Linux":
             try:
-                import distro
 
                 distro_name = distro.name()
                 distro_version = distro.version()
                 if distro_name:
                     system_info["os"] = f"{distro_name} {distro_version}".strip()
-            except BaseException:
+            except (ImportError, OSError):
                 try:
-                    with open("/etc/os-release", "r") as f:
+                    with open("/etc/os-release", "r", encoding="utf-8") as f:
                         os_release = {}
                         for line in f:
                             if "=" in line:
@@ -3483,13 +3918,11 @@ async def get_dashboard_stats() -> dict:
                             system_info["os"] = (
                                 f"{os_release['NAME']} {version}".strip()
                             )
-                except BaseException:
+                except OSError:
                     pass
 
         cpu_gpu_series = None
         try:
-            import cpuinfo
-
             cpu_data = cpuinfo.get_cpu_info()
             if "brand_raw" in cpu_data and cpu_data["brand_raw"]:
                 raw_cpu = (
@@ -3498,20 +3931,14 @@ async def get_dashboard_stats() -> dict:
                 system_info["cpu"] = raw_cpu
 
                 if "Radeon" in raw_cpu:
-                    import re
-
                     radeon_match = re.search(r"Radeon\s+(\d+[A-Za-z]*)", raw_cpu)
                     if radeon_match:
                         cpu_gpu_series = f"AMD Radeon {radeon_match.group(1)}"
-        except BaseException:
+        except (ImportError, OSError, KeyError):
             pass
 
         gpu_info = None
         try:
-            import glob
-            import re
-            import subprocess
-
             gpu_type = "Unknown"
             gpu_model = "Unknown"
             vram_total_gb = None
@@ -3542,7 +3969,9 @@ async def get_dashboard_stats() -> dict:
                     ],
                     timeout=5,
                 )
-                vram_total_mb = int(output.decode().strip().split("\n")[0])
+                vram_total_mb = int(
+                    output.decode().strip().split("\n", maxsplit=1)[0]
+                )
                 vram_total_gb = round(vram_total_mb / 1024, 2)
                 gpu_type = "NVIDIA"
 
@@ -3551,8 +3980,10 @@ async def get_dashboard_stats() -> dict:
                         ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
                         timeout=5,
                     )
-                    gpu_model = model_output.decode().strip().split("\n")[0]
-                except Exception:
+                    gpu_model = model_output.decode().strip().split(
+                        "\n", maxsplit=1
+                    )[0]
+                except (subprocess.SubprocessError, OSError):
                     gpu_model = "NVIDIA GPU"
 
             except (TimeoutExpired, FileNotFoundError, ValueError):
@@ -3597,6 +4028,7 @@ async def get_dashboard_stats() -> dict:
                             capture_output=True,
                             text=True,
                             timeout=5,
+                            check=False,
                         )
                         if lspci_output.returncode == 0 and lspci_output.stdout:
                             for line in lspci_output.stdout.strip().split("\n"):
@@ -3612,6 +4044,7 @@ async def get_dashboard_stats() -> dict:
                                                 capture_output=True,
                                                 text=True,
                                                 timeout=5,
+                                                check=False,
                                             )
                                             if detail_output.returncode == 0:
                                                 detail_text = detail_output.stdout
@@ -3624,7 +4057,7 @@ async def get_dashboard_stats() -> dict:
                                                                 detail_line.strip()
                                                             )
                                                             break
-                                        except BaseException:
+                                        except (subprocess.SubprocessError, OSError):
                                             pass
                                         break
                     except (FileNotFoundError, TimeoutExpired):
@@ -3635,11 +4068,11 @@ async def get_dashboard_stats() -> dict:
                             for gpu_path in Path("/sys/devices").glob(
                                 "**/pci*/*/0000:c7:00.0/device"
                             ):
-                                with open(gpu_path, "r") as f:
+                                with open(gpu_path, "r", encoding="utf-8") as f:
                                     dev_id_hex = f.read().strip()
                                     device_id = dev_id_hex.replace("0x", "")
                                     break
-                        except BaseException:
+                        except OSError:
                             pass
 
                     gfx_code = None
@@ -3649,6 +4082,7 @@ async def get_dashboard_stats() -> dict:
                             capture_output=True,
                             text=True,
                             timeout=5,
+                            check=False,
                         )
                         if result.returncode == 0:
                             for line in result.stdout.split("\n"):
@@ -3657,7 +4091,7 @@ async def get_dashboard_stats() -> dict:
                                     if len(parts) > 1:
                                         gfx_code = parts[1].strip()
                                     break
-                    except Exception:
+                    except (subprocess.SubprocessError, OSError):
                         pass
 
                     if cpu_gpu_series:
@@ -3680,6 +4114,7 @@ async def get_dashboard_stats() -> dict:
                         capture_output=True,
                         text=True,
                         timeout=5,
+                        check=False,
                     )
 
                     if result.returncode == 0:
@@ -3698,6 +4133,7 @@ async def get_dashboard_stats() -> dict:
                             capture_output=True,
                             text=True,
                             timeout=5,
+                            check=False,
                         )
 
                         if result.returncode == 0:
@@ -3724,7 +4160,7 @@ async def get_dashboard_stats() -> dict:
                 ),
             }
 
-        except Exception:
+        except (subprocess.SubprocessError, OSError, ValueError):
             gpu_info = {
                 "type": "Unknown",
                 "vram_gb": None,
@@ -3742,7 +4178,31 @@ async def get_dashboard_stats() -> dict:
             ),
         }
 
+        def calc_percentile(values: List[float], percentile: float) -> float:
+            """Calculate percentile with linear interpolation."""
+            if not values:
+                return 0.0
+            sorted_values = sorted(values)
+            if len(sorted_values) == 1:
+                return float(sorted_values[0])
+            position = (len(sorted_values) - 1) * percentile
+            lower_idx = int(math.floor(position))
+            upper_idx = int(math.ceil(position))
+            if lower_idx == upper_idx:
+                return float(sorted_values[lower_idx])
+            lower_val = sorted_values[lower_idx]
+            upper_val = sorted_values[upper_idx]
+            weight = position - lower_idx
+            return float(lower_val + (upper_val - lower_val) * weight)
+
         perf_stats = {}
+        speed_summary = {
+            "min": 0,
+            "p50": 0,
+            "avg": 0,
+            "p95": 0,
+            "max": 0,
+        }
         if results:
             speeds = [r.avg_tokens_per_sec for r in results]
             perf_stats = {
@@ -3750,8 +4210,28 @@ async def get_dashboard_stats() -> dict:
                 "max_speed": round(max(speeds), 2),
                 "min_speed": round(min(speeds), 2),
             }
+            speed_summary = {
+                "min": round(min(speeds), 2),
+                "p50": round(calc_percentile(speeds, 0.5), 2),
+                "avg": round(sum(speeds) / len(speeds), 2),
+                "p95": round(calc_percentile(speeds, 0.95), 2),
+                "max": round(max(speeds), 2),
+            }
+
+        quantization_distribution: Dict[str, int] = {}
+        architecture_distribution: Dict[str, int] = {}
+        for result in results:
+            quant_key = result.quantization or "unknown"
+            arch_key = result.architecture or "unknown"
+            quantization_distribution[quant_key] = (
+                quantization_distribution.get(quant_key, 0) + 1
+            )
+            architecture_distribution[arch_key] = (
+                architecture_distribution.get(arch_key, 0) + 1
+            )
 
         top_models = []
+        top_models_extended = []
         fastest_model = None
         if results:
             sorted_results = sorted(
@@ -3776,6 +4256,48 @@ async def get_dashboard_stats() -> dict:
                         "speed": round(r.avg_tokens_per_sec, 2),
                         "capabilities": capabilities_by_model.get(r.model_name, []),
                     }
+
+            for r in sorted_results[:10]:
+                base_key = r.model_name.split("@")[0]
+                top_models_extended.append(
+                    {
+                        "model_name": r.model_name,
+                        "quantization": r.quantization,
+                        "speed": round(r.avg_tokens_per_sec, 2),
+                        "vram_mb": r.vram_mb,
+                        "params_size": r.params_size,
+                        "architecture": r.architecture,
+                        "capabilities": capabilities_by_model.get(
+                            r.model_name, []
+                        ),
+                        "source_url": f"https://lmstudio.ai/models/{base_key}",
+                    }
+                )
+
+        efficiency_top = []
+        if results:
+            efficiency_results = [
+                r
+                for r in results
+                if getattr(r, "tokens_per_sec_per_gb", None) is not None
+            ]
+            efficiency_sorted = sorted(
+                efficiency_results,
+                key=lambda r: float(r.tokens_per_sec_per_gb),
+                reverse=True,
+            )
+            for r in efficiency_sorted[:5]:
+                efficiency_top.append(
+                    {
+                        "model_name": r.model_name,
+                        "quantization": r.quantization,
+                        "tokens_per_sec_per_gb": round(
+                            float(r.tokens_per_sec_per_gb), 2
+                        ),
+                        "speed": round(r.avg_tokens_per_sec, 2),
+                        "vram_mb": r.vram_mb,
+                    }
+                )
 
         recent_runs = []
         last_run_timestamp = None
@@ -3803,18 +4325,34 @@ async def get_dashboard_stats() -> dict:
             "gpu_info": gpu_info,
             "cache_stats": cache_stats,
             "perf_stats": perf_stats,
+            "speed_summary": speed_summary,
             "top_models": top_models,
+            "top_models_extended": top_models_extended,
             "recent_runs": recent_runs,
             "fastest_model": fastest_model,
+            "quantization_distribution": quantization_distribution,
+            "architecture_distribution": architecture_distribution,
+            "efficiency_top": efficiency_top,
             "capability_catalog": (
                 sorted(list(distinct_capabilities)) if distinct_capabilities else []
             ),
             "last_run": last_run_timestamp,
             "lmstudio": lmstudio_health,
         }
-    except Exception as e:
+    except (
+        AttributeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+        sqlite3.Error,
+        subprocess.SubprocessError,
+        psutil.Error,
+        statistics.StatisticsError,
+    ) as e:
         logger.error("❌ Error loading dashboard stats: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 # ============================================================================
@@ -3856,7 +4394,7 @@ async def websocket_benchmark(websocket: WebSocket):
             except WebSocketDisconnect:
                 logger.info("⚠️ WebSocket Client has disconnected")
                 break
-            except Exception as e:
+            except (OSError, RuntimeError, ValueError) as e:
                 logger.error("❌ WebSocket Receive Error: %s", e)
                 break
 
@@ -3867,7 +4405,7 @@ async def websocket_benchmark(websocket: WebSocket):
                         {"type": "output", "line": output, "status": manager.status}
                     )
                     heartbeat_count = 0
-                except Exception as e:
+                except (OSError, RuntimeError, ValueError) as e:
                     logger.error("❌ WebSocket Send Error: %s", e)
                     break
 
@@ -3875,38 +4413,32 @@ async def websocket_benchmark(websocket: WebSocket):
 
                 current_time = time.time()
                 if current_time - manager.last_hardware_send_time >= 2.0:
-                    if (
-                        manager.hardware_history["temperatures"]
-                        or manager.hardware_history["power"]
-                        or manager.hardware_history["vram"]
-                        or manager.hardware_history["gtt"]
-                        or manager.hardware_history["cpu"]
-                        or manager.hardware_history["ram"]
-                    ):
+                    hw = manager.hardware_history
+                    has_hw_data = any([
+                        hw["temperatures"],
+                        hw["power"],
+                        hw["vram"],
+                        hw["gtt"],
+                        hw["cpu"],
+                        hw["ram"],
+                    ])
+                    if has_hw_data:
                         try:
                             max_history = 60
                             hardware_data = {
-                                "temperatures": (
-                                    manager.hardware_history["temperatures"][
-                                        -max_history:
-                                    ]
-                                ),
-                                "power": (
-                                    manager.hardware_history["power"][-max_history:]
-                                ),
-                                "vram": (
-                                    manager.hardware_history["vram"][-max_history:]
-                                ),
-                                "gtt": (manager.hardware_history["gtt"][-max_history:]),
-                                "cpu": (manager.hardware_history["cpu"][-max_history:]),
-                                "ram": (manager.hardware_history["ram"][-max_history:]),
+                                "temperatures": hw["temperatures"][-max_history:],
+                                "power": hw["power"][-max_history:],
+                                "vram": hw["vram"][-max_history:],
+                                "gtt": hw["gtt"][-max_history:],
+                                "cpu": hw["cpu"][-max_history:],
+                                "ram": hw["ram"][-max_history:],
                             }
 
                             await websocket.send_json(
                                 {"type": "hardware", "data": hardware_data}
                             )
-                            manager.last_hardware_send_time = current_time
-                        except Exception as e:
+                            manager.update_last_hardware_send_time(current_time)
+                        except (OSError, RuntimeError, ValueError) as e:
                             logger.error(
                                 "❌ WebSocket Hardware Send Error: %s",
                                 e,
@@ -3922,7 +4454,7 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "running": manager.is_running(),
                             }
                         )
-                    except Exception as e:
+                    except (OSError, RuntimeError, ValueError) as e:
                         logger.error("❌ WebSocket Heartbeat Error: %s", e)
                         break
 
@@ -3934,13 +4466,13 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "message": "✅ Benchmark completed",
                             }
                         )
-                    except Exception as e:
+                    except (OSError, RuntimeError, ValueError) as e:
                         logger.warning(
                             "⚠️ Could not send Completion message: %s",
                             e,
                         )
                     finally:
-                        manager.status = "idle"
+                        manager.set_idle_status()
 
                 if manager.status == "failed":
                     try:
@@ -3950,19 +4482,19 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "message": "❌ Benchmark failed",
                             }
                         )
-                    except Exception as e:
+                    except (OSError, RuntimeError, ValueError) as e:
                         logger.warning(
                             "⚠️ Could not send Failure message: %s",
                             e,
                         )
                     finally:
-                        manager.status = "idle"
+                        manager.set_idle_status()
 
                 await asyncio.sleep(0.5)
 
     except WebSocketDisconnect:
         logger.info("ℹ️ WebSocket normal disconnect")
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         logger.error("❌ WebSocket Error: %s", e)
     finally:
         manager.connected_clients.discard(websocket)
@@ -3991,7 +4523,7 @@ async def get_latest_results() -> dict:
         latest_file = max(json_files, key=lambda x: x.stat().st_mtime)
 
         return {"latest": latest_file.name}
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         logger.error("Error finding latest results: %s", e)
         return {"latest": None}
 
@@ -4071,20 +4603,21 @@ if __name__ == "__main__":
         port = find_free_port()
         logger.info("🎲 Using automatically found free port: %s", port)
 
-    dashboard_url = f"http://localhost:{port}"
-    logger.info("🚀 Dashboard available at %s", dashboard_url)
-    logger.info("📊 API Docs: %s/docs", dashboard_url)
+    DASHBOARD_URL = f"http://localhost:{port}"
+    logger.info("🚀 Dashboard available at %s", DASHBOARD_URL)
+    logger.info("📊 API Docs: %s/docs", DASHBOARD_URL)
 
     def open_browser():
+        """Open the dashboard URL in the default web browser."""
         time.sleep(1.5)
         try:
-            logger.info("🌐 Opening browser: %s", dashboard_url)
-            webbrowser.open(dashboard_url)
-        except Exception as e:
+            logger.info("🌐 Opening browser: %s", DASHBOARD_URL)
+            webbrowser.open(DASHBOARD_URL)
+        except (OSError, webbrowser.Error) as e:
             logger.warning("⚠️ Could not open browser: %s", e)
 
     browser_thread = threading.Thread(target=open_browser, daemon=True)
     browser_thread.start()
 
-    uvicorn_log_level = "debug" if args.debug else "info"
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level=uvicorn_log_level)
+    UVICORN_LOG_LEVEL = "debug" if args.debug else "info"
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level=UVICORN_LOG_LEVEL)

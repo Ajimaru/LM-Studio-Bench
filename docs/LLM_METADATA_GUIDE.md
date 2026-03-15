@@ -70,7 +70,7 @@ The benchmark system automatically detects all your GPUs and specs:
 | --- | --- | --- | --- |
 | `quantization.name` | string | "Q4_K_M", "Q8_0", "F16" | Quantization method |
 | `quantization.bits` | number | 4, 8, 16 | Bits per weight |
-| `variants` | array | ["@q4_k_m", "@q8_0"] | All available quantizations |
+| `variants` | array | `[@q4_k_m, @q8_0]` | All available quantizations |
 | `selectedVariant` | string | "mistralai/ministral-3-3b@q4_k_m" | Current selection |
 
 ## 🔍 Practical Examples with Your Models
@@ -88,6 +88,8 @@ lms ls --json | jq '.[] | select(.vision == true) | {displayName, paramsString, 
   • Ministral 3 3B (3B) - 262144 tokens
   • Qwen3 Vl 8B (8B) - 262144 tokens
 ```
+
+The command uses the `jq` filter shown above.
 
 ### Example 2: Tool-calling models only
 

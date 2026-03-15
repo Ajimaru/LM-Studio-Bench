@@ -1,17 +1,12 @@
 """Tests for src/rest_client.py."""
-from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from rest_client import (
-    ChatStats,
     LMStudioRESTClient,
-    LoadedInstance,
     ModelCapabilities,
     ModelInfo,
-    Quantization,
     filter_llm_models,
     filter_tool_models,
     filter_vision_models,
@@ -121,7 +116,7 @@ class TestHealthCheck:
         assert client.health_check() is False
 
 
-class TestListModels:
+class TestListModelsUnit:
     """Tests for LMStudioRESTClient.list_models()."""
 
     def _make_response(self, models_data: list) -> MagicMock:
@@ -187,6 +182,7 @@ class TestListModels:
             }
         ])
         result = client.list_models()
+        assert result[0].capabilities is not None
         assert result[0].capabilities.vision is True
 
     def test_parses_loaded_instances(self):
@@ -203,6 +199,7 @@ class TestListModels:
             }
         ])
         result = client.list_models()
+        assert result[0].loaded_instances is not None
         assert len(result[0].loaded_instances) == 1
         assert result[0].loaded_instances[0].instance_id == "inst-1"
 
@@ -433,7 +430,10 @@ class TestFilterModels:
         ]
         result = filter_vision_models(models)
         assert len(result) == 1
-        assert result[0].capabilities.vision is True
+        caps = result[0].capabilities
+        if caps is None:
+            raise AssertionError("capabilities must not be None")
+        assert caps.vision is True
 
     def test_filter_tool_models_returns_only_tool(self):
         """filter_tool_models returns only tool-capable models."""
@@ -443,7 +443,10 @@ class TestFilterModels:
         ]
         result = filter_tool_models(models)
         assert len(result) == 1
-        assert result[0].capabilities.trained_for_tool_use is True
+        caps = result[0].capabilities
+        if caps is None:
+            raise AssertionError("capabilities must not be None")
+        assert caps.trained_for_tool_use is True
 
     def test_filter_returns_empty_on_empty_input(self):
         """All filter functions return empty list for empty input."""
@@ -511,7 +514,7 @@ class TestChatStreamMethod:
         }
         mock_resp = self._make_sse_response([event])
         with patch.object(client.client, "stream", return_value=mock_resp):
-            result1 = client.chat_stream(
+            client.chat_stream(
                 messages=[{"role": "user", "content": "q"}]
             )
         with patch.object(client.client, "stream") as mock_stream:

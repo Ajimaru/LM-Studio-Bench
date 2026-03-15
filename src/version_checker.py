@@ -60,7 +60,9 @@ def fetch_latest_release() -> Optional[dict]:
         None - Errors are logged and None is returned (graceful
         degradation).
     """
-    url = "https://api.github.com/repos/Ajimaru/" "LM-Studio-Bench/releases/latest"
+    url = (
+        "https://api.github.com/repos/Ajimaru/LM-Studio-Bench/releases/latest"
+    )
 
     try:
         with httpx.Client(timeout=5.0) as client:
@@ -96,7 +98,7 @@ def compare_versions(current: str, latest: str) -> bool:
 
     def parse_version(v: str) -> tuple:
         """Parse version string to tuple (major, minor, patch)."""
-        v_clean = v.lstrip("v").split("-")[0]  # Remove "v" prefix, ignore pre-release
+        v_clean = v.lstrip("v").split("-")[0]
         try:
             parts = v_clean.split(".")
             return tuple(int(p) for p in parts[:3])

@@ -1,10 +1,9 @@
 """Tests for tools/scrape_metadata.py."""
+import importlib
 import json
-import shutil
+from pathlib import Path
 import sqlite3
 import sys
-import types
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,13 +21,17 @@ def _import_scrape_metadata(tmp_path: Path):
     if "scrape_metadata" in sys.modules:
         del sys.modules["scrape_metadata"]
 
+    tools_dir = str(Path(__file__).parent.parent / "tools")
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+
     with patch("user_paths.USER_RESULTS_DIR", results_dir), \
             patch("user_paths.USER_LOGS_DIR", logs_dir):
-        import scrape_metadata as sm
-        sm.RESULTS_DIR = results_dir
-        sm.METADATA_DB = results_dir / "model_metadata.db"
-        sm.LOGS_DIR = logs_dir
-        sm.BACKUPS_DIR = backups_dir
+        sm = importlib.import_module("scrape_metadata")
+        setattr(sm, "RESULTS_DIR", results_dir)
+        setattr(sm, "METADATA_DB", results_dir / "model_metadata.db")
+        setattr(sm, "LOGS_DIR", logs_dir)
+        setattr(sm, "BACKUPS_DIR", backups_dir)
     return sm
 
 
@@ -194,6 +197,12 @@ class TestInferCapsFromDescription:
         assert "math" in caps
         assert "vision" in caps
 
+    def test_no_match_returns_empty(self, tmp_path: Path):
+        """Returns empty list when no keywords match."""
+        sm = _import_scrape_metadata(tmp_path)
+        result = sm.infer_caps_from_description("A generic language model")
+        assert isinstance(result, list)
+
 
 class TestInferCapabilities:
     """Tests for scrape_metadata.infer_capabilities()."""
@@ -227,6 +236,24 @@ class TestInferCapabilities:
         sm = _import_scrape_metadata(tmp_path)
         caps = sm.infer_capabilities("org/xyz-alpha", "XYZ Alpha")
         assert caps == []
+
+    def test_reasoning_from_r1_key(self, tmp_path: Path):
+        """Detects reasoning from deepseek-r1 in model key."""
+        sm = _import_scrape_metadata(tmp_path)
+        result = sm.infer_capabilities("deepseek-r1/model", "Model")
+        assert "reasoning" in result
+
+    def test_coding_from_coder(self, tmp_path: Path):
+        """Detects coding from coder in model key."""
+        sm = _import_scrape_metadata(tmp_path)
+        result = sm.infer_capabilities("org/qwen-coder", "Qwen Coder")
+        assert "coding" in result
+
+    def test_creative_from_writer(self, tmp_path: Path):
+        """Detects creative from writer in display name."""
+        sm = _import_scrape_metadata(tmp_path)
+        result = sm.infer_capabilities("org/model", "Story Writer Model")
+        assert "creative" in result
 
 
 class TestUpsertMetadata:
@@ -371,7 +398,8 @@ class TestLoadLmsModels:
         mock_proc = MagicMock()
         mock_proc.returncode = 0
         mock_proc.stdout = json.dumps([{"modelKey": "pub/model"}])
-        with patch("subprocess.run", return_value=mock_proc):
+        with patch.object(sm, "_resolve_lms_executable", return_value="/usr/bin/lms"), \
+                patch("subprocess.run", return_value=mock_proc):
             result = sm.load_lms_models()
         assert isinstance(result, list)
         assert result[0]["modelKey"] == "pub/model"
@@ -382,7 +410,8 @@ class TestLoadLmsModels:
         mock_proc = MagicMock()
         mock_proc.returncode = 1
         mock_proc.stderr = "command not found"
-        with patch("subprocess.run", return_value=mock_proc):
+        with patch.object(sm, "_resolve_lms_executable", return_value="/usr/bin/lms"), \
+                patch("subprocess.run", return_value=mock_proc):
             with pytest.raises(RuntimeError):
                 sm.load_lms_models()
 
@@ -392,7 +421,8 @@ class TestLoadLmsModels:
         mock_proc = MagicMock()
         mock_proc.returncode = 0
         mock_proc.stdout = "not json at all"
-        with patch("subprocess.run", return_value=mock_proc):
+        with patch.object(sm, "_resolve_lms_executable", return_value="/usr/bin/lms"), \
+                patch("subprocess.run", return_value=mock_proc):
             with pytest.raises(RuntimeError):
                 sm.load_lms_models()
 
@@ -402,8 +432,16 @@ class TestLoadLmsModels:
         mock_proc = MagicMock()
         mock_proc.returncode = 0
         mock_proc.stdout = json.dumps({"key": "value"})
-        with patch("subprocess.run", return_value=mock_proc):
+        with patch.object(sm, "_resolve_lms_executable", return_value="/usr/bin/lms"), \
+                patch("subprocess.run", return_value=mock_proc):
             with pytest.raises((RuntimeError, ValueError)):
+                sm.load_lms_models()
+
+    def test_raises_when_lms_not_found(self, tmp_path: Path):
+        """RuntimeError raised when the lms executable cannot be resolved."""
+        sm = _import_scrape_metadata(tmp_path)
+        with patch.object(sm, "_resolve_lms_executable", side_effect=RuntimeError):
+            with pytest.raises(RuntimeError):
                 sm.load_lms_models()
 
 
@@ -454,97 +492,6 @@ class TestFetchLmStudioReadme:
         assert isinstance(result, str)
 
 
-class TestInferCapsFromDescription:
-    """Tests for scrape_metadata.infer_caps_from_description()."""
-
-    def test_empty_returns_empty(self, tmp_path: Path):
-        """Empty description returns empty list."""
-        sm = _import_scrape_metadata(tmp_path)
-        assert sm.infer_caps_from_description("") == []
-
-    def test_coding_keyword(self, tmp_path: Path):
-        """Detects coding capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A great coding model")
-        assert "coding" in result
-
-    def test_math_keyword(self, tmp_path: Path):
-        """Detects math capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("Supports math and algebra")
-        assert "math" in result
-
-    def test_reasoning_keyword(self, tmp_path: Path):
-        """Detects reasoning capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("Uses chain-of-thought reasoning")
-        assert "reasoning" in result
-
-    def test_chat_keyword(self, tmp_path: Path):
-        """Detects chat capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A conversational assistant")
-        assert "chat" in result
-
-    def test_vision_keyword(self, tmp_path: Path):
-        """Detects vision capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A multimodal vision-language model")
-        assert "vision" in result
-
-    def test_tool_use_keyword(self, tmp_path: Path):
-        """Detects tool_use capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("Supports function calling and tools")
-        assert "tool_use" in result
-
-    def test_creative_keyword(self, tmp_path: Path):
-        """Detects creative capability from keyword."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A creative story writer")
-        assert "creative" in result
-
-    def test_no_match_returns_empty(self, tmp_path: Path):
-        """Returns empty list when no keywords match."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_caps_from_description("A generic language model")
-        assert isinstance(result, list)
-
-
-class TestInferCapabilities:
-    """Tests for scrape_metadata.infer_capabilities()."""
-
-    def test_reasoning_from_key(self, tmp_path: Path):
-        """Detects reasoning from deepseek-r1 in model key."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("deepseek-r1/model", "Model")
-        assert "reasoning" in result
-
-    def test_coding_from_coder(self, tmp_path: Path):
-        """Detects coding from coder in model key."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("org/qwen-coder", "Qwen Coder")
-        assert "coding" in result
-
-    def test_chat_from_instruct(self, tmp_path: Path):
-        """Detects chat from instruct in model key."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("org/model-instruct", "Model Instruct")
-        assert "chat" in result
-
-    def test_math_from_key(self, tmp_path: Path):
-        """Detects math from math in model key."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("org/mathmodel", "Math Model")
-        assert "math" in result
-
-    def test_creative_from_writer(self, tmp_path: Path):
-        """Detects creative from writer in display name."""
-        sm = _import_scrape_metadata(tmp_path)
-        result = sm.infer_capabilities("org/model", "Story Writer Model")
-        assert "creative" in result
-
-
 class TestFetchHfMetadata:
     """Tests for scrape_metadata.fetch_hf_metadata()."""
 
@@ -556,7 +503,6 @@ class TestFetchHfMetadata:
 
     def test_returns_metadata_on_success(self, tmp_path: Path):
         """Returns populated dict on successful API response."""
-        import json
         sm = _import_scrape_metadata(tmp_path)
         api_data = {
             "tags": ["llm", "text-generation"],
@@ -594,13 +540,13 @@ class TestFetchHfMetadata:
         assert result == {}
 
 
-class TestBackupMetadataDb:
-    """Tests for scrape_metadata.backup_metadata_db()."""
+class TestBackupMetadataDbExtended:
+    """Extended tests for scrape_metadata.backup_metadata_db()."""
 
     def test_no_op_when_db_missing(self, tmp_path: Path):
         """Does nothing when metadata DB does not exist."""
         sm = _import_scrape_metadata(tmp_path)
-        sm.METADATA_DB = tmp_path / "missing.db"
+        setattr(sm, "METADATA_DB", tmp_path / "missing.db")
         sm.backup_metadata_db()
 
     def test_creates_backup_file(self, tmp_path: Path):
@@ -608,10 +554,10 @@ class TestBackupMetadataDb:
         sm = _import_scrape_metadata(tmp_path)
         db_path = tmp_path / "results" / "model_metadata.db"
         db_path.write_bytes(b"dummy")
-        sm.METADATA_DB = db_path
+        setattr(sm, "METADATA_DB", db_path)
         backups_dir = tmp_path / "results" / "backups"
         backups_dir.mkdir(exist_ok=True)
-        sm.BACKUPS_DIR = backups_dir
+        setattr(sm, "BACKUPS_DIR", backups_dir)
         sm.backup_metadata_db()
         backup_files = list(backups_dir.glob("*_backup.db"))
         assert len(backup_files) == 1
@@ -621,6 +567,213 @@ class TestBackupMetadataDb:
         sm = _import_scrape_metadata(tmp_path)
         db_path = tmp_path / "results" / "model_metadata.db"
         db_path.write_bytes(b"dummy")
-        sm.METADATA_DB = db_path
+        setattr(sm, "METADATA_DB", db_path)
         with patch("shutil.copy2", side_effect=OSError("disk full")):
             sm.backup_metadata_db()
+
+
+class TestScrapeWorkflow:
+    """Tests for scrape_metadata.scrape()."""
+
+    def _seed_row(self, sm, row):
+        """Insert one row into metadata DB for update/merge scenarios."""
+        conn = sqlite3.connect(sm.METADATA_DB)
+        sm.ensure_schema(conn)
+        sm.upsert_metadata(conn, [row])
+        conn.close()
+
+    def test_scrape_only_missing_updates_existing(self, tmp_path: Path):
+        """only_missing updates description/capabilities for existing row."""
+        sm = _import_scrape_metadata(tmp_path)
+        self._seed_row(
+            sm,
+            {
+                "model_key": "pub/existing@q4",
+                "display_name": "Existing",
+                "publisher": "pub",
+                "architecture": "llama",
+                "params": "7B",
+                "size_bytes": 1,
+                "max_context_length": 2048,
+                "vision": 0,
+                "tool_use": 0,
+                "capabilities": json.dumps([]),
+                "source_url": "",
+                "hf_tags": json.dumps([]),
+                "description": "",
+                "scraped_at": "2024-01-01T00:00:00+00:00",
+            },
+        )
+
+        models = [
+            {
+                "type": "llm",
+                "modelKey": "pub/existing@q4",
+                "displayName": "Existing",
+                "architecture": "llama",
+                "paramsString": "7B",
+                "sizeBytes": 10,
+                "maxContextLength": 4096,
+                "vision": True,
+                "trainedForToolUse": True,
+            },
+            {"type": "embedding", "modelKey": "pub/skip"},
+            {"type": "llm", "displayName": "No key"},
+        ]
+
+        with patch.object(sm, "backup_metadata_db"):
+            with patch.object(sm, "load_lms_models", return_value=models):
+                with patch.object(
+                    sm,
+                    "fetch_lmstudio_readme",
+                    return_value="A coding and math assistant",
+                ):
+                    sm.scrape(only_missing=True, enable_hf=True)
+
+        conn = sqlite3.connect(sm.METADATA_DB)
+        cur = conn.execute(
+            "SELECT description, source_url, capabilities "
+            "FROM model_metadata WHERE model_key=?",
+            ("pub/existing@q4",),
+        )
+        desc, source_url, caps_json = cur.fetchone()
+        caps = set(json.loads(caps_json))
+        conn.close()
+
+        assert "coding" in desc.lower()
+        assert source_url.endswith("pub/existing")
+        assert {"coding", "math", "vision", "tool_use"}.issubset(caps)
+
+    def test_scrape_insert_without_hf(self, tmp_path: Path):
+        """Full scrape inserts rows and skips HF when disabled."""
+        sm = _import_scrape_metadata(tmp_path)
+        models = [
+            {
+                "type": "llm",
+                "modelKey": "pub/new-model",
+                "displayName": "New Model",
+                "architecture": "mistral",
+                "paramsString": "8B",
+                "sizeBytes": 123,
+                "maxContextLength": 8192,
+                "vision": False,
+                "trainedForToolUse": False,
+            }
+        ]
+
+        with patch.object(sm, "backup_metadata_db"), \
+                patch.object(sm, "load_lms_models", return_value=models), \
+                patch.object(sm, "fetch_lmstudio_readme", return_value=""), \
+                patch.object(sm, "fetch_hf_metadata") as mock_hf:
+            sm.scrape(only_missing=False, enable_hf=False)
+
+        conn = sqlite3.connect(sm.METADATA_DB)
+        cur = conn.execute(
+            "SELECT model_key, hf_tags, description, source_url "
+            "FROM model_metadata WHERE model_key=?",
+            ("pub/new-model",),
+        )
+        row = cur.fetchone()
+        conn.close()
+
+        assert row is not None
+        assert row[0] == "pub/new-model"
+        assert row[1] == json.dumps([])
+        assert row[2] == ""
+        assert row[3].endswith("pub/new-model")
+        mock_hf.assert_not_called()
+
+    def test_scrape_insert_merges_existing_caps_and_hf_desc(
+        self,
+        tmp_path: Path,
+    ):
+        """Full scrape merges old capabilities and uses HF description fallback."""
+        sm = _import_scrape_metadata(tmp_path)
+        self._seed_row(
+            sm,
+            {
+                "model_key": "pub/model-a",
+                "display_name": "Model A",
+                "publisher": "pub",
+                "architecture": "llama",
+                "params": "7B",
+                "size_bytes": 1,
+                "max_context_length": 1024,
+                "vision": 0,
+                "tool_use": 0,
+                "capabilities": json.dumps(["creative"]),
+                "source_url": "https://example.com",
+                "hf_tags": json.dumps([]),
+                "description": "old",
+                "scraped_at": "2024-01-01T00:00:00+00:00",
+            },
+        )
+        models = [
+            {
+                "type": "llm",
+                "modelKey": "pub/model-a",
+                "displayName": "Model A Coder",
+                "architecture": "llama",
+                "paramsString": "7B",
+                "sizeBytes": 2,
+                "maxContextLength": 4096,
+                "vision": False,
+                "trainedForToolUse": False,
+            }
+        ]
+
+        with patch.object(sm, "backup_metadata_db"):
+            with patch.object(sm, "load_lms_models", return_value=models):
+                with patch.object(
+                    sm, "fetch_lmstudio_readme", return_value=""
+                ):
+                    with patch.object(
+                        sm,
+                        "fetch_hf_metadata",
+                        return_value={
+                            "hf_tags": ["llm"],
+                            "hf_pipeline_tag": "text-generation",
+                            "hf_description": "HF description",
+                        },
+                    ):
+                        sm.scrape(only_missing=False, enable_hf=True)
+
+        conn = sqlite3.connect(sm.METADATA_DB)
+        cur = conn.execute(
+            "SELECT capabilities, description, hf_tags "
+            "FROM model_metadata WHERE model_key=?",
+            ("pub/model-a",),
+        )
+        caps_json, description, hf_tags = cur.fetchone()
+        conn.close()
+
+        caps = set(json.loads(caps_json))
+        assert "creative" in caps
+        assert "coding" in caps
+        assert description == "HF description"
+        assert json.loads(hf_tags) == ["llm"]
+
+
+class TestMainCli:
+    """Tests for scrape_metadata.main()."""
+
+    def test_main_expands_cluster_flags(self, tmp_path: Path):
+        """Combined short flags are expanded and passed correctly to scrape."""
+        sm = _import_scrape_metadata(tmp_path)
+        with patch.object(sm, "setup_logger"), \
+                patch.object(sm, "scrape") as mock_scrape, \
+                patch.object(sys, "argv", ["scrape_metadata.py", "-rn"]):
+            sm.main()
+
+        mock_scrape.assert_called_once_with(only_missing=False, enable_hf=False)
+
+    def test_main_exits_on_runtime_error(self, tmp_path: Path):
+        """CLI exits with status 1 when scrape raises a handled exception."""
+        sm = _import_scrape_metadata(tmp_path)
+        with patch.object(sm, "setup_logger"), \
+                patch.object(sm, "scrape", side_effect=RuntimeError("boom")), \
+                patch.object(sys, "argv", ["scrape_metadata.py"]):
+            with pytest.raises(SystemExit) as exc:
+                sm.main()
+
+        assert exc.value.code == 1

@@ -40,8 +40,8 @@ class TestGetUserConfigDir:
         assert result.exists()
         assert result.is_dir()
 
-    def test_rejects_relative_traversal_xdg_config(self, tmp_path: Path,
-                                                    monkeypatch):
+    def test_rejects_relative_traversal_xdg_config(
+            self, tmp_path: Path, monkeypatch):
         """Relative traversal values fall back to default config path."""
         monkeypatch.setenv("XDG_CONFIG_HOME", "../etc")
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
@@ -91,8 +91,9 @@ class TestGetUserDataDir:
         assert result.exists()
         assert result.is_dir()
 
-    def test_rejects_relative_traversal_xdg_data(self, tmp_path: Path,
-                                                  monkeypatch):
+    def test_rejects_relative_traversal_xdg_data(
+        self, tmp_path: Path, monkeypatch
+    ):
         """Relative traversal values fall back to default data path."""
         monkeypatch.setenv("XDG_DATA_HOME", "../../var")
         monkeypatch.setattr(Path, "home", lambda: tmp_path)

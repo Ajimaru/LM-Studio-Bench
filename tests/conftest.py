@@ -1,6 +1,5 @@
 """Shared fixtures and configuration for the test suite."""
 import json
-import os
 from pathlib import Path
 import sys
 from typing import Any, Dict
@@ -78,8 +77,11 @@ def sample_config() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def project_config_file(tmp_path: Path, sample_config: Dict[str, Any]) -> Path:
+def project_config_file(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> Path:
     """Write a project config file to a temp directory and return its path."""
     config_path = tmp_path / "defaults.json"
-    config_path.write_text(json.dumps(sample_config), encoding="utf-8")
+    config_data: Dict[str, Any] = request.getfixturevalue("sample_config")
+    config_path.write_text(json.dumps(config_data), encoding="utf-8")
     return config_path

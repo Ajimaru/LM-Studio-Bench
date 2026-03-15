@@ -16,6 +16,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import sqlite3
@@ -26,14 +27,25 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+import httpx
 import psutil
 from tqdm import tqdm
 
 try:
+    import cpuinfo
+except (ImportError, ModuleNotFoundError):
+    cpuinfo = None
+
+try:
+    import distro
+except (ImportError, ModuleNotFoundError):
+    distro = None
+
+try:
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib import pagesizes as rl_pagesizes
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import inch
+    from reportlab.lib import units as rl_units
     from reportlab.platypus import (
         PageBreak,
         Paragraph,
@@ -43,8 +55,23 @@ try:
         TableStyle,
     )
 
+    RL_A4 = rl_pagesizes.A4
+    RL_LANDSCAPE = rl_pagesizes.landscape
+    RL_INCH = rl_units.inch
     REPORTLAB_AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
+    colors = None
+    RL_A4 = None
+    RL_LANDSCAPE = None
+    ParagraphStyle = None
+    getSampleStyleSheet = None
+    RL_INCH = None
+    PageBreak = None
+    Paragraph = None
+    SimpleDocTemplate = None
+    Spacer = None
+    Table = None
+    TableStyle = None
     REPORTLAB_AVAILABLE = False
 
 from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
@@ -60,15 +87,25 @@ except (ImportError, ModuleNotFoundError):
     go = None
     PLOTLY_AVAILABLE = False
 
+try:
+    import lmstudio as _lmstudio_module
+
+    LMSTUDIO_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    _lmstudio_module = None
+    LMSTUDIO_AVAILABLE = False
+
 
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 LOGS_DIR = USER_LOGS_DIR
 LOGS_DIR.mkdir(exist_ok=True)
-log_filename = None
+LOG_FILENAME = None
 
 
 class NoJSONFilter(logging.Filter):
+    """Filter that suppresses JSON-like log lines from standard output."""
+
     def filter(self, record):
         if record.getMessage().startswith("{"):
             return False
@@ -82,10 +119,12 @@ class AutoFlushStream:
         self.stream = stream
 
     def write(self, data):
+        """Write data to the wrapped stream and flush immediately."""
         self.stream.write(data)
         self.stream.flush()
 
     def flush(self):
+        """Flush the wrapped stream."""
         self.stream.flush()
 
     def __getattr__(self, attr):
@@ -151,7 +190,7 @@ def get_app_version() -> str:
         version_file = PROJECT_ROOT / "VERSION"
         if version_file.exists():
             return version_file.read_text().strip()
-    except Exception:
+    except OSError:
         pass
     return "unknown"
 
@@ -188,9 +227,27 @@ class BenchmarkResult:
     power_watts_min: Optional[float] = None
     power_watts_max: Optional[float] = None
     power_watts_avg: Optional[float] = None
+    vram_gb_min: Optional[float] = None
+    vram_gb_max: Optional[float] = None
+    vram_gb_avg: Optional[float] = None
+    gtt_gb_min: Optional[float] = None
+    gtt_gb_max: Optional[float] = None
+    gtt_gb_avg: Optional[float] = None
+    cpu_percent_min: Optional[float] = None
+    cpu_percent_max: Optional[float] = None
+    cpu_percent_avg: Optional[float] = None
+    ram_gb_min: Optional[float] = None
+    ram_gb_max: Optional[float] = None
+    ram_gb_avg: Optional[float] = None
     gtt_enabled: Optional[bool] = None
     gtt_total_gb: Optional[float] = None
     gtt_used_gb: Optional[float] = None
+    tokens_per_sec_p50: Optional[float] = None
+    tokens_per_sec_p95: Optional[float] = None
+    tokens_per_sec_std: Optional[float] = None
+    ttft_p50: Optional[float] = None
+    ttft_p95: Optional[float] = None
+    ttft_std: Optional[float] = None
     temperature: Optional[float] = None
     top_k_sampling: Optional[int] = None
     top_p_sampling: Optional[float] = None
@@ -254,6 +311,17 @@ class HardwareMonitor:
 
         if self.gpu_type == "AMD" and self.gpu_tool == "sysfs":
             self._init_amd_sysfs_paths()
+
+    def _reset_measurements(self) -> None:
+        """Clears all collected measurements before a new profiling run."""
+        with self.lock:
+            self.temps.clear()
+            self.powers.clear()
+            self.vrams.clear()
+            self.gtts.clear()
+            self.cpus.clear()
+            self.rams.clear()
+            self.ram_readings.clear()
         self._amd_sysfs_path: Optional[str] = None
         self._amd_hwmon_path: Optional[str] = None
 
@@ -275,7 +343,7 @@ class HardwareMonitor:
                             if hwmon_paths:
                                 self._amd_hwmon_path = hwmon_paths[0]
                             break
-        except Exception:
+        except OSError:
             pass
 
     def start(self):
@@ -289,11 +357,12 @@ class HardwareMonitor:
             return
 
         logger.info(
-            f"🔥 Starting Hardware-Monitoring (GPU: {self.gpu_type}, Tool: {self.gpu_tool})"
+            "🔥 Starting Hardware-Monitoring (GPU: %s, Tool: %s)",
+            self.gpu_type,
+            self.gpu_tool,
         )
         self.monitoring = True
-        self.temps.clear()
-        self.powers.clear()
+        self._reset_measurements()
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.thread.start()
 
@@ -350,33 +419,41 @@ class HardwareMonitor:
                         self.temps.append(temp)
                         logger.info("🌡️ GPU Temp: %s°C", temp)
                     else:
-                        logger.debug("⚠️ No temperature read (gpu_type=%s, tool=%s)", 
-                                self.gpu_type, 
-                                self.gpu_tool)
+                        logger.debug(
+                            "⚠️ No temperature read (gpu_type=%s, tool=%s)",
+                            self.gpu_type,
+                            self.gpu_tool,
+                        )
 
                     if power is not None:
                         self.powers.append(power)
                         logger.info("⚡ GPU Power: %sW", power)
                     else:
-                        logger.debug("⚠️ No power read (gpu_type=%s, tool=%s)", 
-                                self.gpu_type, 
-                                self.gpu_tool)
+                        logger.debug(
+                            "⚠️ No power read (gpu_type=%s, tool=%s)",
+                            self.gpu_type,
+                            self.gpu_tool,
+                        )
 
                     if vram is not None:
                         self.vrams.append(vram)
                         logger.info("💾 GPU VRAM: %sGB", vram)
                     else:
-                        logger.debug("⚠️ No VRAM read (gpu_type=%s, tool=%s)", 
-                                self.gpu_type, 
-                                self.gpu_tool)
+                        logger.debug(
+                            "⚠️ No VRAM read (gpu_type=%s, tool=%s)",
+                            self.gpu_type,
+                            self.gpu_tool,
+                        )
 
                     if gtt is not None:
                         self.gtts.append(gtt)
                         logger.info("🧠 GPU GTT: %sGB", gtt)
                     else:
-                        logger.debug("⚠️ No GTT read (gpu_type=%s, tool=%s)", 
-                                self.gpu_type, 
-                                self.gpu_tool)
+                        logger.debug(
+                            "⚠️ No GTT read (gpu_type=%s, tool=%s)",
+                            self.gpu_type,
+                            self.gpu_tool,
+                        )
 
                     if cpu is not None:
                         self.cpus.append(cpu)
@@ -387,7 +464,7 @@ class HardwareMonitor:
                         logger.info("💾 RAM: %sGB", ram)
 
                 time.sleep(1)
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError, ValueError) as e:
                 logger.debug("Monitoring error: %s", e)
                 time.sleep(2)
         logger.info("🛑 Hardware-Monitor thread stopped")
@@ -408,6 +485,7 @@ class HardwareMonitor:
                     capture_output=True,
                     text=True,
                     timeout=3,
+                    check=False,
                 )
                 if result.returncode == 0:
                     temp_str = result.stdout.strip().split("\n")[0]
@@ -425,6 +503,7 @@ class HardwareMonitor:
                         capture_output=True,
                         text=True,
                         timeout=3,
+                        check=False,
                     )
                     if result.returncode == 0:
                         for line in result.stdout.split("\n"):
@@ -442,7 +521,7 @@ class HardwareMonitor:
                                     return float(temp_str)
                                 except (ValueError, IndexError):
                                     pass
-        except (subprocess.TimeoutExpired, Exception):
+        except (subprocess.SubprocessError, OSError):
             pass
 
         return None
@@ -463,6 +542,7 @@ class HardwareMonitor:
                     capture_output=True,
                     text=True,
                     timeout=3,
+                    check=False,
                 )
                 if result.returncode == 0:
                     power_str = result.stdout.strip().split("\n")[0]
@@ -474,10 +554,9 @@ class HardwareMonitor:
                     capture_output=True,
                     text=True,
                     timeout=3,
+                    check=False,
                 )
                 if result.returncode == 0:
-                    import re
-
                     for line in result.stdout.split("\n"):
                         if "GPU[" in line and ("(W):" in line or "W" in line):
                             try:
@@ -488,7 +567,7 @@ class HardwareMonitor:
                                 return float(power_str)
                             except (ValueError, IndexError):
                                 pass
-        except (subprocess.TimeoutExpired, Exception):
+        except (subprocess.SubprocessError, OSError):
             pass
 
         return None
@@ -509,6 +588,7 @@ class HardwareMonitor:
                     capture_output=True,
                     text=True,
                     timeout=3,
+                    check=False,
                 )
                 if result.returncode == 0:
                     vram_mb = float(result.stdout.strip().split("\n")[0])
@@ -526,6 +606,7 @@ class HardwareMonitor:
                         capture_output=True,
                         text=True,
                         timeout=3,
+                        check=False,
                     )
                     if result.returncode == 0:
                         for line in result.stdout.split("\n"):
@@ -534,7 +615,7 @@ class HardwareMonitor:
                                 if match:
                                     vram_bytes = float(match.group(1))
                                     return vram_bytes / (1024**3)
-        except (subprocess.TimeoutExpired, Exception):
+        except (subprocess.SubprocessError, OSError):
             pass
 
         return None
@@ -556,6 +637,7 @@ class HardwareMonitor:
                     capture_output=True,
                     text=True,
                     timeout=3,
+                    check=False,
                 )
                 if result.returncode == 0:
                     for line in result.stdout.split("\n"):
@@ -564,7 +646,7 @@ class HardwareMonitor:
                             if match:
                                 gtt_bytes = float(match.group(1))
                                 return gtt_bytes / (1024**3)
-        except (subprocess.TimeoutExpired, Exception):
+        except (subprocess.SubprocessError, OSError):
             pass
 
         return None
@@ -573,11 +655,11 @@ class HardwareMonitor:
         """Reads system CPU utilization in %"""
         try:
             return psutil.cpu_percent(interval=0.1)
-        except Exception:
+        except (OSError, RuntimeError):
             return None
 
     def _get_ram_usage(self) -> Optional[float]:
-        """Reads system RAM usage in GB with smoothing (moving average over 7 measurements)"""
+        """Reads system RAM usage in GB with smoothing (7 measurements)"""
         try:
             mem = psutil.virtual_memory()
             current_ram = mem.used / (1024**3)
@@ -587,17 +669,150 @@ class HardwareMonitor:
                 self.ram_readings.pop(0)
 
             return sum(self.ram_readings) / len(self.ram_readings)
-        except Exception:
+        except OSError:
             return None
 
 
 class BenchmarkCache:
     """SQLite cache for benchmark results"""
 
+    MIGRATION_COLUMNS: List[Tuple[str, str]] = [
+        ("lmstudio_version", "TEXT"),
+        ("app_version", "TEXT"),
+        ("nvidia_driver_version", "TEXT"),
+        ("rocm_driver_version", "TEXT"),
+        ("intel_driver_version", "TEXT"),
+        ("prompt_hash", "TEXT"),
+        ("params_hash", "TEXT"),
+        ("os_name", "TEXT"),
+        ("os_version", "TEXT"),
+        ("cpu_model", "TEXT"),
+        ("python_version", "TEXT"),
+        ("benchmark_duration_seconds", "REAL"),
+        ("error_count", "INTEGER"),
+        ("n_gpu_layers", "INTEGER"),
+        ("n_batch", "INTEGER"),
+        ("n_threads", "INTEGER"),
+        ("flash_attention", "INTEGER"),
+        ("rope_freq_base", "REAL"),
+        ("rope_freq_scale", "REAL"),
+        ("use_mmap", "INTEGER"),
+        ("use_mlock", "INTEGER"),
+        ("kv_cache_quant", "TEXT"),
+        ("temp_celsius_min", "REAL"),
+        ("temp_celsius_max", "REAL"),
+        ("temp_celsius_avg", "REAL"),
+        ("power_watts_min", "REAL"),
+        ("power_watts_max", "REAL"),
+        ("power_watts_avg", "REAL"),
+        ("vram_gb_min", "REAL"),
+        ("vram_gb_max", "REAL"),
+        ("vram_gb_avg", "REAL"),
+        ("gtt_gb_min", "REAL"),
+        ("gtt_gb_max", "REAL"),
+        ("gtt_gb_avg", "REAL"),
+        ("cpu_percent_min", "REAL"),
+        ("cpu_percent_max", "REAL"),
+        ("cpu_percent_avg", "REAL"),
+        ("ram_gb_min", "REAL"),
+        ("ram_gb_max", "REAL"),
+        ("ram_gb_avg", "REAL"),
+        ("tokens_per_sec_p50", "REAL"),
+        ("tokens_per_sec_p95", "REAL"),
+        ("tokens_per_sec_std", "REAL"),
+        ("ttft_p50", "REAL"),
+        ("ttft_p95", "REAL"),
+        ("ttft_std", "REAL"),
+    ]
+
     def __init__(self, db_path: Path = DATABASE_FILE):
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+
+    @staticmethod
+    def _validate_column_spec(col_name: str, col_type: str) -> None:
+        """Validates migration column names/types for safe SQL composition."""
+        if not col_name.replace("_", "").isalnum():
+            raise ValueError(f"Invalid column name: {col_name}")
+        if not col_type.replace(" ", "").isalpha():
+            raise ValueError(f"Invalid column type: {col_type}")
+
+    def _add_column(
+        self,
+        conn: sqlite3.Connection,
+        cursor: sqlite3.Cursor,
+        col_name: str,
+        col_type: str,
+        runtime: bool = False,
+    ) -> bool:
+        """Adds a missing column. Returns True if column was added."""
+        self._validate_column_spec(col_name, col_type)
+        migration_kind = "Runtime migration" if runtime else "Migration"
+        try:
+            logger.info("📦 %s: Adding %s column...", migration_kind, col_name)
+            alter_query = (
+                f"ALTER TABLE benchmark_results "
+                f"ADD COLUMN {col_name} {col_type}"
+            )
+            cursor.execute(alter_query)
+            conn.commit()
+            return True
+        except sqlite3.OperationalError as add_error:
+            if "duplicate column name" in str(add_error).lower():
+                return False
+            raise
+
+    def _ensure_migration_columns(
+        self,
+        conn: sqlite3.Connection,
+        cursor: sqlite3.Cursor,
+    ) -> None:
+        """Ensures all optional migration columns exist in table schema."""
+        cursor.execute("PRAGMA table_info(benchmark_results)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        for col_name, col_type in self.MIGRATION_COLUMNS:
+            if col_name in existing_columns:
+                continue
+            if self._add_column(conn, cursor, col_name, col_type):
+                existing_columns.add(col_name)
+
+    def _recover_from_missing_column(
+        self,
+        conn: sqlite3.Connection,
+        cursor: sqlite3.Cursor,
+        error: sqlite3.Error,
+    ) -> bool:
+        """Handles missing-column insert failures by applying one runtime migration."""
+        match = re.search(
+            r"has no column named\s+([A-Za-z_][A-Za-z0-9_]*)", str(error)
+        )
+        if not match:
+            return False
+
+        missing_col = match.group(1)
+        migration_map = dict(self.MIGRATION_COLUMNS)
+        col_type = migration_map.get(missing_col)
+        if not col_type:
+            return False
+
+        try:
+            self._add_column(
+                conn,
+                cursor,
+                missing_col,
+                col_type,
+                runtime=True,
+            )
+            return True
+        except sqlite3.Error as migration_error:
+            logger.error(
+                "❌ Runtime migration failed for %s: %s",
+                missing_col,
+                migration_error,
+            )
+            return False
 
     def _init_db(self):
         """Creates database schema"""
@@ -663,7 +878,31 @@ class BenchmarkCache:
                 rope_freq_scale REAL,
                 use_mmap INTEGER,
                 use_mlock INTEGER,
-                kv_cache_quant TEXT
+                kv_cache_quant TEXT,
+                temp_celsius_min REAL,
+                temp_celsius_max REAL,
+                temp_celsius_avg REAL,
+                power_watts_min REAL,
+                power_watts_max REAL,
+                power_watts_avg REAL,
+                vram_gb_min REAL,
+                vram_gb_max REAL,
+                vram_gb_avg REAL,
+                gtt_gb_min REAL,
+                gtt_gb_max REAL,
+                gtt_gb_avg REAL,
+                cpu_percent_min REAL,
+                cpu_percent_max REAL,
+                cpu_percent_avg REAL,
+                ram_gb_min REAL,
+                ram_gb_max REAL,
+                ram_gb_avg REAL,
+                tokens_per_sec_p50 REAL,
+                tokens_per_sec_p95 REAL,
+                tokens_per_sec_std REAL,
+                ttft_p50 REAL,
+                ttft_p95 REAL,
+                ttft_std REAL
             )
         """)
 
@@ -677,6 +916,44 @@ class BenchmarkCache:
             ON benchmark_results(model_key, params_hash)
         """)
 
+        cursor.execute("DROP VIEW IF EXISTS benchmark_results_latest_per_model")
+        cursor.execute("""
+            CREATE VIEW benchmark_results_latest_per_model AS
+            WITH ranked AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY model_key, quantization, params_hash
+                        ORDER BY timestamp DESC, id DESC
+                    ) AS rn
+                FROM benchmark_results
+            )
+            SELECT *
+            FROM ranked
+            WHERE rn = 1
+        """)
+
+        cursor.execute(
+            "DROP VIEW IF EXISTS benchmark_results_latest_per_model_per_day"
+        )
+        cursor.execute("""
+            CREATE VIEW benchmark_results_latest_per_model_per_day AS
+            WITH ranked AS (
+                SELECT
+                    *,
+                    DATE(timestamp) AS day,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY model_key, quantization, params_hash,
+                        DATE(timestamp)
+                        ORDER BY timestamp DESC, id DESC
+                    ) AS rn
+                FROM benchmark_results
+            )
+            SELECT *
+            FROM ranked
+            WHERE rn = 1
+        """)
+
         try:
             cursor.execute("SELECT run_index FROM benchmark_results LIMIT 1")
         except sqlite3.OperationalError:
@@ -685,42 +962,7 @@ class BenchmarkCache:
             conn.commit()
             logger.info("✅ Migration successful")
 
-        new_columns = [
-            ("n_gpu_layers", "INTEGER"),
-            ("n_batch", "INTEGER"),
-            ("n_threads", "INTEGER"),
-            ("flash_attention", "INTEGER"),
-            ("rope_freq_base", "REAL"),
-            ("rope_freq_scale", "REAL"),
-            ("use_mmap", "INTEGER"),
-            ("use_mlock", "INTEGER"),
-            ("kv_cache_quant", "TEXT"),
-        ]
-        # Whitelist validation: ensure column names are alphanumeric
-        for col_name, col_type in new_columns:
-            if not col_name.replace("_", "").isalnum():
-                raise ValueError(
-                    f"Invalid column name: {col_name}"
-                )
-            if not col_type.replace(" ", "").isalpha():
-                raise ValueError(
-                    f"Invalid column type: {col_type}"
-                )
-            try:
-                # Safe: col_name is validated against alphanumeric
-                query = (
-                    f"SELECT {col_name} FROM benchmark_results LIMIT 1"
-                )
-                cursor.execute(query)  # nosec B608
-            except sqlite3.OperationalError:
-                logger.info("📦 Migration: Adding %s column...", col_name)
-                # Safe: both col_name and col_type are validated
-                alter_query = (
-                    f"ALTER TABLE benchmark_results "
-                    f"ADD COLUMN {col_name} {col_type}"
-                )
-                cursor.execute(alter_query)  # nosec B608
-                conn.commit()
+        self._ensure_migration_columns(conn, cursor)
 
         conn.commit()
         conn.close()
@@ -831,6 +1073,44 @@ class BenchmarkCache:
                 result_dict["use_mlock"] = bool(val) if val is not None else None
             if "kv_cache_quant" in columns:
                 result_dict["kv_cache_quant"] = row[columns["kv_cache_quant"]]
+            if "temp_celsius_min" in columns:
+                result_dict["temp_celsius_min"] = row[columns["temp_celsius_min"]]
+                result_dict["temp_celsius_max"] = row[columns["temp_celsius_max"]]
+                result_dict["temp_celsius_avg"] = row[columns["temp_celsius_avg"]]
+            if "power_watts_min" in columns:
+                result_dict["power_watts_min"] = row[columns["power_watts_min"]]
+                result_dict["power_watts_max"] = row[columns["power_watts_max"]]
+                result_dict["power_watts_avg"] = row[columns["power_watts_avg"]]
+            if "vram_gb_min" in columns:
+                result_dict["vram_gb_min"] = row[columns["vram_gb_min"]]
+                result_dict["vram_gb_max"] = row[columns["vram_gb_max"]]
+                result_dict["vram_gb_avg"] = row[columns["vram_gb_avg"]]
+            if "gtt_gb_min" in columns:
+                result_dict["gtt_gb_min"] = row[columns["gtt_gb_min"]]
+                result_dict["gtt_gb_max"] = row[columns["gtt_gb_max"]]
+                result_dict["gtt_gb_avg"] = row[columns["gtt_gb_avg"]]
+            if "cpu_percent_min" in columns:
+                result_dict["cpu_percent_min"] = row[columns["cpu_percent_min"]]
+                result_dict["cpu_percent_max"] = row[columns["cpu_percent_max"]]
+                result_dict["cpu_percent_avg"] = row[columns["cpu_percent_avg"]]
+            if "ram_gb_min" in columns:
+                result_dict["ram_gb_min"] = row[columns["ram_gb_min"]]
+                result_dict["ram_gb_max"] = row[columns["ram_gb_max"]]
+                result_dict["ram_gb_avg"] = row[columns["ram_gb_avg"]]
+            if "tokens_per_sec_p50" in columns:
+                result_dict["tokens_per_sec_p50"] = row[
+                    columns["tokens_per_sec_p50"]
+                ]
+                result_dict["tokens_per_sec_p95"] = row[
+                    columns["tokens_per_sec_p95"]
+                ]
+                result_dict["tokens_per_sec_std"] = row[
+                    columns["tokens_per_sec_std"]
+                ]
+            if "ttft_p50" in columns:
+                result_dict["ttft_p50"] = row[columns["ttft_p50"]]
+                result_dict["ttft_p95"] = row[columns["ttft_p95"]]
+                result_dict["ttft_std"] = row[columns["ttft_std"]]
 
             return BenchmarkResult(**result_dict)
         return None
@@ -901,6 +1181,44 @@ class BenchmarkCache:
                 result_dict["use_mlock"] = bool(val) if val is not None else None
             if "kv_cache_quant" in columns:
                 result_dict["kv_cache_quant"] = row[columns["kv_cache_quant"]]
+            if "temp_celsius_min" in columns:
+                result_dict["temp_celsius_min"] = row[columns["temp_celsius_min"]]
+                result_dict["temp_celsius_max"] = row[columns["temp_celsius_max"]]
+                result_dict["temp_celsius_avg"] = row[columns["temp_celsius_avg"]]
+            if "power_watts_min" in columns:
+                result_dict["power_watts_min"] = row[columns["power_watts_min"]]
+                result_dict["power_watts_max"] = row[columns["power_watts_max"]]
+                result_dict["power_watts_avg"] = row[columns["power_watts_avg"]]
+            if "vram_gb_min" in columns:
+                result_dict["vram_gb_min"] = row[columns["vram_gb_min"]]
+                result_dict["vram_gb_max"] = row[columns["vram_gb_max"]]
+                result_dict["vram_gb_avg"] = row[columns["vram_gb_avg"]]
+            if "gtt_gb_min" in columns:
+                result_dict["gtt_gb_min"] = row[columns["gtt_gb_min"]]
+                result_dict["gtt_gb_max"] = row[columns["gtt_gb_max"]]
+                result_dict["gtt_gb_avg"] = row[columns["gtt_gb_avg"]]
+            if "cpu_percent_min" in columns:
+                result_dict["cpu_percent_min"] = row[columns["cpu_percent_min"]]
+                result_dict["cpu_percent_max"] = row[columns["cpu_percent_max"]]
+                result_dict["cpu_percent_avg"] = row[columns["cpu_percent_avg"]]
+            if "ram_gb_min" in columns:
+                result_dict["ram_gb_min"] = row[columns["ram_gb_min"]]
+                result_dict["ram_gb_max"] = row[columns["ram_gb_max"]]
+                result_dict["ram_gb_avg"] = row[columns["ram_gb_avg"]]
+            if "tokens_per_sec_p50" in columns:
+                result_dict["tokens_per_sec_p50"] = row[
+                    columns["tokens_per_sec_p50"]
+                ]
+                result_dict["tokens_per_sec_p95"] = row[
+                    columns["tokens_per_sec_p95"]
+                ]
+                result_dict["tokens_per_sec_std"] = row[
+                    columns["tokens_per_sec_std"]
+                ]
+            if "ttft_p50" in columns:
+                result_dict["ttft_p50"] = row[columns["ttft_p50"]]
+                result_dict["ttft_p95"] = row[columns["ttft_p95"]]
+                result_dict["ttft_std"] = row[columns["ttft_std"]]
 
             return BenchmarkResult(**result_dict)
         return None
@@ -980,14 +1298,37 @@ class BenchmarkCache:
                 int(result.use_mmap) if result.use_mmap is not None else None,
                 int(result.use_mlock) if result.use_mlock is not None else None,
                 result.kv_cache_quant,
+                result.temp_celsius_min,
+                result.temp_celsius_max,
+                result.temp_celsius_avg,
+                result.power_watts_min,
+                result.power_watts_max,
+                result.power_watts_avg,
+                result.vram_gb_min,
+                result.vram_gb_max,
+                result.vram_gb_avg,
+                result.gtt_gb_min,
+                result.gtt_gb_max,
+                result.gtt_gb_avg,
+                result.cpu_percent_min,
+                result.cpu_percent_max,
+                result.cpu_percent_avg,
+                result.ram_gb_min,
+                result.ram_gb_max,
+                result.ram_gb_avg,
+                result.tokens_per_sec_p50,
+                result.tokens_per_sec_p95,
+                result.tokens_per_sec_std,
+                result.ttft_p50,
+                result.ttft_p95,
+                result.ttft_std,
             )
 
-            logger.debug("📊 INSERT: %s values for 56 columns", len(values))
+            logger.debug("📊 INSERT with %s values", len(values))
 
             placeholders = ", ".join("?" for _ in values)
 
-            cursor.execute(
-                f"""
+            insert_query = f"""
                 INSERT INTO benchmark_results (
                     model_key, model_name, quantization, inference_params_hash,
                     gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec,
@@ -1001,14 +1342,32 @@ class BenchmarkCache:
                     intel_driver_version, prompt_hash, params_hash, os_name, os_version,
                     cpu_model, python_version, benchmark_duration_seconds, error_count,
                     n_gpu_layers, n_batch, n_threads, flash_attention, rope_freq_base,
-                    rope_freq_scale, use_mmap, use_mlock, kv_cache_quant
+                    rope_freq_scale, use_mmap, use_mlock, kv_cache_quant,
+                    temp_celsius_min, temp_celsius_max, temp_celsius_avg,
+                    power_watts_min, power_watts_max, power_watts_avg,
+                    vram_gb_min, vram_gb_max, vram_gb_avg,
+                    gtt_gb_min, gtt_gb_max, gtt_gb_avg,
+                    cpu_percent_min, cpu_percent_max, cpu_percent_avg,
+                    ram_gb_min, ram_gb_max, ram_gb_avg,
+                    tokens_per_sec_p50, tokens_per_sec_p95, tokens_per_sec_std,
+                    ttft_p50, ttft_p95, ttft_std
                 ) VALUES ({placeholders})
-            """,
-                values,
-            )
+            """
 
-            conn.commit()
-        except Exception as e:
+            for attempt in range(2):
+                try:
+                    cursor.execute(insert_query, values)
+                    conn.commit()
+                    break
+                except sqlite3.Error as e:
+                    can_retry = (
+                        attempt == 0
+                        and self._recover_from_missing_column(conn, cursor, e)
+                    )
+                    if can_retry:
+                        continue
+                    raise
+        except sqlite3.Error as e:
             logger.error("❌ Error saving to cache: %s", e)
         finally:
             conn.close()
@@ -1041,10 +1400,28 @@ class BenchmarkCache:
                 optional_cols.extend(
                     ["power_watts_min", "power_watts_max", "power_watts_avg"]
                 )
-            if "gtt_enabled" in columns:
+            if "vram_gb_min" in columns:
+                optional_cols.extend(["vram_gb_min", "vram_gb_max", "vram_gb_avg"])
+            if "gtt_gb_min" in columns:
+                optional_cols.extend(["gtt_gb_min", "gtt_gb_max", "gtt_gb_avg"])
+            if "cpu_percent_min" in columns:
                 optional_cols.extend(
-                    ["gtt_enabled", "gtt_total_gb", "gtt_used_gb"]
+                    ["cpu_percent_min", "cpu_percent_max", "cpu_percent_avg"]
                 )
+            if "ram_gb_min" in columns:
+                optional_cols.extend(["ram_gb_min", "ram_gb_max", "ram_gb_avg"])
+            if "gtt_enabled" in columns:
+                optional_cols.extend(["gtt_enabled", "gtt_total_gb", "gtt_used_gb"])
+            if "tokens_per_sec_p50" in columns:
+                optional_cols.extend(
+                    [
+                        "tokens_per_sec_p50",
+                        "tokens_per_sec_p95",
+                        "tokens_per_sec_std",
+                    ]
+                )
+            if "ttft_p50" in columns:
+                optional_cols.extend(["ttft_p50", "ttft_p95", "ttft_std"])
             if "speed_delta_pct" in columns:
                 optional_cols.extend(["speed_delta_pct", "prev_timestamp"])
             if "temperature" in columns:
@@ -1059,9 +1436,7 @@ class BenchmarkCache:
                     ]
                 )
             if "num_runs" in columns:
-                optional_cols.extend(
-                    ["num_runs", "runs_averaged_from", "warmup_runs"]
-                )
+                optional_cols.extend(["num_runs", "runs_averaged_from", "warmup_runs"])
             if "lmstudio_version" in columns:
                 optional_cols.extend(
                     [
@@ -1087,23 +1462,19 @@ class BenchmarkCache:
             if "inference_params_hash" in columns:
                 optional_cols.append("inference_params_hash")
 
-            # Validate all column names are alphanumeric (SQL injection)
             all_cols_str = base_cols + (
                 ", " + ", ".join(optional_cols) if optional_cols else ""
             )
             for col in all_cols_str.replace(",", "").split():
                 if not col.replace("_", "").isalnum():
-                    raise ValueError(
-                        f"Invalid column name detected: {col}"
-                    )
+                    raise ValueError(f"Invalid column name detected: {col}")
 
-            # Safe: all column names have been validated
             select_query = f"""
                 SELECT {all_cols_str}
                 FROM benchmark_results
                 ORDER BY timestamp DESC
             """
-            cursor.execute(select_query)  # nosec B608
+            cursor.execute(select_query)
 
             results = []
             for row in cursor.fetchall():
@@ -1143,12 +1514,48 @@ class BenchmarkCache:
                     result_dict["power_watts_avg"] = row[idx + 2]
                     idx += 3
 
+                if "vram_gb_min" in columns:
+                    result_dict["vram_gb_min"] = row[idx]
+                    result_dict["vram_gb_max"] = row[idx + 1]
+                    result_dict["vram_gb_avg"] = row[idx + 2]
+                    idx += 3
+
+                if "gtt_gb_min" in columns:
+                    result_dict["gtt_gb_min"] = row[idx]
+                    result_dict["gtt_gb_max"] = row[idx + 1]
+                    result_dict["gtt_gb_avg"] = row[idx + 2]
+                    idx += 3
+
+                if "cpu_percent_min" in columns:
+                    result_dict["cpu_percent_min"] = row[idx]
+                    result_dict["cpu_percent_max"] = row[idx + 1]
+                    result_dict["cpu_percent_avg"] = row[idx + 2]
+                    idx += 3
+
+                if "ram_gb_min" in columns:
+                    result_dict["ram_gb_min"] = row[idx]
+                    result_dict["ram_gb_max"] = row[idx + 1]
+                    result_dict["ram_gb_avg"] = row[idx + 2]
+                    idx += 3
+
                 if "gtt_enabled" in columns:
                     result_dict["gtt_enabled"] = (
                         bool(row[idx]) if row[idx] is not None else None
                     )
                     result_dict["gtt_total_gb"] = row[idx + 1]
                     result_dict["gtt_used_gb"] = row[idx + 2]
+                    idx += 3
+
+                if "tokens_per_sec_p50" in columns:
+                    result_dict["tokens_per_sec_p50"] = row[idx]
+                    result_dict["tokens_per_sec_p95"] = row[idx + 1]
+                    result_dict["tokens_per_sec_std"] = row[idx + 2]
+                    idx += 3
+
+                if "ttft_p50" in columns:
+                    result_dict["ttft_p50"] = row[idx]
+                    result_dict["ttft_p95"] = row[idx + 1]
+                    result_dict["ttft_std"] = row[idx + 2]
                     idx += 3
 
                 if "speed_delta_pct" in columns:
@@ -1196,7 +1603,7 @@ class BenchmarkCache:
                 results.append(result)
 
             return results
-        except Exception as e:
+        except (sqlite3.Error, IndexError, KeyError, TypeError, ValueError) as e:
             logger.error("❌ Error loading all results: %s", e)
             return []
         finally:
@@ -1249,10 +1656,32 @@ class BenchmarkCache:
 
         conn.close()
 
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=2, ensure_ascii=False)
+        requested_output = Path(output_file).expanduser()
+        filename = requested_output.name
+        if not filename.lower().endswith(".json"):
+            raise ValueError("Export filename must end with .json")
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", filename):
+            raise ValueError("Export filename contains invalid characters")
 
-        logger.info("💾 Cache exported: %s", output_file)
+        if not requested_output.is_absolute() and requested_output.parent == Path("."):
+            resolved_output = (RESULTS_DIR / filename).resolve()
+        else:
+            resolved_output = requested_output.resolve()
+
+        if resolved_output.exists() and resolved_output.is_symlink():
+            raise ValueError("Refusing to overwrite symlinked export file")
+
+        resolved_output.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(os.path.basename(resolved_output), "w", encoding="utf-8") as f:
+            json.dump(
+                results,
+                f,
+                indent=2,
+                ensure_ascii=False,
+            )
+
+        logger.info("💾 Cache exported: %s", resolved_output)
 
 
 class GPUMonitor:
@@ -1263,6 +1692,14 @@ class GPUMonitor:
         self.gpu_model: Optional[str] = None
         self.gpu_tool: Optional[str] = None
         self._detect_gpu()
+
+    def get_gpu_info(self) -> Dict[str, Optional[str]]:
+        """Returns detected GPU metadata."""
+        return {
+            "gpu_type": self.gpu_type,
+            "gpu_model": self.gpu_model,
+            "gpu_tool": self.gpu_tool,
+        }
 
     def _find_tool(self, tool_name: str, search_paths: List[str]) -> Optional[str]:
         """Searches for tool in PATH and specific paths"""
@@ -1284,23 +1721,29 @@ class GPUMonitor:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
-            if result.returncode != 0 or not result.stdout:
-                return None
+            has_amd_lspci = result.returncode == 0 and bool(result.stdout.strip())
+        except OSError:
+            has_amd_lspci = False
 
-            import glob
+        for cardpath in glob.glob("/sys/class/drm/card*/device"):
+            vendor_file = Path(cardpath) / "vendor"
+            if not vendor_file.exists():
+                continue
+            vendor = vendor_file.read_text().strip()
+            if vendor != "0x1002":
+                continue
+            vram_file = Path(cardpath) / "mem_info_vram_total"
+            if vram_file.exists():
+                return str(Path(cardpath))
 
-            for cardpath in glob.glob("/sys/class/drm/card*/device"):
-                vendor_file = Path(cardpath) / "vendor"
-                if vendor_file.exists():
-                    vendor = vendor_file.read_text().strip()
-                    if vendor == "0x1002":
-                        vram_file = Path(cardpath) / "mem_info_vram_total"
-                        if vram_file.exists():
-                            return str(Path(cardpath))
-            return None
-        except Exception:
-            return None
+        if has_amd_lspci:
+            logger.debug(
+                "AMD device seen via lspci, but no readable sysfs"
+                " mem_info_vram_total path found"
+            )
+        return None
 
     def _detect_gpu(self):
         """Detects GPU type and finds corresponding monitoring tool"""
@@ -1315,21 +1758,22 @@ class GPUMonitor:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
                 if result.returncode == 0:
                     self.gpu_model = result.stdout.strip().split("\n")[0]
                 else:
                     self.gpu_model = "NVIDIA GPU"
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 self.gpu_model = "NVIDIA GPU"
             logger.info(
-                f"🟢 NVIDIA GPU detected: {self.gpu_model}, Tool: {nvidia_tool}"
+                "🟢 NVIDIA GPU detected: %s, Tool: %s",
+                self.gpu_model,
+                nvidia_tool,
             )
             return
 
         amd_paths = ["/usr/bin", "/usr/local/bin", "/opt/rocm/bin"]
-        import glob
-
         rocm_versions = glob.glob("/opt/rocm-*/bin")
         amd_paths.extend(rocm_versions)
 
@@ -1347,7 +1791,9 @@ class GPUMonitor:
             self.gpu_tool = "sysfs"
             self.gpu_model = self._detect_amd_gpu_model()
             logger.info(
-                f"🔴 AMD GPU detected (sysfs): {self.gpu_model}, " f"Path: {amd_sysfs}"
+                "🔴 AMD GPU detected (sysfs): %s, Path: %s",
+                self.gpu_model,
+                amd_sysfs,
             )
             return
 
@@ -1357,7 +1803,9 @@ class GPUMonitor:
             self.gpu_type = "Intel"
             self.gpu_tool = intel_tool
             self.gpu_model = self._detect_intel_gpu_model()
-            logger.info("🔵 Intel GPU detected: %s, Tool: %s", self.gpu_model, intel_tool)
+            logger.info(
+                "🔵 Intel GPU detected: %s, Tool: %s", self.gpu_model, intel_tool
+            )
             return
 
         logger.warning(
@@ -1383,22 +1831,25 @@ class GPUMonitor:
         }
 
         try:
-            import cpuinfo
-
-            cpu = cpuinfo.get_cpu_info()
-            brand = cpu.get("brand_raw", "")
-            if "Radeon" in brand:
-                radeon_part = brand.split("Radeon")[1].strip()
-                model = radeon_part.split()[0]
-                if model:
-                    return f"AMD Radeon {model}"
-        except Exception:
+            if cpuinfo is not None:
+                cpu = cpuinfo.get_cpu_info()
+                brand = cpu.get("brand_raw", "")
+                if "Radeon" in brand:
+                    radeon_part = brand.split("Radeon")[1].strip()
+                    model = radeon_part.split()[0]
+                    if model:
+                        return f"AMD Radeon {model}"
+        except OSError:
             pass
 
         device_id = None
         try:
             result = subprocess.run(
-                ["lspci", "-d", "1002:"], capture_output=True, text=True, timeout=5
+                ["lspci", "-d", "1002:"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
             if result.returncode == 0 and result.stdout:
                 for line in result.stdout.strip().split("\n"):
@@ -1409,7 +1860,7 @@ class GPUMonitor:
                             if device_id in amd_device_mapping:
                                 return f"AMD {amd_device_mapping[device_id]}"
                             break
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             pass
 
         if self.gpu_tool:
@@ -1419,6 +1870,7 @@ class GPUMonitor:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
                 if result.returncode == 0:
                     for line in result.stdout.split("\n"):
@@ -1429,7 +1881,7 @@ class GPUMonitor:
                                 if gfx_code in amd_device_mapping:
                                     return f"AMD {amd_device_mapping[gfx_code]}"
                                 return f"AMD {gfx_code}"
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 pass
 
         if device_id:
@@ -1440,7 +1892,11 @@ class GPUMonitor:
         """Detects Intel GPU model name"""
         try:
             result = subprocess.run(
-                ["lspci", "-d", "8086::0300"], capture_output=True, text=True, timeout=5
+                ["lspci", "-d", "8086::0300"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
             if result.returncode == 0 and result.stdout:
                 line = result.stdout.strip().split("\n")[0]
@@ -1448,7 +1904,7 @@ class GPUMonitor:
                     parts = line.split(": ")
                     if len(parts) > 1:
                         return parts[1].split("[")[0].strip()
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             pass
         return "Intel GPU"
 
@@ -1468,6 +1924,7 @@ class GPUMonitor:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
                 if result.returncode == 0:
                     return result.stdout.strip().split("\n")[0]
@@ -1487,6 +1944,7 @@ class GPUMonitor:
                         capture_output=True,
                         text=True,
                         timeout=5,
+                        check=False,
                     )
                     if result.returncode == 0:
                         for line in result.stdout.split("\n"):
@@ -1503,7 +1961,7 @@ class GPUMonitor:
             elif self.gpu_type == "Intel":
                 return "N/A"
 
-        except (subprocess.TimeoutExpired, Exception) as e:
+        except (subprocess.SubprocessError, OSError, ValueError) as e:
             logger.warning("⚠️ VRAM measurement failed: %s", e)
 
         return "N/A"
@@ -1517,13 +1975,17 @@ class LMStudioServerManager:
         """Checks if LM Studio Server is running"""
         try:
             result = subprocess.run(
-                ["lms", "server", "status"], capture_output=True, text=True, timeout=10
+                ["lms", "server", "status"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
             )
             output = result.stdout + result.stderr
             return result.returncode == 0 and (
                 "running" in output.lower() or "port" in output.lower()
             )
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.error("❌ Error checking server status: %s", e)
             return False
 
@@ -1539,7 +2001,7 @@ class LMStudioServerManager:
             )
 
             max_retries = 30
-            for i in range(max_retries):
+            for _ in range(max_retries):
                 time.sleep(2)
                 if LMStudioServerManager.is_server_running():
                     logger.info("✅ LM Studio Server started successfully")
@@ -1548,7 +2010,7 @@ class LMStudioServerManager:
             logger.error("❌ Server start timeout after 60 seconds")
             return False
 
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.error("❌ Error starting server: %s", e)
             return False
 
@@ -1568,12 +2030,21 @@ class ModelDiscovery:
     _metadata_cache: Dict[str, Dict] = {}
 
     @staticmethod
+    def warm_metadata_cache() -> Dict[str, Dict]:
+        """Public API to preload and return the model metadata cache."""
+        return ModelDiscovery._get_metadata_cache()
+
+    @staticmethod
     def _get_metadata_cache() -> Dict[str, Dict]:
         """Cache for model metadata (loaded once at startup)"""
         if not ModelDiscovery._metadata_cache:
             try:
                 result = subprocess.run(
-                    ["lms", "ls", "--json"], capture_output=True, text=True, timeout=30
+                    ["lms", "ls", "--json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
                 )
                 if result.returncode == 0:
                     data = json.loads(result.stdout)
@@ -1596,7 +2067,12 @@ class ModelDiscovery:
                                 "has_vision": model_data.get("vision", False),
                                 "has_tools": model_data.get("trainedForToolUse", False),
                             }
-            except Exception as e:
+            except (
+                subprocess.SubprocessError,
+                OSError,
+                json.JSONDecodeError,
+                ValueError,
+            ) as e:
                 logger.warning("⚠️ Error loading metadata cache: %s", e)
         return ModelDiscovery._metadata_cache
 
@@ -1633,7 +2109,7 @@ class ModelDiscovery:
             ).fetchone()
             conn.close()
             return dict(row) if row else {}
-        except Exception as e:
+        except (sqlite3.Error, OSError) as e:
             logger.warning("⚠️ Could not read scraped metadata: %s", e)
             return {}
 
@@ -1642,7 +2118,11 @@ class ModelDiscovery:
         """Lists all locally installed models and quantizations"""
         try:
             result = subprocess.run(
-                ["lms", "ls", "--json"], capture_output=True, text=True, timeout=30
+                ["lms", "ls", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
             )
 
             if result.returncode != 0:
@@ -1650,8 +2130,6 @@ class ModelDiscovery:
                 return []
 
             models = []
-            import json
-
             data = json.loads(result.stdout)
 
             for model_data in data:
@@ -1669,7 +2147,12 @@ class ModelDiscovery:
                     logger.info("  • %s", model)
             return models
 
-        except Exception as e:
+        except (
+            subprocess.SubprocessError,
+            OSError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as e:
             logger.error("❌ Error fetching models: %s", e)
             return []
 
@@ -1679,7 +2162,6 @@ class ModelDiscovery:
         if not filter_args:
             return models
 
-        metadata_cache = ModelDiscovery._get_metadata_cache()
         filtered = []
 
         include_pattern = None
@@ -1749,12 +2231,14 @@ class ModelDiscovery:
             filtered.append(model_key)
 
         logger.info(
-            f"✔️ After filtering: {len(filtered)}/{len(models)} models remaining"
+            "✔️ After filtering: %s/%s models remaining",
+            len(filtered),
+            len(models),
         )
         return filtered
 
 
-class LMStudioBenchmark:
+class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
     """Main benchmark class"""
 
     @staticmethod
@@ -1762,7 +2246,11 @@ class LMStudioBenchmark:
         """Retrieves LM Studio version"""
         try:
             result = subprocess.run(
-                ["lms", "version"], capture_output=True, text=True, timeout=5
+                ["lms", "version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
             if result.returncode == 0:
                 stdout = result.stdout.strip()
@@ -1773,19 +2261,19 @@ class LMStudioBenchmark:
                 m2 = re.search(r"CLI commit:\s*([0-9a-fA-F]{6,40})", stdout)
                 if m2:
                     commit = m2.group(1)
-                    try:
-                        import lmstudio
-
-                        pkg_ver = getattr(lmstudio, "__version__", None)
+                    if _lmstudio_module is not None:
+                        pkg_ver = getattr(_lmstudio_module, "__version__", None)
                         if pkg_ver:
                             return f"{pkg_ver} (commit:{commit})"
-                    except Exception:
-                        pass
                     return f"commit:{commit}"
 
+                if _lmstudio_module is not None:
+                    pkg_ver = getattr(_lmstudio_module, "__version__", None)
+                    if pkg_ver:
+                        return pkg_ver
                 first_line = stdout.split("\n")[0] if stdout else None
                 return first_line if first_line else None
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.debug("Error fetching LM Studio version: %s", e)
         return None
 
@@ -1798,11 +2286,12 @@ class LMStudioBenchmark:
                 capture_output=True,
                 text=True,
                 timeout=5,
+                check=False,
             )
             if result.returncode == 0:
                 version = result.stdout.strip()
                 return version if version else None
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             logger.debug("NVIDIA driver not available")
         return None
 
@@ -1820,6 +2309,7 @@ class LMStudioBenchmark:
                         capture_output=True,
                         text=True,
                         timeout=5,
+                        check=False,
                     )
                     if result.returncode == 0 and result.stdout.strip():
                         output = result.stdout.strip()
@@ -1835,7 +2325,7 @@ class LMStudioBenchmark:
                                     return f"{version} (tool: {tool_version})"
                                 return version
                         return output if output else None
-                except Exception:
+                except (subprocess.SubprocessError, OSError):
                     pass
 
             try:
@@ -1844,6 +2334,7 @@ class LMStudioBenchmark:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
                 if result.returncode == 0:
                     for line in result.stdout.split("\n"):
@@ -1851,22 +2342,26 @@ class LMStudioBenchmark:
                             parts = line.split()
                             if len(parts) >= 3:
                                 return f"{parts[2]} (package)"
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 pass
 
             try:
                 result = subprocess.run(
-                    ["modinfo", "amdgpu"], capture_output=True, text=True, timeout=5
+                    ["modinfo", "amdgpu"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
                 )
                 if result.returncode == 0:
                     for line in result.stdout.split("\n"):
                         if line.startswith("srcversion:"):
                             srcver = line.split(":")[1].strip()[:12]
                             return f"amdgpu:{srcver}"
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 pass
 
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             logger.debug("ROCm driver not available")
         return None
 
@@ -1875,7 +2370,11 @@ class LMStudioBenchmark:
         """Retrieves Intel GPU Driver version"""
         try:
             result = subprocess.run(
-                ["intel_gpu_top", "--help"], capture_output=True, text=True, timeout=5
+                ["intel_gpu_top", "--help"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
             for line in result.stdout.split("\n"):
                 if "version" in line.lower():
@@ -1884,7 +2383,7 @@ class LMStudioBenchmark:
                         if "version" in part.lower() and i + 1 < len(parts):
                             return parts[i + 1]
                     return line.strip()
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             logger.debug("Intel GPU driver not available")
         return None
 
@@ -1892,18 +2391,18 @@ class LMStudioBenchmark:
     def get_os_info() -> Tuple[Optional[str], Optional[str]]:
         """Retrieves operating system and kernel version"""
         try:
-            import platform
-
             os_system = platform.system()
 
             if os_system == "Linux":
                 try:
-                    import distro
-
-                    os_name = distro.name()
-                    os_version = distro.version()
+                    if distro is not None:
+                        os_name = distro.name()
+                        os_version = distro.version()
+                        return os_name, os_version
+                    os_name = os_system
+                    os_version = platform.release()
                     return os_name, os_version
-                except Exception:
+                except OSError:
                     os_name = os_system
                     os_version = platform.release()
                     return os_name, os_version
@@ -1911,7 +2410,7 @@ class LMStudioBenchmark:
                 os_name = os_system
                 os_version = platform.release()
                 return os_name, os_version
-        except Exception:
+        except OSError:
             logger.debug("OS info not available")
         return None, None
 
@@ -1919,12 +2418,12 @@ class LMStudioBenchmark:
     def get_cpu_model() -> Optional[str]:
         """Retrieves CPU model"""
         try:
-            import cpuinfo
-
+            if cpuinfo is None:
+                return None
             cpu = cpuinfo.get_cpu_info()
             brand = cpu.get("brand_raw", "")
             return brand if brand else None
-        except Exception:
+        except OSError:
             logger.debug("CPU info not available")
         return None
 
@@ -1932,14 +2431,12 @@ class LMStudioBenchmark:
     def get_python_version() -> Optional[str]:
         """Retrieves Python version"""
         try:
-            import sys
-
             return (
                 f"{sys.version_info.major}."
                 f"{sys.version_info.minor}."
                 f"{sys.version_info.micro}"
             )
-        except Exception:
+        except AttributeError:
             logger.debug("Python version not available")
         return None
 
@@ -2046,7 +2543,7 @@ class LMStudioBenchmark:
 
         logger.info("📋 Collected version information:")
         for key, value in self.system_versions.items():
-            logger.info("   • %s: %s", key, value if value else 'N/A')
+            logger.info("   • %s: %s", key, value if value else "N/A")
 
         os_name, os_version = self.get_os_info()
         self.system_info = {
@@ -2057,10 +2554,12 @@ class LMStudioBenchmark:
         }
         logger.info("💻 System information:")
         logger.info(
-            f"   • OS: {self.system_info['os_name']} {self.system_info['os_version']}"
+            "   • OS: %s %s",
+            self.system_info["os_name"],
+            self.system_info["os_version"],
         )
-        logger.info("   • CPU: %s", self.system_info['cpu_model'] or 'N/A')
-        logger.info("   • Python: %s", self.system_info['python_version'])
+        logger.info("   • CPU: %s", self.system_info["cpu_model"] or "N/A")
+        logger.info("   • Python: %s", self.system_info["python_version"])
 
         self.inference_params = OPTIMIZED_INFERENCE_PARAMS.copy()
         self.inference_overrides = inference_overrides or {}
@@ -2082,14 +2581,15 @@ class LMStudioBenchmark:
         if self.rest_client:
             try:
                 self.rest_client.close()
-            except Exception:
+            except (OSError, RuntimeError):
                 pass
 
     def _get_available_vram_gb(self) -> Optional[float]:
         """Determines available VRAM in GB (incl. GTT if enabled)"""
+        available_vram: Optional[float] = None
+
         try:
             gpu_type = self.gpu_monitor.gpu_type
-            gpu_model = self.gpu_monitor.gpu_model or self.gpu_monitor.gpu_type
             gpu_tool = self.gpu_monitor.gpu_tool
 
             if not gpu_tool:
@@ -2105,10 +2605,11 @@ class LMStudioBenchmark:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
                 if result.returncode == 0:
                     vram_mb = float(result.stdout.strip().split("\n")[0])
-                    return vram_mb / 1024
+                    available_vram = vram_mb / 1024
 
             elif gpu_type == "AMD":
                 result = subprocess.run(
@@ -2116,6 +2617,7 @@ class LMStudioBenchmark:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
                 if result.returncode == 0:
                     vram_total = vram_used = gtt_total = gtt_used = 0.0
@@ -2141,23 +2643,25 @@ class LMStudioBenchmark:
 
                     if self.use_gtt and gtt_total > 0:
                         total_available = vram_free + gtt_free
-                        logger.info("💾 Memory: %sGB VRAM + %sGB GTT = %sGB total", 
-                                vram_free, 
-                                gtt_free, 
-                                total_available)
-                        return total_available
+                        logger.info(
+                            "💾 Memory: %sGB VRAM + %sGB GTT = %sGB total",
+                            vram_free,
+                            gtt_free,
+                            total_available,
+                        )
+                        available_vram = total_available
                     else:
                         logger.info("💾 Memory: %sGB VRAM (GTT disabled)", vram_free)
-                        return vram_free
+                        available_vram = vram_free
 
             elif gpu_type == "Intel":
-                return 8.0
+                available_vram = 8.0
 
-            return None
-
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, ValueError) as e:
             logger.debug("VRAM query failed: %s", e)
-            return None
+            available_vram = None
+
+        return available_vram
 
     def _predict_optimal_offload(self, model_size_gb: float) -> float:
         """Calculates optimal GPU offload based on VRAM and model size"""
@@ -2185,14 +2689,16 @@ class LMStudioBenchmark:
                 optimal_offload = max(0.3, min(1.0, optimal_offload))
 
             logger.info(
-                f"📊 VRAM prediction: {available_vram:.1f}GB available, "
-                f"{estimated_vram:.1f}GB estimated -> Offload "
-                f"{optimal_offload:.2f}"
+                "📊 VRAM prediction: %.1fGB available, %.1fGB estimated"
+                " -> Offload %.2f",
+                available_vram,
+                estimated_vram,
+                optimal_offload,
             )
 
             return round(optimal_offload, 1)
 
-        except Exception as e:
+        except (OSError, ValueError, ZeroDivisionError) as e:
             logger.debug("Offload prediction failed: %s", e)
             return 1.0
 
@@ -2233,14 +2739,16 @@ class LMStudioBenchmark:
                 offloads = [r[0] for r in results]
                 avg_offload = sum(offloads) / len(offloads)
                 logger.info(
-                    f"📚 Cache-Hit: Using average offload {avg_offload:.2f} "
-                    f"for {architecture} (~{model_size_gb:.1f}GB)"
+                    "📚 Cache-Hit: Using average offload %.2f for %s (~%.1fGB)",
+                    avg_offload,
+                    architecture,
+                    model_size_gb,
                 )
                 return round(avg_offload, 1)
 
             return None
 
-        except Exception as e:
+        except sqlite3.Error as e:
             logger.debug("Cache lookup failed: %s", e)
             return None
 
@@ -2270,25 +2778,49 @@ class LMStudioBenchmark:
 
         return sorted(set(levels), reverse=True)
 
+    def load_previous_results(self) -> None:
+        """Public API to load previous benchmark results for comparison."""
+        self._load_previous_results()
+
     def _load_previous_results(self):
         """Loads previous benchmark results for comparison"""
         try:
             if not self.compare_with:
                 return
 
+            results_root = RESULTS_DIR.resolve()
+
             if self.compare_with.endswith(".json"):
-                json_file = RESULTS_DIR / self.compare_with
+                requested = Path(self.compare_with)
+                if requested.name != self.compare_with or requested.is_absolute():
+                    logger.warning(
+                        "⚠️ Invalid compare-with filename: %s",
+                        self.compare_with,
+                    )
+                    return
+                json_file = (results_root / requested.name).resolve()
             else:
                 if self.compare_with.lower() == "latest":
-                    json_files = sorted(RESULTS_DIR.glob("benchmark_results_*.json"))
+                    json_files = sorted(results_root.glob("benchmark_results_*.json"))
                     if not json_files:
                         logger.warning("⚠️ No previous benchmark files found")
                         return
-                    json_file = json_files[-1]
+                    json_file = json_files[-1].resolve()
                 else:
+                    if not re.fullmatch(r"[A-Za-z0-9_-]+", self.compare_with):
+                        logger.warning(
+                            "⚠️ Invalid compare-with identifier: %s",
+                            self.compare_with,
+                        )
+                        return
                     json_file = (
-                        RESULTS_DIR / f"benchmark_results_{self.compare_with}.json"
-                    )
+                        results_root
+                        / f"benchmark_results_{self.compare_with}.json"
+                    ).resolve()
+
+            if not json_file.is_relative_to(results_root):
+                logger.warning("⚠️ Rejected unsafe path: %s", json_file)
+                return
 
             if not json_file.exists():
                 logger.warning("⚠️ File not found: %s", json_file)
@@ -2299,10 +2831,16 @@ class LMStudioBenchmark:
                 self.previous_results = [BenchmarkResult(**item) for item in data]
 
             logger.info(
-                f"✓ {len(self.previous_results)} previous results loaded from {json_file.name}"
+                "✓ %s previous results loaded from %s",
+                len(self.previous_results),
+                json_file.name,
             )
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             logger.error("❌ Error loading previous results: %s", e)
+
+    def matches_filters(self, result: BenchmarkResult) -> bool:
+        """Public API to check whether a result passes active filters."""
+        return self._matches_filters(result)
 
     def _matches_filters(self, result: BenchmarkResult) -> bool:
         """Checks if a BenchmarkResult passes the active filters"""
@@ -2336,8 +2874,6 @@ class LMStudioBenchmark:
                 return False
 
         if self.filter_args.get("include_models"):
-            import re
-
             try:
                 pattern = re.compile(self.filter_args["include_models"], re.IGNORECASE)
                 model_full = f"{result.model_name}@{result.quantization}"
@@ -2347,8 +2883,6 @@ class LMStudioBenchmark:
                 pass
 
         if self.filter_args.get("exclude_models"):
-            import re
-
             try:
                 pattern = re.compile(self.filter_args["exclude_models"], re.IGNORECASE)
                 model_full = f"{result.model_name}@{result.quantization}"
@@ -2397,11 +2931,12 @@ class LMStudioBenchmark:
             try:
                 models = self.rest_client.list_models()
                 for model in models:
-                    for instance in model.loaded_instances:
+                    loaded_instances = model.loaded_instances or []
+                    for instance in loaded_instances:
                         self._unload_model_rest(instance.instance_id)
                 logger.info("🧹 All models unloaded via REST")
                 time.sleep(1)
-            except Exception as e:
+            except (httpx.HTTPError, OSError, ConnectionError) as e:
                 logger.warning("⚠️ REST error unloading: %s", e)
         else:
             try:
@@ -2410,10 +2945,11 @@ class LMStudioBenchmark:
                     capture_output=True,
                     text=True,
                     timeout=30,
+                    check=False,
                 )
                 logger.info("🧹 All models unloaded")
                 time.sleep(1)
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 logger.warning("⚠️ Error unloading all models: %s", e)
 
         if "@" in model_key:
@@ -2436,21 +2972,20 @@ class LMStudioBenchmark:
                 instance_id = self._load_model_rest(model_key, used_offload)
                 if not instance_id:
                     logger.info(
-                        f"⬇️ Model not loaded; starting download for {model_key}"
+                        "⬇️ Model not loaded; starting download for %s",
+                        model_key,
                     )
                     try:
                         self.rest_client.download_model(model_key)
                         time.sleep(3)
                         instance_id = self._load_model_rest(model_key, used_offload)
-                    except Exception as ex:
-                        logger.warning(
-                            f"⚠️ Download/Load via REST failed: {ex}"
-                        )
+                    except (httpx.HTTPError, OSError, ConnectionError) as ex:
+                        logger.warning("⚠️ Download/Load via REST failed: %s", ex)
                 if instance_id:
                     logger.info("🧩 Using REST instance id: %s", instance_id)
                 else:
                     logger.warning("⚠️ Could not load model via REST: %s", model_key)
-            except Exception as e:
+            except (httpx.HTTPError, OSError, ConnectionError) as e:
                 logger.warning("⚠️ REST error while loading model: %s", e)
 
         try:
@@ -2467,7 +3002,6 @@ class LMStudioBenchmark:
             measurements = []
             vram_after = "N/A"
             for run in range(self.num_measurement_runs):
-                vram_before = self.gpu_monitor.get_vram_usage()
                 stats = self._run_inference(model_key, instance_id)
                 vram_after = self.gpu_monitor.get_vram_usage()
 
@@ -2505,24 +3039,40 @@ class LMStudioBenchmark:
                     result.power_watts_min = profiling_stats.get("power_watts_min")
                     result.power_watts_max = profiling_stats.get("power_watts_max")
                     result.power_watts_avg = profiling_stats.get("power_watts_avg")
+                    result.vram_gb_min = profiling_stats.get("vram_gb_min")
+                    result.vram_gb_max = profiling_stats.get("vram_gb_max")
+                    result.vram_gb_avg = profiling_stats.get("vram_gb_avg")
+                    result.gtt_gb_min = profiling_stats.get("gtt_gb_min")
+                    result.gtt_gb_max = profiling_stats.get("gtt_gb_max")
+                    result.gtt_gb_avg = profiling_stats.get("gtt_gb_avg")
+                    result.cpu_percent_min = profiling_stats.get("cpu_percent_min")
+                    result.cpu_percent_max = profiling_stats.get("cpu_percent_max")
+                    result.cpu_percent_avg = profiling_stats.get("cpu_percent_avg")
+                    result.ram_gb_min = profiling_stats.get("ram_gb_min")
+                    result.ram_gb_max = profiling_stats.get("ram_gb_max")
+                    result.ram_gb_avg = profiling_stats.get("ram_gb_avg")
 
                     if (
                         self.max_temp
                         and result.temp_celsius_max
                         and result.temp_celsius_max > self.max_temp
                     ):
-                        logger.warning("⚠️ Max. temperature exceeded: %s°C > %s°C", 
-                                result.temp_celsius_max, 
-                                self.max_temp)
+                        logger.warning(
+                            "⚠️ Max. temperature exceeded: %s°C > %s°C",
+                            result.temp_celsius_max,
+                            self.max_temp,
+                        )
 
                     if (
                         self.max_power
                         and result.power_watts_max
                         and result.power_watts_max > self.max_power
                     ):
-                        logger.warning("⚠️ Max. power exceeded: %sW > %sW", 
-                                result.power_watts_max, 
-                                self.max_power)
+                        logger.warning(
+                            "⚠️ Max. power exceeded: %sW > %sW",
+                            result.power_watts_max,
+                            self.max_power,
+                        )
 
                 benchmark_end_time = time.time()
                 result.benchmark_duration_seconds = round(
@@ -2580,11 +3130,35 @@ class LMStudioBenchmark:
                             has_tools=result.has_tools,
                             tokens_per_sec_per_gb=tps_per_gb,
                             tokens_per_sec_per_billion_params=tps_per_billion,
+                            tokens_per_sec_p50=result.tokens_per_sec_p50,
+                            tokens_per_sec_p95=result.tokens_per_sec_p95,
+                            tokens_per_sec_std=result.tokens_per_sec_std,
+                            ttft_p50=result.ttft_p50,
+                            ttft_p95=result.ttft_p95,
+                            ttft_std=result.ttft_std,
                             lmstudio_version=result.lmstudio_version,
                             nvidia_driver_version=result.nvidia_driver_version,
                             rocm_driver_version=result.rocm_driver_version,
                             intel_driver_version=result.intel_driver_version,
                             temperature=result.temperature,
+                            temp_celsius_min=result.temp_celsius_min,
+                            temp_celsius_max=result.temp_celsius_max,
+                            temp_celsius_avg=result.temp_celsius_avg,
+                            power_watts_min=result.power_watts_min,
+                            power_watts_max=result.power_watts_max,
+                            power_watts_avg=result.power_watts_avg,
+                            vram_gb_min=result.vram_gb_min,
+                            vram_gb_max=result.vram_gb_max,
+                            vram_gb_avg=result.vram_gb_avg,
+                            gtt_gb_min=result.gtt_gb_min,
+                            gtt_gb_max=result.gtt_gb_max,
+                            gtt_gb_avg=result.gtt_gb_avg,
+                            cpu_percent_min=result.cpu_percent_min,
+                            cpu_percent_max=result.cpu_percent_max,
+                            cpu_percent_avg=result.cpu_percent_avg,
+                            ram_gb_min=result.ram_gb_min,
+                            ram_gb_max=result.ram_gb_max,
+                            ram_gb_avg=result.ram_gb_avg,
                             top_k_sampling=result.top_k_sampling,
                             top_p_sampling=result.top_p_sampling,
                             min_p_sampling=result.min_p_sampling,
@@ -2625,21 +3199,30 @@ class LMStudioBenchmark:
                             self.context_length,
                         )
 
-                logger.info("✓ %s: %s tokens/s (Duration: %ss)", model_key, 
-                        result.avg_tokens_per_sec, 
-                        result.benchmark_duration_seconds)
+                logger.info(
+                    "✓ %s: %s tokens/s (Duration: %ss)",
+                    model_key,
+                    result.avg_tokens_per_sec,
+                    result.benchmark_duration_seconds,
+                )
                 try:
                     if self.use_rest_api and instance_id:
                         self._unload_model_rest(instance_id)
-                except Exception:
+                except (httpx.HTTPError, OSError):
                     pass
 
                 return result
-            else:
-                logger.error("❌ No successful measurements for %s", model_key)
-                return None
 
-        except Exception as e:
+            logger.error("❌ No successful measurements for %s", model_key)
+            return None
+
+        except (
+            subprocess.SubprocessError,
+            httpx.HTTPError,
+            OSError,
+            RuntimeError,
+            ValueError,
+        ) as e:
             logger.error("❌ Error benchmarking %s: %s", model_key, e)
             error_count += 1
             return None
@@ -2657,11 +3240,17 @@ class LMStudioBenchmark:
                 str(CONTEXT_LENGTH),
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
 
             return result.returncode == 0
 
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.error("❌ Error loading %s: %s", model_key, e)
             return False
 
@@ -2669,9 +3258,12 @@ class LMStudioBenchmark:
         """Unloads a model from memory"""
         try:
             subprocess.run(
-                ["lms", "unload", model_key], capture_output=True, timeout=30
+                ["lms", "unload", model_key],
+                capture_output=True,
+                timeout=30,
+                check=False,
             )
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.warning("⚠️ Error unloading %s: %s", model_key, e)
 
     def _run_inference(
@@ -2680,13 +3272,22 @@ class LMStudioBenchmark:
         """Performs inference and returns stats (dispatcher)."""
         if self.use_rest_api:
             return self._run_inference_rest(model_key, instance_id)
-        else:
-            return self._run_inference_sdk(model_key)
+        return self._run_inference_sdk(model_key)
 
     def _run_inference_sdk(self, model_key: str) -> Optional[Dict]:
         """Performs inference via SDK and returns stats."""
         try:
-            import lmstudio as lms
+            lms = sys.modules.get("lmstudio") or _lmstudio_module
+            if lms is None:
+                logger.error("❌ lmstudio SDK not available")
+                return None
+
+            server_error_cls = getattr(lms, "LMStudioServerError", None)
+            server_error_type: Optional[type[Exception]] = None
+            if isinstance(server_error_cls, type) and issubclass(
+                server_error_cls, Exception
+            ):
+                server_error_type = server_error_cls
 
             load_config_params: Dict[str, Any] = {
                 "context_length": self.context_length,
@@ -2711,21 +3312,37 @@ class LMStudioBenchmark:
                 load_config_params["llama_v_cache_quantization_type"] = kv_quant
 
             logger.info(
-                f"⚙️ Load Config: context={self.context_length}, "
-                f"n_gpu_layers={self.load_params.get('n_gpu_layers')}, "
-                f"n_batch={self.load_params.get('n_batch')}, "
-                f"n_threads={self.load_params.get('n_threads')}, "
-                f"flash_attention={self.load_params.get('flash_attention')}, "
-                f"rope_freq_base={self.load_params.get('rope_freq_base')}, "
-                f"rope_freq_scale={self.load_params.get('rope_freq_scale')}, "
-                f"use_mmap={self.load_params.get('use_mmap')}, "
-                f"use_mlock={self.load_params.get('use_mlock')}, "
-                f"kv_cache_quant={kv_quant}"
+                "⚙️ Load Config: context=%s, n_gpu_layers=%s, n_batch=%s,"
+                " n_threads=%s, flash_attention=%s, rope_freq_base=%s,"
+                " rope_freq_scale=%s, use_mmap=%s, use_mlock=%s,"
+                " kv_cache_quant=%s",
+                self.context_length,
+                self.load_params.get("n_gpu_layers"),
+                self.load_params.get("n_batch"),
+                self.load_params.get("n_threads"),
+                self.load_params.get("flash_attention"),
+                self.load_params.get("rope_freq_base"),
+                self.load_params.get("rope_freq_scale"),
+                self.load_params.get("use_mmap"),
+                self.load_params.get("use_mlock"),
+                kv_quant,
             )
 
-            model = lms.llm(
-                model_key, config=lms.LlmLoadModelConfig(**load_config_params)
-            )
+            try:
+                model = lms.llm(
+                    model_key,
+                    config=lms.LlmLoadModelConfig(**load_config_params),
+                )
+            except Exception as err:
+                if server_error_type and isinstance(err, server_error_type):
+                    logger.error(
+                        "❌ LM Studio server error during model load "
+                        "with %s: %s",
+                        model_key,
+                        err,
+                    )
+                    return None
+                raise
 
             prediction_config = lms.LlmPredictionConfig(
                 temperature=self.inference_params["temperature"],
@@ -2737,17 +3354,76 @@ class LMStudioBenchmark:
             )
 
             logger.info(
-                f"⚙️ Inference Config: temp={prediction_config.temperature}, "
-                f"top_k={prediction_config.top_k_sampling}, "
-                f"top_p={prediction_config.top_p_sampling}, "
-                f"min_p={prediction_config.min_p_sampling}, "
-                f"repeat_penalty={prediction_config.repeat_penalty}, "
-                f"max_tokens={prediction_config.max_tokens}"
+                "⚙️ Inference Config: temp=%s, top_k=%s, top_p=%s,"
+                " min_p=%s, repeat_penalty=%s, max_tokens=%s",
+                prediction_config.temperature,
+                prediction_config.top_k_sampling,
+                prediction_config.top_p_sampling,
+                prediction_config.min_p_sampling,
+                prediction_config.repeat_penalty,
+                prediction_config.max_tokens,
             )
 
-            start_time = time.time()
-            result = model.respond(self.prompt, config=prediction_config)
-            end_time = time.time()
+            result = None
+            start_time = 0.0
+            end_time = 0.0
+            for attempt in range(2):
+                start_time = time.time()
+                try:
+                    result = model.respond(
+                        self.prompt,
+                        config=prediction_config,
+                    )
+                except Exception as err:
+                    is_server_error = (
+                        server_error_type is not None
+                        and isinstance(err, server_error_type)
+                    )
+                    is_model_unloaded = (
+                        is_server_error and "model unloaded" in str(err).lower()
+                    )
+                    if attempt == 0 and is_model_unloaded:
+                        logger.warning(
+                            "⚠️ SDK returned 'Model unloaded' for %s; "
+                            "reloading model and retrying once",
+                            model_key,
+                        )
+                        try:
+                            model = lms.llm(
+                                model_key,
+                                config=lms.LlmLoadModelConfig(
+                                    **load_config_params
+                                ),
+                            )
+                        except Exception as load_err:
+                            if (
+                                server_error_type
+                                and isinstance(load_err, server_error_type)
+                            ):
+                                logger.error(
+                                    "❌ LM Studio server error during reload "
+                                    "with %s: %s",
+                                    model_key,
+                                    load_err,
+                                )
+                                return None
+                            raise
+                        continue
+                    if is_server_error:
+                        logger.error(
+                            "❌ LM Studio server error during inference "
+                            "with %s: %s",
+                            model_key,
+                            err,
+                        )
+                        return None
+                    raise
+
+                end_time = time.time()
+                break
+
+            if result is None:
+                return None
 
             generation_time = end_time - start_time
 
@@ -2765,7 +3441,7 @@ class LMStudioBenchmark:
                 "completion_tokens": stats.predicted_tokens_count or 0,
             }
 
-        except Exception as e:
+        except (ImportError, RuntimeError, ConnectionError, OSError, ValueError) as e:
             logger.error("❌ Error during inference with %s: %s", model_key, e)
             return None
 
@@ -2807,7 +3483,13 @@ class LMStudioBenchmark:
                 "completion_tokens": stats.tokens_out,
             }
 
-        except Exception as e:
+        except (
+            httpx.HTTPError,
+            OSError,
+            ConnectionError,
+            KeyError,
+            AttributeError,
+        ) as e:
             logger.error("❌ REST error during inference with %s: %s", model_key, e)
             return None
 
@@ -2833,7 +3515,7 @@ class LMStudioBenchmark:
             logger.info("✓ Model loaded via REST: %s", instance_id)
             return instance_id
 
-        except Exception as e:
+        except (httpx.HTTPError, OSError, ConnectionError) as e:
             logger.error("❌ REST error loading %s: %s", model_key, e)
             return None
 
@@ -2846,7 +3528,7 @@ class LMStudioBenchmark:
             self.rest_client.unload_model(instance_id)
             logger.info("✓ Model unloaded via REST: %s", instance_id)
             return True
-        except Exception as e:
+        except (httpx.HTTPError, OSError, ConnectionError) as e:
             logger.warning("⚠️ REST error unloading: %s", e)
             return False
 
@@ -2860,6 +3542,23 @@ class LMStudioBenchmark:
         model_key: str,
     ) -> BenchmarkResult:
         """Calculates average values from measurements"""
+        def _percentile(values: List[float], pct: float) -> Optional[float]:
+            if not values:
+                return None
+            sorted_vals = sorted(values)
+            if len(sorted_vals) == 1:
+                return sorted_vals[0]
+            pos = (len(sorted_vals) - 1) * (pct / 100.0)
+            lower_idx = int(pos)
+            upper_idx = min(lower_idx + 1, len(sorted_vals) - 1)
+            fraction = pos - lower_idx
+            lower = sorted_vals[lower_idx]
+            upper = sorted_vals[upper_idx]
+            return lower + (upper - lower) * fraction
+
+        tps_values = [float(m["tokens_per_second"]) for m in measurements]
+        ttft_values = [float(m["time_to_first_token"]) for m in measurements]
+
         avg_tokens_per_sec = sum(m["tokens_per_second"] for m in measurements) / len(
             measurements
         )
@@ -2891,6 +3590,15 @@ class LMStudioBenchmark:
         except (ValueError, AttributeError):
             tokens_per_sec_per_billion_params = 0.0
 
+        tps_mean = sum(tps_values) / len(tps_values)
+        ttft_mean = sum(ttft_values) / len(ttft_values)
+        tps_std = (
+            sum((val - tps_mean) ** 2 for val in tps_values) / len(tps_values)
+        ) ** 0.5
+        ttft_std = (
+            sum((val - ttft_mean) ** 2 for val in ttft_values) / len(ttft_values)
+        ) ** 0.5
+
         result = BenchmarkResult(
             model_name=model_name,
             quantization=quantization,
@@ -2913,6 +3621,12 @@ class LMStudioBenchmark:
             has_tools=metadata.get("has_tools", False),
             tokens_per_sec_per_gb=tokens_per_sec_per_gb,
             tokens_per_sec_per_billion_params=tokens_per_sec_per_billion_params,
+            tokens_per_sec_p50=round(_percentile(tps_values, 50) or 0.0, 3),
+            tokens_per_sec_p95=round(_percentile(tps_values, 95) or 0.0, 3),
+            tokens_per_sec_std=round(tps_std, 3),
+            ttft_p50=round(_percentile(ttft_values, 50) or 0.0, 3),
+            ttft_p95=round(_percentile(ttft_values, 95) or 0.0, 3),
+            ttft_std=round(ttft_std, 3),
             gtt_enabled=self.use_gtt if self._gtt_info else None,
             gtt_total_gb=(
                 round(self._gtt_info.get("total", 0), 2) if self._gtt_info else None
@@ -2953,7 +3667,7 @@ class LMStudioBenchmark:
             logger.error("❌ Server could not be started, aborting")
             return "failed"
 
-        ModelDiscovery._get_metadata_cache()
+        ModelDiscovery.warm_metadata_cache()
 
         models = ModelDiscovery.get_installed_models()
         if not models:
@@ -2965,7 +3679,7 @@ class LMStudioBenchmark:
             logger.error("❌ No models remaining after filtering")
             return "failed"
 
-        logger.info("")  
+        logger.info("")
         logger.info("📊 Models detected: %d total", len(models))
         logger.info("🔍 App Version: %s", APP_VERSION)
         logger.info("")
@@ -2976,7 +3690,7 @@ class LMStudioBenchmark:
                 cache_count = len(self.cache.list_cached_models())
                 logger.info("💽 Cache DB: %s", format_path_for_logs(DATABASE_FILE))
                 logger.info("💽 Cached entries available: %d", cache_count)
-            except Exception as e:
+            except sqlite3.Error as e:
                 logger.debug("Cache stats read failed: %s", e)
         if self.cache and self.use_cache:
             cached_models = []
@@ -3000,23 +3714,26 @@ class LMStudioBenchmark:
                     new_models.append(model_key)
 
             if self.model_limit and self.model_limit < len(new_models):
-                logger.info("⚙️ Model limit set: Testing max. %s new models (+ %s cached)", 
-                        self.model_limit, 
-                        len(cached_models))
+                logger.info(
+                    "⚙️ Model limit set: Testing max. %s new models (+ %s cached)",
+                    self.model_limit,
+                    len(cached_models),
+                )
                 new_models = new_models[: self.model_limit]
             elif self.model_limit:
-                logger.info("⚙️ Model limit: %s new models + %s cached = %s total", 
-                        len(new_models), 
-                        len(cached_models), 
-                        len(new_models)
-                        + len(cached_models))
+                logger.info(
+                    "⚙️ Model limit: %s new models + %s cached = %s total",
+                    len(new_models),
+                    len(cached_models),
+                    len(new_models) + len(cached_models),
+                )
 
             if cached_models:
                 logger.info("")
                 logger.info("📦 === Cached Models ===")
                 logger.info(
-                    f"💾 {len(cached_models)} models already tested "
-                    f"(will be loaded from cache):"
+                    "💾 %s models already tested (will be loaded from cache):",
+                    len(cached_models),
                 )
                 for model_key, cached in cached_models[:10]:
                     date_part = (
@@ -3025,14 +3742,18 @@ class LMStudioBenchmark:
                         else cached.timestamp[:10]
                     )
                     logger.info(
-                        f"  • {model_key}: {cached.avg_tokens_per_sec:.2f} "
-                        f"tok/s (last tested: {date_part})"
+                        "  • %s: %.2f tok/s (last tested: %s)",
+                        model_key,
+                        cached.avg_tokens_per_sec,
+                        date_part,
                     )
                 if len(cached_models) > 10:
                     logger.info("  ... and %s more", len(cached_models) - 10)
                 logger.debug(
                     "🔍 Cache hits breakdown: %d exact + %d fallback = %d total",
-                    exact_hits, fallback_hits, len(cached_models)
+                    exact_hits,
+                    fallback_hits,
+                    len(cached_models),
                 )
                 logger.info("")
 
@@ -3041,7 +3762,8 @@ class LMStudioBenchmark:
 
             if new_models:
                 logger.info(
-                    f"🚀 Starting benchmark for {len(new_models)} new models..."
+                    "🚀 Starting benchmark for %s new models...",
+                    len(new_models),
                 )
                 models = new_models
             else:
@@ -3052,9 +3774,11 @@ class LMStudioBenchmark:
                 return "no_new_models"
         else:
             if self.model_limit and self.model_limit < len(models):
-                logger.info("⚙️ Model limit set: Testing only first %s of %s models", 
-                        self.model_limit, 
-                        len(models))
+                logger.info(
+                    "⚙️ Model limit set: Testing only first %s of %s models",
+                    self.model_limit,
+                    len(models),
+                )
                 models = models[: self.model_limit]
             logger.info("🚀 Starting benchmark for %s models...", len(models))
 
@@ -3065,24 +3789,32 @@ class LMStudioBenchmark:
                 newly_tested_models.append(result)
 
         if newly_tested_models:
-            logger.info("📊 Exporting reports for %s newly tested models...", 
-                    len(newly_tested_models))
+            logger.info(
+                "📊 Exporting reports for %s newly tested models...",
+                len(newly_tested_models),
+            )
             self._export_results_to_files(newly_tested_models)
         else:
             logger.warning("⚠️ No new models tested - no reports generated")
 
         try:
             subprocess.run(
-                ["lms", "unload", "--all"], capture_output=True, text=True, timeout=30
+                ["lms", "unload", "--all"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
             )
             logger.info("🧹 All models unloaded (cleanup)")
             time.sleep(1)
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.warning("⚠️ Error unloading all models: %s", e)
 
-        logger.info("✅ Benchmark completed. %s/%s models successfully tested", 
-                len(newly_tested_models), 
-                len(models))
+        logger.info(
+            "✅ Benchmark completed. %s/%s models successfully tested",
+            len(newly_tested_models),
+            len(models),
+        )
         return "completed"
 
     def _analyze_best_quantizations(self) -> Dict[str, Dict]:
@@ -3130,13 +3862,13 @@ class LMStudioBenchmark:
             return sorted(
                 self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True
             )
-        elif rank_by == "efficiency":
+        if rank_by == "efficiency":
             return sorted(
                 self.results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True
             )
-        elif rank_by == "ttft":
+        if rank_by == "ttft":
             return sorted(self.results, key=lambda x: x.avg_ttft, reverse=False)
-        elif rank_by == "vram":
+        if rank_by == "vram":
 
             def get_vram_mb(result):
                 try:
@@ -3145,14 +3877,12 @@ class LMStudioBenchmark:
                         if isinstance(result.vram_mb, str)
                         else float(result.vram_mb)
                     )
-                except BaseException:
+                except (ValueError, TypeError, AttributeError):
                     return 999999
 
             return sorted(self.results, key=get_vram_mb, reverse=False)
-        else:
-            return sorted(
-                self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True
-            )
+
+        return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
 
     def calculate_percentile_stats(self) -> Dict[str, Dict]:
         """Calculates P50, P95, P99 statistics for benchmark metrics"""
@@ -3172,7 +3902,7 @@ class LMStudioBenchmark:
                     else float(r.vram_mb)
                 )
                 vram_values.append(vram_mb)
-            except BaseException:
+            except (ValueError, TypeError, AttributeError):
                 pass
 
         stats = {}
@@ -3251,7 +3981,7 @@ class LMStudioBenchmark:
         return comparison
 
     def _generate_best_practices(self) -> List[str]:
-        """Generates best-practice recommendations based on hardware and benchmark results"""
+        """Generates best-practice recommendations based on results"""
         recommendations = []
 
         if not self.results:
@@ -3272,13 +4002,13 @@ class LMStudioBenchmark:
 
         recommendations.append(f"🖥️  Hardware: {gpu_model} detected")
         recommendations.append("")
-        recommendations.append(f"⚡ Fastest model:")
+        recommendations.append("⚡ Fastest model:")
         recommendations.append(
             f"   → {best_speed.model_name} ({best_speed.quantization})"
         )
         recommendations.append(f"   → {best_speed.avg_tokens_per_sec:.2f} tokens/s")
         recommendations.append("")
-        recommendations.append(f"💎 Most efficient model (tokens/s per GB):")
+        recommendations.append("💎 Most efficient model (tokens/s per GB):")
         recommendations.append(
             f"   → {best_efficiency.model_name} ({best_efficiency.quantization})"
         )
@@ -3287,7 +4017,7 @@ class LMStudioBenchmark:
         )
         recommendations.append(f"   → Size: {best_efficiency.model_size_gb:.2f} GB")
         recommendations.append("")
-        recommendations.append(f"🚀 Fastest response time (TTFT):")
+        recommendations.append("🚀 Fastest response time (TTFT):")
         recommendations.append(
             f"   → {best_ttft.model_name} ({best_ttft.quantization})"
         )
@@ -3295,15 +4025,16 @@ class LMStudioBenchmark:
             f"   → {best_ttft.avg_ttft * 1000:.0f} ms until first token"
         )
         recommendations.append("")
-        recommendations.append(f"⚖️  Beste Balance (Speed + Effizienz):")
+        recommendations.append("⚖️  Beste Balance (Speed + Effizienz):")
         recommendations.append(
             f"   → {best_balance.model_name} ({best_balance.quantization})"
         )
         recommendations.append(
-            f"   → {best_balance.avg_tokens_per_sec:.2f} tokens/s, {best_balance.model_size_gb:.2f} GB"
+            f"   → {best_balance.avg_tokens_per_sec:.2f} tokens/s, "
+            f"{best_balance.model_size_gb:.2f} GB"
         )
         recommendations.append("")
-        recommendations.append(f"📊 Quantisierungs-Tipps:")
+        recommendations.append("📊 Quantisierungs-Tipps:")
         q4_models = [r for r in self.results if "q4" in r.quantization.lower()]
         q6_models = [r for r in self.results if "q6" in r.quantization.lower()]
 
@@ -3317,7 +4048,7 @@ class LMStudioBenchmark:
                 f"{'faster' if speed_diff > 0 else 'slower'} than Q6"
             )
             recommendations.append(
-                f"   → Q4: Faster, less quality | Q6: Slower, better quality"
+                "   → Q4: Faster, less quality | Q6: Slower, better quality"
             )
 
         recommendations.append("")
@@ -3342,7 +4073,7 @@ class LMStudioBenchmark:
                 break
 
         if vram_info:
-            recommendations.append(f"🎯 VRAM-Empfehlungen:")
+            recommendations.append("🎯 VRAM-Empfehlungen:")
             recommendations.extend(vram_info[:3])
 
         return recommendations
@@ -3354,7 +4085,7 @@ class LMStudioBenchmark:
 
         for json_file in sorted(results_dir.glob("benchmark_results_*.json")):
             try:
-                with open(json_file) as f:
+                with open(json_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
                 for item in data:
@@ -3371,7 +4102,7 @@ class LMStudioBenchmark:
                             "vram": item.get("vram_mb", 0),
                         }
                     )
-            except Exception as e:
+            except (OSError, json.JSONDecodeError, KeyError, ValueError) as e:
                 logger.debug("Error loading %s: %s", json_file, e)
 
         return trends
@@ -3388,7 +4119,14 @@ class LMStudioBenchmark:
 
             fig = go.Figure()
 
-            colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+            chart_colors = [
+                "#1f77b4",
+                "#ff7f0e",
+                "#2ca02c",
+                "#d62728",
+                "#9467bd",
+                "#8c564b",
+            ]
             color_idx = 0
 
             for key, history in sorted(trends.items()):
@@ -3409,8 +4147,12 @@ class LMStudioBenchmark:
                         y=speeds,
                         mode="lines+markers",
                         name=f"{model_name} ({quantization})",
-                        line=dict(color=colors[color_idx % len(colors)]),
-                        marker=dict(size=6),
+                        line={
+                            "color": chart_colors[
+                                color_idx % len(chart_colors)
+                            ]
+                        },
+                        marker={"size": 6},
                     )
                 )
 
@@ -3429,7 +4171,7 @@ class LMStudioBenchmark:
                 {"data": fig.to_dict()["data"], "layout": fig.to_dict()["layout"]}
             )
 
-        except Exception as e:
+        except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             logger.debug("Error creating trend chart: %s", e)
             return None
 
@@ -3470,14 +4212,40 @@ class LMStudioBenchmark:
 
     def _export_pdf(self, timestamp: str, results_to_export):
         """Exports given benchmark results as PDF report"""
+        a4_page_size = RL_A4
+        page_orientation = RL_LANDSCAPE
+        inch_unit = RL_INCH
+
+        if (
+            not REPORTLAB_AVAILABLE
+            or colors is None
+            or a4_page_size is None
+            or page_orientation is None
+            or ParagraphStyle is None
+            or getSampleStyleSheet is None
+            or inch_unit is None
+            or PageBreak is None
+            or Paragraph is None
+            or SimpleDocTemplate is None
+            or Spacer is None
+            or Table is None
+            or TableStyle is None
+        ):
+            logger.warning("⚠️ ReportLab not available, skipping PDF export")
+            return
+
         try:
             results = results_to_export
+
+            a4_size = a4_page_size
+            landscape = page_orientation
+            inch = inch_unit
 
             pdf_file = RESULTS_DIR / f"benchmark_results_{timestamp}.pdf"
 
             doc = SimpleDocTemplate(
                 str(pdf_file),
-                pagesize=landscape(A4),
+                pagesize=landscape(a4_size),
                 rightMargin=0.5 * inch,
                 leftMargin=0.5 * inch,
                 topMargin=0.5 * inch,
@@ -3529,21 +4297,28 @@ class LMStudioBenchmark:
                 else 0
             )
 
+            vision_pct = vision_count * 100 // len(results) if self.results else 0
+            tools_pct = tools_count * 100 // len(results) if self.results else 0
+
             summary_data = [
                 ["Metric", "Value"],
                 ["Models tested", str(len(results))],
                 ["Measurements per model", str(self.num_measurement_runs)],
                 [
                     "Standard Prompt",
-                    self.prompt[:50] + "..." if len(self.prompt) > 50 else self.prompt,
+                    (
+                        self.prompt[:50] + "..."
+                        if len(self.prompt) > 50
+                        else self.prompt
+                    ),
                 ],
                 [
                     "Vision Models",
-                    f"{vision_count} ({vision_count * 100 // len(results) if self.results else 0}%)",
+                    f"{vision_count} ({vision_pct}%)",
                 ],
                 [
                     "Tool-capable Models",
-                    f"{tools_count} ({tools_count * 100 // len(results) if self.results else 0}%)",
+                    f"{tools_count} ({tools_pct}%)",
                 ],
                 ["Ø Model Size", f"{avg_size_gb:.2f} GB"],
                 ["Ø Speed", f"{avg_tokens_per_sec:.2f} tokens/s"],
@@ -3580,7 +4355,10 @@ class LMStudioBenchmark:
                 ["Context Length", f"{self.context_length} Tokens"],
                 ["Temperature", str(OPTIMIZED_INFERENCE_PARAMS["temperature"])],
                 ["Top-K Sampling", str(OPTIMIZED_INFERENCE_PARAMS["top_k_sampling"])],
-                ["Top-P Sampling", str(OPTIMIZED_INFERENCE_PARAMS["top_p_sampling"])],
+                [
+                    "Top-P Sampling",
+                    str(OPTIMIZED_INFERENCE_PARAMS["top_p_sampling"]),
+                ],
                 ["Min-P Sampling", str(OPTIMIZED_INFERENCE_PARAMS["min_p_sampling"])],
                 ["Repeat Penalty", str(OPTIMIZED_INFERENCE_PARAMS["repeat_penalty"])],
                 ["Max Tokens", str(OPTIMIZED_INFERENCE_PARAMS["max_tokens"])],
@@ -3594,7 +4372,10 @@ class LMStudioBenchmark:
                 params_data.append(
                     [
                         "GTT (Shared System RAM)",
-                        f"{gtt_status} ({gtt_total:.1f}GB total, {gtt_used:.1f}GB used)",
+                        (
+                            f"{gtt_status} "
+                            f"({gtt_total:.1f}GB total, {gtt_used:.1f}GB used)"
+                        ),
                     ]
                 )
 
@@ -3673,7 +4454,7 @@ class LMStudioBenchmark:
                             if isinstance(result.vram_mb, str)
                             else float(result.vram_mb)
                         )
-                    except BaseException:
+                    except (ValueError, TypeError, AttributeError):
                         return 999999
 
                 sorted_results = sorted(results, key=get_vram_mb, reverse=False)
@@ -3690,7 +4471,8 @@ class LMStudioBenchmark:
             }
             elements.append(
                 Paragraph(
-                    f"<font size=9>Sorted by: <b>{rank_labels.get(self.rank_by, 'Speed')}</b></font>",
+                    f"<font size=9>Sorted by: <b>"
+                    f"{rank_labels.get(self.rank_by, 'Speed')}</b></font>",
                     styles["Normal"],
                 )
             )
@@ -3967,11 +4749,17 @@ class LMStudioBenchmark:
                 ["Statistic", "Value"],
                 [
                     "Fastest Model",
-                    f"{max_tps_result.model_name} ({max_tps_result.avg_tokens_per_sec:.2f} tokens/s)",
+                    (
+                        f"{max_tps_result.model_name} "
+                        f"({max_tps_result.avg_tokens_per_sec:.2f} tokens/s)"
+                    ),
                 ],
                 [
                     "Slowest Model",
-                    f"{min_tps_result.model_name} ({min_tps_result.avg_tokens_per_sec:.2f} tokens/s)",
+                    (
+                        f"{min_tps_result.model_name} "
+                        f"({min_tps_result.avg_tokens_per_sec:.2f} tokens/s)"
+                    ),
                 ],
                 ["Average Tokens/s", f"{avg_tps:.2f}"],
             ]
@@ -4105,7 +4893,8 @@ class LMStudioBenchmark:
                 for i, r in enumerate(vision_sorted[:3], 1):
                     top3_text.append(f"{i}. <b>{r.model_name}</b> ({r.quantization})")
                     top3_text.append(
-                        f"   → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB"
+                        f"   → {r.avg_tokens_per_sec:.2f} tokens/s, "
+                        f"{r.model_size_gb:.2f} GB"
                     )
                     top3_text.append("")
 
@@ -4180,7 +4969,10 @@ class LMStudioBenchmark:
                                 "ROWBACKGROUNDS",
                                 (0, 1),
                                 (-1, -1),
-                                [colors.white, colors.HexColor("#fff4e8")],
+                                [
+                                    colors.white,
+                                    colors.HexColor("#fff4e8"),
+                                ],
                             ),
                         ]
                     )
@@ -4192,7 +4984,8 @@ class LMStudioBenchmark:
                 for i, r in enumerate(tool_sorted[:3], 1):
                     top3_text.append(f"{i}. <b>{r.model_name}</b> ({r.quantization})")
                     top3_text.append(
-                        f"   → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB"
+                        f"   → {r.avg_tokens_per_sec:.2f} tokens/s, "
+                        f"{r.model_size_gb:.2f} GB"
                     )
                     top3_text.append("")
 
@@ -4356,34 +5149,22 @@ class LMStudioBenchmark:
                 ):
                     if r.temp_celsius_avg or r.power_watts_avg:
                         temp_min = (
-                            f"{r.temp_celsius_min:.1f}"
-                            if r.temp_celsius_min
-                            else "-"
+                            f"{r.temp_celsius_min:.1f}" if r.temp_celsius_min else "-"
                         )
                         temp_max = (
-                            f"{r.temp_celsius_max:.1f}"
-                            if r.temp_celsius_max
-                            else "-"
+                            f"{r.temp_celsius_max:.1f}" if r.temp_celsius_max else "-"
                         )
                         temp_avg = (
-                            f"{r.temp_celsius_avg:.1f}"
-                            if r.temp_celsius_avg
-                            else "-"
+                            f"{r.temp_celsius_avg:.1f}" if r.temp_celsius_avg else "-"
                         )
                         power_min = (
-                            f"{r.power_watts_min:.1f}"
-                            if r.power_watts_min
-                            else "-"
+                            f"{r.power_watts_min:.1f}" if r.power_watts_min else "-"
                         )
                         power_max = (
-                            f"{r.power_watts_max:.1f}"
-                            if r.power_watts_max
-                            else "-"
+                            f"{r.power_watts_max:.1f}" if r.power_watts_max else "-"
                         )
                         power_avg = (
-                            f"{r.power_watts_avg:.1f}"
-                            if r.power_watts_avg
-                            else "-"
+                            f"{r.power_watts_avg:.1f}" if r.power_watts_avg else "-"
                         )
 
                         profile_data.append(
@@ -4433,7 +5214,10 @@ class LMStudioBenchmark:
                                     "ROWBACKGROUNDS",
                                     (0, 1),
                                     (-1, -1),
-                                    [colors.white, colors.HexColor("#ffe5e5")],
+                                    [
+                                        colors.white,
+                                        colors.HexColor("#ffe5e5"),
+                                    ],
                                 ),
                             ]
                         )
@@ -4443,11 +5227,11 @@ class LMStudioBenchmark:
             doc.build(elements)
             logger.info("📑 PDF results saved: %s", pdf_file)
 
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
             logger.error("❌ Error creating PDF: %s", e)
 
     def _export_html(self, timestamp: str, results_to_export):
-        """Exports given benchmark results as interactive HTML report with Plotly charts"""
+        """Exports benchmark results as interactive HTML with Plotly"""
         if not PLOTLY_AVAILABLE or go is None:
             logger.warning("⚠️ Plotly not available, skipping HTML export")
             return
@@ -4490,16 +5274,23 @@ class LMStudioBenchmark:
                         y=[r.avg_tokens_per_sec for r in results],
                         mode="markers",
                         text=[
-                            f"{r.model_name}<br>{r.quantization}<br>{r.avg_tokens_per_sec:.2f} t/s"
+                            (
+                                f"{r.model_name}<br>{r.quantization}<br>"
+                                f"{r.avg_tokens_per_sec:.2f} t/s"
+                            )
                             for r in results
                         ],
-                        marker=dict(
-                            size=[r.avg_tokens_per_sec / 2 for r in results],
-                            color=[r.tokens_per_sec_per_gb for r in results],
-                            colorscale="Viridis",
-                            showscale=True,
-                            colorbar=dict(title="Effizienz<br>(t/s pro GB)"),
-                        ),
+                        marker={
+                            "size": [
+                                r.avg_tokens_per_sec / 2 for r in results
+                            ],
+                            "color": [r.tokens_per_sec_per_gb for r in results],
+                            "colorscale": "Viridis",
+                            "showscale": True,
+                            "colorbar": {
+                                "title": "Effizienz<br>(t/s pro GB)"
+                            },
+                        },
                         hovertemplate="<b>%{text}</b><extra></extra>",
                     )
                 ]
@@ -4519,19 +5310,27 @@ class LMStudioBenchmark:
                         y=[r.tokens_per_sec_per_billion_params for r in results],
                         mode="markers",
                         text=[f"{r.model_name} ({r.quantization})" for r in results],
-                        marker=dict(
-                            size=8,
-                            color=[r.avg_tokens_per_sec for r in results],
-                            colorscale="RdYlGn",
-                            showscale=True,
-                            colorbar=dict(title="Speed<br>(tokens/s)"),
+                        marker={
+                            "size": 8,
+                            "color": [r.avg_tokens_per_sec for r in results],
+                            "colorscale": "RdYlGn",
+                            "showscale": True,
+                            "colorbar": {
+                                "title": "Speed<br>(tokens/s)"
+                            },
+                        },
+                        hovertemplate=(
+                            "<b>%{text}</b><br>Per GB: %{x:.2f}<br>"
+                            "Per Billion Params: %{y:.2f}<extra></extra>"
                         ),
-                        hovertemplate="<b>%{text}</b><br>Per GB: %{x:.2f}<br>Per Billion Params: %{y:.2f}<extra></extra>",
                     )
                 ]
             )
             fig_efficiency.update_layout(
-                title="Effizienz-Analyse: Tokens/s pro GB vs Tokens/s pro Milliarde Parameter",
+                title=(
+                    "Effizienz-Analyse: Tokens/s pro GB "
+                    "vs Tokens/s pro Milliarde Parameter"
+                ),
                 xaxis_title="Tokens/s pro GB",
                 yaxis_title="Tokens/s pro Milliarde Parameter",
                 height=500,
@@ -4556,11 +5355,23 @@ class LMStudioBenchmark:
                 "Standard Prompt": (
                     self.prompt[:50] + "..." if len(self.prompt) > 50 else self.prompt
                 ),
-                "Fastest": f"{sorted_results[0].model_name[:20]} ({sorted_results[0].avg_tokens_per_sec:.2f} t/s)",
-                "Slowest": f"{sorted_results[-1].model_name[:20]} ({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)",
+                "Fastest": (
+                    f"{sorted_results[0].model_name[:20]} "
+                    f"({sorted_results[0].avg_tokens_per_sec:.2f} t/s)"
+                ),
+                "Slowest": (
+                    f"{sorted_results[-1].model_name[:20]} "
+                    f"({sorted_results[-1].avg_tokens_per_sec:.2f} t/s)"
+                ),
                 "Ø Speed": f"{avg_tokens_per_sec:.2f} t/s",
-                "Vision Models": f"{vision_count} ({vision_count * 100 // len(results) if self.results else 0}%)",
-                "Tool-capable Models": f"{tools_count} ({tools_count * 100 // len(results) if self.results else 0}%)",
+                "Vision Models": (
+                    f"{vision_count} "
+                    f"({vision_count * 100 // len(results) if self.results else 0}%)"
+                ),
+                "Tool-capable Models": (
+                    f"{tools_count} "
+                    f"({tools_count * 100 // len(results) if self.results else 0}%)"
+                ),
                 "Ø Model Size": f"{avg_size_gb:.2f} GB",
             }
 
@@ -4569,7 +5380,8 @@ class LMStudioBenchmark:
             for i, (label, value) in enumerate(summary_stats.items()):
                 color = colors_list[i % len(colors_list)]
                 summary_boxes += f"""
-            <div class="summary-box" style="background: linear-gradient(135deg, {color} 0%, {color}dd 100%);">
+            <div class="summary-box" style="background: linear-gradient(
+                135deg, {color} 0%, {color}dd 100%);">
                 <div class="summary-label">{label}</div>
                 <div class="summary-value">{value}</div>
             </div>
@@ -4580,25 +5392,32 @@ class LMStudioBenchmark:
                 f"<strong>Context Length:</strong> {self.context_length} Tokens"
             )
             benchmark_params.append(
-                f"<strong>Temperature:</strong> {OPTIMIZED_INFERENCE_PARAMS['temperature']}"
+                f"<strong>Temperature:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['temperature']}"
             )
             benchmark_params.append(
-                f"<strong>Top-K Sampling:</strong> {OPTIMIZED_INFERENCE_PARAMS['top_k_sampling']}"
+                f"<strong>Top-K Sampling:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['top_k_sampling']}"
             )
             benchmark_params.append(
-                f"<strong>Top-P Sampling:</strong> {OPTIMIZED_INFERENCE_PARAMS['top_p_sampling']}"
+                f"<strong>Top-P Sampling:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['top_p_sampling']}"
             )
             benchmark_params.append(
-                f"<strong>Min-P Sampling:</strong> {OPTIMIZED_INFERENCE_PARAMS['min_p_sampling']}"
+                f"<strong>Min-P Sampling:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['min_p_sampling']}"
             )
             benchmark_params.append(
-                f"<strong>Repeat Penalty:</strong> {OPTIMIZED_INFERENCE_PARAMS['repeat_penalty']}"
+                f"<strong>Repeat Penalty:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['repeat_penalty']}"
             )
             benchmark_params.append(
-                f"<strong>Max Tokens:</strong> {OPTIMIZED_INFERENCE_PARAMS['max_tokens']}"
+                f"<strong>Max Tokens:</strong> "
+                f"{OPTIMIZED_INFERENCE_PARAMS['max_tokens']}"
             )
             benchmark_params.append(
-                f"<strong>GPU-Offload Levels:</strong> {', '.join(map(str, GPU_OFFLOAD_LEVELS))}"
+                f"<strong>GPU-Offload Levels:</strong> "
+                f"{', '.join(map(str, GPU_OFFLOAD_LEVELS))}"
             )
 
             cli_params = []
@@ -4620,30 +5439,35 @@ class LMStudioBenchmark:
                     f"<strong>Model Limit:</strong> {self.cli_args['limit']}"
                 )
             if self.cli_args.get("retest"):
-                cli_params.append(f"<strong>Cache:</strong> Ignored (--retest)")
+                cli_params.append("<strong>Cache:</strong> Ignored (--retest)")
             if self.cli_args.get("only_vision"):
-                cli_params.append(f"<strong>Filter:</strong> Vision models only")
+                cli_params.append("<strong>Filter:</strong> Vision models only")
             if self.cli_args.get("only_tools"):
-                cli_params.append(f"<strong>Filter:</strong> Tool-capable models only")
+                cli_params.append("<strong>Filter:</strong> Tool-capable models only")
             if self.cli_args.get("include_models"):
+                pattern_short = self.cli_args['include_models'][:40]
                 cli_params.append(
-                    f"<strong>Include-Pattern:</strong> {self.cli_args['include_models'][:40]}"
+                    f"<strong>Include-Pattern:</strong> {pattern_short}"
                 )
             if self.cli_args.get("exclude_models"):
+                pattern_short = self.cli_args['exclude_models'][:40]
                 cli_params.append(
-                    f"<strong>Exclude-Pattern:</strong> {self.cli_args['exclude_models'][:40]}"
+                    f"<strong>Exclude-Pattern:</strong> {pattern_short}"
                 )
             if self.cli_args.get("enable_profiling"):
                 cli_params.append(
-                    f"<strong>Hardware Profiling:</strong> Yes (--enable-profiling)"
+                    "<strong>Hardware Profiling:</strong> "
+                    "Yes (--enable-profiling)"
                 )
                 if self.cli_args.get("max_temp"):
+                    max_temp = self.cli_args['max_temp']
                     cli_params.append(
-                        f"<strong>Max. Temperature:</strong> {self.cli_args['max_temp']}°C"
+                        f"<strong>Max. Temperature:</strong> {max_temp}°C"
                     )
                 if self.cli_args.get("max_power"):
+                    max_power = self.cli_args['max_power']
                     cli_params.append(
-                        f"<strong>Max. Power Draw:</strong> {self.cli_args['max_power']}W"
+                        f"<strong>Max. Power Draw:</strong> {max_power}W"
                     )
 
             cli_section = f"""
@@ -4721,8 +5545,12 @@ class LMStudioBenchmark:
         <h3>Top 3 Vision Models:</h3>
         <ul>"""
                 for i, r in enumerate(vision_sorted[:3], 1):
-                    vision_section += f"""
-            <li><strong>{r.model_name}</strong> ({r.quantization}) → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB</li>"""
+                    vision_section += (
+                        f"""
+            <li><strong>{r.model_name}</strong> ({r.quantization}) → """
+                        f"""{r.avg_tokens_per_sec:.2f} tokens/s, """
+                        f"""{r.model_size_gb:.2f} GB</li>"""
+                    )
                 vision_section += """
         </ul>"""
             else:
@@ -4768,8 +5596,12 @@ class LMStudioBenchmark:
         <h3>Top 3 Tool-Calling Models:</h3>
         <ul>"""
                 for i, r in enumerate(tool_sorted[:3], 1):
-                    tools_section += f"""
-            <li><strong>{r.model_name}</strong> ({r.quantization}) → {r.avg_tokens_per_sec:.2f} tokens/s, {r.model_size_gb:.2f} GB</li>"""
+                    tools_section += (
+                        f"""
+            <li><strong>{r.model_name}</strong> ({r.quantization}) → """
+                        f"""{r.avg_tokens_per_sec:.2f} tokens/s, """
+                        f"""{r.model_size_gb:.2f} GB</li>"""
+                    )
                 tools_section += """
         </ul>"""
             else:
@@ -4835,34 +5667,22 @@ class LMStudioBenchmark:
                 ):
                     if r.temp_celsius_avg or r.power_watts_avg:
                         temp_min = (
-                            f"{r.temp_celsius_min:.1f}°C"
-                            if r.temp_celsius_min
-                            else "-"
+                            f"{r.temp_celsius_min:.1f}°C" if r.temp_celsius_min else "-"
                         )
                         temp_max = (
-                            f"{r.temp_celsius_max:.1f}°C"
-                            if r.temp_celsius_max
-                            else "-"
+                            f"{r.temp_celsius_max:.1f}°C" if r.temp_celsius_max else "-"
                         )
                         temp_avg = (
-                            f"{r.temp_celsius_avg:.1f}°C"
-                            if r.temp_celsius_avg
-                            else "-"
+                            f"{r.temp_celsius_avg:.1f}°C" if r.temp_celsius_avg else "-"
                         )
                         power_min = (
-                            f"{r.power_watts_min:.1f}W"
-                            if r.power_watts_min
-                            else "-"
+                            f"{r.power_watts_min:.1f}W" if r.power_watts_min else "-"
                         )
                         power_max = (
-                            f"{r.power_watts_max:.1f}W"
-                            if r.power_watts_max
-                            else "-"
+                            f"{r.power_watts_max:.1f}W" if r.power_watts_max else "-"
                         )
                         power_avg = (
-                            f"{r.power_watts_avg:.1f}W"
-                            if r.power_watts_avg
-                            else "-"
+                            f"{r.power_watts_avg:.1f}W" if r.power_watts_avg else "-"
                         )
 
                         profile_rows += f"""
@@ -4879,18 +5699,24 @@ class LMStudioBenchmark:
 
                 profile_summary = ""
                 if temps_avg:
-                    profile_summary += f"""
+                    profile_summary += (
+                        f"""
                 <div class="summary-box" style="border-left: 4px solid #d9534f;">
                     <h4>🌡️ GPU Temperatur</h4>
-                    <p>Min: {min(temps_avg):.1f}°C | Max: {max(temps_avg):.1f}°C | Ø: {mean(temps_avg):.1f}°C</p>
+                    <p>Min: {min(temps_avg):.1f}°C | Max: {max(temps_avg):.1f}°C | """
+                        f"""Ø: {mean(temps_avg):.1f}°C</p>
                 </div>"""
+                    )
 
                 if powers_avg:
-                    profile_summary += f"""
+                    profile_summary += (
+                        f"""
                 <div class="summary-box" style="border-left: 4px solid #ff9800;">
                     <h4>⚡ Power-Draw</h4>
-                    <p>Min: {min(powers_avg):.1f}W | Max: {max(powers_avg):.1f}W | Ø: {mean(powers_avg):.1f}W</p>
+                    <p>Min: {min(powers_avg):.1f}W | Max: {max(powers_avg):.1f}W | """
+                        f"""Ø: {mean(powers_avg):.1f}W</p>
                 </div>"""
+                    )
 
                 profiling_section = f"""
             <h2>🌡️ Hardware-Profiling</h2>
@@ -4953,13 +5779,12 @@ class LMStudioBenchmark:
 
             logger.info("🌐 HTML results saved: %s", html_file)
 
-        except Exception as e:
+        except (OSError, ValueError, TypeError, AttributeError) as e:
             logger.error("❌ Error creating HTML: %s", e)
 
 
 def main():
     """Main function with CLI arguments"""
-    global log_filename
 
     def _expand_short_flag_clusters(cli_args: list[str]) -> list[str]:
         """Expand combined short flags like ``-rd`` to ``-r -d``.
@@ -4992,7 +5817,7 @@ def main():
             parent_cmdline = " ".join(parent_process.cmdline())
             if "web/app.py" in parent_cmdline:
                 is_webapp_subprocess = True
-        except BaseException:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             pass
 
     log_filename = (
@@ -5051,7 +5876,10 @@ def main():
     final_cli_args = preset_cli_args + remaining_args
 
     parser = argparse.ArgumentParser(
-        description="LM Studio Model Benchmark - Tests all locally installed LLM models",
+        description=(
+            "LM Studio Model Benchmark - Tests all locally "
+            "installed LLM models"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -5071,7 +5899,10 @@ Examples:
         "-r",
         type=int,
         default=NUM_MEASUREMENT_RUNS,
-        help=f"Number of measurements per model quantization (default: {NUM_MEASUREMENT_RUNS})",
+        help=(
+            "Number of measurements per model quantization "
+            f"(default: {NUM_MEASUREMENT_RUNS})"
+        ),
     )
 
     parser.add_argument(
@@ -5156,7 +5987,10 @@ Examples:
         "--exclude-models",
         type=str,
         default=None,
-        help='Exclude models matching the regex pattern (e.g. ".*uncensored.*" or "test|experimental")',
+        help=(
+            'Exclude models matching the regex pattern '
+            '(e.g. ".*uncensored.*" or "test|experimental")'
+        ),
     )
 
     parser.add_argument(
@@ -5171,7 +6005,11 @@ Examples:
         type=str,
         choices=["speed", "efficiency", "ttft", "vram"],
         default="speed",
-        help="Sort results by: speed (tokens/s), efficiency (tokens/s per GB), ttft (Time to First Token), vram (VRAM usage)",
+        help=(
+            "Sort results by: speed (tokens/s), "
+            "efficiency (tokens/s per GB), ttft (Time to First Token), "
+            "vram (VRAM usage)"
+        ),
     )
 
     parser.add_argument(
@@ -5183,7 +6021,10 @@ Examples:
     parser.add_argument(
         "--dev-mode",
         action="store_true",
-        help="Development mode: Automatically tests the smallest available model with -l 1 -r 1",
+        help=(
+            "Development mode: Automatically tests the smallest "
+            "available model with -l 1 -r 1"
+        ),
     )
 
     parser.add_argument(
@@ -5201,7 +6042,10 @@ Examples:
     parser.add_argument(
         "--enable-profiling",
         action="store_true",
-        help="Enable hardware profiling: Measures temperature and power draw during benchmark",
+        help=(
+            "Enable hardware profiling: Measures temperature and "
+            "power draw during benchmark"
+        ),
     )
 
     parser.add_argument(
@@ -5227,7 +6071,10 @@ Examples:
     parser.add_argument(
         "--export-only",
         action="store_true",
-        help="Generate reports (JSON/CSV/PDF/HTML) from all results in database without running new tests",
+        help=(
+            "Generate reports (JSON/CSV/PDF/HTML) from all results in "
+            "database without running new tests"
+        ),
     )
 
     parser.add_argument(
@@ -5284,7 +6131,11 @@ Examples:
         "--n-gpu-layers",
         type=int,
         default=DEFAULT_LOAD_PARAMS.get("n_gpu_layers", -1),
-        help=f"Number of GPU layers (-1=auto/all, 0=CPU only, >0=specific count, default: {DEFAULT_LOAD_PARAMS.get('n_gpu_layers', -1)})",
+        help=(
+            "Number of GPU layers (-1=auto/all, 0=CPU only, "
+            f">0=specific count, default: "
+            f"{DEFAULT_LOAD_PARAMS.get('n_gpu_layers', -1)})"
+        ),
     )
     parser.add_argument(
         "--n-batch",
@@ -5299,15 +6150,20 @@ Examples:
         "--n-threads",
         type=int,
         default=DEFAULT_LOAD_PARAMS.get("n_threads", -1),
-        help=f"Number of CPU threads (-1=auto/all, default: {DEFAULT_LOAD_PARAMS.get('n_threads', -1)})",
+        help=(
+            f"Number of CPU threads (-1=auto/all, default: "
+            f"{DEFAULT_LOAD_PARAMS.get('n_threads', -1)})"
+        ),
     )
+    flash_attn_default = DEFAULT_LOAD_PARAMS.get("flash_attention", True)
+    flash_attn_status = 'enabled' if flash_attn_default else 'disabled'
     parser.add_argument(
         "--flash-attention",
         action="store_true",
-        default=DEFAULT_LOAD_PARAMS.get("flash_attention", True),
+        default=flash_attn_default,
         help=(
-            "Enable Flash Attention (faster attention computation, default: "
-            f"{'enabled' if DEFAULT_LOAD_PARAMS.get('flash_attention', True) else 'disabled'})"
+            "Enable Flash Attention (faster attention computation, "
+            f"default: {flash_attn_status})"
         ),
     )
     parser.add_argument(
@@ -5343,27 +6199,38 @@ Examples:
         dest="use_mmap",
         help="Disable memory-mapping",
     )
+    mlock_default = DEFAULT_LOAD_PARAMS.get("use_mlock", False)
+    mlock_status = 'enabled' if mlock_default else 'disabled'
     parser.add_argument(
         "--use-mlock",
         action="store_true",
-        default=DEFAULT_LOAD_PARAMS.get("use_mlock", False),
+        default=mlock_default,
         help=(
-            "Enable memory-locking (prevents swapping, default: "
-            f"{'enabled' if DEFAULT_LOAD_PARAMS.get('use_mlock', False) else 'disabled'})"
+            "Enable memory-locking (prevents swapping, "
+            f"default: {mlock_status})"
         ),
     )
     parser.add_argument(
         "--kv-cache-quant",
         type=str,
-        choices=["f32", "f16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"],
+        choices=[
+            "f32", "f16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1"
+        ],
         default=DEFAULT_LOAD_PARAMS.get("kv_cache_quant"),
-        help="KV-Cache quantization (reduces VRAM, may affect performance, None=model default)",
+        help=(
+            "KV-Cache quantization (reduces VRAM, may affect performance, "
+            "None=model default)"
+        ),
     )
 
     parser.add_argument(
         "--use-rest-api",
         action="store_true",
-        help="Use LM Studio REST API v1 instead of Python SDK/CLI (enables advanced features like stateful chats, parallel requests)",
+        help=(
+            "Use LM Studio REST API v1 instead of Python SDK/CLI "
+            "(enables advanced features like stateful chats, "
+            "parallel requests)"
+        ),
     )
     parser.add_argument(
         "--api-token",
@@ -5375,13 +6242,19 @@ Examples:
         "--n-parallel",
         type=int,
         default=None,
-        help="Max. parallel predictions per model (REST API only, default: 4, requires continuous batching support)",
+        help=(
+            "Max. parallel predictions per model (REST API only, "
+            "default: 4, requires continuous batching support)"
+        ),
     )
     parser.add_argument(
         "--unified-kv-cache",
         action="store_true",
         default=None,
-        help="Enable unified KV cache (REST API only, optimizes VRAM for parallel requests)",
+        help=(
+            "Enable unified KV cache (REST API only, "
+            "optimizes VRAM for parallel requests)"
+        ),
     )
 
     args = parser.parse_args(args=final_cli_args)
@@ -5390,8 +6263,8 @@ Examples:
 
     if args.debug:
         logger.setLevel(logging.DEBUG)
-        for handler in logging.root.handlers:
-            handler.setLevel(logging.DEBUG)
+        for log_handler in logging.root.handlers:
+            log_handler.setLevel(logging.DEBUG)
         logging.getLogger("httpx").setLevel(logging.DEBUG)
         logging.getLogger("lmstudio").setLevel(logging.DEBUG)
         logging.getLogger("urllib3").setLevel(logging.DEBUG)
@@ -5404,13 +6277,18 @@ Examples:
         if cached:
             print("\n=== Cached Benchmark Results ===")
             print(
-                f"{'Model':<50} {'Quant':<10} {'Params':<8} {'tok/s':<10} {'Date':<12} {'Hash':<10}"
+                f"{'Model':<50} {'Quant':<10} {'Params':<8} "
+                f"{'tok/s':<10} {'Date':<12} {'Hash':<10}"
             )
             print("-" * 110)
             for entry in cached:
                 print(
-                    f"{entry['model_name']:<50} {entry['quantization']:<10} {entry['params_size']:<8} "
-                    f"{entry['avg_tokens_per_sec']:<10.2f} {entry['timestamp'][:10]:<12} {entry['params_hash']:<10}"
+                    f"{entry['model_name']:<50} "
+                    f"{entry['quantization']:<10} "
+                    f"{entry['params_size']:<8} "
+                    f"{entry['avg_tokens_per_sec']:<10.2f} "
+                    f"{entry['timestamp'][:10]:<12} "
+                    f"{entry['params_hash']:<10}"
                 )
             print(f"\nTotal: {len(cached)} entries")
         else:
@@ -5419,9 +6297,9 @@ Examples:
 
     if args.export_cache:
         cache = BenchmarkCache()
-        output_file = RESULTS_DIR / args.export_cache
+        output_file = Path(args.export_cache)
         cache.export_to_json(output_file)
-        print(f"Cache exported to: {output_file}")
+        print(f"Cache exported to: {RESULTS_DIR / output_file.name}")
         return
 
     if args.export_only:
@@ -5465,10 +6343,13 @@ Examples:
         if any(filter_args.values()):
             original_count = len(benchmark.results)
             benchmark.results = [
-                r for r in benchmark.results if benchmark._matches_filters(r)
+                r for r in benchmark.results
+                if benchmark.matches_filters(r)
             ]
             logger.info(
-                f"✔️ After filtering: {len(benchmark.results)}/{original_count} models"
+                "✔️ After filtering: %s/%s models",
+                len(benchmark.results),
+                original_count,
             )
 
         if not benchmark.results:
@@ -5476,7 +6357,7 @@ Examples:
             return
 
         if args.compare_with:
-            benchmark._load_previous_results()
+            benchmark.load_previous_results()
 
         logger.info("⚙️ Generating reports for %s models...", len(benchmark.results))
         benchmark.export_results()
@@ -5497,7 +6378,9 @@ Examples:
             model_sizes.sort(key=lambda x: x[1])
             smallest = model_sizes[0][0]
             logger.info(
-                f"✅ Smallest model selected: {smallest} ({model_sizes[0][1]:.2f} GB)"
+                "✅ Smallest model selected: %s (%.2f GB)",
+                smallest,
+                model_sizes[0][1],
             )
             logger.info("⚙️ Configuration: 1 measurement, context %s", args.context)
             logger.info("")
@@ -5529,12 +6412,14 @@ Examples:
     logger.info("🚀 === LM Studio Model Benchmark ===")
     logger.info("💬 Prompt: '%s'", args.prompt)
     logger.info("📏 Context Length: %s Tokens", args.context)
-    logger.info("🔢 Measurements per Model: %s (+ %s Warmup)", args.runs, NUM_WARMUP_RUNS)
+    logger.info(
+        "🔢 Measurements per Model: %s (+ %s Warmup)", args.runs, NUM_WARMUP_RUNS
+    )
     if args.limit:
-            logger.info("📌 Model Limit: Testing max. %s models", args.limit)
+        logger.info("📌 Model Limit: Testing max. %s models", args.limit)
     active_filters = [k for k, v in filter_args.items() if v]
     if active_filters:
-        logger.info("🔎 Active filters: %s", ', '.join(active_filters))
+        logger.info("🔎 Active filters: %s", ", ".join(active_filters))
 
     if args.compare_with:
         logger.info("📈 Historical comparison: %s", args.compare_with)

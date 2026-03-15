@@ -127,6 +127,11 @@ Frontend (dashboard.html.jinja)
   └─ 6 Plotly.js charts with live updates
 ```
 
+Before each profiling run, `HardwareMonitor.start()` calls
+`_reset_measurements()`. This clears prior temperature, power, VRAM, GTT,
+CPU and RAM samples, so chart data and exported min/max/avg values only
+reflect the current run.
+
 ## 🐛 Fixes and Optimizations
 
 ### Fix 1: rocm-smi 7.0.1 Format Change

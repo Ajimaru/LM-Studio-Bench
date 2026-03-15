@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def _build_gi_mock() -> types.ModuleType:
+def _build_gi_mock() -> tuple[MagicMock, MagicMock, MagicMock]:
     """Return a mock gi module that satisfies tray.py imports."""
     gi_mock = MagicMock()
     gtk_mock = MagicMock()
@@ -22,7 +22,7 @@ def _build_gi_mock() -> types.ModuleType:
     return gi_mock, gtk_mock, indicator_mock
 
 
-def _import_tray():
+def _import_tray() -> tuple[types.ModuleType, MagicMock, MagicMock]:
     """Import tray module with GTK fully mocked."""
     gi_mock, gtk_mock, indicator_mock = _build_gi_mock()
     with patch.dict(
@@ -37,10 +37,10 @@ def _import_tray():
         if "tray" in sys.modules:
             del sys.modules["tray"]
         import tray
-        tray.gi = gi_mock
-        tray.Gtk = gtk_mock
-        tray.AppIndicator3 = indicator_mock
-        tray.IMPORT_ERROR = None
+        setattr(tray, "gi", gi_mock)
+        setattr(tray, "Gtk", gtk_mock)
+        setattr(tray, "AppIndicator3", indicator_mock)
+        setattr(tray, "IMPORT_ERROR", None)
     sys.modules["tray"] = tray
     return tray, gtk_mock, indicator_mock
 
@@ -111,8 +111,10 @@ class TestTrayAppCallApi:
         mock_response.read.return_value = b'{"success": true}'
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
-        with patch("tray.urllib_request.urlopen", return_value=mock_response) as mock_open:
-            result = app._call_api("/api/benchmark/start", method="POST", payload={"runs": 1})
+        with patch("tray.urllib_request.urlopen", return_value=mock_response):
+            result = app._call_api(
+                "/api/benchmark/start", method="POST", payload={"runs": 1}
+            )
         assert result is not None
 
     def test_call_api_returns_none_on_url_error(self, tmp_path: Path):
@@ -493,15 +495,9 @@ class TestTrayExpandShortFlagClusters:
     def test_positional_arg_unchanged(self, tmp_path: Path):
         """Non-flag args pass through unchanged via tray._parse_args."""
         tray, _, _ = _import_tray()
-        with patch("tray.USER_LOGS_DIR", tmp_path):
-            app = tray.TrayApp("http://localhost:8080")
         with patch("sys.argv", ["tray.py", "--help"]):
-            try:
-                import argparse
-                with pytest.raises(SystemExit):
-                    tray._parse_args()
-            except Exception:
-                pass
+            with pytest.raises(SystemExit):
+                tray._parse_args()
 
     def test_module_level_flags_unchanged(self, tmp_path: Path):
         """tray module-level constants are accessible."""
@@ -513,8 +509,7 @@ class TestTrayExpandShortFlagClusters:
         """TrayApp can be instantiated without error."""
         tray, _, _ = _import_tray()
         with patch("tray.USER_LOGS_DIR", tmp_path):
-            app = tray.TrayApp("http://localhost:8080")
-        assert app is not None
+            assert tray.TrayApp("http://localhost:8080") is not None
 
 
 class TestTrayCheckUpdatesClicked:

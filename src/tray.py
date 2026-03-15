@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import importlib
 import json
 import logging
+import os
 from pathlib import Path
 import sys
 import threading
 import time
-from typing import Optional
+from typing import Any, Optional, cast
 from urllib import error as urllib_error
 from urllib.parse import urlparse
 from urllib import request as urllib_request
@@ -19,23 +21,105 @@ import webbrowser
 
 from user_paths import USER_LOGS_DIR
 
+
+def _prepend_env_paths(var_name: str, paths: list[str]) -> None:
+    """Prepend existing directories to colon-separated environment var."""
+    valid_paths = [path for path in paths if path and Path(path).is_dir()]
+    if not valid_paths:
+        return
+
+    current = os.environ.get(var_name, "")
+    current_parts = [part for part in current.split(":") if part]
+    merged = valid_paths + [part for part in current_parts if part not in valid_paths]
+    os.environ[var_name] = ":".join(merged)
+
+
+def _bootstrap_gi_runtime_paths() -> None:
+    """Ensure GI typelibs and shared libs are discoverable in AppImage mode."""
+    project_root = Path(__file__).resolve().parent.parent
+    appdir_candidate = project_root.parents[2]
+
+    app_lib_dir = appdir_candidate / "usr" / "lib"
+    app_arch_lib_dir = app_lib_dir / "x86_64-linux-gnu"
+
+    gi_paths = [
+        str(app_arch_lib_dir / "girepository-1.0"),
+        str(app_lib_dir / "girepository-1.0"),
+        "/usr/lib/x86_64-linux-gnu/girepository-1.0",
+        "/usr/lib/girepository-1.0",
+        "/usr/lib64/girepository-1.0",
+    ]
+
+    _prepend_env_paths("GI_TYPELIB_PATH", gi_paths)
+
+
+_bootstrap_gi_runtime_paths()
+
+
+def _import_gi_repository(module_name: str) -> Any:
+    """Import a whitelisted GI repository module by name."""
+    if module_name == "Gtk":
+        return importlib.import_module("gi.repository.Gtk")
+    if module_name == "GLib":
+        return importlib.import_module("gi.repository.GLib")
+    if module_name == "AppIndicator3":
+        return importlib.import_module("gi.repository.AppIndicator3")
+    if module_name == "AyatanaAppIndicator3":
+        return importlib.import_module("gi.repository.AyatanaAppIndicator3")
+    raise ValueError(f"Unsupported GI module: {module_name}")
+
+
 try:
     import gi
 
     gi.require_version("Gtk", "3.0")
-    gi.require_version("AppIndicator3", "0.1")
-    from gi.repository import AppIndicator3, Gtk
-except Exception as import_exc:
+    GTK: Any = _import_gi_repository("Gtk")
+
+    try:
+        GLIB: Any = _import_gi_repository("GLib")
+    except (ImportError, ModuleNotFoundError, ValueError):
+        GLIB = None
+
+    APP_INDICATOR3: Any = None
+    for appindicator_module in ("AppIndicator3", "AyatanaAppIndicator3"):
+        try:
+            gi.require_version(appindicator_module, "0.1")
+            APP_INDICATOR3 = _import_gi_repository(appindicator_module)
+            break
+        except (
+            ValueError,
+            ImportError,
+            ModuleNotFoundError,
+            AttributeError,
+        ):
+            continue
+except (ImportError, ValueError, AttributeError) as import_exc:
     gi = None
-    Gtk = None
-    AppIndicator3 = None
+    GTK = None
+    APP_INDICATOR3 = None
+    GLIB = None
     IMPORT_ERROR = import_exc
 else:
     IMPORT_ERROR = None
 
 
 LOGGER = logging.getLogger("tray")
-TRAY_THREAD: Optional[threading.Thread] = None
+_TRAY_STATE: dict[str, Optional[threading.Thread]] = {"thread": None}
+
+
+def _normalize_dashboard_url(dashboard_url: str) -> str:
+    """Normalize and validate the dashboard base URL.
+
+    Only absolute same-host HTTP(S) URLs without embedded credentials are
+    accepted.
+    """
+    normalized = dashboard_url.rstrip("/")
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Dashboard URL must use http or https")
+    if not parsed.netloc or parsed.username or parsed.password:
+        raise ValueError("Dashboard URL must use a plain host[:port]")
+    return normalized
 
 
 def _setup_logger(debug: bool) -> Path:
@@ -83,22 +167,23 @@ class TrayApp:
             dashboard_url: Dashboard base URL.
             debug: Enables debug logging.
         """
-        self.dashboard_url = dashboard_url.rstrip("/")
+        self.dashboard_url = _normalize_dashboard_url(dashboard_url)
         parsed = urlparse(self.dashboard_url)
         self.api_base = f"{parsed.scheme}://{parsed.netloc}"
         self._api_scheme = parsed.scheme
         self._api_netloc = parsed.netloc
         self.debug = debug
-        self.menu: Optional[Gtk.Menu] = None
-        self.start_item: Optional[Gtk.MenuItem] = None
-        self.pause_item: Optional[Gtk.MenuItem] = None
-        self.stop_item: Optional[Gtk.MenuItem] = None
+        self.menu: Optional[Any] = None
+        self.start_item: Optional[Any] = None
+        self.pause_item: Optional[Any] = None
+        self.stop_item: Optional[Any] = None
         self._polling_timer_id: Optional[int] = None
-        self.appindicator: Optional[AppIndicator3.Indicator] = None
+        self.appindicator: Optional[Any] = None
+        self.status_icon: Optional[Any] = None
         self.icon_dir: Optional[Path] = None
-        self.last_update_check: float = 0.0  # Timestamp of last check
-        self.force_update_check: bool = False  # Force immediate check
-        self.pending_update: Optional[dict] = None  # Update info if any
+        self.last_update_check: float = 0.0
+        self.force_update_check: bool = False
+        self.pending_update: Optional[dict] = None
 
     def _build_api_url(self, endpoint: str) -> Optional[str]:
         """Build and validate API URL for endpoint.
@@ -161,7 +246,7 @@ class TrayApp:
                 headers=headers,
                 method=method,
             )
-            with urllib_request.urlopen(req, timeout=5.0) as response:
+            with urllib_request.urlopen(req, timeout=5.0) as response:  # nosec B310
                 response_body = response.read().decode("utf-8")
             data = json.loads(response_body) if response_body else {}
             LOGGER.debug("API response (%s): %s", endpoint, data)
@@ -175,17 +260,17 @@ class TrayApp:
             exc_type = type(exc).__name__
             LOGGER.warning("API %s %s failed (%s): %s", method, endpoint, exc_type, exc)
             return None
-        except Exception as exc:
+        except OSError as exc:
             LOGGER.error("Unexpected error on API %s %s: %s", method, endpoint, exc)
             return None
 
     def _show_info_dialog(self, title: str, message: str) -> None:
         """Show a simple GTK information dialog."""
-        dialog = Gtk.MessageDialog(
+        dialog = GTK.MessageDialog(
             parent=None,
             modal=True,
-            message_type=Gtk.MessageType.INFO,
-            buttons=Gtk.ButtonsType.OK,
+            message_type=GTK.MessageType.INFO,
+            buttons=GTK.ButtonsType.OK,
             text=title,
         )
         dialog.format_secondary_text(message)
@@ -205,11 +290,11 @@ class TrayApp:
         latest = self.pending_update.get("latest", "unknown")
         url = self.pending_update.get("url", "")
 
-        dialog = Gtk.MessageDialog(
+        dialog = GTK.MessageDialog(
             parent=None,
             modal=True,
-            message_type=Gtk.MessageType.QUESTION,
-            buttons=Gtk.ButtonsType.CANCEL,
+            message_type=GTK.MessageType.QUESTION,
+            buttons=GTK.ButtonsType.CANCEL,
             text="🆕 Update Available",
         )
         message = (
@@ -219,16 +304,27 @@ class TrayApp:
         )
         dialog.format_secondary_text(message)
 
-        # Add "Download" button
-        download_button = dialog.add_button("Download", Gtk.ResponseType.OK)
-        download_button.set_image(
-            Gtk.Image.new_from_icon_name("document-save", Gtk.IconSize.BUTTON)
+        dialog.add_button("Download", GTK.ResponseType.OK)
+        _btn: Any = cast(
+            Any, dialog.get_widget_for_response(GTK.ResponseType.OK)
         )
+        if _btn is not None:
+            _btn.set_image(
+                GTK.Image.new_from_icon_name(
+                    "document-save", GTK.IconSize.BUTTON
+                )
+            )
 
-        response = dialog.run()
-        dialog.destroy()
+        response_holder: list[int] = []
 
-        if response == Gtk.ResponseType.OK and url:
+        def _on_response(dlg: Any, response_id: int) -> None:
+            response_holder.append(response_id)
+            dlg.destroy()
+
+        dialog.connect("response", _on_response)
+        dialog.run()
+
+        if response_holder and response_holder[0] == GTK.ResponseType.OK and url:
             LOGGER.info("Opening download URL: %s", url)
             webbrowser.open(url)
 
@@ -239,7 +335,7 @@ class TrayApp:
             status: Benchmark status (running/paused/idle/etc).
             api_reachable: Whether API call succeeded.
         """
-        if not self.appindicator or not self.icon_dir:
+        if not self.icon_dir:
             return
 
         if not api_reachable:
@@ -252,8 +348,30 @@ class TrayApp:
             color = "gray"
 
         icon_name = f"lmstudio-bench-tray-{color}"
-        self.appindicator.set_icon_full(icon_name, "")
+        if self.appindicator is not None:
+            self.appindicator.set_icon_full(icon_name, "")
+        elif self.status_icon is not None:
+            self.status_icon.set_from_icon_name(icon_name)
         LOGGER.debug("Updated tray icon: %s (status=%s)", color, status)
+
+    def _on_status_icon_popup(
+        self,
+        _icon: Any,
+        button: int,
+        activate_time: int,
+    ) -> None:
+        """Show context menu for Gtk.StatusIcon fallback."""
+        if self.menu is None:
+            return
+
+        self.menu.popup(
+            None,
+            None,
+            GTK.StatusIcon.position_menu,
+            self.status_icon,
+            button,
+            activate_time,
+        )
 
     def _refresh_menu_buttons(self) -> None:
         """Refresh menu button states based on benchmark status.
@@ -297,14 +415,14 @@ class TrayApp:
         if self.stop_item:
             self.stop_item.set_sensitive(is_running_or_paused)
 
-    def _on_start(self, _item: Gtk.MenuItem) -> None:
+    def _on_start(self, _item: Any) -> None:
         """Start benchmark from tray."""
         result = self._call_api("/api/benchmark/start", "POST", payload={})
         if result:
             LOGGER.info("Start action: %s", result.get("message", "ok"))
         self._refresh_menu_buttons()
 
-    def _on_pause_resume(self, _item: Gtk.MenuItem) -> None:
+    def _on_pause_resume(self, _item: Any) -> None:
         """Pause or resume benchmark based on current status."""
         status_data = self._call_api("/api/status")
         if not status_data:
@@ -322,14 +440,14 @@ class TrayApp:
                 LOGGER.info("Resume action: %s", result.get("message", "ok"))
         self._refresh_menu_buttons()
 
-    def _on_stop(self, _item: Gtk.MenuItem) -> None:
+    def _on_stop(self, _item: Any) -> None:
         """Stop benchmark from tray."""
         result = self._call_api("/api/benchmark/stop", "POST")
         if result:
             LOGGER.info("Stop action: %s", result.get("message", "ok"))
         self._refresh_menu_buttons()
 
-    def _on_status(self, _item: Gtk.MenuItem) -> None:
+    def _on_status(self, _item: Any) -> None:
         """Show current benchmark status."""
         status_data = self._call_api("/api/status")
         if not status_data:
@@ -395,7 +513,7 @@ class TrayApp:
         return False
 
     def _on_polling_tick(self) -> bool:
-        """Periodic status update callback for GLib timeout.
+        """Periodic status update callback for GLIB timeout.
 
         This ensures button states are refreshed every few seconds,
         allowing recovery when benchmark crashes or API becomes
@@ -408,10 +526,9 @@ class TrayApp:
         try:
             self._refresh_menu_buttons()
 
-            # Check for updates (24h interval or when forced)
             now = time.time()
             time_since_last_check = now - self.last_update_check
-            check_interval = 24 * 3600  # 24 hours
+            check_interval = 24 * 3600
 
             if self.force_update_check or time_since_last_check >= check_interval:
                 self.last_update_check = now
@@ -419,7 +536,7 @@ class TrayApp:
                 update_available = self._check_for_updates()
                 if update_available and self.pending_update:
                     self._show_update_notification()
-        except Exception:
+        except (RuntimeError, OSError, AttributeError):
             LOGGER.exception("Error during status polling")
         return True
 
@@ -432,21 +549,19 @@ class TrayApp:
         if self._polling_timer_id is not None:
             return
 
-        try:
-            from gi.repository import GLib
-        except ImportError:
-            LOGGER.warning("GLib not available, status polling disabled")
+        if GLIB is None:
+            LOGGER.warning("GLIB not available, status polling disabled")
             return
 
-        self._polling_timer_id = GLib.timeout_add(3000, self._on_polling_tick)
+        self._polling_timer_id = int(GLIB.timeout_add(3000, self._on_polling_tick))
         LOGGER.debug("Started status polling (interval: 3s)")
 
-    def _on_open_webapp(self, _item: Gtk.MenuItem) -> None:
+    def _on_open_webapp(self, _item: Any) -> None:
         """Open dashboard URL in default browser."""
         LOGGER.info("Opening webapp: %s", self.dashboard_url)
         webbrowser.open(self.dashboard_url)
 
-    def _on_check_updates_clicked(self, _item: Gtk.MenuItem) -> None:
+    def _on_check_updates_clicked(self, _item: Any) -> None:
         """Handle "Check for Updates" menu item click.
 
         Forces an immediate update check regardless of the 24h interval.
@@ -454,7 +569,7 @@ class TrayApp:
         """
         LOGGER.info("Manual update check triggered")
         self.force_update_check = True
-        self.last_update_check = 0.0  # Reset to trigger immediate check
+        self.last_update_check = 0.0
         update_available = self._check_for_updates()
 
         if update_available and self.pending_update:
@@ -529,9 +644,9 @@ class TrayApp:
             return "Ahead of release"
         return "no update"
 
-    def _create_info_tab(self) -> Gtk.Box:
+    def _create_info_tab(self) -> Any:
         """Create the Info tab with icon, title, version, etc."""
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
+        box = GTK.Box(orientation=GTK.Orientation.VERTICAL, spacing=15)
         box.set_margin_top(30)
         box.set_margin_bottom(30)
         box.set_margin_start(40)
@@ -541,16 +656,16 @@ class TrayApp:
 
         icon_path = project_root / "assets" / "icons" / "lmstudio-bench.svg"
         if icon_path.exists():
-            image = Gtk.Image()
+            image = GTK.Image()
             image.set_from_file(str(icon_path))
             image.set_pixel_size(120)
             box.pack_start(image, False, False, 5)
 
-        title_label = Gtk.Label()
+        title_label = GTK.Label()
         title_label.set_markup(
-            '<span size="large" weight="bold">' "LM Studio Model Benchmark</span>"
+            '<span size="large" weight="bold">LM Studio Model Benchmark</span>'
         )
-        title_label.set_justify(Gtk.Justification.CENTER)
+        title_label.set_justify(GTK.Justification.CENTER)
         box.pack_start(title_label, False, False, 0)
 
         version_file = project_root / "VERSION"
@@ -558,14 +673,16 @@ class TrayApp:
         if version_file.exists():
             version = version_file.read_text().strip()
         version_status = self._get_about_version_status(version)
-        version_label = Gtk.Label()
+        version_label = GTK.Label()
         version_label.set_markup(
-            f'<span foreground="#888888">' f"{version} ({version_status})" f"</span>"
+            f'<span foreground="#888888">'
+            f"{version} ({version_status})"
+            f"</span>"
         )
-        version_label.set_justify(Gtk.Justification.CENTER)
+        version_label.set_justify(GTK.Justification.CENTER)
         box.pack_start(version_label, False, False, 5)
 
-        desc_label = Gtk.Label()
+        desc_label = GTK.Label()
         desc_label.set_text(
             "Automatic benchmarking tool for all locally installed "
             "LM Studio models. Systematically tests different models "
@@ -574,38 +691,40 @@ class TrayApp:
         )
         desc_label.set_line_wrap(True)
         desc_label.set_max_width_chars(50)
-        desc_label.set_justify(Gtk.Justification.CENTER)
+        desc_label.set_justify(GTK.Justification.CENTER)
         box.pack_start(desc_label, False, False, 10)
 
-        links_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        links_box = GTK.Box(orientation=GTK.Orientation.VERTICAL, spacing=5)
 
-        doc_link = Gtk.LinkButton(
+        doc_link = GTK.LinkButton(
             uri="https://ajimaru.github.io/LM-Studio-Bench",
             label="Documentation",
         )
-        doc_link.set_halign(Gtk.Align.CENTER)
+        doc_link.set_halign(GTK.Align.CENTER)
         links_box.pack_start(doc_link, False, False, 0)
 
-        github_link = Gtk.LinkButton(
+        github_link = GTK.LinkButton(
             uri="https://github.com/Ajimaru/LM-Studio-Bench",
             label="GitHub Repository",
         )
-        github_link.set_halign(Gtk.Align.CENTER)
+        github_link.set_halign(GTK.Align.CENTER)
         links_box.pack_start(github_link, False, False, 0)
 
         box.pack_start(links_box, False, False, 0)
 
-        copyright_label = Gtk.Label()
-        copyright_label.set_markup('<span foreground="#888888">© 2026 Ajimaru</span>')
-        copyright_label.set_justify(Gtk.Justification.CENTER)
+        copyright_label = GTK.Label()
+        copyright_label.set_markup(
+            '<span foreground="#888888">© 2026 Ajimaru</span>'
+        )
+        copyright_label.set_justify(GTK.Justification.CENTER)
         box.pack_start(copyright_label, False, False, 5)
 
         box.show_all()
         return box
 
-    def _create_contributors_tab(self) -> Gtk.Box:
+    def _create_contributors_tab(self) -> Any:
         """Create the Contributors tab with list of contributors."""
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        box = GTK.Box(orientation=GTK.Orientation.VERTICAL, spacing=12)
         box.set_margin_top(30)
         box.set_margin_bottom(30)
         box.set_margin_start(40)
@@ -613,19 +732,21 @@ class TrayApp:
 
         project_root = Path(__file__).resolve().parent.parent
 
-        header_label = Gtk.Label()
-        header_label.set_markup('<span size="large" weight="bold">Contributors</span>')
-        header_label.set_justify(Gtk.Justification.CENTER)
+        header_label = GTK.Label()
+        header_label.set_markup(
+            '<span size="large" weight="bold">Contributors</span>'
+        )
+        header_label.set_justify(GTK.Justification.CENTER)
         box.pack_start(header_label, False, False, 10)
 
-        ajimaru_label = Gtk.Label()
+        ajimaru_label = GTK.Label()
         ajimaru_label.set_markup(
             '<b>Ajimaru</b> (<a href="https://github.com/Ajimaru">'
             "@Ajimaru</a>)\n"
             '<span foreground="#888888">Project creator and maintainer</span>'
         )
         ajimaru_label.set_line_wrap(True)
-        ajimaru_label.set_justify(Gtk.Justification.CENTER)
+        ajimaru_label.set_justify(GTK.Justification.CENTER)
         box.pack_start(ajimaru_label, False, False, 5)
 
         authors_file = project_root / "AUTHORS"
@@ -651,52 +772,53 @@ class TrayApp:
                     if "(@" in contrib:
                         name, handle_part = contrib.split(" ")
                         handle = handle_part.replace("(@", "").replace(")", "").strip()
-                        contrib_label = Gtk.Label()
+                        contrib_label = GTK.Label()
                         contrib_label.set_markup(
                             f'{name} (<a href="'
                             f'https://github.com/{handle}">'
                             f"@{handle}</a>)"
                         )
                         contrib_label.set_line_wrap(True)
-                        contrib_label.set_justify(Gtk.Justification.CENTER)
+                        contrib_label.set_justify(GTK.Justification.CENTER)
                         box.pack_start(contrib_label, False, False, 5)
                     else:
-                        contrib_label = Gtk.Label(label=contrib)
+                        contrib_label = GTK.Label(label=contrib)
                         contrib_label.set_line_wrap(True)
-                        contrib_label.set_justify(Gtk.Justification.CENTER)
+                        contrib_label.set_justify(GTK.Justification.CENTER)
                         box.pack_start(contrib_label, False, False, 5)
 
         box.show_all()
         return box
 
-    def _on_about(self, _item: Gtk.MenuItem) -> None:
+    def _on_about(self, _item: Any) -> None:
         """Show about dialog with two tabs (Info, Contributors)."""
-        dialog = Gtk.Dialog(
+        dialog = GTK.Dialog(
             title="About LM Studio Benchmark",
             parent=None,
             modal=True,
-            type=Gtk.WindowType.TOPLEVEL,
+            type=GTK.WindowType.TOPLEVEL,
         )
         dialog.set_default_size(550, 520)
         dialog.set_resizable(False)
         dialog.set_border_width(0)
 
-        notebook = Gtk.Notebook()
+        notebook = GTK.Notebook()
 
         info_box = self._create_info_tab()
-        info_label = Gtk.Label(label="Info")
+        info_label = GTK.Label(label="Info")
         info_label.show()
         notebook.append_page(info_box, info_label)
 
         contributors_box = self._create_contributors_tab()
-        contributors_label = Gtk.Label(label="Contributors")
+        contributors_label = GTK.Label(label="Contributors")
         contributors_label.show()
         notebook.append_page(contributors_box, contributors_label)
 
-        content_area = dialog.get_content_area()
-        content_area.add(notebook)
+        content_area: Any = dialog.get_content_area()
+        if content_area is not None:
+            content_area.add(notebook)
 
-        dialog.add_button("OK", Gtk.ResponseType.OK)
+        dialog.add_button("OK", GTK.ResponseType.OK)
 
         notebook.show_all()
 
@@ -710,15 +832,14 @@ class TrayApp:
         """
         if self._polling_timer_id is not None:
             try:
-                from gi.repository import GLib
-
-                GLib.source_remove(self._polling_timer_id)
+                if GLIB is not None:
+                    GLIB.source_remove(self._polling_timer_id)
                 self._polling_timer_id = None
                 LOGGER.debug("Stopped status polling")
-            except Exception as exc:
+            except (RuntimeError, OSError) as exc:
                 LOGGER.warning("Failed to stop polling timer: %s", exc)
 
-    def _on_quit(self, _item: Gtk.MenuItem) -> None:
+    def _on_quit(self, _item: Any) -> None:
         """Stop benchmark and shutdown web dashboard.
 
         This cleanup handler ensures the benchmark is stopped and the
@@ -742,55 +863,66 @@ class TrayApp:
                     if status in ("running", "paused"):
                         LOGGER.info("Stopping benchmark...")
                         self._call_api("/api/benchmark/stop", "POST")
-        except Exception as exc:
+        except (OSError, RuntimeError, AttributeError) as exc:
             LOGGER.warning("Error during shutdown: %s", exc)
 
         LOGGER.info("Benchmark Tray exiting")
-        Gtk.main_quit()
+        if self.status_icon is not None:
+            self.status_icon.set_visible(False)
+        GTK.main_quit()
 
-    def _build_menu(self) -> Gtk.Menu:
+    def _build_menu(self) -> Any:
         """Build tray menu with benchmark actions."""
-        menu = Gtk.Menu()
+        menu = GTK.Menu()
 
-        heading = Gtk.MenuItem(label="Benchmark")
+        heading = GTK.MenuItem(label="Benchmark")
         heading.set_sensitive(False)
         menu.append(heading)
 
-        self.start_item = Gtk.MenuItem(label="Start")
-        self.start_item.connect("activate", self._on_start)
-        menu.append(self.start_item)
+        start_item = GTK.MenuItem(label="Start")
+        if start_item is None:
+            raise RuntimeError("Failed to create Start menu item")
+        self.start_item = start_item
+        start_item.connect("activate", self._on_start)
+        menu.append(start_item)
 
-        self.pause_item = Gtk.MenuItem(label="Pause")
-        self.pause_item.connect("activate", self._on_pause_resume)
-        menu.append(self.pause_item)
+        pause_item = GTK.MenuItem(label="Pause")
+        if pause_item is None:
+            raise RuntimeError("Failed to create Pause menu item")
+        self.pause_item = pause_item
+        pause_item.connect("activate", self._on_pause_resume)
+        menu.append(pause_item)
 
-        self.stop_item = Gtk.MenuItem(label="Stop")
-        self.stop_item.connect("activate", self._on_stop)
-        menu.append(self.stop_item)
+        stop_item = GTK.MenuItem(label="Stop")
+        if stop_item is None:
+            raise RuntimeError("Failed to create Stop menu item")
+        self.stop_item = stop_item
+        stop_item.connect("activate", self._on_stop)
+        menu.append(stop_item)
 
-        menu.append(Gtk.SeparatorMenuItem())
+        menu.append(GTK.SeparatorMenuItem())
 
-        status_item = Gtk.MenuItem(label="Show Status")
+        status_item = GTK.MenuItem(label="Show Status")
         status_item.connect("activate", self._on_status)
         menu.append(status_item)
 
-        open_item = Gtk.MenuItem(label="Go to WebApp")
+        open_item = GTK.MenuItem(label="Go to WebApp")
         open_item.connect("activate", self._on_open_webapp)
         menu.append(open_item)
 
-        check_updates_item = Gtk.MenuItem(label="Check for Updates")
+        check_updates_item = GTK.MenuItem(label="Check for Updates")
         check_updates_item.connect("activate", self._on_check_updates_clicked)
         menu.append(check_updates_item)
 
-        menu.append(Gtk.SeparatorMenuItem())
+        menu.append(GTK.SeparatorMenuItem())
 
-        about_item = Gtk.MenuItem(label="About")
+        about_item = GTK.MenuItem(label="About")
         about_item.connect("activate", self._on_about)
         menu.append(about_item)
 
-        menu.append(Gtk.SeparatorMenuItem())
+        menu.append(GTK.SeparatorMenuItem())
 
-        quit_item = Gtk.MenuItem(label="Quit")
+        quit_item = GTK.MenuItem(label="Quit")
         quit_item.connect("activate", self._on_quit)
         menu.append(quit_item)
 
@@ -798,30 +930,50 @@ class TrayApp:
         return menu
 
     def run(self) -> None:
-        """Initialize AppIndicator3 and run GTK loop."""
+        """Initialize tray icon and run GTK loop."""
         project_root = Path(__file__).resolve().parent.parent
         self.icon_dir = project_root / "assets" / "icons"
 
-        self.appindicator = AppIndicator3.Indicator.new(
-            "lm-studio-benchmark",
-            "lmstudio-bench-tray-gray",
-            AppIndicator3.IndicatorCategory.APPLICATION_STATUS,
-        )
-        self.appindicator.set_icon_theme_path(str(self.icon_dir))
-        self.appindicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
-
         self.menu = self._build_menu()
-        self.appindicator.set_menu(self.menu)
-        self._refresh_menu_buttons()
 
-        LOGGER.info(
-            "AppIndicator3 tray started for dashboard: %s",
-            self.dashboard_url,
-        )
+        if APP_INDICATOR3 is not None:
+            indicator: Any = APP_INDICATOR3.Indicator.new(
+                "lm-studio-benchmark",
+                "lmstudio-bench-tray-gray",
+                APP_INDICATOR3.IndicatorCategory.APPLICATION_STATUS,
+            )
+            if indicator is None:
+                raise RuntimeError("Failed to create AppIndicator3 indicator")
+            appindicator: Any = cast(Any, indicator)
+            self.appindicator = appindicator
+            appindicator.set_icon_theme_path(str(self.icon_dir))
+            appindicator.set_status(APP_INDICATOR3.IndicatorStatus.ACTIVE)
+            appindicator.set_menu(self.menu)
+            LOGGER.info(
+                "AppIndicator tray started for dashboard: %s",
+                self.dashboard_url,
+            )
+        else:
+            LOGGER.warning(
+                "AppIndicator bindings unavailable; using Gtk.StatusIcon "
+                "fallback"
+            )
+            status_icon: Any = GTK.StatusIcon.new_from_icon_name(
+                "lmstudio-bench-tray-gray"
+            )
+            if status_icon is None:
+                raise RuntimeError("Failed to create Gtk.StatusIcon fallback")
+            si: Any = cast(Any, status_icon)
+            self.status_icon = si
+            si.set_visible(True)
+            si.set_tooltip_text("LM Studio Benchmark")
+            si.connect("popup-menu", self._on_status_icon_popup)
+
+        self._refresh_menu_buttons()
 
         self._start_status_polling()
 
-        Gtk.main()
+        GTK.main()
 
 
 def _run_tray(dashboard_url: str, debug: bool) -> None:
@@ -829,7 +981,7 @@ def _run_tray(dashboard_url: str, debug: bool) -> None:
     try:
         app = TrayApp(dashboard_url=dashboard_url, debug=debug)
         app.run()
-    except Exception:
+    except (RuntimeError, OSError, ImportError):
         LOGGER.exception("Tray thread crashed")
 
 
@@ -843,8 +995,6 @@ def start_tray(dashboard_url: str, debug: bool = False) -> bool:
     Returns:
         True when startup was initiated, otherwise False.
     """
-    global TRAY_THREAD
-
     log_file = _setup_logger(debug=debug)
     LOGGER.info("Tray log file: %s", log_file)
 
@@ -852,16 +1002,18 @@ def start_tray(dashboard_url: str, debug: bool = False) -> bool:
         LOGGER.warning("Tray dependencies unavailable: %s", IMPORT_ERROR)
         return False
 
-    if TRAY_THREAD and TRAY_THREAD.is_alive():
+    current_thread = _TRAY_STATE["thread"]
+    if current_thread and current_thread.is_alive():
         LOGGER.info("Tray already running")
         return True
 
-    TRAY_THREAD = threading.Thread(
+    tray_thread = threading.Thread(
         target=_run_tray,
         args=(dashboard_url, debug),
         daemon=True,
     )
-    TRAY_THREAD.start()
+    _TRAY_STATE["thread"] = tray_thread
+    tray_thread.start()
     return True
 
 
@@ -915,15 +1067,16 @@ def main() -> int:
         LOGGER.error(msg)
         return 1
 
-    display_ok, _ = Gtk.init_check()
-    if not display_ok:
+    try:
+        GTK.init(sys.argv)
+    except RuntimeError:
         LOGGER.error("No graphical display available for GTK tray")
         return 1
 
     try:
         app = TrayApp(dashboard_url=args.url, debug=args.debug)
         app.run()
-    except Exception:
+    except (RuntimeError, OSError, ImportError):
         LOGGER.exception("Tray standalone startup failed")
         return 1
     return 0

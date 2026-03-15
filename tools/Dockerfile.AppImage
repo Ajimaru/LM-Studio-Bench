@@ -22,6 +22,10 @@ RUN apt-get update && apt-get install -y \
     libgirepository1.0-dev \
     gobject-introspection \
     gir1.2-gtk-3.0 \
+    gir1.2-ayatanaappindicator3-0.1 \
+    libayatana-appindicator3-1 \
+    libdbusmenu-glib4 \
+    libdbusmenu-gtk3-4 \
     desktop-file-utils \
     appstream \
     && rm -rf /var/lib/apt/lists/*

@@ -1,14 +1,8 @@
 """Tests for web/app.py."""
-import hashlib
+import importlib
 import json
-import math
-import socket
-import statistics
 import sys
-from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 def _import_app():
@@ -17,7 +11,7 @@ def _import_app():
         sys.modules["lmstudio"] = MagicMock()
 
     if "app" not in sys.modules:
-        import app
+        importlib.import_module("app")
     return sys.modules["app"]
 
 
@@ -420,7 +414,7 @@ class TestGetCachedLatestRelease:
         with patch.object(
             app_mod,
             "get_current_version",
-            side_effect=Exception("error"),
+            side_effect=RuntimeError("error"),
         ):
             result = app_mod._get_cached_latest_release()
 
@@ -478,7 +472,7 @@ class TestCollectLmsVariants:
     def test_returns_empty_list_on_exception(self):
         """Returns empty list on unexpected exception."""
         app_mod = _import_app()
-        with patch("subprocess.run", side_effect=Exception("broken")):
+        with patch("subprocess.run", side_effect=OSError("broken")):
             result = app_mod._collect_lms_variants("org/model")
         assert result == []
 

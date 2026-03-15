@@ -3,10 +3,12 @@
 run.py executes module-level code that starts subprocesses on import.
 We patch subprocess and sys.exit before importing to avoid side effects.
 """
+import importlib
+from pathlib import Path
 import socket
 import subprocess
 import sys
-from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -305,3 +307,354 @@ class TestStopTrayProcess:
         mock_proc.wait.side_effect = subprocess.SubprocessError("timeout")
         run._stop_tray_process(mock_proc)
         mock_proc.kill.assert_called_once()
+
+
+class TestStartTrayProcess:
+    """Tests for _start_tray_process() in run.py."""
+
+    def test_returns_none_when_tray_script_missing(self, tmp_path: Path, monkeypatch):
+        """_start_tray_process returns None when tray.py does not exist."""
+        run = _import_run()
+        monkeypatch.setattr(run, "project_root", tmp_path)
+        (tmp_path / "src").mkdir(exist_ok=True)
+        with patch.object(run, "USER_LOGS_DIR", tmp_path / "logs"), \
+                patch.object(run, "_tray_python_candidates",
+                             return_value=[sys.executable]):
+            result = run._start_tray_process("http://localhost:8080", False)
+        assert result is None
+
+    def test_returns_proc_when_tray_starts_successfully(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """_start_tray_process returns Popen when tray starts (poll=None)."""
+        run = _import_run()
+        src_dir = tmp_path / "src"
+        src_dir.mkdir(exist_ok=True)
+        tray_script = src_dir / "tray.py"
+        tray_script.write_text("# tray stub")
+        monkeypatch.setattr(run, "project_root", tmp_path)
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        with patch.object(run, "USER_LOGS_DIR", logs_dir), \
+                patch.object(run, "_tray_python_candidates",
+                             return_value=[sys.executable]), \
+                patch("subprocess.Popen", return_value=mock_proc), \
+                patch("time.sleep"):
+            result = run._start_tray_process(
+                "http://localhost:8080", False
+            )
+        assert result is mock_proc
+
+    def test_returns_none_when_tray_exits_early_all_candidates(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """_start_tray_process returns None when tray exits for all candidates."""
+        run = _import_run()
+        src_dir = tmp_path / "src"
+        src_dir.mkdir(exist_ok=True)
+        tray_script = src_dir / "tray.py"
+        tray_script.write_text("# tray stub")
+        monkeypatch.setattr(run, "project_root", tmp_path)
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1
+        mock_proc.returncode = 1
+        with patch.object(run, "USER_LOGS_DIR", logs_dir), \
+                patch.object(run, "_tray_python_candidates",
+                             return_value=[sys.executable]), \
+                patch("subprocess.Popen", return_value=mock_proc), \
+                patch("time.sleep"):
+            result = run._start_tray_process(
+                "http://localhost:8080", False
+            )
+        assert result is None
+
+    def test_skips_osexception_candidates(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """_start_tray_process continues to next candidate on OSError."""
+        run = _import_run()
+        src_dir = tmp_path / "src"
+        src_dir.mkdir(exist_ok=True)
+        tray_script = src_dir / "tray.py"
+        tray_script.write_text("# tray stub")
+        monkeypatch.setattr(run, "project_root", tmp_path)
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        good_proc = MagicMock()
+        good_proc.poll.return_value = None
+        call_count = [0]
+
+        def popen_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise OSError("bad python")
+            return good_proc
+
+        with patch.object(run, "USER_LOGS_DIR", logs_dir), \
+                patch.object(run, "_tray_python_candidates",
+                             return_value=["/bad/python", sys.executable]), \
+                patch("subprocess.Popen", side_effect=popen_side_effect), \
+                patch("time.sleep"):
+            result = run._start_tray_process(
+                "http://localhost:8080", False
+            )
+        assert result is good_proc
+
+    def test_passes_debug_flag_when_enabled(
+        self, tmp_path: Path, monkeypatch
+    ):
+        """_start_tray_process appends --debug to command when debug=True."""
+        run = _import_run()
+        src_dir = tmp_path / "src"
+        src_dir.mkdir(exist_ok=True)
+        tray_script = src_dir / "tray.py"
+        tray_script.write_text("# tray stub")
+        monkeypatch.setattr(run, "project_root", tmp_path)
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        captured_cmd = []
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+
+        def capture_popen(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            return mock_proc
+
+        with patch.object(run, "USER_LOGS_DIR", logs_dir), \
+                patch.object(run, "_tray_python_candidates",
+                             return_value=[sys.executable]), \
+                patch("subprocess.Popen", side_effect=capture_popen), \
+                patch("time.sleep"):
+            run._start_tray_process("http://localhost:8080", True)
+        assert "--debug" in captured_cmd
+
+
+class TestStartTrayProcessSymbolLookup:
+    """Cover the 'symbol lookup error' branch in _start_tray_process."""
+
+    def test_logs_symbol_lookup_warning(self, tmp_path, monkeypatch):
+        """Prints warning when launcher log contains 'symbol lookup error'."""
+        run = _import_run()
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "tray.py").write_text("# tray stub")
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir(exist_ok=True)
+
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1
+
+        original_read_text = Path.read_text
+
+        def patched_read_text(self, *args, **kwargs):
+            if "runapp_" in str(self) or "tray" in str(self):
+                return "symbol lookup error: /lib/libfoo.so.0"
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", patched_read_text)
+        monkeypatch.setattr(run, "project_root", tmp_path)
+
+        with patch.object(run, "USER_LOGS_DIR", logs_dir), \
+                patch.object(run, "_tray_python_candidates",
+                             return_value=[sys.executable]), \
+                patch("subprocess.Popen", return_value=mock_proc), \
+                patch("time.sleep"):
+            result = run._start_tray_process("http://localhost:8080", False)
+        assert result is None
+
+    def test_launcher_log_os_error_ignored(self, tmp_path, monkeypatch):
+        """OSError reading launcher log is silently ignored."""
+        run = _import_run()
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "tray.py").write_text("# tray stub")
+        logs_dir = tmp_path / "logs"
+        logs_dir.mkdir(exist_ok=True)
+
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1
+
+        original_read_text = Path.read_text
+
+        def raise_os_error(self, *args, **kwargs):
+            if "runapp_" in str(self) or "tray" in str(self):
+                raise OSError("no access")
+            return original_read_text(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", raise_os_error)
+        monkeypatch.setattr(run, "project_root", tmp_path)
+
+        with patch.object(run, "USER_LOGS_DIR", logs_dir), \
+                patch.object(run, "_tray_python_candidates",
+                             return_value=[sys.executable]), \
+                patch("subprocess.Popen", return_value=mock_proc), \
+                patch("time.sleep"):
+            result = run._start_tray_process("http://localhost:8080", False)
+        assert result is None
+
+
+class TestRunPyHelperFunctions:
+    """Tests for small helper functions in run.py."""
+
+    def test_format_path_for_logs_home(self):
+        """format_path_for_logs replaces home dir with ~."""
+        run = _import_run()
+        home = Path.home()
+        p = home / "some" / "path.txt"
+        if hasattr(run, "format_path_for_logs"):
+            result = run.format_path_for_logs(p)
+            assert isinstance(result, str)
+
+    def test_format_path_for_logs_non_home(self):
+        """format_path_for_logs returns string for non-home paths."""
+        run = _import_run()
+        p = Path("/tmp/test_path.txt")
+        if hasattr(run, "format_path_for_logs"):
+            result = run.format_path_for_logs(p)
+            assert isinstance(result, str)
+
+    def test_find_free_port_returns_int(self):
+        """_find_free_port returns an integer port."""
+        run = _import_run()
+        if hasattr(run, "_find_free_port"):
+            port = run._find_free_port()
+            assert isinstance(port, int)
+            assert 1024 <= port <= 65535
+
+    def test_resolve_python_executable_returns_path(self):
+        """_resolve_python_executable returns a valid path."""
+        run = _import_run()
+        result = run._resolve_python_executable()
+        assert result is not None
+        assert isinstance(result, (str, Path))
+
+    def test_tray_python_candidates_returns_list(self):
+        """_tray_python_candidates returns a non-empty list."""
+        run = _import_run()
+        if hasattr(run, "_tray_python_candidates"):
+            candidates = run._tray_python_candidates()
+            assert isinstance(candidates, list)
+            assert len(candidates) > 0
+
+
+class TestRunPyMainBlock:
+    """Tests for run.py's main entry point modes."""
+
+    def test_webapp_mode_flag_detected(self):
+        """HAS_WEB_FLAG reflects --webapp arg."""
+        run = _import_run()
+        if hasattr(run, "HAS_WEB_FLAG"):
+            assert isinstance(run.HAS_WEB_FLAG, bool)
+
+    def test_cli_args_is_list(self):
+        """CLI_ARGS is a list of strings."""
+        run = _import_run()
+        if hasattr(run, "CLI_ARGS"):
+            assert isinstance(run.CLI_ARGS, list)
+
+
+def _execute_run_module_with_args(
+    argv: list[str],
+    run_result: SimpleNamespace | None = None,
+    popen_proc: MagicMock | None = None,
+):
+    """Import run.py with a custom argv and return execution artifacts."""
+    if "run" in sys.modules:
+        del sys.modules["run"]
+
+    if run_result is None:
+        run_result = SimpleNamespace(returncode=0, stdout="")
+
+    if popen_proc is None:
+        popen_proc = MagicMock()
+        popen_proc.poll.return_value = 1
+        popen_proc.returncode = 1
+
+    def _raise_system_exit(code=0):
+        raise SystemExit(code)
+
+    with patch.object(sys, "argv", argv), \
+            patch("subprocess.run", return_value=run_result) as mock_run, \
+            patch("subprocess.Popen", return_value=popen_proc) as mock_popen, \
+            patch("time.sleep"), \
+            patch("sys.exit", side_effect=_raise_system_exit) as mock_exit:
+        exit_code = None
+        try:
+            importlib.import_module("run")
+        except SystemExit as exc:
+            exit_code = exc.code
+        return {
+            "exit_code": exit_code,
+            "mock_run": mock_run,
+            "mock_popen": mock_popen,
+            "mock_exit": mock_exit,
+        }
+
+
+class TestRunModuleEntrypointCoverage:
+    """Additional coverage tests for run.py module-level branches."""
+
+    def test_help_mode_exits_zero_and_requests_benchmark_help(self):
+        """`--help` path prints help and exits with code 0."""
+        result = _execute_run_module_with_args(
+            ["run.py", "--help"],
+            run_result=SimpleNamespace(
+                returncode=0,
+                stdout="usage: benchmark.py\n\noptions:\n  --runs RUNS\n",
+            ),
+        )
+        assert result["exit_code"] == 0
+        called_cmd = result["mock_run"].call_args[0][0]
+        assert "--help" in called_cmd
+
+    def test_webapp_mode_invalid_args_exits_two(self):
+        """Invalid characters in webapp args trigger exit code 2."""
+        result = _execute_run_module_with_args(
+            ["run.py", "--webapp", "--bad$arg"],
+        )
+        assert result["exit_code"] == 2
+        assert result["mock_run"].call_count == 0
+
+    def test_webapp_mode_runs_app_and_exits_with_subprocess_code(self):
+        """Webapp branch forwards args to web/app.py and exits with its code."""
+        tray_proc = MagicMock()
+        tray_proc.poll.return_value = None
+        tray_proc.returncode = 0
+
+        result = _execute_run_module_with_args(
+            ["run.py", "--webapp", "--port", "8899"],
+            run_result=SimpleNamespace(returncode=7, stdout=""),
+            popen_proc=tray_proc,
+        )
+        assert result["exit_code"] == 7
+        called_cmd = result["mock_run"].call_args[0][0]
+        assert str(Path("web") / "app.py") in called_cmd[1]
+        tray_proc.terminate.assert_called_once()
+
+    def test_cli_mode_invalid_args_exits_two(self):
+        """Invalid characters in CLI mode trigger exit code 2."""
+        result = _execute_run_module_with_args(
+            ["run.py", "--oops;"],
+        )
+        assert result["exit_code"] == 2
+        assert result["mock_run"].call_count == 0
+
+    def test_cli_mode_runs_benchmark_and_exits_with_subprocess_code(self):
+        """Default CLI mode runs benchmark subprocess and returns its code."""
+        tray_proc = MagicMock()
+        tray_proc.poll.return_value = None
+        tray_proc.returncode = 0
+
+        result = _execute_run_module_with_args(
+            ["run.py", "--limit", "1"],
+            run_result=SimpleNamespace(returncode=5, stdout=""),
+            popen_proc=tray_proc,
+        )
+        assert result["exit_code"] == 5
+        called_cmd = result["mock_run"].call_args[0][0]
+        assert str(Path("src") / "benchmark.py") in called_cmd[1]
+        tray_proc.terminate.assert_called_once()

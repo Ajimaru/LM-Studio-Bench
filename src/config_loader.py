@@ -82,20 +82,19 @@ def load_default_config(config_path: Path | None = None) -> Dict[str, Any]:
     3. Hardcoded defaults (BASE_DEFAULT_CONFIG)
     """
     config = dict(BASE_DEFAULT_CONFIG)
+    project_config_path = config_path or PROJECT_CONFIG_PATH
 
-    # 1. Load project defaults
-    if PROJECT_CONFIG_PATH.exists():
+    if project_config_path.exists():
         try:
-            with PROJECT_CONFIG_PATH.open("r", encoding="utf-8") as f:
+            with project_config_path.open("r", encoding="utf-8") as f:
                 project_config = json.load(f)
             config = _deep_merge(config, project_config)
-            logger.info("Loaded project defaults from %s", PROJECT_CONFIG_PATH)
+            logger.info("Loaded project defaults from %s", project_config_path)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning(
-                "Failed to load project config from %s: %s", PROJECT_CONFIG_PATH, exc
+                "Failed to load project config from %s: %s", project_config_path, exc
             )
 
-    # 2. Load user overrides (if exists)
     if USER_CONFIG_FILE.exists():
         try:
             with USER_CONFIG_FILE.open("r", encoding="utf-8") as f:

@@ -34,7 +34,7 @@ jobs:
     steps:
       # Checkout the repository to the GitHub Actions runner
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Execute Codacy Analysis CLI and upload results directly to Codacy
       - name: Run Codacy Analysis CLI
@@ -44,7 +44,5 @@ jobs:
           # You can also omit the token and run the tools that support default configurations
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           verbose: true
-          # Upload results directly to Codacy (no SARIF output)
           upload: true
-          # Force 0 exit code to allow the workflow to complete
           max-allowed-issues: 2147483647

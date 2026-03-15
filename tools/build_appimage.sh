@@ -70,10 +70,69 @@ if ! command -v lms >/dev/null 2>&1; then
     exit 1
 fi
 
+APPIMAGE_GI_PATH="$APPDIR/usr/lib/x86_64-linux-gnu/girepository-1.0"
+APPIMAGE_GI_PATH="$APPIMAGE_GI_PATH:$APPDIR/usr/lib/girepository-1.0"
+if [ -n "${GI_TYPELIB_PATH:-}" ]; then
+    export GI_TYPELIB_PATH="$APPIMAGE_GI_PATH:${GI_TYPELIB_PATH}"
+else
+    export GI_TYPELIB_PATH="$APPIMAGE_GI_PATH"
+fi
+
+APPIMAGE_LD_PATH="$APPDIR/usr/lib:$APPDIR/usr/lib/x86_64-linux-gnu"
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    export LD_LIBRARY_PATH="$APPIMAGE_LD_PATH:${LD_LIBRARY_PATH}"
+else
+    export LD_LIBRARY_PATH="$APPIMAGE_LD_PATH"
+fi
+
 export PYTHONPATH="$PROJECT_DIR/src:$PROJECT_DIR"
 exec "$APPDIR/usr/venv/bin/python" "$PROJECT_DIR/run.py" "$@"
 EOF
 chmod +x "$APPDIR/usr/bin/lmstudio-bench"
+
+mkdir -p "$APPDIR/usr/lib/x86_64-linux-gnu/girepository-1.0"
+
+copy_if_exists() {
+    local source_file="$1"
+    local target_dir="$2"
+    if [ -f "$source_file" ]; then
+        cp -a "$source_file" "$target_dir/"
+    fi
+}
+
+copy_matches() {
+    local pattern="$1"
+    local target_dir="$2"
+    local matched=1
+    local -a matches
+
+    mapfile -t matches < <(compgen -G "$pattern")
+
+    for source_file in "${matches[@]}"; do
+        if [ -f "$source_file" ]; then
+            cp -a "$source_file" "$target_dir/"
+            matched=0
+        fi
+    done
+    return "$matched"
+}
+
+TYPELIB_DIR="/usr/lib/x86_64-linux-gnu/girepository-1.0"
+copy_if_exists "$TYPELIB_DIR/AyatanaAppIndicator3-0.1.typelib" \
+    "$APPDIR/usr/lib/x86_64-linux-gnu/girepository-1.0"
+copy_if_exists "$TYPELIB_DIR/AppIndicator3-0.1.typelib" \
+    "$APPDIR/usr/lib/x86_64-linux-gnu/girepository-1.0"
+copy_if_exists "$TYPELIB_DIR/Gtk-3.0.typelib" \
+    "$APPDIR/usr/lib/x86_64-linux-gnu/girepository-1.0"
+
+mkdir -p "$APPDIR/usr/lib/x86_64-linux-gnu"
+
+copy_matches "/usr/lib/x86_64-linux-gnu/libayatana-appindicator3.so.1*" \
+    "$APPDIR/usr/lib/x86_64-linux-gnu" || true
+copy_matches "/usr/lib/x86_64-linux-gnu/libdbusmenu-glib.so.4*" \
+    "$APPDIR/usr/lib/x86_64-linux-gnu" || true
+copy_matches "/usr/lib/x86_64-linux-gnu/libdbusmenu-gtk3.so.4*" \
+    "$APPDIR/usr/lib/x86_64-linux-gnu" || true
 
 mkdir -p "$DIST_DIR"
 ARCH=x86_64 appimagetool "$APPDIR" "$APPIMAGE_OUT"
