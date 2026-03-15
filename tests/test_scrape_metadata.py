@@ -398,7 +398,8 @@ class TestLoadLmsModels:
         mock_proc = MagicMock()
         mock_proc.returncode = 0
         mock_proc.stdout = json.dumps([{"modelKey": "pub/model"}])
-        with patch("subprocess.run", return_value=mock_proc):
+        with patch.object(sm, "_resolve_lms_executable", return_value="/usr/bin/lms"), \
+                patch("subprocess.run", return_value=mock_proc):
             result = sm.load_lms_models()
         assert isinstance(result, list)
         assert result[0]["modelKey"] == "pub/model"
@@ -409,7 +410,8 @@ class TestLoadLmsModels:
         mock_proc = MagicMock()
         mock_proc.returncode = 1
         mock_proc.stderr = "command not found"
-        with patch("subprocess.run", return_value=mock_proc):
+        with patch.object(sm, "_resolve_lms_executable", return_value="/usr/bin/lms"), \
+                patch("subprocess.run", return_value=mock_proc):
             with pytest.raises(RuntimeError):
                 sm.load_lms_models()
 
@@ -419,7 +421,8 @@ class TestLoadLmsModels:
         mock_proc = MagicMock()
         mock_proc.returncode = 0
         mock_proc.stdout = "not json at all"
-        with patch("subprocess.run", return_value=mock_proc):
+        with patch.object(sm, "_resolve_lms_executable", return_value="/usr/bin/lms"), \
+                patch("subprocess.run", return_value=mock_proc):
             with pytest.raises(RuntimeError):
                 sm.load_lms_models()
 
@@ -429,8 +432,16 @@ class TestLoadLmsModels:
         mock_proc = MagicMock()
         mock_proc.returncode = 0
         mock_proc.stdout = json.dumps({"key": "value"})
-        with patch("subprocess.run", return_value=mock_proc):
+        with patch.object(sm, "_resolve_lms_executable", return_value="/usr/bin/lms"), \
+                patch("subprocess.run", return_value=mock_proc):
             with pytest.raises((RuntimeError, ValueError)):
+                sm.load_lms_models()
+
+    def test_raises_when_lms_not_found(self, tmp_path: Path):
+        """RuntimeError raised when the lms executable cannot be resolved."""
+        sm = _import_scrape_metadata(tmp_path)
+        with patch.object(sm, "_resolve_lms_executable", side_effect=RuntimeError):
+            with pytest.raises(RuntimeError):
                 sm.load_lms_models()
 
 
@@ -492,7 +503,6 @@ class TestFetchHfMetadata:
 
     def test_returns_metadata_on_success(self, tmp_path: Path):
         """Returns populated dict on successful API response."""
-        import json
         sm = _import_scrape_metadata(tmp_path)
         api_data = {
             "tags": ["llm", "text-generation"],

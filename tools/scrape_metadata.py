@@ -11,16 +11,18 @@ import argparse
 from datetime import datetime, timezone
 import html as htmllib
 from http.client import IncompleteRead, RemoteDisconnected
+import importlib
 import json
 import logging
 from pathlib import Path
 import re
 import shutil
 import sqlite3
-import subprocess
+import subprocess  # nosec B404
 import sys
 from typing import Dict, List
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -28,8 +30,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.user_paths import USER_LOGS_DIR, USER_RESULTS_DIR
-
+user_paths = importlib.import_module("src.user_paths")
+USER_LOGS_DIR = user_paths.USER_LOGS_DIR
+USER_RESULTS_DIR = user_paths.USER_RESULTS_DIR
 RESULTS_DIR = USER_RESULTS_DIR
 METADATA_DB = RESULTS_DIR / "model_metadata.db"
 LOGS_DIR = USER_LOGS_DIR
@@ -38,6 +41,36 @@ BACKUPS_DIR = RESULTS_DIR / "backups"
 BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
 
 logger: logging.Logger = logging.getLogger("metadata_scraper")
+
+_ALLOWED_MODEL_KEY_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
+
+
+def _sanitize_model_key(model_key: str) -> str:
+    """Return a safe model key path segment for remote requests."""
+    base_key = model_key.split("@")[0].strip().strip("/")
+    if not base_key or ".." in base_key:
+        raise ValueError("Invalid model key")
+    if not _ALLOWED_MODEL_KEY_RE.fullmatch(base_key):
+        raise ValueError("Invalid model key")
+    return quote(base_key, safe="/")
+
+
+def _build_https_request(url: str, user_agent: str, host: str) -> Request:
+    """Build a Request only for an allowed HTTPS host."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError("Only HTTPS URLs are allowed")
+    if parsed.hostname != host or parsed.username or parsed.password:
+        raise ValueError("Unexpected request host")
+    return Request(url, headers={"User-Agent": user_agent})
+
+
+def _resolve_lms_executable() -> str:
+    """Resolve the LM Studio CLI to an absolute executable path."""
+    lms_executable = shutil.which("lms")
+    if not lms_executable:
+        raise RuntimeError("LM Studio CLI 'lms' not found in PATH")
+    return lms_executable
 
 
 def setup_logger() -> logging.Logger:
@@ -144,11 +177,18 @@ def fetch_lmstudio_readme(model_key: str, timeout: int = 5) -> str:
          A best-effort plain-text summary/readme snippet for the model, or an empty
          string if retrieval/parsing fails.
     """
-    base_key = model_key.split("@")[0]
-    url = f"https://lmstudio.ai/models/{base_key}"
-    req = Request(url, headers={"User-Agent": "lmstudio-metadata-scraper"})
     try:
-        with urlopen(req, timeout=timeout) as resp:
+        model_path = _sanitize_model_key(model_key)
+        url = f"https://lmstudio.ai/models/{model_path}"
+        req = _build_https_request(
+            url,
+            "lmstudio-metadata-scraper",
+            "lmstudio.ai",
+        )
+    except ValueError:
+        return ""
+    try:
+        with urlopen(req, timeout=timeout) as resp:  # nosec B310
             try:
                 html_bytes = resp.read()
             except IncompleteRead as exc:
@@ -365,14 +405,24 @@ def fetch_hf_metadata(model_key: str, timeout: int = 3) -> Dict:
         Returns an empty dictionary if the key format is invalid or if the request,
         parsing, or decoding fails.
     """
-    base_key = model_key.split("@")[0]
+    try:
+        base_key = _sanitize_model_key(model_key)
+    except ValueError:
+        return {}
     if "/" not in base_key:
         return {}
     publisher, name = base_key.split("/", 1)
     url = f"https://huggingface.co/api/models/{publisher}/{name}"
-    req = Request(url, headers={"User-Agent": "lmstudio-metadata-scraper"})
     try:
-        with urlopen(req, timeout=timeout) as resp:
+        req = _build_https_request(
+            url,
+            "lmstudio-metadata-scraper",
+            "huggingface.co",
+        )
+    except ValueError:
+        return {}
+    try:
+        with urlopen(req, timeout=timeout) as resp:  # nosec B310
             try:
                 payload_bytes = resp.read()
             except IncompleteRead as exc:
@@ -404,8 +454,9 @@ def load_lms_models(timeout: int = 30) -> List[Dict]:
             or if its output cannot be parsed as valid JSON.
         ValueError: If the parsed JSON is not a list as expected.
     """
-    proc = subprocess.run(
-        ["lms", "ls", "--json"],
+    lms_executable = _resolve_lms_executable()
+    proc = subprocess.run(  # nosec B603
+        [lms_executable, "ls", "--json"],
         capture_output=True,
         text=True,
         timeout=timeout,

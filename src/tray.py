@@ -55,14 +55,28 @@ def _bootstrap_gi_runtime_paths() -> None:
 
 _bootstrap_gi_runtime_paths()
 
+
+def _import_gi_repository(module_name: str) -> Any:
+    """Import a whitelisted GI repository module by name."""
+    if module_name == "Gtk":
+        return importlib.import_module("gi.repository.Gtk")
+    if module_name == "GLib":
+        return importlib.import_module("gi.repository.GLib")
+    if module_name == "AppIndicator3":
+        return importlib.import_module("gi.repository.AppIndicator3")
+    if module_name == "AyatanaAppIndicator3":
+        return importlib.import_module("gi.repository.AyatanaAppIndicator3")
+    raise ValueError(f"Unsupported GI module: {module_name}")
+
+
 try:
     import gi
 
     gi.require_version("Gtk", "3.0")
-    GTK: Any = importlib.import_module("gi.repository.Gtk")
+    GTK: Any = _import_gi_repository("Gtk")
 
     try:
-        GLIB: Any = importlib.import_module("gi.repository.GLib")
+        GLIB: Any = _import_gi_repository("GLib")
     except (ImportError, ModuleNotFoundError, ValueError):
         GLIB = None
 
@@ -70,9 +84,7 @@ try:
     for appindicator_module in ("AppIndicator3", "AyatanaAppIndicator3"):
         try:
             gi.require_version(appindicator_module, "0.1")
-            APP_INDICATOR3 = importlib.import_module(
-                f"gi.repository.{appindicator_module}"
-            )
+            APP_INDICATOR3 = _import_gi_repository(appindicator_module)
             break
         except (
             ValueError,
@@ -93,6 +105,21 @@ else:
 
 LOGGER = logging.getLogger("tray")
 _TRAY_STATE: dict[str, Optional[threading.Thread]] = {"thread": None}
+
+
+def _normalize_dashboard_url(dashboard_url: str) -> str:
+    """Normalize and validate the dashboard base URL.
+
+    Only absolute same-host HTTP(S) URLs without embedded credentials are
+    accepted.
+    """
+    normalized = dashboard_url.rstrip("/")
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Dashboard URL must use http or https")
+    if not parsed.netloc or parsed.username or parsed.password:
+        raise ValueError("Dashboard URL must use a plain host[:port]")
+    return normalized
 
 
 def _setup_logger(debug: bool) -> Path:
@@ -140,7 +167,7 @@ class TrayApp:
             dashboard_url: Dashboard base URL.
             debug: Enables debug logging.
         """
-        self.dashboard_url = dashboard_url.rstrip("/")
+        self.dashboard_url = _normalize_dashboard_url(dashboard_url)
         parsed = urlparse(self.dashboard_url)
         self.api_base = f"{parsed.scheme}://{parsed.netloc}"
         self._api_scheme = parsed.scheme
@@ -219,7 +246,7 @@ class TrayApp:
                 headers=headers,
                 method=method,
             )
-            with urllib_request.urlopen(req, timeout=5.0) as response:
+            with urllib_request.urlopen(req, timeout=5.0) as response:  # nosec B310
                 response_body = response.read().decode("utf-8")
             data = json.loads(response_body) if response_body else {}
             LOGGER.debug("API response (%s): %s", endpoint, data)

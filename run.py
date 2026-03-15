@@ -18,8 +18,9 @@ from datetime import datetime
 import os
 from pathlib import Path
 import re
+import shutil
 import socket
-import subprocess
+import subprocess  # nosec B404
 import sys
 import time
 
@@ -46,16 +47,24 @@ PYTHON_EXECUTABLE = _resolve_python_executable()
 
 def _tray_python_candidates() -> list[str]:
     """Return Python candidates for tray startup."""
-    candidates = [
+    raw_candidates = [
         PYTHON_EXECUTABLE,
         sys.executable,
         "/usr/bin/python3",
         "python3",
     ]
     unique_candidates: list[str] = []
-    for candidate in candidates:
-        if candidate and candidate not in unique_candidates:
-            unique_candidates.append(candidate)
+    for candidate in raw_candidates:
+        if not candidate:
+            continue
+        resolved_candidate = candidate
+        candidate_path = Path(candidate)
+        if not candidate_path.is_absolute():
+            resolved_candidate = shutil.which(candidate) or ""
+        if not resolved_candidate:
+            continue
+        if resolved_candidate not in unique_candidates:
+            unique_candidates.append(resolved_candidate)
     return unique_candidates
 
 
@@ -210,7 +219,7 @@ def _start_tray_process(
         try:
             with open(launcher_log, "a", encoding="utf-8") as log_handle:
                 log_handle.write(f"CMD: {' '.join(tray_cmd)}\n")
-                tray_proc = subprocess.Popen(
+                tray_proc = subprocess.Popen(  # nosec B603
                     tray_cmd,
                     cwd=project_root,
                     stdout=log_handle,
@@ -304,7 +313,7 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
 
     benchmark_script = project_root / "src" / "benchmark.py"
     if benchmark_script.exists():
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             [PYTHON_EXECUTABLE, str(benchmark_script), "--help"],
             capture_output=True,
             text=True,
