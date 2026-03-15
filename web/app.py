@@ -97,6 +97,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+GENERIC_API_ERROR = "Internal server error"
+
+
+def _safe_api_error(
+    extras: Optional[Dict[str, Any]] = None,
+    message: str = GENERIC_API_ERROR,
+) -> Dict[str, Any]:
+    """Build a sanitized API error response without exposing internals."""
+    response: Dict[str, Any] = {"success": False, "error": message}
+    if extras:
+        response.update(extras)
+    return response
+
+
 # ============================================================================
 # Helper functions
 # ============================================================================
@@ -232,7 +246,7 @@ def setup_webapp_logger():
 def find_free_port() -> int:
     """Finds a free port on the system"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
+        s.bind(("127.0.0.1", 0))
         s.listen(1)
         free_port = s.getsockname()[1]
     return free_port
@@ -1493,7 +1507,7 @@ async def get_results() -> dict:
         sqlite3.Error,
     ) as e:
         logger.error("❌ Error loading results: %s", e)
-        return {"success": False, "error": str(e), "results": []}
+        return _safe_api_error({"results": []})
 
 
 @app.get("/api/cache/stats")
@@ -1552,7 +1566,7 @@ async def get_cache_stats() -> dict:
         sqlite3.Error,
     ) as e:
         logger.error("❌ Error fetching cache statistics: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.delete("/api/cache/{model_key}")
@@ -1596,7 +1610,7 @@ async def delete_cache_entry(model_key: str) -> dict:
         sqlite3.Error,
     ) as e:
         logger.error("❌ Error deleting cache entry: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/cache/clear")
@@ -1645,7 +1659,7 @@ async def clear_cache() -> dict:
         sqlite3.Error,
     ) as e:
         logger.error("❌ Error clearing cache: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/lmstudio/models")
@@ -1687,7 +1701,7 @@ async def get_lmstudio_models() -> dict:
         return {"success": False, "error": "LM Studio CLI Timeout", "models": []}
     except (OSError, RuntimeError, TypeError, ValueError) as e:
         logger.error("❌ Error fetching LM Studio models: %s", e)
-        return {"success": False, "error": str(e), "models": []}
+        return _safe_api_error({"models": []})
 
 
 @app.get("/api/comparison/models")
@@ -1755,7 +1769,7 @@ async def get_comparison_models() -> dict:
         sqlite3.Error,
     ) as e:
         logger.error("❌ Error fetching comparison models: %s", e)
-        return {"success": False, "error": str(e), "models": []}
+        return _safe_api_error({"models": []})
 
 
 @app.get("/api/comparison/{model_name:path}")
@@ -1846,7 +1860,7 @@ async def get_model_history(model_name: str) -> dict:
         sqlite3.Error,
     ) as e:
         logger.error("❌ Error fetching model history: %s", e)
-        return {"success": False, "error": str(e), "history": []}
+        return _safe_api_error({"history": []})
 
 
 @app.post("/api/comparison/export/csv")
@@ -1995,7 +2009,7 @@ async def export_comparison_csv(
         sqlite3.Error,
     ) as e:
         logger.error("❌ CSV Export Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/comparison/export/pdf")
@@ -2162,7 +2176,7 @@ async def export_comparison_pdf(request: Request) -> dict:
         }
     except (sqlite3.Error, OSError, ValueError, TypeError) as e:
         logger.error("❌ PDF Export Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/comparison/statistics/{model_name:path}")
@@ -2297,7 +2311,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
         }
     except (sqlite3.Error, ValueError, ZeroDivisionError, TypeError) as e:
         logger.error("❌ Advanced Statistics Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/output")
@@ -2335,7 +2349,7 @@ async def list_presets() -> dict:
         return result
     except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error("❌ Error listing presets: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/presets/{name}")
@@ -2362,7 +2376,7 @@ async def get_preset(name: str) -> dict:
         return {"success": False, "error": f"Preset not found: {name}"}
     except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error("❌ Error loading preset %s: %s", name, e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/presets")
@@ -2388,7 +2402,7 @@ async def save_preset(request: PresetSaveRequest) -> dict:
         }
     except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
         logger.error("❌ Error saving preset %s: %s", request.name, e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.delete("/api/presets/{name}")
@@ -2410,7 +2424,7 @@ async def delete_preset(name: str) -> dict:
         return {"success": False, "error": f"Preset not found: {name}"}
     except (OSError, PermissionError) as e:
         logger.error("❌ Error deleting preset %s: %s", name, e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/presets/compare")
@@ -2439,7 +2453,7 @@ async def compare_presets(request: PresetCompareRequest) -> dict:
             request.preset_b,
             e,
         )
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/presets/export")
@@ -2479,7 +2493,7 @@ async def export_presets() -> dict:
         zipfile.BadZipFile,
     ) as e:
         logger.error("❌ Error exporting presets: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/presets/import")
@@ -2531,7 +2545,7 @@ async def import_presets(request: Request) -> dict:
         binascii.Error,
     ) as e:
         logger.error("❌ Error importing presets: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 # ============================================================================
@@ -2571,7 +2585,7 @@ async def create_experiment(request: CreateExperimentRequest) -> dict:
         }
     except (ValueError, TypeError, AttributeError) as e:
         logger.error("❌ Experiment Creation Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/experiments/{experiment_id}/comparison")
@@ -2604,18 +2618,19 @@ async def get_experiment_comparison(
                 repeat_penalty, max_tokens, num_runs, error_count
             FROM benchmark_results
             WHERE model_name = ?
-            ORDER BY timestamp ASC
         """
-        params = [model_name]
+        params: List[Any] = [model_name]
 
         if start_date:
-            query = query.replace(
-                "ORDER BY", f"AND timestamp >= '{start_date}' ORDER BY"
-            )
+            query += " AND timestamp >= ?"
+            params.append(start_date)
         if end_date:
-            query = query.replace("ORDER BY", f"AND timestamp <= '{end_date}' ORDER BY")
+            query += " AND timestamp <= ?"
+            params.append(end_date)
 
-        cursor.execute(query, params)
+        query += " ORDER BY timestamp ASC"
+
+        cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
         conn.close()
 
@@ -2766,7 +2781,7 @@ async def get_experiment_comparison(
         }
     except (sqlite3.Error, ValueError, ZeroDivisionError, TypeError) as e:
         logger.error("❌ Experiment Comparison Error: %s", e)
-        return {"success": False, "error": str(e), "comparison": {}}
+        return _safe_api_error({"comparison": {}})
 
 
 @app.post("/api/experiments/{experiment_id}/comparison")
@@ -2956,7 +2971,7 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
         TypeError,
     ) as e:
         logger.error("❌ Experiment Comparison Error: %s", e)
-        return {"success": False, "error": str(e), "comparison": {}}
+        return _safe_api_error({"comparison": {}})
 
 
 @app.post("/api/experiments/{experiment_id}/export")
@@ -3136,7 +3151,7 @@ async def export_experiment(experiment_id: str, request: Request) -> dict:
 
     except (json.JSONDecodeError, OSError, ValueError, TypeError) as e:
         logger.error("❌ Experiment Export Error: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.post("/api/experiments/run")
@@ -3770,7 +3785,7 @@ async def run_experiment(request: Request) -> dict:
     ) as e:
         logger.error("❌ Experiment Run Error: %s", e)
         logger.error("Traceback: %s", traceback.format_exc())
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 @app.get("/api/dashboard/stats")
@@ -4337,7 +4352,7 @@ async def get_dashboard_stats() -> dict:
         statistics.StatisticsError,
     ) as e:
         logger.error("❌ Error loading dashboard stats: %s", e)
-        return {"success": False, "error": str(e)}
+        return _safe_api_error()
 
 
 # ============================================================================
