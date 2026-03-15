@@ -2580,6 +2580,38 @@ class TestLMStudioBenchmarkInference:
         assert mock_lms.llm.call_count == 2
         assert mock_model.respond.call_count == 2
 
+    def test_run_inference_sdk_handles_server_error_on_model_load(
+        self, tmp_path: Path
+    ):
+        """SDK inference returns None when model load raises server error."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.use_rest_api = False
+        bench.context_length = 2048
+        bench.inference_params = {
+            "temperature": 0.7,
+            "top_k_sampling": 40,
+            "top_p_sampling": 0.9,
+            "min_p_sampling": 0.05,
+            "repeat_penalty": 1.1,
+            "max_tokens": 256,
+        }
+
+        class FakeLMStudioServerError(Exception):
+            """Local fake for lmstudio server errors in tests."""
+
+        mock_lms = MagicMock()
+        mock_lms.LMStudioServerError = FakeLMStudioServerError
+        mock_lms.llm.side_effect = FakeLMStudioServerError(
+            "Model get/load error: Operation canceled."
+        )
+
+        with patch.dict("sys.modules", {"lmstudio": mock_lms}):
+            result = bench._run_inference_sdk("test/model@Q4_K_M")
+
+        assert result is None
+        assert mock_lms.llm.call_count == 1
+
     def test_run_inference_rest_no_client(self, tmp_path: Path):
         """_run_inference_rest returns None when rest_client is None."""
         bm = _import_benchmark()

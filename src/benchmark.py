@@ -3282,6 +3282,13 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 logger.error("❌ lmstudio SDK not available")
                 return None
 
+            server_error_cls = getattr(lms, "LMStudioServerError", None)
+            server_error_type: Optional[type[Exception]] = None
+            if isinstance(server_error_cls, type) and issubclass(
+                server_error_cls, Exception
+            ):
+                server_error_type = server_error_cls
+
             load_config_params: Dict[str, Any] = {
                 "context_length": self.context_length,
             }
@@ -3321,9 +3328,21 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 kv_quant,
             )
 
-            model = lms.llm(
-                model_key, config=lms.LlmLoadModelConfig(**load_config_params)
-            )
+            try:
+                model = lms.llm(
+                    model_key,
+                    config=lms.LlmLoadModelConfig(**load_config_params),
+                )
+            except Exception as err:
+                if server_error_type and isinstance(err, server_error_type):
+                    logger.error(
+                        "❌ LM Studio server error during model load "
+                        "with %s: %s",
+                        model_key,
+                        err,
+                    )
+                    return None
+                raise
 
             prediction_config = lms.LlmPredictionConfig(
                 temperature=self.inference_params["temperature"],
@@ -3344,13 +3363,6 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 prediction_config.repeat_penalty,
                 prediction_config.max_tokens,
             )
-
-            server_error_cls = getattr(lms, "LMStudioServerError", None)
-            server_error_type: Optional[type[Exception]] = None
-            if isinstance(server_error_cls, type) and issubclass(
-                server_error_cls, Exception
-            ):
-                server_error_type = server_error_cls
 
             result = None
             start_time = 0.0
@@ -3376,12 +3388,26 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                             "reloading model and retrying once",
                             model_key,
                         )
-                        model = lms.llm(
-                            model_key,
-                            config=lms.LlmLoadModelConfig(
-                                **load_config_params
-                            ),
-                        )
+                        try:
+                            model = lms.llm(
+                                model_key,
+                                config=lms.LlmLoadModelConfig(
+                                    **load_config_params
+                                ),
+                            )
+                        except Exception as load_err:
+                            if (
+                                server_error_type
+                                and isinstance(load_err, server_error_type)
+                            ):
+                                logger.error(
+                                    "❌ LM Studio server error during reload "
+                                    "with %s: %s",
+                                    model_key,
+                                    load_err,
+                                )
+                                return None
+                            raise
                         continue
                     if is_server_error:
                         logger.error(
