@@ -311,6 +311,17 @@ class HardwareMonitor:
 
         if self.gpu_type == "AMD" and self.gpu_tool == "sysfs":
             self._init_amd_sysfs_paths()
+
+    def _reset_measurements(self) -> None:
+        """Clears all collected measurements before a new profiling run."""
+        with self.lock:
+            self.temps.clear()
+            self.powers.clear()
+            self.vrams.clear()
+            self.gtts.clear()
+            self.cpus.clear()
+            self.rams.clear()
+            self.ram_readings.clear()
         self._amd_sysfs_path: Optional[str] = None
         self._amd_hwmon_path: Optional[str] = None
 
@@ -351,8 +362,7 @@ class HardwareMonitor:
             self.gpu_tool,
         )
         self.monitoring = True
-        self.temps.clear()
-        self.powers.clear()
+        self._reset_measurements()
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.thread.start()
 
@@ -3335,9 +3345,59 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 prediction_config.max_tokens,
             )
 
-            start_time = time.time()
-            result = model.respond(self.prompt, config=prediction_config)
-            end_time = time.time()
+            server_error_cls = getattr(lms, "LMStudioServerError", None)
+            server_error_type: Optional[type[Exception]] = None
+            if isinstance(server_error_cls, type) and issubclass(
+                server_error_cls, Exception
+            ):
+                server_error_type = server_error_cls
+
+            result = None
+            start_time = 0.0
+            end_time = 0.0
+            for attempt in range(2):
+                start_time = time.time()
+                try:
+                    result = model.respond(
+                        self.prompt,
+                        config=prediction_config,
+                    )
+                except Exception as err:
+                    is_server_error = (
+                        server_error_type is not None
+                        and isinstance(err, server_error_type)
+                    )
+                    is_model_unloaded = (
+                        is_server_error and "model unloaded" in str(err).lower()
+                    )
+                    if attempt == 0 and is_model_unloaded:
+                        logger.warning(
+                            "⚠️ SDK returned 'Model unloaded' for %s; "
+                            "reloading model and retrying once",
+                            model_key,
+                        )
+                        model = lms.llm(
+                            model_key,
+                            config=lms.LlmLoadModelConfig(
+                                **load_config_params
+                            ),
+                        )
+                        continue
+                    if is_server_error:
+                        logger.error(
+                            "❌ LM Studio server error during inference "
+                            "with %s: %s",
+                            model_key,
+                            err,
+                        )
+                        return None
+                    raise
+
+                end_time = time.time()
+                break
+
+            if result is None:
+                return None
 
             generation_time = end_time - start_time
 

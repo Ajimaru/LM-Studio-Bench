@@ -171,6 +171,35 @@ class TestHardwareMonitor:
         monitor.start()
         assert monitor.monitoring is False
 
+    def test_start_resets_all_measurement_buffers(self):
+        """start() clears all stale readings before a new run begins."""
+        bm = _import_benchmark()
+        monitor = bm.HardwareMonitor(
+            gpu_type="AMD", gpu_tool="rocm-smi", enabled=True
+        )
+        monitor.temps = [60.0]
+        monitor.powers = [50.0]
+        monitor.vrams = [9.0]
+        monitor.gtts = [1.0]
+        monitor.cpus = [25.0]
+        monitor.rams = [15.0]
+        monitor.ram_readings = [15.0, 15.1]
+
+        with patch("threading.Thread") as mock_thread_cls:
+            mock_thread = MagicMock()
+            mock_thread_cls.return_value = mock_thread
+
+            monitor.start()
+
+        assert monitor.temps == []
+        assert monitor.powers == []
+        assert monitor.vrams == []
+        assert monitor.gtts == []
+        assert monitor.cpus == []
+        assert monitor.rams == []
+        assert monitor.ram_readings == []
+        mock_thread.start.assert_called_once()
+
     def test_stop_returns_stats_dict(self):
         """stop() returns a dict with expected statistic keys."""
         bm = _import_benchmark()
@@ -2505,6 +2534,51 @@ class TestLMStudioBenchmarkInference:
         with patch.dict("sys.modules", {"lmstudio": mock_lms}):
             result = bench._run_inference_sdk("test/model@Q4_K_M")
         assert result is None
+
+    def test_run_inference_sdk_retries_when_model_unloaded(
+        self, tmp_path: Path
+    ):
+        """SDK inference retries once when server reports model unloaded."""
+        bm = _import_benchmark()
+        bench = _make_benchmark_instance(bm, tmp_path)
+        bench.use_rest_api = False
+        bench.context_length = 2048
+        bench.inference_params = {
+            "temperature": 0.7,
+            "top_k_sampling": 40,
+            "top_p_sampling": 0.9,
+            "min_p_sampling": 0.05,
+            "repeat_penalty": 1.1,
+            "max_tokens": 256,
+        }
+
+        class FakeLMStudioServerError(Exception):
+            """Local fake for lmstudio server errors in tests."""
+
+        mock_stats = MagicMock()
+        mock_stats.time_to_first_token_sec = 0.2
+        mock_stats.predicted_tokens_count = 20
+        mock_stats.prompt_tokens_count = 8
+
+        mock_response = MagicMock()
+        mock_response.stats = mock_stats
+
+        mock_model = MagicMock()
+        mock_model.respond.side_effect = [
+            FakeLMStudioServerError("Chat response error: Model unloaded."),
+            mock_response,
+        ]
+
+        mock_lms = MagicMock()
+        mock_lms.LMStudioServerError = FakeLMStudioServerError
+        mock_lms.llm.return_value = mock_model
+
+        with patch.dict("sys.modules", {"lmstudio": mock_lms}):
+            result = bench._run_inference_sdk("test/model@Q4_K_M")
+
+        assert result is not None
+        assert mock_lms.llm.call_count == 2
+        assert mock_model.respond.call_count == 2
 
     def test_run_inference_rest_no_client(self, tmp_path: Path):
         """_run_inference_rest returns None when rest_client is None."""
