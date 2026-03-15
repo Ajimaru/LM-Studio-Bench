@@ -320,6 +320,226 @@ class TestHardwareMonitor:
 class TestBenchmarkCache:
     """Tests for benchmark.BenchmarkCache."""
 
+    @staticmethod
+    def _validate_sql_identifier(identifier: str) -> str:
+        """Return a validated SQL identifier for trusted schema fragments."""
+        is_valid = (
+            identifier
+            and (identifier[0].isalpha() or identifier[0] == "_")
+            and identifier.replace("_", "").isalnum()
+        )
+        if not is_valid:
+            raise ValueError(f"Invalid SQL identifier: {identifier}")
+        return identifier
+
+    @staticmethod
+    def _validate_sql_type(col_type: str) -> str:
+        """Return a validated SQL type from a strict allowlist."""
+        normalized_type = " ".join(col_type.upper().split())
+        base_type = normalized_type.split(" ", maxsplit=1)[0]
+        allowed_types = {"TEXT", "INTEGER", "REAL", "BLOB", "NUMERIC"}
+        if base_type not in allowed_types:
+            raise ValueError(f"Invalid SQL type: {col_type}")
+        return normalized_type
+
+    @classmethod
+    def _build_safe_schema_fragments(
+        cls, table_info: list[tuple[Any, ...]]
+    ) -> tuple[str, str]:
+        """Builds validated SQL fragments used by test migration setup."""
+        kept_columns = []
+        for col in table_info:
+            if col[1] == "app_version":
+                continue
+            col_name = cls._validate_sql_identifier(str(col[1]))
+            col_type = cls._validate_sql_type(str(col[2] or "TEXT"))
+            kept_columns.append((col_name, col_type))
+
+        column_defs = ", ".join(
+            f"{name} {col_type}" for name, col_type in kept_columns
+        )
+        column_names = ", ".join(name for name, _ in kept_columns)
+        return column_defs, column_names
+
+    def test_init_migrates_legacy_app_version_column(self, tmp_path: Path):
+        """Legacy benchmark_results DBs get app_version via migration."""
+        import sqlite3
+
+        bm = _import_benchmark()
+        db_path = tmp_path / "legacy_cache.db"
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE benchmark_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_key TEXT NOT NULL,
+                quantization TEXT NOT NULL,
+                params_hash TEXT,
+                timestamp TEXT NOT NULL,
+                inference_params_hash TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        bm.BenchmarkCache(db_path=db_path)
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(benchmark_results)")
+        columns = {row[1] for row in cursor.fetchall()}
+        conn.close()
+
+        assert "app_version" in columns
+
+    def test_save_result_works_after_legacy_migration(self, tmp_path: Path):
+        """Saving results works after migrating a legacy schema DB."""
+        import sqlite3
+
+        bm = _import_benchmark()
+        db_path = tmp_path / "legacy_insert_cache.db"
+        bm.BenchmarkCache(db_path=db_path)
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "ALTER TABLE benchmark_results RENAME TO benchmark_results_old"
+        )
+        cursor.execute("PRAGMA table_info(benchmark_results_old)")
+        table_info = cursor.fetchall()
+
+        column_defs, column_names = self._build_safe_schema_fragments(
+            table_info
+        )
+
+        cursor.execute(f"CREATE TABLE benchmark_results ({column_defs})")
+        cursor.execute(
+            "INSERT INTO benchmark_results "
+            f"({column_names}) "
+            f"SELECT {column_names} "
+            "FROM benchmark_results_old"
+        )
+        cursor.execute("DROP TABLE benchmark_results_old")
+        conn.commit()
+        conn.close()
+
+        cache = bm.BenchmarkCache(db_path=db_path)
+        result = bm.BenchmarkResult(
+            model_name="legacy-test-model",
+            quantization="Q4",
+            gpu_type="NVIDIA",
+            gpu_offload=1.0,
+            vram_mb="8192",
+            avg_tokens_per_sec=40.0,
+            avg_ttft=0.5,
+            avg_gen_time=1.0,
+            prompt_tokens=10,
+            completion_tokens=20,
+            timestamp="2026-03-15T13:00:00",
+            params_size="7B",
+            architecture="llama",
+            max_context_length=2048,
+            model_size_gb=4.0,
+            has_vision=False,
+            has_tools=False,
+            tokens_per_sec_per_gb=10.0,
+            tokens_per_sec_per_billion_params=5.7,
+            inference_params_hash="legacyhash",
+        )
+
+        cache.save_result(
+            result,
+            "org/legacy-test-model",
+            "params1234",
+            "Explain machine learning in 3 sentences",
+            2048,
+        )
+
+        cached = cache.get_cached_result("org/legacy-test-model", "params1234")
+        assert cached is not None
+        assert cached.model_name == "legacy-test-model"
+
+    def test_save_result_recovers_missing_app_version_runtime(
+        self, tmp_path: Path
+    ):
+        """save_result repairs schema if app_version was removed at runtime."""
+        import sqlite3
+
+        bm = _import_benchmark()
+        db_path = tmp_path / "runtime_repair_cache.db"
+        cache = bm.BenchmarkCache(db_path=db_path)
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "ALTER TABLE benchmark_results RENAME TO benchmark_results_old"
+        )
+        cursor.execute("PRAGMA table_info(benchmark_results_old)")
+        table_info = cursor.fetchall()
+
+        column_defs, column_names = self._build_safe_schema_fragments(
+            table_info
+        )
+
+        cursor.execute(f"CREATE TABLE benchmark_results ({column_defs})")
+        cursor.execute(
+            "INSERT INTO benchmark_results "
+            f"({column_names}) "
+            f"SELECT {column_names} "
+            "FROM benchmark_results_old"
+        )
+        cursor.execute("DROP TABLE benchmark_results_old")
+        conn.commit()
+        conn.close()
+
+        result = bm.BenchmarkResult(
+            model_name="runtime-repair-model",
+            quantization="Q4",
+            gpu_type="NVIDIA",
+            gpu_offload=1.0,
+            vram_mb="8192",
+            avg_tokens_per_sec=40.0,
+            avg_ttft=0.5,
+            avg_gen_time=1.0,
+            prompt_tokens=10,
+            completion_tokens=20,
+            timestamp="2026-03-15T13:00:00",
+            params_size="7B",
+            architecture="llama",
+            max_context_length=2048,
+            model_size_gb=4.0,
+            has_vision=False,
+            has_tools=False,
+            tokens_per_sec_per_gb=10.0,
+            tokens_per_sec_per_billion_params=5.7,
+            inference_params_hash="runtimehash",
+            app_version="v0.1.0",
+        )
+
+        cache.save_result(
+            result,
+            "org/runtime-repair-model",
+            "runtime1234",
+            "Explain machine learning in 3 sentences",
+            2048,
+        )
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(benchmark_results)")
+        columns = {row[1] for row in cursor.fetchall()}
+        cursor.execute(
+            "SELECT COUNT(*) FROM benchmark_results WHERE model_key = ?",
+            ("org/runtime-repair-model",),
+        )
+        count = cursor.fetchone()[0]
+        conn.close()
+
+        assert "app_version" in columns
+        assert count == 1
+
     def test_init_creates_db(self, tmp_path: Path):
         """BenchmarkCache creates SQLite database on init."""
         bm = _import_benchmark()

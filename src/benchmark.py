@@ -666,10 +666,143 @@ class HardwareMonitor:
 class BenchmarkCache:
     """SQLite cache for benchmark results"""
 
+    MIGRATION_COLUMNS: List[Tuple[str, str]] = [
+        ("lmstudio_version", "TEXT"),
+        ("app_version", "TEXT"),
+        ("nvidia_driver_version", "TEXT"),
+        ("rocm_driver_version", "TEXT"),
+        ("intel_driver_version", "TEXT"),
+        ("prompt_hash", "TEXT"),
+        ("params_hash", "TEXT"),
+        ("os_name", "TEXT"),
+        ("os_version", "TEXT"),
+        ("cpu_model", "TEXT"),
+        ("python_version", "TEXT"),
+        ("benchmark_duration_seconds", "REAL"),
+        ("error_count", "INTEGER"),
+        ("n_gpu_layers", "INTEGER"),
+        ("n_batch", "INTEGER"),
+        ("n_threads", "INTEGER"),
+        ("flash_attention", "INTEGER"),
+        ("rope_freq_base", "REAL"),
+        ("rope_freq_scale", "REAL"),
+        ("use_mmap", "INTEGER"),
+        ("use_mlock", "INTEGER"),
+        ("kv_cache_quant", "TEXT"),
+        ("temp_celsius_min", "REAL"),
+        ("temp_celsius_max", "REAL"),
+        ("temp_celsius_avg", "REAL"),
+        ("power_watts_min", "REAL"),
+        ("power_watts_max", "REAL"),
+        ("power_watts_avg", "REAL"),
+        ("vram_gb_min", "REAL"),
+        ("vram_gb_max", "REAL"),
+        ("vram_gb_avg", "REAL"),
+        ("gtt_gb_min", "REAL"),
+        ("gtt_gb_max", "REAL"),
+        ("gtt_gb_avg", "REAL"),
+        ("cpu_percent_min", "REAL"),
+        ("cpu_percent_max", "REAL"),
+        ("cpu_percent_avg", "REAL"),
+        ("ram_gb_min", "REAL"),
+        ("ram_gb_max", "REAL"),
+        ("ram_gb_avg", "REAL"),
+        ("tokens_per_sec_p50", "REAL"),
+        ("tokens_per_sec_p95", "REAL"),
+        ("tokens_per_sec_std", "REAL"),
+        ("ttft_p50", "REAL"),
+        ("ttft_p95", "REAL"),
+        ("ttft_std", "REAL"),
+    ]
+
     def __init__(self, db_path: Path = DATABASE_FILE):
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+
+    @staticmethod
+    def _validate_column_spec(col_name: str, col_type: str) -> None:
+        """Validates migration column names/types for safe SQL composition."""
+        if not col_name.replace("_", "").isalnum():
+            raise ValueError(f"Invalid column name: {col_name}")
+        if not col_type.replace(" ", "").isalpha():
+            raise ValueError(f"Invalid column type: {col_type}")
+
+    def _add_column(
+        self,
+        conn: sqlite3.Connection,
+        cursor: sqlite3.Cursor,
+        col_name: str,
+        col_type: str,
+        runtime: bool = False,
+    ) -> bool:
+        """Adds a missing column. Returns True if column was added."""
+        self._validate_column_spec(col_name, col_type)
+        migration_kind = "Runtime migration" if runtime else "Migration"
+        try:
+            logger.info("📦 %s: Adding %s column...", migration_kind, col_name)
+            alter_query = (
+                f"ALTER TABLE benchmark_results "
+                f"ADD COLUMN {col_name} {col_type}"
+            )
+            cursor.execute(alter_query)
+            conn.commit()
+            return True
+        except sqlite3.OperationalError as add_error:
+            if "duplicate column name" in str(add_error).lower():
+                return False
+            raise
+
+    def _ensure_migration_columns(
+        self,
+        conn: sqlite3.Connection,
+        cursor: sqlite3.Cursor,
+    ) -> None:
+        """Ensures all optional migration columns exist in table schema."""
+        cursor.execute("PRAGMA table_info(benchmark_results)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        for col_name, col_type in self.MIGRATION_COLUMNS:
+            if col_name in existing_columns:
+                continue
+            if self._add_column(conn, cursor, col_name, col_type):
+                existing_columns.add(col_name)
+
+    def _recover_from_missing_column(
+        self,
+        conn: sqlite3.Connection,
+        cursor: sqlite3.Cursor,
+        error: sqlite3.Error,
+    ) -> bool:
+        """Handles missing-column insert failures by applying one runtime migration."""
+        match = re.search(
+            r"has no column named\s+([A-Za-z_][A-Za-z0-9_]*)", str(error)
+        )
+        if not match:
+            return False
+
+        missing_col = match.group(1)
+        migration_map = dict(self.MIGRATION_COLUMNS)
+        col_type = migration_map.get(missing_col)
+        if not col_type:
+            return False
+
+        try:
+            self._add_column(
+                conn,
+                cursor,
+                missing_col,
+                col_type,
+                runtime=True,
+            )
+            return True
+        except sqlite3.Error as migration_error:
+            logger.error(
+                "❌ Runtime migration failed for %s: %s",
+                missing_col,
+                migration_error,
+            )
+            return False
 
     def _init_db(self):
         """Creates database schema"""
@@ -819,57 +952,7 @@ class BenchmarkCache:
             conn.commit()
             logger.info("✅ Migration successful")
 
-        new_columns = [
-            ("n_gpu_layers", "INTEGER"),
-            ("n_batch", "INTEGER"),
-            ("n_threads", "INTEGER"),
-            ("flash_attention", "INTEGER"),
-            ("rope_freq_base", "REAL"),
-            ("rope_freq_scale", "REAL"),
-            ("use_mmap", "INTEGER"),
-            ("use_mlock", "INTEGER"),
-            ("kv_cache_quant", "TEXT"),
-            ("temp_celsius_min", "REAL"),
-            ("temp_celsius_max", "REAL"),
-            ("temp_celsius_avg", "REAL"),
-            ("power_watts_min", "REAL"),
-            ("power_watts_max", "REAL"),
-            ("power_watts_avg", "REAL"),
-            ("vram_gb_min", "REAL"),
-            ("vram_gb_max", "REAL"),
-            ("vram_gb_avg", "REAL"),
-            ("gtt_gb_min", "REAL"),
-            ("gtt_gb_max", "REAL"),
-            ("gtt_gb_avg", "REAL"),
-            ("cpu_percent_min", "REAL"),
-            ("cpu_percent_max", "REAL"),
-            ("cpu_percent_avg", "REAL"),
-            ("ram_gb_min", "REAL"),
-            ("ram_gb_max", "REAL"),
-            ("ram_gb_avg", "REAL"),
-            ("tokens_per_sec_p50", "REAL"),
-            ("tokens_per_sec_p95", "REAL"),
-            ("tokens_per_sec_std", "REAL"),
-            ("ttft_p50", "REAL"),
-            ("ttft_p95", "REAL"),
-            ("ttft_std", "REAL"),
-        ]
-        for col_name, col_type in new_columns:
-            if not col_name.replace("_", "").isalnum():
-                raise ValueError(f"Invalid column name: {col_name}")
-            if not col_type.replace(" ", "").isalpha():
-                raise ValueError(f"Invalid column type: {col_type}")
-            try:
-                query = f"SELECT {col_name} FROM benchmark_results LIMIT 1"
-                cursor.execute(query)
-            except sqlite3.OperationalError:
-                logger.info("📦 Migration: Adding %s column...", col_name)
-                alter_query = (
-                    f"ALTER TABLE benchmark_results "
-                    f"ADD COLUMN {col_name} {col_type}"
-                )
-                cursor.execute(alter_query)
-                conn.commit()
+        self._ensure_migration_columns(conn, cursor)
 
         conn.commit()
         conn.close()
@@ -1235,8 +1318,7 @@ class BenchmarkCache:
 
             placeholders = ", ".join("?" for _ in values)
 
-            cursor.execute(
-                f"""
+            insert_query = f"""
                 INSERT INTO benchmark_results (
                     model_key, model_name, quantization, inference_params_hash,
                     gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec,
@@ -1260,11 +1342,21 @@ class BenchmarkCache:
                     tokens_per_sec_p50, tokens_per_sec_p95, tokens_per_sec_std,
                     ttft_p50, ttft_p95, ttft_std
                 ) VALUES ({placeholders})
-            """,
-                values,
-            )
+            """
 
-            conn.commit()
+            for attempt in range(2):
+                try:
+                    cursor.execute(insert_query, values)
+                    conn.commit()
+                    break
+                except sqlite3.Error as e:
+                    can_retry = (
+                        attempt == 0
+                        and self._recover_from_missing_column(conn, cursor, e)
+                    )
+                    if can_retry:
+                        continue
+                    raise
         except sqlite3.Error as e:
             logger.error("❌ Error saving to cache: %s", e)
         finally:
