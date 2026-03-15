@@ -39,6 +39,7 @@ quantizations to measure and compare tokens-per-second performance.
   - 🏠 **Dashboard Home**:
     - System info (OS, kernel, CPU, GPU with detailed model names)
     - LM Studio healthcheck status
+    - Executive summary KPIs (avg, P50, P95 speed)
     - Top 5 fastest models
     - Last 10 benchmark runs
   - ⚡ **Live Streaming**: WebSocket for real-time terminal output
@@ -85,6 +86,9 @@ quantizations to measure and compare tokens-per-second performance.
 - 📝 **Standardized Tests**: Uses the same prompt for all models
 - 📈 **Statistical Evaluation**: Warmup + multiple measurements for accurate results
 - 🗄️ **SQLite Cache**: Automatically caches benchmark results (skips already-tested models)
+  - Automatic schema migration for newly added benchmark columns
+- 🔁 **Resilient Inference**: Retries once when LM Studio reports
+  transient "Model unloaded"
 - ⚡ **Dev Mode**: Picks the smallest model for quick tests during development
 - 🧹 **Clean Logging**: Emojis, formatted model lists, filtered third-party debug logs, separate log files for
   webapp and benchmarks

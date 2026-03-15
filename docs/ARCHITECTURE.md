@@ -584,6 +584,7 @@ flowchart TD
 - Manage benchmark lifecycle
 - Model discovery and filtering
 - Cache management (SQLite)
+- Runtime-safe cache schema migration for optional columns
 - Hardware monitoring
 - Report generation
 
@@ -594,6 +595,15 @@ flowchart TD
 - `GPUMonitor`: GPU detection (NVIDIA/AMD/Intel)
 - `HardwareMonitor`: Live profiling (GPU temp, power, VRAM, GTT, CPU, RAM)
 - `ModelDiscovery`: Model listing and metadata
+
+**Reliability Behaviors (2026-03):**
+
+- **Runtime cache migration**:
+  Missing optional SQLite columns are added automatically at startup and,
+  if needed, once again during insert error recovery.
+- **Inference retry guard**:
+  If LM Studio returns a server error containing `Model unloaded`, the
+  benchmark reloads the model and retries inference once.
 
 **CLI Arguments (49 total):**
 
