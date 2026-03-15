@@ -106,7 +106,6 @@ copy_matches() {
     local matched=1
     local -a matches
     shopt -s nullglob
-    # shellcheck disable=SC2206
     matches=( $pattern )
     shopt -u nullglob
     for source_file in "${matches[@]}"; do
