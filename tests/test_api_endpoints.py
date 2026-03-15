@@ -1,6 +1,7 @@
 """Comprehensive FastAPI endpoint tests for web/app.py."""
 import asyncio
 import importlib
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -2003,9 +2004,10 @@ class TestLatestResultsWithFiles:
             real_dir = Path(tmpdir)
             f1 = real_dir / "benchmark_results_20240101_100000.json"
             f1.write_text("[]")
-            time.sleep(0.01)
             f2 = real_dir / "benchmark_results_20240101_120000.json"
             f2.write_text("[]")
+            os.utime(f1, (1_000_000, 1_000_000))
+            os.utime(f2, (2_000_000, 2_000_000))
             with patch.object(app_mod, "RESULTS_DIR", real_dir):
                 response = client.get("/api/latest-results")
         assert response.status_code == 200
