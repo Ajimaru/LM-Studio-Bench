@@ -499,7 +499,8 @@ class TestGPUMonitor:
         """GPUMonitor falls back to Unknown when no GPU tools found."""
         bm = _import_benchmark()
         with patch("shutil.which", return_value=None), \
-                patch("subprocess.run", return_value=MagicMock(returncode=1)):
+                patch("subprocess.run", return_value=MagicMock(returncode=1)), \
+                patch("glob.glob", return_value=[]):
             monitor = bm.GPUMonitor()
         assert monitor.gpu_type == "Unknown"
         assert monitor.gpu_model == "Unknown"
@@ -555,7 +556,8 @@ class TestGPUMonitor:
         """get_vram_usage returns 'N/A' when no GPU tool found."""
         bm = _import_benchmark()
         with patch("shutil.which", return_value=None), \
-                patch("subprocess.run", return_value=MagicMock(returncode=1)):
+                patch("subprocess.run", return_value=MagicMock(returncode=1)), \
+                patch("glob.glob", return_value=[]):
             monitor = bm.GPUMonitor()
         assert monitor.get_vram_usage() == "N/A"
 
@@ -586,7 +588,7 @@ class TestGPUMonitor:
         with patch(
             "subprocess.run",
             return_value=MagicMock(returncode=1, stdout=""),
-        ):
+        ), patch("glob.glob", return_value=[]):
             result = monitor._find_amd_sysfs_path()
         assert result is None
 

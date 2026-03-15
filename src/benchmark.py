@@ -1353,20 +1353,27 @@ class GPUMonitor:
                 timeout=5,
                 check=False,
             )
-            if result.returncode != 0 or not result.stdout:
-                return None
-
-            for cardpath in glob.glob("/sys/class/drm/card*/device"):
-                vendor_file = Path(cardpath) / "vendor"
-                if vendor_file.exists():
-                    vendor = vendor_file.read_text().strip()
-                    if vendor == "0x1002":
-                        vram_file = Path(cardpath) / "mem_info_vram_total"
-                        if vram_file.exists():
-                            return str(Path(cardpath))
-            return None
+            has_amd_lspci = result.returncode == 0 and bool(result.stdout.strip())
         except OSError:
-            return None
+            has_amd_lspci = False
+
+        for cardpath in glob.glob("/sys/class/drm/card*/device"):
+            vendor_file = Path(cardpath) / "vendor"
+            if not vendor_file.exists():
+                continue
+            vendor = vendor_file.read_text().strip()
+            if vendor != "0x1002":
+                continue
+            vram_file = Path(cardpath) / "mem_info_vram_total"
+            if vram_file.exists():
+                return str(Path(cardpath))
+
+        if has_amd_lspci:
+            logger.debug(
+                "AMD device seen via lspci, but no readable sysfs"
+                " mem_info_vram_total path found"
+            )
+        return None
 
     def _detect_gpu(self):
         """Detects GPU type and finds corresponding monitoring tool"""
