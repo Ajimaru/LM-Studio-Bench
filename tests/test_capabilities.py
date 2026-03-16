@@ -4,7 +4,6 @@ Unit tests for capability detection module.
 
 import json
 from pathlib import Path
-import pytest
 
 from agents.capabilities import (
     Capability,
