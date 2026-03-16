@@ -29,6 +29,11 @@ class TestCapabilityDetector:
         if result is None:
             raise AssertionError("Expected result, got None")
 
+        if not isinstance(result, CapabilityDetectionResult):
+            raise AssertionError(
+                "Expected CapabilityDetectionResult instance"
+            )
+
         if Capability.GENERAL_TEXT not in result.capabilities:
             raise AssertionError("Expected GENERAL_TEXT capability")
 
