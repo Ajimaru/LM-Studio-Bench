@@ -573,7 +573,9 @@ class BenchmarkAgent:
 
         summary = self._compute_summary(results, capability_results)
 
-        detected_caps = list(set(tc.capability.value for tc in test_cases))
+        detected_caps = sorted(
+            {tc.capability.value for tc in test_cases}
+        )
 
         return BenchmarkReport(
             model_name=model_name,
