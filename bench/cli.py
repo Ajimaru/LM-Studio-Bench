@@ -9,7 +9,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from agents.runner import BenchmarkRunner
 from bench.reporting import generate_reports
