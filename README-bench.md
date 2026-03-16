@@ -7,7 +7,7 @@ This benchmark agent implements capability-driven evaluation for language models
 - Automatic capability detection (general text, reasoning, vision, tooling)
 - Per-capability test suites with standardized prompts
 - Quality metrics: ROUGE, F1, Exact Match, Accuracy, Function Call Accuracy
-- Performance metrics: tokens/sec, latency, memory usage
+- Performance metrics: tokens/sec, latency
 - Machine-readable JSON and human-friendly HTML reports
 - CLI interface with extensive configuration options
 - Docker support for containerized execution
