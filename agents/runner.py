@@ -324,7 +324,7 @@ class BenchmarkRunner:
             capabilities_str=caps_str
         )
 
-        return list(result.capabilities)
+        return sorted(result.capabilities, key=lambda cap: cap.value)
 
     def _load_test_cases(
         self,
