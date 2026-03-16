@@ -191,6 +191,7 @@ class LMStudioAdapter(ModelAdapter):
         self.use_rest_api = use_rest_api
         self.model = None
         self.model_path = None
+        self._rest_instance_id: Optional[str] = None
 
         if not use_rest_api:
             try:
@@ -217,15 +218,16 @@ class LMStudioAdapter(ModelAdapter):
             gpu_offload = kwargs.get("gpu_offload", 1.0)
 
             self.rest_client = LMStudioRESTClient()
-            success = self.rest_client.load_model(
+            instance_id = self.rest_client.load_model(
                 model_path,
                 context_length=context_length,
                 gpu_offload=gpu_offload
             )
 
-            if not success:
+            if not instance_id:
                 raise RuntimeError(f"Failed to load model: {model_path}")
 
+            self._rest_instance_id = instance_id
             logger.info(f"Loaded model via REST API: {model_path}")
         else:
             from lmstudio import LlmLoadModelConfig
@@ -244,10 +246,17 @@ class LMStudioAdapter(ModelAdapter):
         """
         if self.use_rest_api and hasattr(self, "rest_client"):
             try:
-                self.rest_client.unload_model()
-                logger.info("Unloaded model via REST API")
+                if self._rest_instance_id is not None:
+                    self.rest_client.unload_model(self._rest_instance_id)
+                    logger.info("Unloaded model via REST API")
+                else:
+                    logger.warning(
+                        "No REST instance id set; skipping unload_model call"
+                    )
             except Exception as e:
                 logger.warning(f"Error unloading model: {e}")
+            finally:
+                self._rest_instance_id = None
         else:
             self.model = None
             logger.info("Unloaded model via SDK")
