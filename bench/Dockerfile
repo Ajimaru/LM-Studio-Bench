@@ -5,6 +5,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    build-essential \
+    pkg-config \
+    python3-dev \
+    libcairo2-dev \
+    libgirepository1.0-dev \
+    gobject-introspection \
+    gir1.2-gtk-3.0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
