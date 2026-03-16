@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import json
 import logging
+from html import escape
 
 logger = logging.getLogger(__name__)
 
@@ -349,14 +350,19 @@ class HTMLReporter:
                 else '<span class="success">Success</span>'
             )
 
+            safe_test_id = escape(str(test_id), quote=True)
+            safe_capability = escape(str(capability), quote=True)
+            safe_tokens = escape(str(tokens), quote=True)
+            safe_throughput = escape(str(throughput_str), quote=True)
+
             rows.append(f"""
             <tr>
-                <td>{test_id}</td>
-                <td>{capability}</td>
+                <td>{safe_test_id}</td>
+                <td>{safe_capability}</td>
                 <td>{status}</td>
                 <td>{latency:.2f}</td>
-                <td>{tokens}</td>
-                <td>{throughput_str}</td>
+                <td>{safe_tokens}</td>
+                <td>{safe_throughput}</td>
                 <td><span class="score {score_class}">{quality:.3f}</span></td>
             </tr>
             """)
