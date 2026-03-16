@@ -4,7 +4,7 @@ Benchmark agent core for capability-driven evaluation.
 Manages model inference, metric computation, and result collection.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
