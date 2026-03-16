@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an improvement for LM-Studio-Tray-Manager
+description: Suggest an improvement for LM-Studio-Bench
 title: "[Feature]: "
 labels:
   - enhancement
@@ -39,8 +39,10 @@ body:
     attributes:
       label: Affected area
       options:
-        - lmstudio_autostart.sh
-        - lmstudio_tray.py
+        - src/benchmark.py
+        - web/app.py
+        - Web Dashboard
+        - GPU detection / hardware info
         - docs
         - GitHub Actions / CI
         - Other

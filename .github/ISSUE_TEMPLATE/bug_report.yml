@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in LM-Studio-Tray-Manager
+description: Report a reproducible problem in LM-Studio-Bench
 title: "[Bug]: "
 labels:
   - bug
@@ -51,12 +51,13 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: OS, LM Studio version, and relevant tooling versions
+      description: OS, LM Studio version, GPU, and relevant tooling versions
       placeholder: |
         - OS:
         - LM Studio:
-        - llmster/lms:
+        - lms CLI:
         - Python:
+        - GPU (nvidia-smi / rocm-smi / intel_gpu_top output):
     validations:
       required: true
 
@@ -64,5 +65,8 @@ body:
     id: logs
     attributes:
       label: Relevant logs
-      description: Paste relevant snippets from .logs/lmstudio_autostart.log or .logs/lmstudio_tray.log
+      description: >
+        Paste relevant snippets from your user logs directory
+        (typically ~/.local/share/lm-studio-bench/logs/,
+        e.g. benchmark_*.log, webapp_*.log or the *_latest.log symlinks).
       render: shell

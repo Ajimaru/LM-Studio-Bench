@@ -38,7 +38,7 @@ body:
     attributes:
       label: Affected area
       description: Relevant file(s) or component(s)
-      placeholder: e.g. lmstudio_autostart.sh command handling
+      placeholder: e.g. src/benchmark.py GPU offload logic
 
   - type: checkboxes
     id: private_followup
