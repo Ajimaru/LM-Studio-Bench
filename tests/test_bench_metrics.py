@@ -3,7 +3,6 @@ Unit tests for metrics computation module.
 """
 
 import json
-import pytest
 
 from bench.metrics import (
     AccuracyMetric,
