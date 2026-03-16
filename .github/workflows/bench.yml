@@ -51,18 +51,30 @@ jobs:
           if [ -n "${{ github.event.inputs.model_path }}" ]; then
             MODEL_PATH="${{ github.event.inputs.model_path }}"
             CAPABILITIES="${{ github.event.inputs.capabilities }}"
+            # Temporarily disable 'set -e' so we can capture the exit code
+            set +e
             python -m bench.cli \
               "$MODEL_PATH" \
               --capabilities "$CAPABILITIES" \
               --output-dir output \
               --verbose
+            exit_code=$?
+            # Optionally re-enable 'set -e' for any subsequent commands
+            set -e
+
+            if [ "$exit_code" -eq 0 ]; then
+              echo "status=completed" >> "$GITHUB_OUTPUT"
+            else
+              echo "status=failed" >> "$GITHUB_OUTPUT"
+            fi
+
+            exit "$exit_code"
           else
             echo "No model path provided, skipping benchmark execution"
             echo "This workflow can be triggered manually with model path"
-            echo "status=skipped" >> $GITHUB_OUTPUT
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "status=completed" >> $GITHUB_OUTPUT
 
       - name: Upload JSON results
         if: steps.benchmark.outputs.status == 'completed'
