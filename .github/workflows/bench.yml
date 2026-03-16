@@ -36,6 +36,17 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi \
+            gir1.2-gtk-3.0 \
+            libgirepository1.0-dev \
+            gobject-introspection \
+            libcairo2-dev \
+            pkg-config
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
