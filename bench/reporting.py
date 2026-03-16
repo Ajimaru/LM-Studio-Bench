@@ -152,7 +152,7 @@ class HTMLReporter:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Benchmark Report: {model_name}</title>
+    <title>Benchmark Report: {escape(model_name)}</title>
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -248,7 +248,7 @@ class HTMLReporter:
 <body>
     <div class="container">
         <h1>Capability-Driven Benchmark Report</h1>
-        <h2>Model: {model_name}</h2>
+        <h2>Model: {escape(model_name)}</h2>
 """
 
     def _html_summary_section(
