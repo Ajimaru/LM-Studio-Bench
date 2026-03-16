@@ -558,13 +558,17 @@ class BenchmarkAgent:
         Run complete benchmark on test cases.
 
         Args:
-            test_cases: List of test cases
-            model_name: Name of the model
-            model_path: Path to model
-            config: Optional configuration dict
+            test_cases: List of test cases.
+            model_name: Name of the model.
+            model_path: Path to model.
+            config: Optional configuration dict.
+            detected_capabilities: Optional list of capabilities
+                detected for this model. When provided, this list
+                is used for the report's capabilities field, even
+                if some capabilities have zero test cases.
 
         Returns:
-            BenchmarkReport with all results
+            BenchmarkReport with all results.
         """
         logger.info(
             f"Starting benchmark for {model_name} "
@@ -572,7 +576,7 @@ class BenchmarkAgent:
         )
 
         results = []
-        capability_results = {}
+        capability_results: Dict[str, List[Any]] = {}
 
         for test_case in test_cases:
             logger.info(f"Evaluating test case: {test_case.id}")
@@ -587,9 +591,17 @@ class BenchmarkAgent:
 
         summary = self._compute_summary(results, capability_results)
 
-        detected_caps = sorted(
-            {tc.capability.value for tc in test_cases}
-        )
+        if detected_capabilities:
+            detected_caps_set = {
+                c.value if isinstance(c, Capability) else str(c)
+                for c in detected_capabilities
+            }
+        else:
+            detected_caps_set = {
+                tc.capability.value for tc in test_cases
+            }
+
+        detected_caps = sorted(detected_caps_set)
 
         return BenchmarkReport(
             model_name=model_name,
