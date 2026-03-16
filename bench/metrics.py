@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Union
 import logging
 import re
 import string
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -182,24 +183,31 @@ class F1Metric(BaseMetric):
         else:
             references = reference
 
-        pred_tokens = set(self.normalize(prediction).split())
+        pred_tokens = self.normalize(prediction).split()
+        pred_counts = Counter(pred_tokens)
+        total_pred = sum(pred_counts.values())
 
         max_f1 = 0.0
         best_ref = None
 
         for ref in references:
-            ref_tokens = set(self.normalize(ref).split())
+            ref_tokens = self.normalize(ref).split()
+            ref_counts = Counter(ref_tokens)
+            total_ref = sum(ref_counts.values())
 
-            if not pred_tokens or not ref_tokens:
+            if not total_pred or not total_ref:
                 f1 = 0.0
             else:
-                common = pred_tokens & ref_tokens
-                if not common:
+                common_counts = pred_counts & ref_counts
+                overlap = sum(common_counts.values())
+                if overlap == 0:
                     f1 = 0.0
                 else:
-                    precision = len(common) / len(pred_tokens)
-                    recall = len(common) / len(ref_tokens)
-                    f1 = 2 * precision * recall / (precision + recall)
+                    precision = overlap / total_pred
+                    recall = overlap / total_ref
+                    f1 = (
+                        2 * precision * recall / (precision + recall)
+                    )
 
             if f1 > max_f1:
                 max_f1 = f1
