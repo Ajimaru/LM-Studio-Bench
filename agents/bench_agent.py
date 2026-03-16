@@ -292,14 +292,28 @@ class LMStudioAdapter(ModelAdapter):
                 response_text = ""
                 tokens_generated = 0
 
-                if hasattr(response, "stats"):
+                if isinstance(response, dict):
+                    # REST client returns a dict, e.g. {"text": ..., "stats": {...}}
+                    response_text = (
+                        response.get("text")
+                        or response.get("content")
+                        or ""
+                    )
+                    stats = response.get("stats")
+                    if isinstance(stats, dict):
+                        completion_tokens = stats.get("completion_tokens")
+                        if completion_tokens is not None:
+                            tokens_generated = completion_tokens
+                elif hasattr(response, "stats") and hasattr(response, "content"):
+                    # Fallback for object-style responses with stats/content attrs
                     tokens_generated = getattr(
                         response.stats,
                         "completion_tokens",
-                        0
+                        0,
                     )
                     response_text = response.content
                 else:
+                    # Last-resort fallback: stringify unknown response type
                     response_text = str(response)
 
             else:
