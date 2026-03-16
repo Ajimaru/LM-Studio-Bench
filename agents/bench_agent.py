@@ -304,14 +304,27 @@ class LMStudioAdapter(ModelAdapter):
                         completion_tokens = stats.get("completion_tokens")
                         if completion_tokens is not None:
                             tokens_generated = completion_tokens
-                elif hasattr(response, "stats") and hasattr(response, "content"):
-                    # Fallback for object-style responses with stats/content attrs
+                    elif stats is not None:
+                        # Handle ChatStats-like objects with tokens_out attribute
+                        tokens_generated = getattr(
+                            stats,
+                            "tokens_out",
+                            getattr(stats, "completion_tokens", 0),
+                        )
+                elif hasattr(response, "stats"):
+                    # Fallback for object-style responses with stats/text attrs
+                    stats_obj = response.stats
                     tokens_generated = getattr(
-                        response.stats,
-                        "completion_tokens",
-                        0,
+                        stats_obj,
+                        "tokens_out",
+                        getattr(stats_obj, "completion_tokens", 0),
                     )
-                    response_text = response.content
+                    if hasattr(response, "content"):
+                        response_text = response.content
+                    elif hasattr(response, "text"):
+                        response_text = response.text
+                    else:
+                        response_text = ""
                 else:
                     # Last-resort fallback: stringify unknown response type
                     response_text = str(response)
