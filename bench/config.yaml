@@ -1,0 +1,39 @@
+context_length: 2048
+gpu_offload: 1.0
+temperature: 0.1
+max_tokens: 256
+max_tests_per_capability: 10
+use_rest_api: true
+
+data_dir: tests/data
+prompts_dir: tests/prompts
+
+timeout_seconds: 300
+
+metric_weights:
+  general_text:
+    rouge-1: 0.3
+    rouge-l: 0.4
+    f1: 0.3
+  reasoning:
+    exact_match: 0.5
+    f1: 0.3
+    accuracy: 0.2
+  vision:
+    accuracy: 0.6
+    rouge-l: 0.4
+  tooling:
+    function_call_accuracy: 0.7
+    accuracy: 0.3
+
+composite_score_weights:
+  quality: 0.6
+  performance: 0.2
+  efficiency: 0.2
+
+lmstudio:
+  host: localhost
+  ports:
+    - 1234
+    - 1235
+  api_token: null

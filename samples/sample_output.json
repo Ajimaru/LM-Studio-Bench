@@ -1,0 +1,198 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2025-01-15T10:30:00.000000",
+  "report": {
+    "model_name": "example-model-7b",
+    "model_path": "models/example-model-7b",
+    "capabilities": [
+      "general_text",
+      "reasoning"
+    ],
+    "timestamp": "2025-01-15T10:30:00.000000",
+    "summary": {
+      "total_tests": 6,
+      "successful_tests": 6,
+      "success_rate": 1.0,
+      "avg_latency_ms": 245.6,
+      "avg_quality_score": 0.823,
+      "avg_throughput_tokens_per_sec": 42.3,
+      "by_capability": {
+        "general_text": {
+          "test_count": 3,
+          "avg_quality_score": 0.856,
+          "success_rate": 1.0
+        },
+        "reasoning": {
+          "test_count": 3,
+          "avg_quality_score": 0.790,
+          "success_rate": 1.0
+        }
+      }
+    },
+    "results": [
+      {
+        "test_id": "qa_001",
+        "capability": "general_text",
+        "latency_ms": 230.5,
+        "tokens_generated": 12,
+        "throughput": 52.1,
+        "quality_score": 0.89,
+        "metrics": [
+          {
+            "name": "rouge-1",
+            "value": 0.85,
+            "normalized": 0.85
+          },
+          {
+            "name": "rouge-l",
+            "value": 0.92,
+            "normalized": 0.92
+          },
+          {
+            "name": "f1",
+            "value": 0.90,
+            "normalized": 0.90
+          }
+        ],
+        "error": null
+      },
+      {
+        "test_id": "qa_002",
+        "capability": "general_text",
+        "latency_ms": 245.3,
+        "tokens_generated": 15,
+        "throughput": 61.2,
+        "quality_score": 0.92,
+        "metrics": [
+          {
+            "name": "rouge-1",
+            "value": 0.88,
+            "normalized": 0.88
+          },
+          {
+            "name": "rouge-l",
+            "value": 0.95,
+            "normalized": 0.95
+          },
+          {
+            "name": "f1",
+            "value": 0.93,
+            "normalized": 0.93
+          }
+        ],
+        "error": null
+      },
+      {
+        "test_id": "qa_003",
+        "capability": "general_text",
+        "latency_ms": 220.8,
+        "tokens_generated": 10,
+        "throughput": 45.3,
+        "quality_score": 0.76,
+        "metrics": [
+          {
+            "name": "rouge-1",
+            "value": 0.72,
+            "normalized": 0.72
+          },
+          {
+            "name": "rouge-l",
+            "value": 0.78,
+            "normalized": 0.78
+          },
+          {
+            "name": "f1",
+            "value": 0.78,
+            "normalized": 0.78
+          }
+        ],
+        "error": null
+      },
+      {
+        "test_id": "reasoning_001",
+        "capability": "reasoning",
+        "latency_ms": 267.4,
+        "tokens_generated": 8,
+        "throughput": 29.9,
+        "quality_score": 1.0,
+        "metrics": [
+          {
+            "name": "exact_match",
+            "value": 1.0,
+            "normalized": 1.0
+          },
+          {
+            "name": "f1",
+            "value": 1.0,
+            "normalized": 1.0
+          },
+          {
+            "name": "accuracy",
+            "value": 1.0,
+            "normalized": 1.0
+          }
+        ],
+        "error": null
+      },
+      {
+        "test_id": "reasoning_002",
+        "capability": "reasoning",
+        "latency_ms": 255.2,
+        "tokens_generated": 6,
+        "throughput": 23.5,
+        "quality_score": 0.75,
+        "metrics": [
+          {
+            "name": "exact_match",
+            "value": 1.0,
+            "normalized": 1.0
+          },
+          {
+            "name": "f1",
+            "value": 0.67,
+            "normalized": 0.67
+          },
+          {
+            "name": "accuracy",
+            "value": 0.5,
+            "normalized": 0.5
+          }
+        ],
+        "error": null
+      },
+      {
+        "test_id": "reasoning_003",
+        "capability": "reasoning",
+        "latency_ms": 254.5,
+        "tokens_generated": 7,
+        "throughput": 27.5,
+        "quality_score": 0.62,
+        "metrics": [
+          {
+            "name": "exact_match",
+            "value": 0.0,
+            "normalized": 0.0
+          },
+          {
+            "name": "f1",
+            "value": 0.8,
+            "normalized": 0.8
+          },
+          {
+            "name": "accuracy",
+            "value": 1.0,
+            "normalized": 1.0
+          }
+        ],
+        "error": null
+      }
+    ],
+    "config": {
+      "context_length": 2048,
+      "gpu_offload": 1.0,
+      "temperature": 0.1,
+      "max_tokens": 256
+    },
+    "raw_outputs_dir": "output/raw"
+  }
+}

@@ -1,0 +1,23 @@
+[
+    {
+        "id": "reasoning_001",
+        "prompt": "If all A are B, and all B are C, then are all A also C?",
+        "reference": "Yes",
+        "reasoning": "This is a valid syllogism. By transitivity, if A implies B and B implies C, then A implies C.",
+        "category": "logical"
+    },
+    {
+        "id": "reasoning_002",
+        "prompt": "A train travels 120 miles in 2 hours. What is its average speed in miles per hour?",
+        "reference": "60",
+        "reasoning": "Speed = Distance / Time = 120 / 2 = 60 mph",
+        "category": "math"
+    },
+    {
+        "id": "reasoning_003",
+        "prompt": "If 3x + 5 = 20, what is x?",
+        "reference": "5",
+        "reasoning": "3x + 5 = 20; 3x = 15; x = 5",
+        "category": "math"
+    }
+]

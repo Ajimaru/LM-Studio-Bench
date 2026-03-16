@@ -1,0 +1,24 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir pyyaml
+
+COPY agents/ ./agents/
+COPY bench/ ./bench/
+COPY tests/data/ ./tests/data/
+COPY tests/prompts/ ./tests/prompts/
+COPY src/ ./src/
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+ENTRYPOINT ["python", "-m", "bench.cli"]
+CMD ["--help"]

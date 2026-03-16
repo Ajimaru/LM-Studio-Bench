@@ -1,0 +1,20 @@
+[
+    {
+        "id": "qa_001",
+        "prompt": "What is the capital of France?",
+        "reference": "Paris",
+        "category": "geography"
+    },
+    {
+        "id": "qa_002",
+        "prompt": "Who wrote Romeo and Juliet?",
+        "reference": "William Shakespeare",
+        "category": "literature"
+    },
+    {
+        "id": "qa_003",
+        "prompt": "What is the largest planet in our solar system?",
+        "reference": "Jupiter",
+        "category": "astronomy"
+    }
+]
