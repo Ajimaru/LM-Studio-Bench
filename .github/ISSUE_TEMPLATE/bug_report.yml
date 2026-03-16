@@ -57,7 +57,7 @@ body:
         - LM Studio:
         - lms CLI:
         - Python:
-        - GPU (nvidia-smi / rocm-smi output):
+        - GPU (nvidia-smi / rocm-smi / intel_gpu_top output):
     validations:
       required: true
 
@@ -65,5 +65,5 @@ body:
     id: logs
     attributes:
       label: Relevant logs
-      description: Paste relevant snippets from logs/benchmark_*.log or logs/webapp_*.log
+      description: Paste relevant snippets from ~/.local/share/lm-studio-bench/logs/benchmark_*.log or ~/.local/share/lm-studio-bench/logs/webapp_*.log
       render: shell
