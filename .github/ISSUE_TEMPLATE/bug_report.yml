@@ -65,5 +65,8 @@ body:
     id: logs
     attributes:
       label: Relevant logs
-      description: Paste relevant snippets from ~/.local/share/lm-studio-bench/logs/benchmark_*.log or ~/.local/share/lm-studio-bench/logs/webapp_*.log
+      description: >
+        Paste relevant snippets from your user logs directory
+        (typically ~/.local/share/lm-studio-bench/logs/,
+        e.g. benchmark_*.log, webapp_*.log or the *_latest.log symlinks).
       render: shell
