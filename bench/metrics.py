@@ -507,6 +507,9 @@ class FunctionCallMetric(BaseMetric):
         else:
             references = reference
 
+        best_score = 0.0
+        best_metadata: Optional[Dict[str, Any]] = None
+
         for ref in references:
             try:
                 if isinstance(ref, str):
@@ -539,17 +542,21 @@ class FunctionCallMetric(BaseMetric):
                 1.0 if function_match else 0.0
             ) + 0.5 * param_score
 
-            if total_score > 0.5:
-                return MetricResult(
-                    name=self.name,
-                    value=total_score,
-                    max_value=1.0,
-                    normalized=total_score,
-                    metadata={
-                        "function_match": function_match,
-                        "param_accuracy": param_score
-                    }
-                )
+            if total_score > best_score:
+                best_score = total_score
+                best_metadata = {
+                    "function_match": function_match,
+                    "param_accuracy": param_score,
+                }
+
+        if best_metadata is not None:
+            return MetricResult(
+                name=self.name,
+                value=best_score,
+                max_value=1.0,
+                normalized=best_score,
+                metadata=best_metadata,
+            )
 
         return MetricResult(
             name=self.name,
