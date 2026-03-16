@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest an improvement for LM-Studio-Tray-Manager
+title: "[Feature]: "
+labels:
+  - enhancement
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+      placeholder: Describe the current pain point.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should be added or changed?
+      placeholder: Describe your preferred behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional alternatives or workarounds you tried.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - lmstudio_autostart.sh
+        - lmstudio_tray.py
+        - docs
+        - GitHub Actions / CI
+        - Other
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues before opening this request.
+          required: true

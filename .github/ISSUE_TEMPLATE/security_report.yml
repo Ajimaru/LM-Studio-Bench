@@ -1,0 +1,49 @@
+name: Security report (public-safe)
+description: Report a potential security concern (non-sensitive details only)
+title: "[Security]: "
+labels:
+  - security
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ Do not disclose sensitive exploit details in a public issue.
+
+        For private reporting, use the process in SECURITY.md:
+        - Repository → Security → Advisories → Report a vulnerability
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: High-level description of the concern
+    validations:
+      required: true
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Potential impact
+      options:
+        - Low
+        - Medium
+        - High
+        - Critical
+    validations:
+      required: true
+
+  - type: textarea
+    id: affected
+    attributes:
+      label: Affected area
+      description: Relevant file(s) or component(s)
+      placeholder: e.g. lmstudio_autostart.sh command handling
+
+  - type: checkboxes
+    id: private_followup
+    attributes:
+      label: Private follow-up
+      options:
+        - label: I understand sensitive details should be reported privately via SECURITY.md guidance.
+          required: true
