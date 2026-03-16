@@ -1,15 +1,6 @@
 name: Capability-Driven Benchmark
 
 on:
-  push:
-    branches:
-      - main
-      - dev
-  pull_request:
-    branches:
-      - main
-  schedule:
-    - cron: '0 0 * * 0'
   workflow_dispatch:
     inputs:
       model_path:
