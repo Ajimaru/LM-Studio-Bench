@@ -3,4 +3,9 @@ name: "CodeQL Config"
 paths-ignore:
   - tests/**
   - '**/*test*.py'
+  - docs/**
+  - htmlcov/**
+  - dist/**
+  - assets/**
+  - .venv/**
 
