@@ -287,7 +287,15 @@ class LMStudioAdapter(ModelAdapter):
         try:
             if self.use_rest_api:
                 messages = [{"role": "user", "content": prompt}]
-                response = self.rest_client.chat_stream(messages)
+                model_id = (
+                    kwargs.get("model")
+                    or getattr(self, "instance_id", None)
+                    or getattr(self, "model_key", None)
+                )
+                chat_args: Dict[str, Any] = {"messages": messages}
+                if model_id is not None:
+                    chat_args["model"] = model_id
+                response = self.rest_client.chat_stream(**chat_args)
 
                 response_text = ""
                 tokens_generated = 0
