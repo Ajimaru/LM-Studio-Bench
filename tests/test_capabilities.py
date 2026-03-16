@@ -33,7 +33,7 @@ class TestCapabilityDetector:
             raise AssertionError("Expected GENERAL_TEXT capability")
 
         if Capability.REASONING not in result.capabilities:
-            raise AssertError("Expected REASONING capability")
+            raise AssertionError("Expected REASONING capability")
 
         if result.source != "cli_flags":
             raise AssertionError(f"Expected cli_flags source, got {result.source}")
