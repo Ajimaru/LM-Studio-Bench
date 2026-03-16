@@ -11,3 +11,4 @@ distro>=1.8.0
 py-cpuinfo>=9.0.0
 scipy>=1.11.0
 PyGObject>=3.48,<3.50
+PyYAML>=6.0
