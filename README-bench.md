@@ -313,7 +313,13 @@ Runs automatically every Sunday at midnight (UTC).
 
 #### Push Trigger
 
-Runs on push to `main` or `dev` branches (if model path configured).
+Runs on push to `main` or `dev` branches.
+
+Note: the benchmark step currently reads the model path only from
+manual `workflow_dispatch` inputs. Push- and schedule-triggered
+runs therefore skip the actual benchmark unless you adapt the
+workflow to read the model path from another configuration source
+(for example, a repository variable or secret).
 
 ### Workflow Outputs
 
