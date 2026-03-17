@@ -518,6 +518,7 @@ class BenchmarkManager:
             "--context",
             "--limit",
             "--min-context",
+            "--random-models",
             "--top-k",
             "--max-tokens",
             "--n-gpu-layers",
@@ -614,8 +615,81 @@ class BenchmarkManager:
 
         return sanitized
 
+    def _sanitize_agent_args(self, cli_args: list[str]) -> list[str]:
+        """Whitelist and sanitize capability-agent CLI args."""
+        if not cli_args:
+            raise ValueError("Missing model id/path for capability benchmark")
+
+        flags_with_values = {
+            "--model-name",
+            "--capabilities",
+            "--max-tests",
+            "--random-models",
+            "--context-length",
+            "--gpu-offload",
+            "--temperature",
+        }
+        flags_without_values = {"--all-models", "--verbose"}
+        allowed_flags = flags_with_values | flags_without_values
+
+        sanitized: list[str] = []
+        index = 0
+
+        first_arg = str(cli_args[0])
+        if not first_arg.startswith("--"):
+            model = first_arg.strip()
+            if not model:
+                raise ValueError(
+                    "Invalid empty model id/path for capability benchmark"
+                )
+
+            model_pattern = re.compile(r"^[A-Za-z0-9_./:@%+\-=,]+$")
+            if not model_pattern.fullmatch(model):
+                raise ValueError(f"Unsupported model id/path: {model}")
+
+            sanitized.append(model)
+            index = 1
+
+        if index >= len(cli_args):
+            return sanitized
+
+        while index < len(cli_args):
+            current = str(cli_args[index])
+
+            if current not in allowed_flags:
+                raise ValueError(f"Unsupported agent argument: {current}")
+
+            sanitized.append(current)
+
+            if current in flags_with_values:
+                if index + 1 >= len(cli_args):
+                    raise ValueError(f"Missing value for agent argument: {current}")
+                value = self._validate_cli_arg_value(
+                    current,
+                    str(cli_args[index + 1]),
+                )
+                sanitized.append(value)
+                index += 2
+                continue
+
+            index += 1
+
+        has_model = bool(sanitized and not sanitized[0].startswith("--"))
+        has_random = "--random-models" in sanitized
+        has_all = "--all-models" in sanitized
+        if not has_model and not has_random and not has_all:
+            raise ValueError(
+                "Capability benchmark requires model id/path, "
+                "--random-models or --all-models"
+            )
+
+        return sanitized
+
     @staticmethod
-    def _build_safe_command(sanitized_args: list[str]) -> list[str]:
+    def _build_safe_command(
+        sanitized_args: list[str],
+        mode: str = "classic",
+    ) -> list[str]:
         """Build a fully-validated command list for subprocess execution.
 
         Verifies that the Python interpreter and benchmark script are absolute
@@ -633,18 +707,26 @@ class BenchmarkManager:
         shell_unsafe_pattern = re.compile(r"[;&|`$<>\\!]")
 
         interpreter = str(sys.executable)
-        script = str(BENCHMARK_SCRIPT.resolve())
+        if mode == "capability":
+            base_cmd = [interpreter, "-m", "bench.cli"]
+        else:
+            script = str(BENCHMARK_SCRIPT.resolve())
+            base_cmd = [interpreter, script]
 
-        for component in [interpreter, script] + sanitized_args:
+        for component in base_cmd + sanitized_args:
             if shell_unsafe_pattern.search(component):
                 raise ValueError(
                     f"Shell-unsafe characters detected in argument: "
                     f"{component!r}"
                 )
 
-        return [interpreter, script] + [str(a) for a in sanitized_args]
+        return base_cmd + [str(a) for a in sanitized_args]
 
-    async def start_benchmark(self, cli_args: list[str]) -> bool:
+    async def start_benchmark(
+        self,
+        cli_args: list[str],
+        mode: str = "classic",
+    ) -> bool:
         """Starts a new benchmark process."""
         if self.is_running():
             logger.warning("Benchmark is already running")
@@ -652,12 +734,15 @@ class BenchmarkManager:
         if self._state.output_queue is None:
             self._state.output_queue = asyncio.Queue()
         try:
-            sanitized_args = self._sanitize_benchmark_args(cli_args)
+            if mode == "capability":
+                sanitized_args = self._sanitize_agent_args(cli_args)
+            else:
+                sanitized_args = self._sanitize_benchmark_args(cli_args)
             self._state.output_queue = asyncio.Queue()
             if self._state.output_task and not self._state.output_task.done():
                 self._state.output_task.cancel()
 
-            safe_cmd = self._build_safe_command(sanitized_args)
+            safe_cmd = self._build_safe_command(sanitized_args, mode=mode)
 
             self._state.process = subprocess.Popen(
                 safe_cmd,
@@ -895,6 +980,7 @@ class BenchmarkParams(BaseModel):
     context: Optional[int] = None
     limit: Optional[int] = None
     prompt: Optional[str] = None
+    benchmark_mode: str = "classic"
 
     min_context: Optional[int] = None
     max_size: Optional[float] = None
@@ -932,6 +1018,10 @@ class BenchmarkParams(BaseModel):
     use_mmap: Optional[bool] = True
     use_mlock: Optional[bool] = False
     kv_cache_quant: Optional[str] = None
+
+    agent_model: Optional[str] = None
+    agent_capabilities: Optional[str] = None
+    agent_max_tests: Optional[int] = None
 
 
 class InferenceParamSet(BaseModel):
@@ -1257,7 +1347,77 @@ async def get_lmstudio_health() -> dict:
 @app.post("/api/benchmark/start")
 async def start_benchmark(params: BenchmarkParams) -> dict:
     """Start a new benchmark."""
+    mode = params.benchmark_mode
+    if mode not in {"classic", "capability"}:
+        return {
+            "success": False,
+            "status": manager.status,
+            "message": "❌ Invalid benchmark mode",
+        }
+
     benchmark_args = []
+
+    if mode == "capability":
+        if params.retest:
+            if params.limit is not None:
+                benchmark_args.extend([
+                    "--random-models",
+                    str(params.limit),
+                ])
+            else:
+                benchmark_args.append("--all-models")
+        elif not params.agent_model:
+            return {
+                "success": False,
+                "status": manager.status,
+                "message": "❌ Agent mode requires a model id/path",
+            }
+
+        if params.agent_model:
+            benchmark_args.append(params.agent_model)
+        if params.agent_capabilities:
+            benchmark_args.extend([
+                "--capabilities",
+                params.agent_capabilities,
+            ])
+        if params.agent_max_tests is not None:
+            benchmark_args.extend([
+                "--max-tests",
+                str(params.agent_max_tests),
+            ])
+        if params.context:
+            benchmark_args.extend([
+                "--context-length",
+                str(params.context),
+            ])
+        if params.temperature is not None:
+            benchmark_args.extend([
+                "--temperature",
+                str(params.temperature),
+            ])
+        if DEBUG_MODE:
+            benchmark_args.append("--verbose")
+
+        logger.info("🔧 Capability benchmark args: %s", benchmark_args)
+        success = await manager.start_benchmark(benchmark_args, mode=mode)
+        message = (
+            "✅ Capability benchmark started"
+            if success
+            else "❌ Error starting capability benchmark"
+        )
+        if success and params.retest:
+            if params.limit is not None:
+                message = (
+                    "✅ Capability benchmark started "
+                    f"(random {params.limit} models)"
+                )
+            else:
+                message = "✅ Capability benchmark started (all models)"
+        return {
+            "success": success,
+            "status": manager.status,
+            "message": message,
+        }
 
     if params.runs:
         benchmark_args.extend(["--runs", str(params.runs)])
@@ -1346,7 +1506,7 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
         params.disable_gtt,
     )
 
-    success = await manager.start_benchmark(benchmark_args)
+    success = await manager.start_benchmark(benchmark_args, mode=mode)
     message = "✅ Benchmark started" if success else "❌ Error starting"
     return {"success": success, "status": manager.status, "message": message}
 

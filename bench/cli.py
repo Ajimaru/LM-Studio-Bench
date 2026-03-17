@@ -6,9 +6,12 @@ Provides command-line interface to run benchmarks on models.
 """
 
 import argparse
+import json
 import logging
-import sys
 from pathlib import Path
+import random
+import subprocess
+import sys
 from typing import Optional
 
 from agents.runner import BenchmarkRunner
@@ -47,7 +50,7 @@ def load_config(config_path: Optional[Path]) -> dict:
 
     if not config_path.exists():
         logging.warning(
-            f"Config file not found: {config_path}, using defaults"
+            "Config file not found: %s, using defaults", config_path
         )
         return _get_default_config()
 
@@ -55,8 +58,8 @@ def load_config(config_path: Optional[Path]) -> dict:
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         return config or _get_default_config()
-    except Exception as e:
-        logging.error(f"Error loading config: {e}")
+    except (OSError, TypeError, ValueError, yaml.YAMLError) as error:
+        logging.error("Error loading config: %s", error)
         return _get_default_config()
 
 
@@ -93,7 +96,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "model_path",
         type=str,
+        nargs="?",
         help="Path to model or model identifier"
+    )
+
+    parser.add_argument(
+        "--random-models",
+        type=int,
+        help="Run capability benchmark for N random installed models"
+    )
+
+    parser.add_argument(
+        "--all-models",
+        action="store_true",
+        help="Run capability benchmark for all installed models"
     )
 
     parser.add_argument(
@@ -165,6 +181,46 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _list_installed_models() -> list[str]:
+    """Return installed LM Studio model variants from ``lms ls --json``."""
+    try:
+        result = subprocess.run(
+            ["lms", "ls", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode != 0:
+            return []
+
+        parsed = json.loads(result.stdout)
+        model_names: list[str] = []
+        seen: set[str] = set()
+        for item in parsed:
+            variants = item.get("variants") or []
+            if variants:
+                for variant in variants:
+                    if variant and variant not in seen:
+                        model_names.append(variant)
+                        seen.add(variant)
+                continue
+
+            model_key = item.get("modelKey")
+            if model_key and model_key not in seen:
+                model_names.append(model_key)
+                seen.add(model_key)
+        return model_names
+    except (
+        json.JSONDecodeError,
+        OSError,
+        subprocess.SubprocessError,
+        TypeError,
+        ValueError,
+    ):
+        return []
+
+
 def override_config(config: dict, args: argparse.Namespace) -> dict:
     """
     Override config with CLI arguments.
@@ -208,8 +264,7 @@ def main() -> int:
         config = override_config(config, args)
 
         logger.info("Starting capability-driven benchmark")
-        logger.info(f"Model: {args.model_path}")
-        logger.info(f"Output: {args.output_dir}")
+        logger.info("Output: %s", args.output_dir)
 
         runner = BenchmarkRunner(
             config=config,
@@ -222,23 +277,63 @@ def main() -> int:
                 c.strip() for c in args.capabilities.split(",")
             ]
 
-        report_data = runner.run(
-            model_path=args.model_path,
-            model_name=args.model_name,
-            capabilities=capabilities
-        )
+        if args.all_models and args.random_models:
+            logger.error(
+                "--all-models and --random-models cannot be used together"
+            )
+            return 1
+
+        model_targets: list[str] = []
+        if args.all_models:
+            installed_models = _list_installed_models()
+            if not installed_models:
+                logger.error("No installed models found for all-model benchmark")
+                return 1
+            model_targets = installed_models
+            logger.info("Selected all installed models: %d", len(model_targets))
+        elif args.random_models:
+            if args.random_models < 1:
+                logger.error("--random-models must be >= 1")
+                return 1
+            installed_models = _list_installed_models()
+            if not installed_models:
+                logger.error("No installed models found for random benchmark")
+                return 1
+            sample_size = min(args.random_models, len(installed_models))
+            model_targets = random.sample(installed_models, sample_size)
+            logger.info(
+                "Selected %d random model(s): %s",
+                sample_size,
+                ", ".join(model_targets),
+            )
+        else:
+            if not args.model_path:
+                logger.error(
+                    "model_path is required unless --random-models "
+                    "or --all-models is used"
+                )
+                return 1
+            model_targets = [args.model_path]
 
         formats = [f.strip() for f in args.formats.split(",")]
-        output_files = generate_reports(
-            report_data=report_data,
-            output_dir=args.output_dir,
-            formats=formats
-        )
+        for model_target in model_targets:
+            logger.info("Model: %s", model_target)
+            report_data = runner.run(
+                model_path=model_target,
+                model_name=args.model_name,
+                capabilities=capabilities,
+            )
+            output_files = generate_reports(
+                report_data=report_data,
+                output_dir=args.output_dir,
+                formats=formats,
+            )
+
+            logger.info("Generated reports for %s:", model_target)
+            for fmt, path in output_files.items():
+                logger.info("  %s: %s", fmt.upper(), path)
 
         logger.info("Benchmark completed successfully")
-        logger.info("Generated reports:")
-        for fmt, path in output_files.items():
-            logger.info(f"  {fmt.upper()}: {path}")
 
         return 0
 
@@ -246,8 +341,8 @@ def main() -> int:
         logger.info("Benchmark interrupted by user")
         return 1
 
-    except Exception as e:
-        logger.error(f"Benchmark failed: {e}", exc_info=args.verbose)
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        logger.error("Benchmark failed: %s", error, exc_info=args.verbose)
         return 1
 
 

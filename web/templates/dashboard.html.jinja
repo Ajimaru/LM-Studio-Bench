@@ -1605,7 +1605,8 @@
 
                 <div class="form-group">
                   <label>
-                    <span class="tooltip-icon" data-tooltip="Max. number of models to test">?</span> Model Limit
+                    <span class="tooltip-icon"
+                          data-tooltip="Max. number of models to test. In Capability mode with Re-test enabled: if set, picks this many random installed models; if empty, tests all installed models.">?</span> Model Limit
                   </label>
                   <input type="number"
                          id="paramLimit"
@@ -1638,6 +1639,72 @@
                           data-tooltip="Custom test prompt instead of default">?</span> Custom Prompt
                   </label>
                   <input type="text" id="paramPrompt" placeholder="Empty = default">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Classic runs full model benchmark; capability runs focused capability tests for one model">?</span> Benchmark Mode
+                  </label>
+                  <select id="paramBenchmarkMode"
+                          onchange="updateBenchmarkModeUI()"
+                          style="padding: 0.5rem;
+                                 border: 1px solid var(--border);
+                                 border-radius: 0.25rem;
+                                 font-size: 0.9rem">
+                    <option value="classic">Classic (default prompt benchmark)</option>
+                    <option value="capability">Capability-driven test</option>
+                  </select>
+                </div>
+
+                <div id="capabilityModeSettings"
+                     style="display: none;
+                            padding: 0.75rem;
+                            border: 1px solid var(--border);
+                            border-radius: 0.4rem;
+                            background: rgba(255,255,255,0.03)">
+                  <div class="form-group" style="margin-bottom: 0.6rem;">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="Model ID or path for capability benchmark (required in capability mode)">?</span> Agent Model ID/Path
+                    </label>
+                    <input type="text"
+                           id="paramAgentModel"
+                           placeholder="e.g. qwen2.5-7b-instruct">
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0.6rem;">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="Run only selected capability suites">?</span> Capabilities
+                    </label>
+                    <div class="checkbox-group"
+                         style="display: grid;
+                                grid-template-columns: 1fr 1fr;
+                                gap: 0.5rem">
+                      <div class="checkbox-item">
+                        <input type="checkbox" id="capGeneralText" checked>
+                        <label for="capGeneralText">General Text</label>
+                      </div>
+                      <div class="checkbox-item">
+                        <input type="checkbox" id="capReasoning" checked>
+                        <label for="capReasoning">Reasoning</label>
+                      </div>
+                      <div class="checkbox-item">
+                        <input type="checkbox" id="capVision">
+                        <label for="capVision">Vision</label>
+                      </div>
+                      <div class="checkbox-item">
+                        <input type="checkbox" id="capTooling">
+                        <label for="capTooling">Tooling</label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label>
+                      <span class="tooltip-icon" data-tooltip="Maximum tests per capability">?</span> Max Tests per Capability
+                    </label>
+                    <input type="number" id="paramAgentMaxTests" value="10" min="1" max="100">
+                  </div>
                 </div>
               </div>
 
@@ -3515,6 +3582,7 @@
         // WebSocket & Timers starten
         window.addEventListener('DOMContentLoaded', () => {
             applyConfigDefaults();
+            updateBenchmarkModeUI();
             // Stelle Theme aus localStorage wieder her
             restoreTheme();
             
@@ -3545,8 +3613,7 @@
             if (s == null) return '';
             return String(s)
                 .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
+                .replace(/</g , '&lt;') .replace( />/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
@@ -4215,14 +4282,60 @@
             if (termAB) termAB.textContent = '';
         }
 
+        function getSelectedCapabilities() {
+            const selected = [];
+            if (document.getElementById('capGeneralText')?.checked) {
+                selected.push('general_text');
+            }
+            if (document.getElementById('capReasoning')?.checked) {
+                selected.push('reasoning');
+            }
+            if (document.getElementById('capVision')?.checked) {
+                selected.push('vision');
+            }
+            if (document.getElementById('capTooling')?.checked) {
+                selected.push('tooling');
+            }
+            return selected;
+        }
+
+        function updateBenchmarkModeUI() {
+            const mode = document.getElementById('paramBenchmarkMode')?.value || 'classic';
+            const capabilitySettings = document.getElementById('capabilityModeSettings');
+            const promptInput = document.getElementById('paramPrompt');
+
+            if (capabilitySettings) {
+                capabilitySettings.style.display = mode === 'capability' ? 'block' : 'none';
+            }
+            if (promptInput) {
+                promptInput.disabled = mode === 'capability';
+                promptInput.placeholder =
+                    mode === 'capability'
+                        ? 'Unused in capability mode'
+                        : 'Empty = default';
+            }
+        }
+
         // ===== Benchmark Kontrolle =====
         async function startBenchmark() {
+            const benchmarkMode =
+                document.getElementById('paramBenchmarkMode').value || 'classic';
+            const selectedCapabilities = getSelectedCapabilities();
             const params = {
                 // Basis-Parameter
                 runs: parseInt(document.getElementById('paramRuns').value) || null,
                 context: parseInt(document.getElementById('paramContext').value) || null,
                 limit: parseInt(document.getElementById('paramLimit').value) || null,
                 prompt: document.getElementById('paramPrompt').value || null,
+                benchmark_mode: benchmarkMode,
+                agent_model: document.getElementById('paramAgentModel').value || null,
+                agent_capabilities:
+                    selectedCapabilities.length > 0
+                        ? selectedCapabilities.join(',')
+                        : null,
+                agent_max_tests:
+                    parseInt(document.getElementById('paramAgentMaxTests').value) ||
+                    null,
                 
                 // Neue Filter-Parameter
                 min_context: parseInt(document.getElementById('paramMinContext').value) || null,
@@ -4267,6 +4380,15 @@
                 use_mlock: document.getElementById('paramUseMlock').checked,
                 kv_cache_quant: document.getElementById('paramKvCacheQuant').value || null
             };
+
+            if (
+                benchmarkMode === 'capability' &&
+                !params.retest &&
+                !params.agent_model
+            ) {
+                showToast('Capability mode requires Agent Model ID/Path', 'error');
+                return;
+            }
 
             try {
                 clearTerminal();
@@ -5966,6 +6088,24 @@
                 document.getElementById('paramContext').value = config.context_length;
             if (config.prompt !== undefined)
                 document.getElementById('paramPrompt').value = config.prompt;
+            if (config.benchmark_mode !== undefined && document.getElementById('paramBenchmarkMode'))
+                document.getElementById('paramBenchmarkMode').value = config.benchmark_mode;
+            if (config.agent_model !== undefined && document.getElementById('paramAgentModel'))
+                document.getElementById('paramAgentModel').value = config.agent_model || '';
+            if (config.agent_max_tests !== undefined && document.getElementById('paramAgentMaxTests'))
+                document.getElementById('paramAgentMaxTests').value = config.agent_max_tests || 10;
+            if (config.agent_capabilities !== undefined) {
+                const caps = String(config.agent_capabilities || '').split(',').map(s => s.trim());
+                const setCap = (id, key) => {
+                    const el = document.getElementById(id);
+                    if (el) el.checked = caps.includes(key);
+                };
+                setCap('capGeneralText', 'general_text');
+                setCap('capReasoning', 'reasoning');
+                setCap('capVision', 'vision');
+                setCap('capTooling', 'tooling');
+            }
+            updateBenchmarkModeUI();
             if (config.warmup_runs !== undefined)
                 document.getElementById('paramWarmup').value = config.warmup_runs;
             
@@ -6045,6 +6185,10 @@
                 runs: getValue('paramRuns'),
                 context_length: getValue('paramContext'),
                 prompt: getValue('paramPrompt'),
+                benchmark_mode: getValue('paramBenchmarkMode'),
+                agent_model: getValue('paramAgentModel'),
+                agent_capabilities: getSelectedCapabilities().join(',') || undefined,
+                agent_max_tests: getValue('paramAgentMaxTests'),
                 warmup_runs: getValue('paramWarmup'),
                 include_quant: getValue('filterQuants'),
                 include_arch: getValue('filterArchs'),
