@@ -3,15 +3,18 @@
 Wrapper script - Entry point for the benchmark tool
 
 Usage:
-    ./run.py [args]              - Starts normal benchmark
-    ./run.py --webapp            - Starts FastAPI web dashboard
-    ./run.py -w                  - Starts FastAPI web dashboard (short form)
+    ./run.py [args]                 - Starts classic benchmark
+    ./run.py --agent MODEL [args]   - Starts capability-driven agent
+    ./run.py --webapp               - Starts FastAPI web dashboard
+    ./run.py -w                     - Starts FastAPI web dashboard (short form)
 
 Examples:
-    ./run.py --limit 5           - Tests 5 new models
-    ./run.py --export-only       - Generates reports from cache
-    ./run.py --webapp            - Starts web dashboard
-    ./run.py -w                  - Starts web dashboard (short form)
+    ./run.py --limit 5                    - Tests 5 new models (classic)
+    ./run.py --export-only                - Generates reports from cache
+    ./run.py --agent 'llama-13b'          - Tests model capabilities
+    ./run.py --agent 'llama-13b' --capabilities general_text,reasoning
+    ./run.py --webapp                     - Starts web dashboard
+    ./run.py -w                           - Starts web dashboard (short form)
 """
 
 from datetime import datetime
@@ -91,6 +94,13 @@ def _extract_port(cli_args: list[str]) -> int | None:
             if value.isdigit():
                 return int(value)
     return None
+
+
+def _has_agent_flag(cli_args: list[str]) -> bool:
+    """Check if --agent flag is present in CLI arguments."""
+    return "--agent" in cli_args or any(
+        arg.startswith("--agent=") for arg in cli_args
+    )
 
 
 def _build_subprocess_env() -> dict[str, str]:
@@ -290,11 +300,16 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print()
     print("📊 BENCHMARK MODES:")
     print()
-    print("  1️⃣  CLI Benchmark (Default):")
+    print("  1️⃣  Classic Benchmark (Default):")
     print("      ./run.py [benchmark-args]")
-    print("      → Runs benchmark directly and shows results")
+    print("      → Tests token/s speed on all models")
     print()
-    print("  2️⃣  Web Dashboard (Recommended):")
+    print("  2️⃣  Capability-Driven Agent:")
+    print("      ./run.py --agent 'model-id' [agent-args]")
+    print("      → Tests model capabilities (general, reasoning, vision, tooling)")
+    print("      → Generates JSON & HTML reports with quality/performance metrics")
+    print()
+    print("  3️⃣  Web Dashboard (Recommended):")
     print("      ./run.py --webapp  (or -w)")
     print("      → Starts modern web interface with live streaming")
     print("      → Automatically opens browser at http://localhost:8080")
@@ -308,7 +323,23 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print()
     print("=" * 60)
     print()
-    print("📋 BENCHMARK OPTIONS (for CLI mode):")
+    print("🤖 CAPABILITY-DRIVEN AGENT OPTIONS:")
+    print()
+    print("  --agent MODEL_PATH    Runs capability-driven benchmark")
+    print("  --capabilities CAPS   Comma-separated capabilities to test")
+    print("                        (general_text,reasoning,vision,tooling)")
+    print("  --output-dir DIR      Output directory for results")
+    print("  --config FILE         Configuration YAML file")
+    print("  --formats FORMATS     Output formats (json,html)")
+    print("  --max-tests N         Maximum tests per capability")
+    print("  --context-length N    Model context length")
+    print("  --gpu-offload RATIO   GPU offload ratio (0.0-1.0)")
+    print("  --temperature TEMP    Generation temperature")
+    print("  -v, --verbose         Enable verbose logging")
+    print()
+    print("=" * 60)
+    print()
+    print("📋 CLASSIC BENCHMARK OPTIONS:")
     print()
 
     benchmark_script = project_root / "src" / "benchmark.py"
@@ -328,9 +359,23 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
             if IN_OPTIONS:
                 print(line)
 
+    print()
+    print("📚 EXAMPLES:")
+    print()
+    print("  Classic benchmark:")
+    print("    ./run.py --limit 5")
+    print()
+    print("  Capability-driven agent:")
+    print("    ./run.py --agent 'llama-13b' --capabilities general_text,reasoning")
+    print()
+    print("  Web dashboard:")
+    print("    ./run.py --webapp")
+    print()
+
     sys.exit(0)
 
 HAS_WEB_FLAG = "--webapp" in CLI_ARGS or "-w" in CLI_ARGS
+HAS_AGENT_FLAG = _has_agent_flag(CLI_ARGS)
 DEBUG_ENABLED = "--debug" in CLI_ARGS or "-d" in CLI_ARGS
 
 TRAY_PROCESS = None
@@ -367,6 +412,35 @@ if HAS_WEB_FLAG:
         sys.exit(result.returncode)
     finally:
         _stop_tray_process(TRAY_PROCESS)
+elif HAS_AGENT_FLAG:
+    args = [
+        arg for arg in CLI_ARGS if arg != "--agent" and not arg.startswith("--agent=")
+    ]
+
+    try:
+        safe_args = _sanitize_cli_args(args)
+    except ValueError as error:
+        print(f"❌ Invalid CLI arguments: {error}")
+        sys.exit(2)
+
+    agent_script = project_root / "bench" / "cli.py"
+    if not agent_script.exists():
+        print(f"❌ Error: {agent_script} not found")
+        sys.exit(1)
+
+    print("🤖 Starting capability-driven benchmark agent...")
+    try:
+        result = subprocess.run(
+            [PYTHON_EXECUTABLE, "-m", "bench.cli"] + safe_args,
+            cwd=project_root,
+            env=_build_subprocess_env(),
+            check=False,
+        )
+        sys.exit(result.returncode)
+    except Exception as error:
+        print(f"❌ Error starting agent: {error}")
+        sys.exit(1)
+
 else:
     benchmark_script = project_root / "src" / "benchmark.py"
     TRAY_PROCESS = _start_tray_process("http://localhost:1234", DEBUG_ENABLED)

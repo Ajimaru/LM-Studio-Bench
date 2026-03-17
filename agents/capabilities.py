@@ -7,10 +7,11 @@ Supports: general_text, reasoning, vision, tooling.
 
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
-from typing import Dict, List, Optional, Set
 import json
 import logging
+from pathlib import Path
+import sqlite3
+from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,151 @@ class CapabilityDetector:
             default_capability: Default capability if none detected
         """
         self.default_capability = default_capability
+
+    def _map_metadata_capability(self, capability_name: str) -> Optional[Capability]:
+        """Map free-form capability names to benchmark capabilities."""
+        cap = capability_name.strip().lower()
+        if cap in {"reasoning", "cot", "chain_of_thought"}:
+            return Capability.REASONING
+        if cap in {"vision", "image", "multimodal"}:
+            return Capability.VISION
+        if cap in {
+            "tooling",
+            "tool_use",
+            "tool-use",
+            "tools",
+            "function_calling",
+            "function-calling",
+        }:
+            return Capability.TOOLING
+        if cap in {
+            "general_text",
+            "chat",
+            "coding",
+            "creative",
+            "math",
+        }:
+            return Capability.GENERAL_TEXT
+        return None
+
+    def _capabilities_from_metadata(self, metadata: Dict) -> Set[Capability]:
+        """Extract benchmark capabilities from a metadata dictionary."""
+        capabilities: Set[Capability] = set()
+
+        caps_field = metadata.get("capabilities")
+        if isinstance(caps_field, list):
+            for cap_name in caps_field:
+                if not isinstance(cap_name, str):
+                    continue
+                mapped = self._map_metadata_capability(cap_name)
+                if mapped is not None:
+                    capabilities.add(mapped)
+
+        modalities = metadata.get("modalities")
+        if isinstance(modalities, list):
+            lowered_modalities = {
+                str(modality).strip().lower() for modality in modalities
+            }
+            if "vision" in lowered_modalities or "image" in lowered_modalities:
+                capabilities.add(Capability.VISION)
+            if "text" in lowered_modalities:
+                capabilities.add(Capability.GENERAL_TEXT)
+
+        if metadata.get("function_calling"):
+            capabilities.add(Capability.TOOLING)
+
+        if metadata.get("tools") or metadata.get("tool_use"):
+            capabilities.add(Capability.TOOLING)
+
+        model_name = str(metadata.get("name", "")).lower()
+        if any(
+            kw in model_name for kw in ["reasoning", "cot", "chain-of-thought"]
+        ):
+            capabilities.add(Capability.REASONING)
+
+        return capabilities
+
+    def detect_from_metadata_db(
+        self,
+        metadata_db_path: Path,
+        model_name: Optional[str],
+        model_path: Optional[str] = None,
+    ) -> Optional[CapabilityDetectionResult]:
+        """Detect capabilities from the scraped metadata SQLite database."""
+        if not metadata_db_path.exists():
+            logger.debug("Metadata DB not found: %s", metadata_db_path)
+            return None
+
+        candidates: List[str] = []
+        for value in [model_name, model_path]:
+            if not value:
+                continue
+            text = str(value).strip()
+            if text and text not in candidates:
+                candidates.append(text)
+            path_name = Path(text).name
+            if path_name and path_name not in candidates:
+                candidates.append(path_name)
+
+        if not candidates:
+            return None
+
+        try:
+            conn = sqlite3.connect(metadata_db_path)
+            conn.row_factory = sqlite3.Row
+
+            row: Optional[sqlite3.Row] = None
+            for candidate in candidates:
+                query = (
+                    "SELECT model_key, display_name, vision, tool_use, capabilities "
+                    "FROM model_metadata "
+                    "WHERE lower(model_key)=lower(?) OR lower(display_name)=lower(?)"
+                )
+                row = conn.execute(query, (candidate, candidate)).fetchone()
+                if row:
+                    break
+
+            conn.close()
+
+            if not row:
+                return None
+
+            metadata: Dict = {
+                "model_key": row["model_key"],
+                "display_name": row["display_name"],
+                "vision": bool(row["vision"]),
+                "tool_use": bool(row["tool_use"]),
+            }
+
+            raw_caps = row["capabilities"]
+            if raw_caps:
+                try:
+                    metadata["capabilities"] = json.loads(raw_caps)
+                except json.JSONDecodeError:
+                    logger.debug("Invalid capabilities JSON in metadata DB row")
+
+            capabilities = self._capabilities_from_metadata(metadata)
+            if metadata["vision"]:
+                capabilities.add(Capability.VISION)
+            if metadata["tool_use"]:
+                capabilities.add(Capability.TOOLING)
+
+            if not capabilities:
+                return None
+
+            return CapabilityDetectionResult(
+                capabilities=capabilities,
+                source="metadata_db",
+                confidence=0.95,
+                metadata={
+                    "db_path": str(metadata_db_path),
+                    "row": metadata,
+                },
+            )
+
+        except sqlite3.Error as exc:
+            logger.debug("Could not read metadata DB %s: %s", metadata_db_path, exc)
+            return None
 
     def detect_from_flags(
         self,
@@ -120,41 +266,8 @@ class CapabilityDetector:
             with open(metadata_path, "r", encoding="utf-8") as f:
                 metadata = json.load(f)
 
-            capabilities = set()
-            confidence = 0.7
-
-            if "capabilities" in metadata:
-                for cap in metadata["capabilities"]:
-                    try:
-                        capabilities.add(Capability(cap.lower()))
-                    except ValueError:
-                        logger.warning(
-                            f"Unknown capability in metadata: {cap}"
-                        )
-                        continue
-                confidence = 1.0
-
-            if "modalities" in metadata:
-                modalities = metadata["modalities"]
-                if isinstance(modalities, list):
-                    if "vision" in modalities or "image" in modalities:
-                        capabilities.add(Capability.VISION)
-                    if "text" in modalities:
-                        capabilities.add(Capability.GENERAL_TEXT)
-
-            if "function_calling" in metadata:
-                if metadata["function_calling"]:
-                    capabilities.add(Capability.TOOLING)
-
-            if "tools" in metadata or "tool_use" in metadata:
-                capabilities.add(Capability.TOOLING)
-
-            model_name = metadata.get("name", "").lower()
-            if any(
-                kw in model_name
-                for kw in ["reasoning", "cot", "chain-of-thought"]
-            ):
-                capabilities.add(Capability.REASONING)
+            capabilities = self._capabilities_from_metadata(metadata)
+            confidence = 1.0 if metadata.get("capabilities") else 0.7
 
             if not capabilities:
                 return None
@@ -227,21 +340,26 @@ class CapabilityDetector:
         self,
         model_name: Optional[str] = None,
         metadata_path: Optional[Path] = None,
-        capabilities_str: Optional[str] = None
+        capabilities_str: Optional[str] = None,
+        metadata_db_path: Optional[Path] = None,
+        model_path: Optional[str] = None,
     ) -> CapabilityDetectionResult:
         """
         Detect capabilities using all available sources.
 
         Priority order:
         1. CLI flags (if provided)
-        2. Metadata file (if exists)
-        3. Model name heuristics
-        4. Default capability
+        2. Metadata database (if exists)
+        3. Metadata file (if exists)
+        4. Model name heuristics
+        5. Default capability
 
         Args:
             model_name: Name of the model
             metadata_path: Path to metadata file
             capabilities_str: Comma-separated capability flags
+            metadata_db_path: Path to metadata SQLite database
+            model_path: Model path or model identifier
 
         Returns:
             CapabilityDetectionResult with detected capabilities
@@ -249,6 +367,15 @@ class CapabilityDetector:
         result = self.detect_from_flags(capabilities_str)
         if result and result.capabilities:
             return result
+
+        if metadata_db_path:
+            result = self.detect_from_metadata_db(
+                metadata_db_path=metadata_db_path,
+                model_name=model_name,
+                model_path=model_path,
+            )
+            if result and result.capabilities:
+                return result
 
         if metadata_path:
             result = self.detect_from_metadata(metadata_path)

@@ -75,9 +75,20 @@ action repository and GitHub Terms.
 
 Please review each action repository for exact license details.
 
+## Test Data Assets
+
+- **Vision test images (`tests/data/images/*.jpg`)**
+  - Source: Wikimedia Commons
+  - Selected licenses: CC0 1.0 and Public Domain (as reported by Wikimedia)
+  - Attribution and per-file provenance:
+    `tests/data/images/LICENSES.md`
+  - Raw metadata capture for reproducibility:
+    `tests/data/images/wikimedia_manifest.json`
+
 ## Notes
 
 - System package licenses may vary by distribution packaging.
 - If you redistribute binaries or bundled dependencies, ensure full license
   text and notice requirements are met.
 - Revisit this file when adding new runtime dependencies or workflow actions.
+- Revalidate third-party asset license status before release distribution.

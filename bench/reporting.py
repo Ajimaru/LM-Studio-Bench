@@ -5,10 +5,11 @@ Generates JSON and HTML reports from benchmark data.
 """
 
 from datetime import datetime
-from pathlib import Path
-from typing import Dict
+from html import escape
 import json
 import logging
+from pathlib import Path
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

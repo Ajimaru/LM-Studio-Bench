@@ -1,6 +1,8 @@
 # LM Studio Benchmark Documentation
 
-Welcome to the LM Studio Benchmark documentation! This tool helps you measure and compare token/s performance across all your locally installed LLM models and their quantizations.
+Welcome to the LM Studio Benchmark documentation! This tool helps you
+measure and compare token/s performance across all your locally installed
+LLM models and their quantizations.
 
 ## What is this?
 
@@ -16,12 +18,17 @@ A Python benchmark tool for LM Studio with a modern web dashboard that:
 ## Quick Links
 
 - [Quickstart Guide](QUICKSTART.md) — Get started in 5 minutes
-- [Configuration Reference](CONFIGURATION.md) — All CLI arguments and config file options
-- [Architecture Documentation](ARCHITECTURE.md) — System architecture with Mermaid diagrams, including testing architecture
-- [REST API Integration](REST_API_FEATURES.md) — Advanced features with LM Studio API v1
+- [Configuration Reference](CONFIGURATION.md) — All CLI arguments and
+  config file options
+- [Architecture Documentation](ARCHITECTURE.md) — System architecture
+  with Mermaid diagrams, including testing architecture
+- [REST API Integration](REST_API_FEATURES.md) — Advanced features with
+  LM Studio API v1
 - [Hardware Monitoring](HARDWARE_MONITORING_GUIDE.md) — GPU, CPU, RAM tracking
 - [LLM Metadata Guide](LLM_METADATA_GUIDE.md) — Model capabilities and metadata
-- [User Data & Configuration](USER_DATA.md) — XDG directory structure and config management
+- [User Data & Configuration](USER_DATA.md) — XDG directory structure
+  and config management
+- [Agent Integration](AGENT_INTEGRATION.md) — How to integrate with LM Studio Agents
 
 ## Features at a Glance
 
@@ -35,8 +42,6 @@ A Python benchmark tool for LM Studio with a modern web dashboard that:
 ✅ REST API mode with parallel inference support
 ✅ Download progress tracking, MCP integration, stateful chats
 ✅ Response caching with 10,000x+ speedup for repeated prompts
-✅ **520+ comprehensive tests with 51% code coverage**
-✅ **Automated CI/CD with quality checks and security scans**  
 
 ## Getting Started
 

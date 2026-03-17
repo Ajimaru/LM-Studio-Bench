@@ -6,11 +6,11 @@ Manages model inference, metric computation, and result collection.
 
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
 import json
 import logging
+from pathlib import Path
 import time
+from typing import Any, Dict, List, Optional, Union
 
 from agents.capabilities import Capability, CapabilityDetector
 from bench.metrics import (
@@ -20,7 +20,7 @@ from bench.metrics import (
     FunctionCallMetric,
     MetricResult,
     RougeMetric,
-    aggregate_metrics
+    aggregate_metrics,
 )
 
 logger = logging.getLogger(__name__)
@@ -289,12 +289,22 @@ class LMStudioAdapter(ModelAdapter):
                 messages = [{"role": "user", "content": prompt}]
                 model_id = (
                     kwargs.get("model")
-                    or getattr(self, "instance_id", None)
-                    or getattr(self, "model_key", None)
+                    or self.model_path
                 )
                 chat_args: Dict[str, Any] = {"messages": messages}
                 if model_id is not None:
                     chat_args["model"] = model_id
+                if image_path:
+                    chat_args["messages"] = [
+                        {
+                            "role": "user",
+                            "content": (
+                                f"{prompt}\n\n"
+                                f"Image path for this task: {image_path}"
+                            ),
+                        }
+                    ]
+
                 response = self.rest_client.chat_stream(**chat_args)
 
                 response_text = ""
@@ -573,7 +583,8 @@ class BenchmarkAgent:
         test_cases: List[TestCase],
         model_name: str,
         model_path: str,
-        config: Optional[Dict] = None
+        config: Optional[Dict] = None,
+        detected_capabilities: Optional[List[Capability]] = None,
     ) -> BenchmarkReport:
         """
         Run complete benchmark on test cases.

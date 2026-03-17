@@ -8,12 +8,12 @@ Implements quality metrics for different capabilities:
 - Tooling: Function call accuracy, parameter accuracy
 """
 
+from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
 import logging
 import re
 import string
-from collections import Counter
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -249,7 +249,7 @@ class RougeMetric(BaseMetric):
         Returns:
             List of n-gram tuples
         """
-        return [tuple(tokens[i:i+n]) for i in range(len(tokens) - n + 1)]
+        return [tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)]
 
     def _rouge_n(
         self,
@@ -302,10 +302,10 @@ class RougeMetric(BaseMetric):
         dp = [[0] * (n + 1) for _ in range(m + 1)]
         for i in range(1, m + 1):
             for j in range(1, n + 1):
-                if pred_tokens[i-1] == ref_tokens[j-1]:
-                    dp[i][j] = dp[i-1][j-1] + 1
+                if pred_tokens[i - 1] == ref_tokens[j - 1]:
+                    dp[i][j] = dp[i - 1][j - 1] + 1
                 else:
-                    dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+                    dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
 
         lcs_length = dp[m][n]
         if n == 0:
@@ -502,6 +502,15 @@ class FunctionCallMetric(BaseMetric):
                 metadata={"error": "Invalid prediction JSON"}
             )
 
+        if not isinstance(pred_data, dict):
+            return MetricResult(
+                name=self.name,
+                value=0.0,
+                max_value=1.0,
+                normalized=0.0,
+                metadata={"error": "Prediction JSON must be an object"},
+            )
+
         if isinstance(reference, str):
             references = [reference]
         else:
@@ -519,6 +528,9 @@ class FunctionCallMetric(BaseMetric):
             except (json.JSONDecodeError, TypeError):
                 continue
 
+            if not isinstance(ref_data, dict):
+                continue
+
             function_match = (
                 pred_data.get("function") == ref_data.get("function")
             )
@@ -528,6 +540,11 @@ class FunctionCallMetric(BaseMetric):
 
             pred_params = pred_data.get("parameters", {})
             ref_params = ref_data.get("parameters", {})
+
+            if not isinstance(pred_params, dict):
+                pred_params = {}
+            if not isinstance(ref_params, dict):
+                ref_params = {}
 
             if not ref_params:
                 param_score = 1.0 if function_match else 0.0

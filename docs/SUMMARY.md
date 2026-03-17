@@ -12,6 +12,7 @@
 # Advanced Features
 
 - [REST API v1 Integration](REST_API_FEATURES.md)
+- [Capability-Driven Benchmark Agent](AGENT_INTEGRATION.md)
 
 # Developer Guide
 
