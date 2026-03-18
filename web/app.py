@@ -708,7 +708,7 @@ class BenchmarkManager:
 
         interpreter = str(sys.executable)
         if mode == "capability":
-            base_cmd = [interpreter, "-m", "bench.cli"]
+            base_cmd = [interpreter, "-u", "-m", "bench.cli"]
         else:
             script = str(BENCHMARK_SCRIPT.resolve())
             base_cmd = [interpreter, script]
@@ -751,6 +751,7 @@ class BenchmarkManager:
                 text=True,
                 bufsize=1,
                 cwd=PROJECT_ROOT,
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 shell=False,
             )
             self._state.status = "running"
@@ -1373,7 +1374,7 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
                 "message": "❌ Agent mode requires a model id/path",
             }
 
-        if params.agent_model:
+        if params.agent_model and not params.retest:
             benchmark_args.append(params.agent_model)
         if params.agent_capabilities:
             benchmark_args.extend([
@@ -1862,6 +1863,45 @@ async def get_lmstudio_models() -> dict:
     except (OSError, RuntimeError, TypeError, ValueError) as e:
         logger.error("❌ Error fetching LM Studio models: %s", e)
         return _safe_api_error({"models": []})
+
+
+@app.get("/api/models/installed")
+async def get_installed_models() -> dict:
+    """Returns installed LM Studio model IDs via ``lms ls --json``."""
+    try:
+        result = subprocess.run(
+            ["lms", "ls", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode != 0:
+            return {"success": False, "models": []}
+
+        parsed = json.loads(result.stdout)
+        model_ids: list[str] = []
+        seen: set[str] = set()
+        for item in parsed:
+            variants = item.get("variants") or []
+            if variants:
+                for variant in variants:
+                    if variant and variant not in seen:
+                        model_ids.append(variant)
+                        seen.add(variant)
+                continue
+            model_key = item.get("modelKey")
+            if model_key and model_key not in seen:
+                model_ids.append(model_key)
+                seen.add(model_key)
+
+        return {"success": True, "models": model_ids}
+    except json.JSONDecodeError as e:
+        logger.error("❌ Failed to parse lms ls --json output: %s", e)
+        return {"success": False, "models": []}
+    except (OSError, TimeoutExpired) as e:
+        logger.error("❌ Failed to list installed models: %s", e)
+        return {"success": False, "models": []}
 
 
 @app.get("/api/comparison/models")

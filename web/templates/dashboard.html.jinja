@@ -803,6 +803,11 @@
             cursor: pointer;
         }
 
+        .mode-disabled {
+            opacity: 0.45;
+            filter: saturate(0.7);
+        }
+
         .hidden {
             display: none;
         }
@@ -1670,7 +1675,10 @@
                     </label>
                     <input type="text"
                            id="paramAgentModel"
-                           placeholder="e.g. qwen2.5-7b-instruct">
+                           list="installedModelsList"
+                           placeholder="e.g. qwen2.5-7b-instruct"
+                           autocomplete="off">
+                    <datalist id="installedModelsList"></datalist>
                   </div>
                   <div class="form-group" style="margin-bottom: 0.6rem;">
                     <label>
@@ -4303,9 +4311,68 @@
             const mode = document.getElementById('paramBenchmarkMode')?.value || 'classic';
             const capabilitySettings = document.getElementById('capabilityModeSettings');
             const promptInput = document.getElementById('paramPrompt');
+            const classicOnlyFields = [
+                'paramRuns',
+                'paramMinContext',
+                'paramMaxSize',
+                'paramPrompt',
+                'paramInclude',
+                'paramExclude',
+                'paramQuants',
+                'paramArch',
+                'paramParams',
+                'paramRankBy',
+                'paramVisionOnly',
+                'paramDisableGTT',
+                'paramToolsOnly',
+                'paramDevMode',
+                'paramEnableProfiling',
+                'paramNGpuLayers',
+                'paramNBatch',
+                'paramNThreads',
+                'paramFlashAttention',
+                'paramRopeFreqBase',
+                'paramRopeFreqScale',
+                'paramUseMmap',
+                'paramUseMlock',
+                'paramKvCacheQuant',
+                'paramTopK',
+                'paramTopP',
+                'paramMinP',
+                'paramRepeatPenalty',
+                'paramMaxTokens',
+                'paramMaxTemp',
+                'paramMaxPower',
+            ];
+            const capabilityOnlyFields = [
+                'paramAgentModel',
+                'paramAgentMaxTests',
+                'capGeneralText',
+                'capReasoning',
+                'capVision',
+                'capTooling',
+            ];
+
+            const setModeDisabled = (fieldIds, disabled) => {
+                fieldIds.forEach((fieldId) => {
+                    const element = document.getElementById(fieldId);
+                    if (!element) return;
+                    element.disabled = disabled;
+                    const container =
+                        element.closest('.form-group') ||
+                        element.closest('.checkbox-item');
+                    if (container) {
+                        container.classList.toggle('mode-disabled', disabled);
+                    }
+                });
+            };
 
             if (capabilitySettings) {
-                capabilitySettings.style.display = mode === 'capability' ? 'block' : 'none';
+                capabilitySettings.style.display = 'block';
+                capabilitySettings.classList.toggle(
+                    'mode-disabled',
+                    mode !== 'capability',
+                );
             }
             if (promptInput) {
                 promptInput.disabled = mode === 'capability';
@@ -4313,6 +4380,31 @@
                     mode === 'capability'
                         ? 'Unused in capability mode'
                         : 'Empty = default';
+            }
+
+            setModeDisabled(classicOnlyFields, mode === 'capability');
+            setModeDisabled(capabilityOnlyFields, mode !== 'capability');
+
+            if (mode === 'capability') {
+                _populateInstalledModelsList();
+            }
+        }
+
+        let _installedModelsLoaded = false;
+        async function _populateInstalledModelsList() {
+            if (_installedModelsLoaded) return;
+            try {
+                const resp = await fetch('/api/models/installed');
+                const data = await resp.json();
+                if (!data.success || !data.models) return;
+                const dl = document.getElementById('installedModelsList');
+                if (!dl) return;
+                dl.innerHTML = data.models
+                    .map(m => `<option value="${m.replace(/"/g, '&quot;')}">`)
+                    .join('');
+                _installedModelsLoaded = true;
+            } catch (_e) {
+                // silently ignore — autocomplete is best-effort
             }
         }
 

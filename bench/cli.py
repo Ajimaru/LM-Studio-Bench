@@ -12,6 +12,7 @@ from pathlib import Path
 import random
 import subprocess
 import sys
+import time
 from typing import Optional
 
 from agents.runner import BenchmarkRunner
@@ -28,9 +29,13 @@ def setup_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S"
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        force=True,
     )
+
+    httpcore_level = logging.INFO if verbose else logging.WARNING
+    for name in ("httpcore", "httpcore.connection", "httpcore.http11"):
+        logging.getLogger(name).setLevel(httpcore_level)
 
 
 def load_config(config_path: Optional[Path]) -> dict:
@@ -258,13 +263,15 @@ def main() -> int:
 
     setup_logging(args.verbose)
     logger = logging.getLogger(__name__)
+    total_start = time.perf_counter()
 
     try:
         config = load_config(args.config)
         config = override_config(config, args)
 
-        logger.info("Starting capability-driven benchmark")
-        logger.info("Output: %s", args.output_dir)
+        logger.info("🚀 === LM Studio Model Benchmark ===")
+        logger.info("🔬 Mode: Capability-driven")
+        logger.info("📂 Output directory: %s", args.output_dir)
 
         runner = BenchmarkRunner(
             config=config,
@@ -290,7 +297,7 @@ def main() -> int:
                 logger.error("No installed models found for all-model benchmark")
                 return 1
             model_targets = installed_models
-            logger.info("Selected all installed models: %d", len(model_targets))
+            logger.info("⚙️ Model selection: testing all installed models")
         elif args.random_models:
             if args.random_models < 1:
                 logger.error("--random-models must be >= 1")
@@ -302,10 +309,11 @@ def main() -> int:
             sample_size = min(args.random_models, len(installed_models))
             model_targets = random.sample(installed_models, sample_size)
             logger.info(
-                "Selected %d random model(s): %s",
+                "⚙️ Model limit set: testing random %d of %d model(s)",
                 sample_size,
-                ", ".join(model_targets),
+                len(installed_models),
             )
+            logger.info("📋 Selected models: %s", ", ".join(model_targets))
         else:
             if not args.model_path:
                 logger.error(
@@ -316,13 +324,30 @@ def main() -> int:
             model_targets = [args.model_path]
 
         formats = [f.strip() for f in args.formats.split(",")]
-        for model_target in model_targets:
-            logger.info("Model: %s", model_target)
+        logger.info("📊 Models detected: %d total", len(model_targets))
+        logger.info(
+            "⚙️ Context=%s, GPU Offload=%s, Temp=%s, Max Tests=%s",
+            config.get("context_length"),
+            config.get("gpu_offload"),
+            config.get("temperature"),
+            config.get("max_tests_per_capability"),
+        )
+        logger.info("🚀 Starting benchmark for %d models...", len(model_targets))
+
+        for index, model_target in enumerate(model_targets, start=1):
+            model_start = time.perf_counter()
+            logger.info(
+                "🎯 Starting benchmark for %s (%d/%d)",
+                model_target,
+                index,
+                len(model_targets),
+            )
             report_data = runner.run(
                 model_path=model_target,
                 model_name=args.model_name,
                 capabilities=capabilities,
             )
+            logger.info("📊 Exporting reports for %s...", model_target)
             output_files = generate_reports(
                 report_data=report_data,
                 output_dir=args.output_dir,
@@ -333,7 +358,24 @@ def main() -> int:
             for fmt, path in output_files.items():
                 logger.info("  %s: %s", fmt.upper(), path)
 
-        logger.info("Benchmark completed successfully")
+            model_duration = time.perf_counter() - model_start
+            logger.info("✓ %s completed (Duration: %.2fs)", model_target, model_duration)
+
+        total_duration = time.perf_counter() - total_start
+        logger.info(
+            "📊 Exporting reports for %d newly tested models...",
+            len(model_targets),
+        )
+        logger.info(
+            "✅ Benchmark completed. %d/%d models successfully tested",
+            len(model_targets),
+            len(model_targets),
+        )
+        logger.info("🎉 Benchmark completed!")
+        logger.info(
+            "⏱️ Total capability benchmark duration: %.2fs",
+            total_duration,
+        )
 
         return 0
 
