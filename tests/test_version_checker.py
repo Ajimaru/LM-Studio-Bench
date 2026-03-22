@@ -145,6 +145,22 @@ class TestFetchLatestRelease:
 
         assert result is None
 
+    def test_returns_none_on_invalid_json_payload(self):
+        """Returns None when response JSON parsing fails."""
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.side_effect = ValueError("invalid json")
+
+        with patch("core.version.httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            mock_client.get.return_value = mock_response
+            mock_client_cls.return_value = mock_client
+            result = fetch_latest_release()
+
+        assert result is None
+
 
 class TestCompareVersions:
     """Tests for compare_versions()."""

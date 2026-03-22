@@ -292,6 +292,13 @@ Built-in readonly presets:
 - `high_quality` - Accurate testing (5 runs, 8K context)
 - `resource_limited` - Low-resource mode (8GB max, memory-efficient)
 
+Notes:
+
+- Capability-driven runs across many installed models continue when one model
+  fails to load; the failed model is logged and skipped.
+- Embedding models are retried automatically without KV-cache offload if LM
+  Studio rejects that load option.
+
 </details>
 
 #### REST API Mode (LM Studio 0.4.0+)
@@ -770,8 +777,8 @@ The benchmark tool generates separate log files for each component:
 **Log Format**:
 
 ```bash
-2026-03-06 10:15:30,123 - INFO - Starting benchmark...
-YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message
+2026-03-22 13:35:32,445 - INFO - ℹ️ Starting benchmark...
+YYYY-MM-DD HH:MM:SS,mmm - LEVEL - LEVEL_ICON message
 ```
 
 **Log Levels**:
@@ -779,6 +786,14 @@ YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message
 - `INFO`: General information, progress updates, hardware metrics
 - `WARNING`: Non-fatal issues (GPU tool missing, falling back to CLI)
 - `ERROR`: Runtime errors (model load failure, API unavailable)
+
+**Level Icons**:
+
+- `🐛` Debug details
+- `ℹ️` Informational progress messages
+- `⚠️` Warnings and recoverable issues
+- `❌` Errors
+- `🔥` Critical failures
 
 **Third-Party Logging**:
 

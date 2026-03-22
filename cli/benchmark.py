@@ -33,6 +33,7 @@ from tqdm import tqdm
 
 from core.client import LMStudioRESTClient
 from core.config import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
+from core.logging_utils import install_level_icons
 from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
 from core.presets import PresetManager
 
@@ -132,14 +133,16 @@ class AutoFlushStream:
 
 
 sys.stdout = AutoFlushStream(sys.stdout)
+install_level_icons()
 
 stream_handler = logging.StreamHandler(stream=sys.stdout)
 stream_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    logging.Formatter("%(asctime)s - %(levelname)s - %(level_icon)s %(message)s")
 )
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(level_icon)s %(message)s",
 )
 logging.root.handlers = [stream_handler]
 logger = logging.getLogger(__name__)

@@ -185,6 +185,45 @@ class TestBuildSubprocessEnv:
         env = run._build_subprocess_env()
         assert "/custom/path" in env["PYTHONPATH"]
 
+    def test_appimage_runtime_sets_gi_typelib_path(self, tmp_path, monkeypatch):
+        """AppImage-style runtime adds GI_TYPELIB_PATH entries."""
+        run = _import_run()
+
+        project_root = tmp_path / "a" / "b" / "project"
+        project_root.mkdir(parents=True)
+        appdir = project_root.parents[2]
+        gi_dir = appdir / "usr" / "lib" / "girepository-1.0"
+        gi_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(run, "project_root", project_root)
+        monkeypatch.delenv("GI_TYPELIB_PATH", raising=False)
+
+        env = run._build_subprocess_env()
+        assert "GI_TYPELIB_PATH" in env
+        assert str(gi_dir) in env["GI_TYPELIB_PATH"]
+
+    def test_appimage_runtime_appends_existing_gi_typelib_path(
+        self, tmp_path, monkeypatch
+    ):
+        """Existing GI_TYPELIB_PATH is appended after discovered AppImage dirs."""
+        run = _import_run()
+
+        project_root = tmp_path / "x" / "y" / "project"
+        project_root.mkdir(parents=True)
+        appdir = project_root.parents[2]
+        gi_arch_dir = (
+            appdir / "usr" / "lib" / "x86_64-linux-gnu" / "girepository-1.0"
+        )
+        gi_arch_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(run, "project_root", project_root)
+        monkeypatch.setenv("GI_TYPELIB_PATH", "/already/present")
+
+        env = run._build_subprocess_env()
+        value = env.get("GI_TYPELIB_PATH", "")
+        assert str(gi_arch_dir) in value
+        assert value.endswith("/already/present")
+
 
 class TestSanitizeCliArgs:
     """Tests for _sanitize_cli_args()."""
@@ -306,6 +345,18 @@ class TestStopTrayProcess:
         mock_proc.poll.return_value = None
         mock_proc.wait.side_effect = subprocess.SubprocessError("timeout")
         run._stop_tray_process(mock_proc)
+        mock_proc.kill.assert_called_once()
+
+    def test_kill_errors_are_ignored(self):
+        """kill() exceptions are swallowed in final fallback path."""
+        run = _import_run()
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        mock_proc.wait.side_effect = TimeoutError("timeout")
+        mock_proc.kill.side_effect = OSError("already gone")
+
+        run._stop_tray_process(mock_proc)
+        mock_proc.terminate.assert_called_once()
         mock_proc.kill.assert_called_once()
 
 
@@ -658,3 +709,48 @@ class TestRunModuleEntrypointCoverage:
         called_cmd = result["mock_run"].call_args[0][0]
         assert str(Path("cli") / "benchmark.py") in called_cmd[1]
         tray_proc.terminate.assert_called_once()
+
+    def test_webapp_mode_missing_app_script_exits_one(self):
+        """Webapp mode exits with code 1 when web/app.py is missing."""
+        original_exists = Path.exists
+
+        def patched_exists(path_obj):
+            path_str = str(path_obj)
+            if path_str.endswith("web/app.py"):
+                return False
+            return original_exists(path_obj)
+
+        with patch.object(Path, "exists", patched_exists):
+            result = _execute_run_module_with_args(["run.py", "--webapp"])
+
+        assert result["exit_code"] == 1
+
+    def test_agent_mode_invalid_args_exits_two(self):
+        """Invalid agent args trigger sanitize failure and exit code 2."""
+        result = _execute_run_module_with_args(
+            ["run.py", "--agent", "model-x", "--bad$arg"]
+        )
+
+        assert result["exit_code"] == 2
+
+    def test_agent_mode_subprocess_oserror_exits_one(self):
+        """Agent mode handles subprocess OSError with exit code 1."""
+        if "run" in sys.modules:
+            del sys.modules["run"]
+
+        def _raise_system_exit(code=0):
+            raise SystemExit(code)
+
+        with patch.object(sys, "argv", ["run.py", "--agent", "model-x"]), \
+                patch("subprocess.run", side_effect=OSError("boom")), \
+                patch("subprocess.Popen") as mock_popen, \
+                patch("time.sleep"), \
+                patch("sys.exit", side_effect=_raise_system_exit):
+            exit_code = None
+            try:
+                importlib.import_module("run")
+            except SystemExit as exc:
+                exit_code = exc.code
+
+        assert exit_code == 1
+        assert mock_popen.call_count == 0

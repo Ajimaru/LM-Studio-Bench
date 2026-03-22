@@ -18,6 +18,7 @@ from typing import Optional
 
 from agents.runner import BenchmarkRunner
 from cli.reporting import HTMLReporter, sanitize_report_name
+from core.logging_utils import install_level_icons
 
 try:
     import yaml as _yaml
@@ -42,9 +43,10 @@ def setup_logging(verbose: bool = False) -> None:
         verbose: Enable verbose logging
     """
     level = logging.DEBUG if verbose else logging.INFO
+    install_level_icons()
     logging.basicConfig(
         level=level,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(levelname)s - %(level_icon)s %(message)s",
         force=True,
     )
 
@@ -636,6 +638,9 @@ def main() -> int:
         )
         logger.info("🚀 Starting benchmark for %d models...", len(model_targets))
 
+        successful_models = 0
+        failed_models = 0
+
         for index, model_target in enumerate(model_targets, start=1):
             model_start = time.perf_counter()
             logger.info(
@@ -644,43 +649,62 @@ def main() -> int:
                 index,
                 len(model_targets),
             )
-            report_data = runner.run(
-                model_path=model_target,
-                model_name=args.model_name,
-                capabilities=capabilities,
-            )
-            report_stem = sanitize_report_name(
-                report_data.get("model_name", model_target)
-            )
-            logger.info("📊 Exporting reports for %s...", model_target)
-            output_files = _write_reports(
-                report_data=report_data,
-                output_dir=safe_output_dir,
-                formats=formats,
-                report_stem=report_stem,
-            )
+            try:
+                report_data = runner.run(
+                    model_path=model_target,
+                    model_name=args.model_name,
+                    capabilities=capabilities,
+                )
+                report_stem = sanitize_report_name(
+                    report_data.get("model_name", model_target)
+                )
+                logger.info("📊 Exporting reports for %s...", model_target)
+                output_files = _write_reports(
+                    report_data=report_data,
+                    output_dir=safe_output_dir,
+                    formats=formats,
+                    report_stem=report_stem,
+                )
 
-            logger.info("Generated reports for %s:", model_target)
-            for fmt, path in output_files.items():
-                logger.info("  %s: %s", fmt.upper(), path)
+                logger.info("🧾 Generated reports for %s:", model_target)
+                for fmt, path in output_files.items():
+                    logger.info("📄 %s: %s", fmt.upper(), path)
 
-            model_duration = time.perf_counter() - model_start
-            logger.info(
-                "✓ %s completed (Duration: %.2fs)",
-                model_target,
-                model_duration,
-            )
+                model_duration = time.perf_counter() - model_start
+                logger.info(
+                    "✅ %s completed (Duration: %.2fs)",
+                    model_target,
+                    model_duration,
+                )
+                successful_models += 1
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                failed_models += 1
+                model_duration = time.perf_counter() - model_start
+                logger.error(
+                    "❌ %s failed after %.2fs: %s",
+                    model_target,
+                    model_duration,
+                    error,
+                    exc_info=args.verbose,
+                )
+                logger.info(
+                    "⏭️ Skipping failed model and continuing (%d/%d)",
+                    index,
+                    len(model_targets),
+                )
 
         total_duration = time.perf_counter() - total_start
         logger.info(
             "📊 Exporting reports for %d newly tested models...",
-            len(model_targets),
+            successful_models,
         )
         logger.info(
             "✅ Benchmark completed. %d/%d models successfully tested",
-            len(model_targets),
+            successful_models,
             len(model_targets),
         )
+        if failed_models > 0:
+            logger.warning("⚠️ %d model(s) failed and were skipped", failed_models)
         logger.info("🎉 Benchmark completed!")
         logger.info(
             "⏱️ Total capability benchmark duration: %.2fs",
@@ -690,11 +714,11 @@ def main() -> int:
         return 0
 
     except KeyboardInterrupt:
-        logger.info("Benchmark interrupted by user")
+        logger.info("🛑 Benchmark interrupted by user")
         return 1
 
     except (OSError, RuntimeError, TypeError, ValueError) as error:
-        logger.error("Benchmark failed: %s", error, exc_info=args.verbose)
+        logger.error("❌ Benchmark failed: %s", error, exc_info=args.verbose)
         return 1
 
 

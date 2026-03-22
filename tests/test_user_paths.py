@@ -1,5 +1,6 @@
 """Tests for core/paths.py."""
 from pathlib import Path
+from typing import cast
 
 
 class TestGetUserConfigDir:
@@ -151,3 +152,50 @@ class TestModuleLevelConstants:
         """USER_LOGS_DIR is inside USER_DATA_DIR."""
         import core.paths as up
         assert up.USER_LOGS_DIR.parent == up.USER_DATA_DIR
+
+
+class TestPathFormattingAndSnapHome:
+    """Tests for helper branches in core.paths."""
+
+    def test_effective_home_uses_snap_real_home(self, tmp_path, monkeypatch):
+        """SNAP_REAL_HOME is preferred when valid and absolute."""
+        monkeypatch.setenv("SNAP_REAL_HOME", str(tmp_path))
+        import importlib
+
+        import core.paths as up
+        importlib.reload(up)
+        assert up._effective_home() == tmp_path
+
+    def test_effective_home_falls_back_on_invalid_snap_path(self, monkeypatch):
+        """Invalid SNAP_REAL_HOME falls back to Path.home()."""
+        monkeypatch.setenv("SNAP_REAL_HOME", "../bad")
+        import importlib
+
+        import core.paths as up
+        importlib.reload(up)
+        assert up._effective_home() == Path.home()
+
+    def test_format_path_for_logs_exact_home(self, tmp_path, monkeypatch):
+        """Exact home path is redacted to '~'."""
+        monkeypatch.setenv("SNAP_REAL_HOME", str(tmp_path))
+        import importlib
+
+        import core.paths as up
+        importlib.reload(up)
+        assert up.format_path_for_logs(str(tmp_path)) == "~"
+
+    def test_format_path_for_logs_non_fspath_input(self, tmp_path, monkeypatch):
+        """Non-fspath values take the TypeError fallback path."""
+        monkeypatch.setenv("SNAP_REAL_HOME", str(tmp_path))
+        import importlib
+
+        import core.paths as up
+        importlib.reload(up)
+
+        class _NoFspath:
+            def __str__(self):
+                return str(tmp_path / "logs" / "x.log")
+
+        value = _NoFspath()
+        typed_value = cast(str | Path, value)
+        assert up.format_path_for_logs(typed_value) == "~/logs/x.log"

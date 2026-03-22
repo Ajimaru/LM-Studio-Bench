@@ -1,4 +1,5 @@
 """Tests for core/client.py."""
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -242,6 +243,56 @@ class TestLoadModel:
         payload = client.client.post.call_args[1]["json"]
         assert payload["context_length"] == 4096
 
+    def test_retries_without_kv_offload_for_embedding_models(self):
+        """400 embedding offload errors are retried without kv-offload."""
+        client = LMStudioRESTClient()
+        client.client = MagicMock()
+
+        request = httpx.Request("POST", "http://localhost:1234/api/v1/models/load")
+        error_response = httpx.Response(
+            400,
+            request=request,
+            json={
+                "error": {
+                    "type": "invalid_request",
+                    "message": (
+                        "The following configuration values are not "
+                        "supported for embedding models: "
+                        "offload_kv_cache_to_gpu"
+                    ),
+                }
+            },
+        )
+        error = httpx.HTTPStatusError(
+            "Client error '400 Bad Request'",
+            request=request,
+            response=error_response,
+        )
+
+        first_response = MagicMock()
+        first_response.raise_for_status.side_effect = error
+
+        second_response = MagicMock()
+        second_response.raise_for_status = MagicMock()
+        second_response.json.return_value = {"instance_id": "inst-embedding"}
+
+        client.client.post.side_effect = [first_response, second_response]
+
+        result = client.load_model(
+            "text-embedding-model@q4",
+            context_length=2048,
+            gpu_offload=1.0,
+        )
+
+        assert result == "inst-embedding"
+        assert client.client.post.call_count == 2
+
+        first_payload = client.client.post.call_args_list[0][1]["json"]
+        second_payload = client.client.post.call_args_list[1][1]["json"]
+
+        assert first_payload["offload_kv_cache_to_gpu"] is True
+        assert "offload_kv_cache_to_gpu" not in second_payload
+
 
 class TestUnloadModel:
     """Tests for LMStudioRESTClient.unload_model()."""
@@ -296,6 +347,57 @@ class TestDownloadStatus:
         client.client.get.return_value = mock_resp
         result = client.download_status("pub/model")
         assert result["status"] == "downloading"
+
+
+class TestDownloadProgressPolling:
+    """Tests for _poll_download_progress()."""
+
+    def test_poll_download_progress_completed(self):
+        """Polling returns True when status becomes completed."""
+        client = LMStudioRESTClient()
+        callback_calls = []
+
+        def callback(payload):
+            callback_calls.append(payload)
+
+        with patch.object(
+            client,
+            "download_status",
+            return_value={"status": "completed", "progress": 100},
+        ):
+            result = client._poll_download_progress(
+                "pub/model", progress_callback=callback
+            )
+
+        assert result is True
+        assert callback_calls
+
+    def test_poll_download_progress_failed(self):
+        """Polling returns False when status becomes failed."""
+        client = LMStudioRESTClient()
+
+        with patch.object(
+            client,
+            "download_status",
+            return_value={"status": "failed", "progress": 55},
+        ):
+            result = client._poll_download_progress("pub/model")
+
+        assert result is False
+
+    def test_poll_download_progress_handles_http_error_then_completes(self):
+        """HTTP polling errors are retried and then completion returns True."""
+        client = LMStudioRESTClient()
+        err = httpx.HTTPError("temporary")
+
+        with patch.object(
+            client,
+            "download_status",
+            side_effect=[err, {"status": "already_downloaded"}],
+        ), patch("core.client.time.sleep", return_value=None):
+            result = client._poll_download_progress("pub/model")
+
+        assert result is True
 
 
 class TestCacheOperations:
@@ -578,6 +680,105 @@ class TestChatStreamMethod:
                 use_stateful=True,
             )
         assert client.last_response_id == "resp-123"
+
+    def test_chat_stream_sets_optional_sampling_payload_fields(self):
+        """Optional sampling and integration fields are forwarded."""
+        client = LMStudioRESTClient(enable_cache=False)
+        captured_payload = {}
+
+        end_event = {
+            "type": "chat.end",
+            "result": {
+                "output": [{"type": "message", "content": "ok"}],
+                "stats": {
+                    "input_tokens": 1,
+                    "total_output_tokens": 1,
+                    "time_to_first_token_seconds": 0.0,
+                    "tokens_per_second": 5.0,
+                },
+            },
+        }
+        mock_resp = self._make_sse_response([end_event])
+
+        def capture_stream(*_args, **kwargs):
+            captured_payload.update(kwargs.get("json", {}))
+            return mock_resp
+
+        client.last_response_id = "prev-1"
+        with patch.object(client.client, "stream", side_effect=capture_stream):
+            result = client.chat_stream(
+                messages=[{"role": "user", "content": "hello"}],
+                model="test/model@q4",
+                top_k=20,
+                top_p=0.9,
+                min_p=0.1,
+                repeat_penalty=1.1,
+                use_stateful=True,
+                mcp_integrations=[{"name": "tool-a"}],
+            )
+
+        assert result["text"] == "ok"
+        assert captured_payload["top_k"] == 20
+        assert captured_payload["top_p"] == 0.9
+        assert captured_payload["min_p"] == 0.1
+        assert captured_payload["repeat_penalty"] == 1.1
+        assert captured_payload["previous_response_id"] == "prev-1"
+        assert captured_payload["integrations"] == [{"name": "tool-a"}]
+
+    def test_chat_stream_handles_invalid_message_payload(self):
+        """Invalid message shapes fall back to empty input text."""
+        client = LMStudioRESTClient(enable_cache=False)
+        captured_payload = {}
+
+        end_event = {
+            "type": "chat.end",
+            "result": {
+                "output": [{"type": "message", "content": "ok"}],
+                "stats": {
+                    "input_tokens": 1,
+                    "total_output_tokens": 1,
+                    "time_to_first_token_seconds": 0.0,
+                    "tokens_per_second": 5.0,
+                },
+            },
+        }
+        mock_resp = self._make_sse_response([end_event])
+
+        def capture_stream(*_args, **kwargs):
+            captured_payload.update(kwargs.get("json", {}))
+            return mock_resp
+
+        with patch.object(client.client, "stream", side_effect=capture_stream):
+            client.chat_stream(messages=cast(list[dict[str, str]], [None]))
+
+        assert captured_payload["input"] == ""
+
+    def test_chat_stream_ignores_non_data_lines_and_bad_json(self):
+        """Blank lines and malformed data events are skipped safely."""
+        client = LMStudioRESTClient(enable_cache=False)
+        lines = [
+            "",
+            "data: {bad_json}",
+            "event: ping",
+            (
+                'data: {"type": "chat.end", "result": '
+                '{"output": [], "stats": '
+                '{"input_tokens": 1, "total_output_tokens": 1, '
+                '"time_to_first_token_seconds": 0.0, '
+                '"tokens_per_second": 1.0}}}'
+            ),
+        ]
+
+        mock_resp = MagicMock()
+        mock_resp.iter_lines.return_value = iter(lines)
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch.object(client.client, "stream", return_value=mock_resp):
+            result = client.chat_stream(messages=[{"role": "user", "content": "x"}])
+
+        assert result["stats"].tokens_per_second == 1.0
 
 
 class TestListModels:

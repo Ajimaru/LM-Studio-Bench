@@ -231,17 +231,59 @@ class LMStudioRESTClient:
             payload["offload_kv_cache_to_gpu"] = bool(gpu_offload)
 
         logger.info("Loading model: %s", base_key)
-        response = self.client.post(
-            f"{self.base_url}/api/v1/models/load",
-            headers=self._headers(),
-            json=payload,
-        )
-        response.raise_for_status()
+        try:
+            response = self.client.post(
+                f"{self.base_url}/api/v1/models/load",
+                headers=self._headers(),
+                json=payload,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            if not self._should_retry_without_kv_offload(error, payload):
+                raise
+
+            retry_payload = dict(payload)
+            retry_payload.pop("offload_kv_cache_to_gpu", None)
+            logger.warning(
+                "Retrying model load without offload_kv_cache_to_gpu: %s",
+                base_key,
+            )
+            response = self.client.post(
+                f"{self.base_url}/api/v1/models/load",
+                headers=self._headers(),
+                json=retry_payload,
+            )
+            response.raise_for_status()
 
         result = response.json()
         instance_id = result.get("instance_id", base_key)
         logger.info("Model loaded: %s", instance_id)
         return instance_id
+
+    @staticmethod
+    def _should_retry_without_kv_offload(
+        error: httpx.HTTPStatusError,
+        payload: Dict[str, Any],
+    ) -> bool:
+        """Return True for embedding-specific kv-offload incompatibility."""
+        response = error.response
+        if response is None or response.status_code != 400:
+            return False
+        if "offload_kv_cache_to_gpu" not in payload:
+            return False
+
+        try:
+            response_json = response.json()
+        except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
+            return False
+
+        error_block = response_json.get("error") or {}
+        message = str(error_block.get("message", "")).lower()
+        return (
+            "embedding model" in message
+            and "offload_kv_cache_to_gpu" in message
+            and "not supported" in message
+        )
 
     def unload_model(self, instance_id: str) -> bool:
         """

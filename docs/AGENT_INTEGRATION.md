@@ -49,6 +49,13 @@ Tests model capabilities with quality metrics:
 - Reports: JSON + HTML with visualizations
 - **Storage:** SQLite database for historical tracking and comparison
 
+**Runtime Resilience:**
+
+- Multi-model capability runs continue when a single model fails to load or
+  execute; failed models are logged and skipped.
+- Embedding models are retried automatically without
+  `offload_kv_cache_to_gpu` if LM Studio rejects that load option.
+
 **Data Storage:**
 
 Results are automatically saved to:
@@ -164,3 +171,14 @@ core/
 - [README-bench.md](README-bench.md) - Detailed agent documentation
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
 - [CONFIGURATION.md](CONFIGURATION.md) - Configuration guide
+
+## Logging
+
+Capability benchmark logs use automatic level icons in addition to
+benchmark-specific emoji markers:
+
+- `🐛` Debug
+- `ℹ️` Info
+- `⚠️` Warning
+- `❌` Error
+- `🔥` Critical

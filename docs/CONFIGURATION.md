@@ -227,19 +227,28 @@ List all available presets (readonly + user presets) and exit.
 #### `--preset`, `-p` (string)
 
 Load a preset before parsing all remaining CLI arguments.
-If omitted, `default` is loaded automatically.
+If omitted, `default_classic` is used. The legacy alias `default` still
+loads `default_classic` automatically.
 
 ```bash
 ./run.py --preset quick_test
 ./run.py --preset high_quality --runs 3
+./run.py --preset default_classic
+./run.py --preset default_compatability_test
 ```
 
 Built-in readonly presets:
 
-- `default`
+- `default_classic`
+- `default_compatability_test`
+- `default` (alias for `default_classic`)
 - `quick_test`
 - `high_quality`
 - `resource_limited`
+
+For capability-driven runs across many models, individual model load failures
+are logged and skipped so the benchmark can continue with the remaining
+models.
 
 ---
 
@@ -859,8 +868,8 @@ logs/
 Each log entry follows this format:
 
 ```bash
-YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message
-2026-03-06 10:15:30,123 - INFO - Starting benchmark...
+YYYY-MM-DD HH:MM:SS,mmm - LEVEL - LEVEL_ICON message
+2026-03-22 13:35:32,445 - INFO - ℹ️ Starting benchmark...
 ```
 
 ### Log Levels
@@ -872,6 +881,18 @@ The tool uses standard Python logging levels:
 | `INFO` | General information and progress | Model loading, benchmark completion, hardware metrics |
 | `WARNING` | Non-fatal issues and fallbacks | GPU tool missing, using CLI fallback, skipped models |
 | `ERROR` | Runtime errors requiring attention | Model load failure, API unavailable, VRAM exceeded |
+
+### Level Icons
+
+Each log level also gets an automatic icon prefix:
+
+| Level | Icon |
+| ----- | ---- |
+| `DEBUG` | `🐛` |
+| `INFO` | `ℹ️` |
+| `WARNING` | `⚠️` |
+| `ERROR` | `❌` |
+| `CRITICAL` | `🔥` |
 
 ### Hardware Metrics in Logs
 

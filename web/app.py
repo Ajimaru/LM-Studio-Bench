@@ -52,6 +52,7 @@ import psutil
 from pydantic import BaseModel
 
 from core.config import DEFAULT_CONFIG
+from core.logging_utils import install_level_icons
 from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
 from core.presets import PresetManager
 
@@ -104,8 +105,12 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 SCIPY_AVAILABLE = scipy_stats is not None
 
+install_level_icons()
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format=(
+        "%(asctime)s - %(name)s - %(levelname)s - %(level_icon)s %(message)s"
+    ),
 )
 logger = logging.getLogger(__name__)
 

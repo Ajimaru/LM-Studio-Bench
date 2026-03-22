@@ -25,6 +25,13 @@ Run a benchmark on a model:
 python -m cli.main "path/to/model" --output-dir output
 ```
 
+Run across installed models:
+
+```bash
+python -m cli.main --all-models --output-dir output
+python -m cli.main --random-models 5 --output-dir output
+```
+
 With specific capabilities:
 
 ```bash
@@ -110,6 +117,8 @@ python -m cli.main MODEL_PATH [OPTIONS]
 #### Model Configuration
 
 - `--model-name NAME`: Override model name (default: derived from path)
+- `--all-models`: Run the capability benchmark for all installed models
+- `--random-models N`: Run the capability benchmark for `N` random installed models
 - `--capabilities CAPS`: Comma-separated capabilities to test
   - Options: `general_text,reasoning,vision,tooling`
   - Default: Auto-detect from model metadata
@@ -161,6 +170,22 @@ python -m cli.main "model" \
   --formats json \
   --output-dir json_results
 ```
+
+Run against random installed models:
+
+```bash
+python -m cli.main --random-models 3 --capabilities general_text,reasoning
+```
+
+## Runtime Behavior
+
+- When running across multiple installed models, a single model failure is
+  logged and skipped so the benchmark can continue.
+- For embedding models loaded through the LM Studio REST API, the loader
+  automatically retries without `offload_kv_cache_to_gpu` if LM Studio
+  rejects that option.
+- Log output includes automatic level icons such as `ℹ️`, `⚠️`, and `❌`
+  in addition to benchmark-specific emoji markers.
 
 ## Configuration File
 

@@ -206,8 +206,10 @@ Only include fields you want to override from project defaults.
 
 **A**: `~/.config/lm-studio-bench/presets/`
 
-Built-in readonly presets (`default`, `quick_test`, `high_quality`,
-`resource_limited`) are not stored as files.
+Built-in readonly presets (`default_classic`,
+`default_compatability_test`, `default` as a legacy alias,
+`quick_test`, `high_quality`, `resource_limited`) are not stored as
+files.
 
 ### Q: What happens to my old results?
 
