@@ -7,7 +7,7 @@
 # - Markdown: markdownlint
 # - HTML/Jinja: djlint
 #
-# Installation: Run tools/install-hooks.sh
+# Installation: Run scripts/install-hooks.sh
 # Skip pylint: SKIP_PYLINT=1 git commit
 #
 

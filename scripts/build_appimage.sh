@@ -28,14 +28,14 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share"
 
 cp "$ROOT_DIR/assets/icons/lmstudio-bench.svg" "$APPDIR/lmstudio-bench.svg"
 
-cp "$ROOT_DIR/tools/io.github.Ajimaru.LMStudioBench.desktop" "$APPDIR/"
+cp "$ROOT_DIR/scripts/io.github.Ajimaru.LMStudioBench.desktop" "$APPDIR/"
 
 mkdir -p "$APPDIR/usr/share/applications"
-cp "$ROOT_DIR/tools/io.github.Ajimaru.LMStudioBench.desktop" \
+cp "$ROOT_DIR/scripts/io.github.Ajimaru.LMStudioBench.desktop" \
     "$APPDIR/usr/share/applications/io.github.Ajimaru.LMStudioBench.desktop"
 
 mkdir -p "$APPDIR/usr/share/metainfo"
-cp "$ROOT_DIR/tools/io.github.Ajimaru.LMStudioBench.appdata.xml" \
+cp "$ROOT_DIR/scripts/io.github.Ajimaru.LMStudioBench.appdata.xml" \
     "$APPDIR/usr/share/metainfo/io.github.Ajimaru.LMStudioBench.appdata.xml"
 
 cat >"$APPDIR/AppRun" <<'EOF'
@@ -48,10 +48,13 @@ chmod +x "$APPDIR/AppRun"
 
 mkdir -p "$PROJECT_DIR"
 cp -a "$ROOT_DIR/run.py" "$PROJECT_DIR/"
-cp -a "$ROOT_DIR/src" "$PROJECT_DIR/"
+cp -a "$ROOT_DIR/core" "$PROJECT_DIR/"
+cp -a "$ROOT_DIR/cli" "$PROJECT_DIR/"
+cp -a "$ROOT_DIR/agents" "$PROJECT_DIR/"
 cp -a "$ROOT_DIR/web" "$PROJECT_DIR/"
 cp -a "$ROOT_DIR/config" "$PROJECT_DIR/"
 cp -a "$ROOT_DIR/tools" "$PROJECT_DIR/"
+cp -a "$ROOT_DIR/scripts" "$PROJECT_DIR/"
 cp -a "$ROOT_DIR/assets" "$PROJECT_DIR/"
 cp -a "$ROOT_DIR/requirements.txt" "$PROJECT_DIR/"
 cp -a "$ROOT_DIR/VERSION" "$PROJECT_DIR/"
@@ -86,7 +89,7 @@ else
     export LD_LIBRARY_PATH="$APPIMAGE_LD_PATH"
 fi
 
-export PYTHONPATH="$PROJECT_DIR/src:$PROJECT_DIR"
+export PYTHONPATH="$PROJECT_DIR:$PROJECT_DIR/core"
 
 # When started with no real arguments (--debug/-d are exempt), launch only
 # the tray app so it stays in the system tray without auto-running a

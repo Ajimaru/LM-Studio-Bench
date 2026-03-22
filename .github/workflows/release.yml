@@ -56,13 +56,13 @@ jobs:
       - name: Ensure build scripts are executable
         run: |
           set -euo pipefail
-          chmod +x ./tools/build_appimage.sh
-          chmod +x ./tools/build_appimage_docker.sh
+          chmod +x ./scripts/build_appimage.sh
+          chmod +x ./scripts/build_appimage_docker.sh
 
       - name: Build AppImage
         run: |
           set -euo pipefail
-          ./tools/build_appimage_docker.sh
+          ./scripts/build_appimage_docker.sh
 
       - name: Verify AppImage artifact
         run: |

@@ -4,8 +4,8 @@
 # Unlike pre-commit which only checks staged files, this scans everything
 #
 # Usage:
-#   ./tools/scan-all.sh          # Scan only (check mode)
-#   ./tools/scan-all.sh --fix    # Scan and fix auto-fixable issues
+#   ./scripts/scan-all.sh          # Scan only (check mode)
+#   ./scripts/scan-all.sh --fix    # Scan and fix auto-fixable issues
 #
 
 set -e
@@ -65,7 +65,7 @@ get_git_files() {
 echo ""
 echo -e "${YELLOW}═══ Python Files Scan ═══${NC}"
 
-readarray -t PYTHON_FILES < <(get_git_files '\.py$' src web tools)
+readarray -t PYTHON_FILES < <(get_git_files '\.py$' core cli agents web tools)
 
 if [[ ${#PYTHON_FILES[@]} -gt 0 ]]; then
     # Run isort
@@ -77,7 +77,7 @@ if [[ ${#PYTHON_FILES[@]} -gt 0 ]]; then
             echo -e "${GREEN}✓ Fixed with isort${NC}"
         else
             echo -e "${RED}❌ isort found issues!${NC}"
-            echo -e "${YELLOW}Fix with: ./tools/scan-all.sh --fix${NC}"
+            echo -e "${YELLOW}Fix with: ./scripts/scan-all.sh --fix${NC}"
             FAILED=1
         fi
     else
@@ -96,7 +96,7 @@ if [[ ${#PYTHON_FILES[@]} -gt 0 ]]; then
     # Run pylint (optional, with timeout)
     if [[ -z "$SKIP_PYLINT" ]]; then
         echo -e "${YELLOW}Running pylint (timeout 30s)...${NC}"
-        readarray -t PYLINT_FILES < <(printf '%s\n' "${PYTHON_FILES[@]}" | grep -E '^(src|web)/' || true)
+        readarray -t PYLINT_FILES < <(printf '%s\n' "${PYTHON_FILES[@]}" | grep -E '^(core|cli|agents|web)/' || true)
 
         if [[ ${#PYLINT_FILES[@]} -gt 0 ]]; then
             if timeout 30s pylint "${PYLINT_FILES[@]}" --exit-zero; then
@@ -117,7 +117,7 @@ fi
 echo ""
 echo -e "${YELLOW}═══ Shell Scripts Scan ═══${NC}"
 
-readarray -t BASH_FILES < <(get_git_files '\.(sh|bash)$' . tools)
+readarray -t BASH_FILES < <(get_git_files '\.(sh|bash)$' . scripts)
 
 if [[ ${#BASH_FILES[@]} -gt 0 ]]; then
     echo -e "${YELLOW}Running shellcheck...${NC}"
@@ -166,7 +166,7 @@ if [[ ${#HTML_JINJA_FILES_ARRAY[@]} -gt 0 ]]; then
             echo -e "${GREEN}✓ Fixed with djlint${NC}"
         else
             echo -e "${RED}❌ djlint found issues!${NC}"
-            echo -e "${YELLOW}Fix with: ./tools/scan-all.sh --fix${NC}"
+            echo -e "${YELLOW}Fix with: ./scripts/scan-all.sh --fix${NC}"
             FAILED=1
         fi
     else
@@ -180,7 +180,7 @@ fi
 echo ""
 if [[ $FIX_MODE == false ]]; then
     echo -e "Run with ${YELLOW}--fix${NC} to auto-correct fixable issues:"
-    echo -e "  ${YELLOW}./tools/scan-all.sh --fix${NC}"
+    echo -e "  ${YELLOW}./scripts/scan-all.sh --fix${NC}"
 fi
 
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"

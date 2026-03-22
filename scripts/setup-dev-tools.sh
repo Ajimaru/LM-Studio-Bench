@@ -3,7 +3,7 @@
 # Setup development tools for LM-Studio-Bench
 # Installs Python, Node.js, and system tools for pre-commit hooks
 #
-# Usage: ./tools/setup-dev-tools.sh
+# Usage: ./scripts/setup-dev-tools.sh
 #
 
 set -e
@@ -118,7 +118,7 @@ fi
 # Install git hooks
 echo ""
 echo -e "${YELLOW}Installing git hooks...${NC}"
-./tools/install-hooks.sh
+./scripts/install-hooks.sh
 
 echo ""
 echo -e "${BLUE}╔═════════════════════╗${NC}"

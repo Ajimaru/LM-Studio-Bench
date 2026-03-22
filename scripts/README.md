@@ -1,6 +1,6 @@
-# Tools Directory
+# Scripts Directory
 
-This directory contains development tools and scripts for LM-Studio-Bench.
+This directory contains non-Python development and build scripts for LM-Studio-Bench.
 
 ## AppImage Build
 
@@ -12,10 +12,10 @@ Uses Ubuntu 24.04 Docker container for reproducible builds:
 
 ```bash
 # Make script executable once
-chmod +x ./tools/build_appimage_docker.sh
+chmod +x ./scripts/build_appimage_docker.sh
 
 # Build dist/LM-Studio-Bench-x86_64.AppImage
-./tools/build_appimage_docker.sh
+./scripts/build_appimage_docker.sh
 ```
 
 Requirements:
@@ -29,10 +29,10 @@ Build directly on Ubuntu 24.04 (or compatible):
 
 ```bash
 # Make script executable once
-chmod +x ./tools/build_appimage.sh
+chmod +x ./scripts/build_appimage.sh
 
 # Build dist/LM-Studio-Bench-x86_64.AppImage
-./tools/build_appimage.sh
+./scripts/build_appimage.sh
 ```
 
 Requirements:
@@ -54,11 +54,11 @@ The Docker build:
 - Uses `ubuntu:24.04` base image
 - Installs Python 3, appimagetool, and all dependencies
 - Runs appimagetool in extracted mode (no FUSE required)
-- Copies a minimal build context (incl. runtime `tools/`) via `docker cp`
+- Copies a minimal build context (incl. runtime `scripts/`) via `docker cp`
 - Works even when Docker Desktop path sharing for `/mnt` is disabled
 - Reuses a persistent build container by default (`lmstudio-bench-appimage-build-cache`)
 - Preserves file permissions for the generated AppImage
-- Dockerfile: `tools/Dockerfile.AppImage`
+- Dockerfile: `scripts/Dockerfile.AppImage`
 - Image name: `lmstudio-bench-appimage-builder:ubuntu24.04`
 
 Optional environment variables:
@@ -73,8 +73,8 @@ AppStream metadata notes:
 - AppImage builds include desktop/appdata metadata to satisfy
   `appimagetool` validation.
 - Metadata sources:
-  - `tools/io.github.Ajimaru.LMStudioBench.desktop`
-  - `tools/io.github.Ajimaru.LMStudioBench.appdata.xml`
+  - `scripts/io.github.Ajimaru.LMStudioBench.desktop`
+  - `scripts/io.github.Ajimaru.LMStudioBench.appdata.xml`
 - If the builder image changes, the Docker script recreates the cached
   build container automatically to avoid stale dependency issues.
 
@@ -98,7 +98,7 @@ Fixable issues are corrected automatically and re-staged.
 
 ```bash
 # 1. Run the complete setup script
-./tools/setup-dev-tools.sh
+./scripts/setup-dev-tools.sh
 
 # This will:
 # - Create/activate Python virtual environment
@@ -112,7 +112,7 @@ Fixable issues are corrected automatically and re-staged.
 
 ```bash
 # 1. Install git hooks
-./tools/install-hooks.sh
+./scripts/install-hooks.sh
 
 # 2. Install required Python tools
 pip install -r requirements-dev.txt
@@ -231,7 +231,7 @@ pylint core/ cli/ agents/ web/
 
 **In pre-commit:**
 
-- Runs on `core/`, `cli/`, `agents/` and `web/` directories (not on `tools/`)
+- Runs on `core/`, `cli/`, `agents/` and `web/` directories (not on `scripts/`)
 - Has 10-second timeout (prevents slowdown)
 - Optional: `SKIP_PYLINT=1 git commit`
 
@@ -250,13 +250,13 @@ Lint shell scripts for errors and best practices.
 
 ```bash
 # Check specific script
-shellcheck tools/install-hooks.sh
+shellcheck scripts/install-hooks.sh
 
 # Check multiple scripts
-shellcheck setup.sh tools/*.sh
+shellcheck setup.sh scripts/*.sh
 
 # Fix issues (some can be auto-fixed)
-shellcheck -format=json tools/install-hooks.sh
+shellcheck -format=json scripts/install-hooks.sh
 ```
 
 **Common issues:**
@@ -339,10 +339,10 @@ djlint --reformat web/templates/dashboard.html.jinja
 
 | Script | Purpose |
 | --- | --- |
-| `tools/setup-dev-tools.sh` | Full setup (recommended) - installs all tools |
-| `tools/install-hooks.sh` | Install git hooks only |
-| `tools/scan-all.sh` | Scan all project files (with optional `--fix`) |
-| `tools/pre-commit` | Git pre-commit hook (runs linters) |
+| `scripts/setup-dev-tools.sh` | Full setup (recommended) - installs all tools |
+| `scripts/install-hooks.sh` | Install git hooks only |
+| `scripts/scan-all.sh` | Scan all project files (with optional `--fix`) |
+| `scripts/pre-commit` | Git pre-commit hook (runs linters) |
 
 ---
 
@@ -355,7 +355,7 @@ djlint --reformat web/templates/dashboard.html.jinja
 isort --check-only core/ cli/ agents/ web/ tools/
 flake8 core/ cli/ agents/ web/ tools/
 pylint core/ cli/ agents/ web/      # Code quality (optional)
-shellcheck tools/*.sh
+shellcheck scripts/*.sh
 markdownlint docs/**/*.md
 djlint --check web/templates/
 
@@ -368,10 +368,10 @@ Scan the entire project (not just staged files):
 
 ```bash
 # Full scan
-./tools/scan-all.sh
+./scripts/scan-all.sh
 
 # Skip pylint (faster)
-SKIP_PYLINT=1 ./tools/scan-all.sh
+SKIP_PYLINT=1 ./scripts/scan-all.sh
 ```
 
 ### Auto-fix issues
@@ -380,7 +380,7 @@ Automatically fix issues that can be auto-corrected:
 
 ```bash
 # Interactive auto-fix (fixes isort and djlint issues)
-./tools/scan-all.sh --fix
+./scripts/scan-all.sh --fix
 ```
 
 **What gets auto-fixed:**
@@ -467,7 +467,7 @@ source /path/to/your/venv/bin/activate
 Use the setup script for easy installation:
 
 ```bash
-./tools/setup-dev-tools.sh
+./scripts/setup-dev-tools.sh
 ```
 
 Or install manually:

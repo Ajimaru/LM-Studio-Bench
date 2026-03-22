@@ -51,15 +51,16 @@ prepare_build_context() {
     BUILD_CONTEXT_DIR="$(mktemp -d)"
 
     cp -a "$ROOT_DIR/run.py" "$BUILD_CONTEXT_DIR/"
-    cp -a "$ROOT_DIR/src" "$BUILD_CONTEXT_DIR/"
+    cp -a "$ROOT_DIR/core" "$BUILD_CONTEXT_DIR/"
+    cp -a "$ROOT_DIR/cli" "$BUILD_CONTEXT_DIR/"
+    cp -a "$ROOT_DIR/agents" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/web" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/config" "$BUILD_CONTEXT_DIR/"
+    cp -a "$ROOT_DIR/scripts" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/assets" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/tools" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/requirements.txt" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/VERSION" "$BUILD_CONTEXT_DIR/"
-    cp -a "$ROOT_DIR/tools/io.github.Ajimaru.LMStudioBench.appdata.xml" \
-        "$BUILD_CONTEXT_DIR/tools/"
 
     find "$BUILD_CONTEXT_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} +
 }
@@ -101,7 +102,7 @@ if [ "$FAST_MODE" = "1" ] && image_exists; then
 else
     echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}..."
     docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f \
-    "$ROOT_DIR/tools/Dockerfile.AppImage" "$ROOT_DIR/tools/"
+    "$ROOT_DIR/scripts/Dockerfile.AppImage" "$ROOT_DIR/scripts/"
 fi
 
 echo ""
@@ -116,7 +117,7 @@ if [ "$REUSE_CONTAINER" = "1" ] && container_exists; then
             --name "$CONTAINER_NAME" \
             -w /build \
             "${IMAGE_NAME}:${IMAGE_TAG}" \
-            /bin/bash -lc "./tools/build_appimage.sh" >/dev/null
+            /bin/bash -lc "./scripts/build_appimage.sh" >/dev/null
     fi
 else
     if container_exists; then
@@ -128,7 +129,7 @@ else
         --name "$CONTAINER_NAME" \
         -w /build \
         "${IMAGE_NAME}:${IMAGE_TAG}" \
-        /bin/bash -lc "./tools/build_appimage.sh" >/dev/null
+        /bin/bash -lc "./scripts/build_appimage.sh" >/dev/null
 fi
 
 if container_is_running; then

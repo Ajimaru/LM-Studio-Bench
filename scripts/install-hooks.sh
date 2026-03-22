@@ -2,7 +2,7 @@
 #
 # Install git hooks for LM-Studio-Bench
 #
-# Usage: ./tools/install-hooks.sh
+# Usage: ./scripts/install-hooks.sh
 #
 
 set -e
@@ -39,7 +39,7 @@ mkdir -p .git/hooks
 
 # Copy pre-commit hook
 echo -e "${YELLOW}Installing pre-commit hook...${NC}"
-cp tools/pre-commit .git/hooks/pre-commit
+cp scripts/pre-commit .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
 
 echo -e "${GREEN}✓ pre-commit hook installed${NC}"
