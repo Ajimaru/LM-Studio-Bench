@@ -30,12 +30,98 @@ class PresetManager:
 
     READONLY_PRESETS = {
         "default",
+        "default_classic",
+        "default_compatability_test",
         "quick_test",
         "high_quality",
         "resource_limited",
     }
 
     PREDEFINED_PRESETS: Dict[str, Dict[str, Any]] = {
+        "default_classic": {
+            "runs": 3,
+            "context": 2048,
+            "limit": 0,
+            "dev_mode": False,
+            "min_context": 0,
+            "max_size": 0.0,
+            "quants": "",
+            "arch": "",
+            "params": "",
+            "rank_by": "speed",
+            "only_vision": False,
+            "only_tools": False,
+            "include_models": "",
+            "exclude_models": "",
+            "retest": False,
+            "enable_profiling": False,
+            "disable_gtt": False,
+            "max_temp": 0.0,
+            "max_power": 0.0,
+            "prompt": "Explain machine learning in 3 sentences",
+            "temperature": 0.1,
+            "top_k_sampling": 40,
+            "top_p_sampling": 0.9,
+            "min_p_sampling": 0.05,
+            "repeat_penalty": 1.2,
+            "max_tokens": 256,
+            "n_gpu_layers": -1,
+            "n_batch": 512,
+            "n_threads": -1,
+            "flash_attention": True,
+            "rope_freq_base": None,
+            "rope_freq_scale": None,
+            "use_mmap": True,
+            "use_mlock": False,
+            "kv_cache_quant": None,
+            "benchmark_mode": "classic",
+            "preset_mode": "classic",
+            "agent_model": None,
+            "agent_capabilities": None,
+            "agent_max_tests": None,
+        },
+        "default_compatability_test": {
+            "runs": 1,
+            "context": 2048,
+            "limit": 0,
+            "dev_mode": False,
+            "min_context": 0,
+            "max_size": 0.0,
+            "quants": "",
+            "arch": "",
+            "params": "",
+            "rank_by": "speed",
+            "only_vision": False,
+            "only_tools": False,
+            "include_models": "",
+            "exclude_models": "",
+            "retest": False,
+            "enable_profiling": False,
+            "disable_gtt": False,
+            "max_temp": 0.0,
+            "max_power": 0.0,
+            "prompt": "Explain machine learning in 3 sentences",
+            "temperature": 0.1,
+            "top_k_sampling": 40,
+            "top_p_sampling": 0.9,
+            "min_p_sampling": 0.05,
+            "repeat_penalty": 1.2,
+            "max_tokens": 256,
+            "n_gpu_layers": -1,
+            "n_batch": 512,
+            "n_threads": -1,
+            "flash_attention": True,
+            "rope_freq_base": None,
+            "rope_freq_scale": None,
+            "use_mmap": True,
+            "use_mlock": False,
+            "kv_cache_quant": None,
+            "benchmark_mode": "capability",
+            "preset_mode": "capability",
+            "agent_model": "qwen2.5-7b-instruct",
+            "agent_capabilities": "general_text,reasoning",
+            "agent_max_tests": 10,
+        },
         "quick_test": {
             "runs": 1,
             "context": 1024,
@@ -64,7 +150,7 @@ class PresetManager:
 
     def list_presets(self) -> List[str]:
         """Return all available preset names."""
-        names = ["default"]
+        names = ["default", "default_classic", "default_compatability_test"]
         names.extend(sorted(self.PREDEFINED_PRESETS.keys()))
 
         user_names: List[str] = []
@@ -84,21 +170,19 @@ class PresetManager:
 
     def load_preset(self, name: str) -> Dict[str, Any]:
         """Load a preset by name."""
-        if name == "default":
-            logger.info("Loading readonly preset: default")
-            return self.get_default_preset()
+        name_to_load = "default_classic" if name == "default" else name
 
-        if name in self.PREDEFINED_PRESETS:
-            logger.info("Loading readonly preset: %s", name)
-            return self._merge_with_default(self.PREDEFINED_PRESETS[name])
+        if name_to_load in self.PREDEFINED_PRESETS:
+            logger.info("Loading readonly preset: %s", name_to_load)
+            return self._merge_with_default(self.PREDEFINED_PRESETS[name_to_load])
 
-        valid, reason = self.validate_preset_name(name)
+        valid, reason = self.validate_preset_name(name_to_load)
         if not valid:
             raise ValueError(reason)
 
-        preset_path = self._preset_path(name)
+        preset_path = self._preset_path(name_to_load)
         if not preset_path.exists():
-            raise FileNotFoundError(f"Preset not found: {name}")
+            raise FileNotFoundError(f"Preset not found: {name_to_load}")
 
         with preset_path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
@@ -108,12 +192,12 @@ class PresetManager:
         elif isinstance(payload, dict):
             preset_data = payload
         else:
-            raise ValueError(f"Invalid preset format: {name}")
+            raise ValueError(f"Invalid preset format: {name_to_load}")
 
         if not isinstance(preset_data, dict):
-            raise ValueError(f"Invalid preset payload: {name}")
+            raise ValueError(f"Invalid preset payload: {name_to_load}")
 
-        logger.info("Loading user preset: %s", name)
+        logger.info("Loading user preset: %s", name_to_load)
         return self._merge_with_default(preset_data)
 
     def get_default_preset(self) -> Dict[str, Any]:
@@ -157,6 +241,11 @@ class PresetManager:
             "use_mmap": load_cfg.get("use_mmap"),
             "use_mlock": load_cfg.get("use_mlock"),
             "kv_cache_quant": load_cfg.get("kv_cache_quant"),
+            "benchmark_mode": "classic",
+            "preset_mode": "classic",
+            "agent_model": None,
+            "agent_capabilities": None,
+            "agent_max_tests": None,
         }
 
     def validate_preset_name(self, name: str) -> tuple[bool, str]:

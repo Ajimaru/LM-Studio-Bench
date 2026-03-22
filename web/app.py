@@ -626,8 +626,32 @@ class BenchmarkManager:
             "--context-length",
             "--gpu-offload",
             "--temperature",
+            "--top-k",
+            "--top-p",
+            "--min-p",
+            "--repeat-penalty",
+            "--max-tokens",
+            "--n-gpu-layers",
+            "--n-batch",
+            "--n-threads",
+            "--rope-freq-base",
+            "--rope-freq-scale",
+            "--kv-cache-quant",
+            "--max-temp",
+            "--max-power",
         }
-        flags_without_values = {"--all-models", "--verbose"}
+        flags_without_values = {
+            "--all-models",
+            "--verbose",
+            "--flash-attention",
+            "--no-flash-attention",
+            "--use-mmap",
+            "--no-mmap",
+            "--use-mlock",
+            "--enable-profiling",
+            "--disable-gtt",
+            "--dev-mode",
+        }
         allowed_flags = flags_with_values | flags_without_values
 
         sanitized: list[str] = []
@@ -1394,6 +1418,89 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
                 "--temperature",
                 str(params.temperature),
             ])
+        if params.top_k_sampling is not None:
+            benchmark_args.extend([
+                "--top-k",
+                str(params.top_k_sampling),
+            ])
+        if params.top_p_sampling is not None:
+            benchmark_args.extend([
+                "--top-p",
+                str(params.top_p_sampling),
+            ])
+        if params.min_p_sampling is not None:
+            benchmark_args.extend([
+                "--min-p",
+                str(params.min_p_sampling),
+            ])
+        if params.repeat_penalty is not None:
+            benchmark_args.extend([
+                "--repeat-penalty",
+                str(params.repeat_penalty),
+            ])
+        if params.max_tokens is not None:
+            benchmark_args.extend([
+                "--max-tokens",
+                str(params.max_tokens),
+            ])
+        if params.n_gpu_layers is not None:
+            benchmark_args.extend([
+                "--n-gpu-layers",
+                str(params.n_gpu_layers),
+            ])
+        if params.n_batch is not None:
+            benchmark_args.extend([
+                "--n-batch",
+                str(params.n_batch),
+            ])
+        if params.n_threads is not None:
+            benchmark_args.extend([
+                "--n-threads",
+                str(params.n_threads),
+            ])
+        if params.flash_attention is not None:
+            if params.flash_attention:
+                benchmark_args.append("--flash-attention")
+            else:
+                benchmark_args.append("--no-flash-attention")
+        if params.rope_freq_base is not None:
+            benchmark_args.extend([
+                "--rope-freq-base",
+                str(params.rope_freq_base),
+            ])
+        if params.rope_freq_scale is not None:
+            benchmark_args.extend([
+                "--rope-freq-scale",
+                str(params.rope_freq_scale),
+            ])
+        if params.use_mmap is not None:
+            if params.use_mmap:
+                benchmark_args.append("--use-mmap")
+            else:
+                benchmark_args.append("--no-mmap")
+        if params.use_mlock is not None and params.use_mlock:
+            benchmark_args.append("--use-mlock")
+        if params.kv_cache_quant:
+            benchmark_args.extend([
+                "--kv-cache-quant",
+                params.kv_cache_quant,
+            ])
+        if params.max_temp is not None:
+            benchmark_args.extend([
+                "--max-temp",
+                str(params.max_temp),
+            ])
+        if params.max_power is not None:
+            benchmark_args.extend([
+                "--max-power",
+                str(params.max_power),
+            ])
+        if params.enable_profiling:
+            benchmark_args.append("--enable-profiling")
+        if params.disable_gtt:
+            benchmark_args.append("--disable-gtt")
+        if params.dev_mode:
+            benchmark_args.append("--dev-mode")
         if DEBUG_MODE:
             benchmark_args.append("--verbose")
 
@@ -2531,16 +2638,33 @@ async def list_presets() -> dict:
     try:
         all_presets = preset_mgr.list_presets_detailed()
 
-        result = {
-            "success": True,
-            "presets": [
+        preset_entries = []
+        for name, is_readonly in all_presets:
+            preset_mode = "classic"
+            try:
+                preset_config = preset_mgr.load_preset(name)
+                mode = (
+                    preset_config.get("benchmark_mode")
+                    or preset_config.get("preset_mode")
+                    or "classic"
+                )
+                if mode in {"classic", "capability"}:
+                    preset_mode = mode
+            except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError):
+                preset_mode = "classic"
+
+            preset_entries.append(
                 {
                     "name": name,
                     "readonly": is_readonly,
                     "type": "readonly" if is_readonly else "user",
+                    "preset_mode": preset_mode,
                 }
-                for name, is_readonly in all_presets
-            ],
+            )
+
+        result = {
+            "success": True,
+            "presets": preset_entries,
         }
 
         logger.info("📜 Listed %s presets", len(all_presets))
@@ -2564,10 +2688,19 @@ async def get_preset(name: str) -> dict:
         is_readonly = any(pname == name and ro for pname, ro in all_presets)
 
         logger.info("📦 Loaded preset: %s", name)
+        mode = (
+            preset_config.get("benchmark_mode")
+            or preset_config.get("preset_mode")
+            or "classic"
+        )
+        if mode not in {"classic", "capability"}:
+            mode = "classic"
+
         return {
             "success": True,
             "name": name,
             "readonly": is_readonly,
+            "preset_mode": mode,
             "config": preset_config,
         }
     except FileNotFoundError:

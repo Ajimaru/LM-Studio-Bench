@@ -379,6 +379,10 @@ class LMStudioRESTClient:
         context_length: Optional[int] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
+        top_k: Optional[int] = None,
+        top_p: Optional[float] = None,
+        min_p: Optional[float] = None,
+        repeat_penalty: Optional[float] = None,
         on_chunk: Optional[Callable[[str, Dict[str, Any]], None]] = None,
         use_stateful: bool = False,
         mcp_integrations: Optional[List[Dict[str, Any]]] = None,
@@ -392,6 +396,10 @@ class LMStudioRESTClient:
             context_length: Context length override
             temperature: Sampling temperature
             max_tokens: Max tokens to generate
+            top_k: Top-k sampling override
+            top_p: Top-p sampling override
+            min_p: Min-p sampling override
+            repeat_penalty: Repeat penalty override
             on_chunk: Callback for streaming chunks (text, event_data)
             use_stateful: Enable stateful chat (uses previous_response_id)
             mcp_integrations: List of MCP server integrations
@@ -420,6 +428,14 @@ class LMStudioRESTClient:
             payload["context_length"] = context_length
         if max_tokens:
             payload["max_output_tokens"] = max_tokens
+        if top_k is not None:
+            payload["top_k"] = top_k
+        if top_p is not None:
+            payload["top_p"] = top_p
+        if min_p is not None:
+            payload["min_p"] = min_p
+        if repeat_penalty is not None:
+            payload["repeat_penalty"] = repeat_penalty
 
         if messages:
             try:

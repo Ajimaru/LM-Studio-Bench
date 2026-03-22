@@ -197,6 +197,132 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--top-k",
+        type=int,
+        help="Top-k sampling"
+    )
+
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        help="Top-p sampling"
+    )
+
+    parser.add_argument(
+        "--min-p",
+        type=float,
+        help="Min-p sampling"
+    )
+
+    parser.add_argument(
+        "--repeat-penalty",
+        type=float,
+        help="Repeat penalty"
+    )
+
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        help="Maximum generated tokens"
+    )
+
+    parser.add_argument(
+        "--n-gpu-layers",
+        type=int,
+        help="Number of GPU layers for load config"
+    )
+
+    parser.add_argument(
+        "--n-batch",
+        type=int,
+        help="Batch size for load config"
+    )
+
+    parser.add_argument(
+        "--n-threads",
+        type=int,
+        help="Number of threads for load config"
+    )
+
+    parser.add_argument(
+        "--flash-attention",
+        action="store_true",
+        help="Enable flash attention"
+    )
+
+    parser.add_argument(
+        "--no-flash-attention",
+        action="store_true",
+        help="Disable flash attention"
+    )
+
+    parser.add_argument(
+        "--rope-freq-base",
+        type=float,
+        help="RoPE frequency base"
+    )
+
+    parser.add_argument(
+        "--rope-freq-scale",
+        type=float,
+        help="RoPE frequency scale"
+    )
+
+    parser.add_argument(
+        "--use-mmap",
+        action="store_true",
+        help="Enable memory mapping"
+    )
+
+    parser.add_argument(
+        "--no-mmap",
+        action="store_true",
+        help="Disable memory mapping"
+    )
+
+    parser.add_argument(
+        "--use-mlock",
+        action="store_true",
+        help="Enable mlock"
+    )
+
+    parser.add_argument(
+        "--kv-cache-quant",
+        type=str,
+        help="KV cache quantization"
+    )
+
+    parser.add_argument(
+        "--max-temp",
+        type=float,
+        help="Max GPU temperature limit"
+    )
+
+    parser.add_argument(
+        "--max-power",
+        type=float,
+        help="Max GPU power limit"
+    )
+
+    parser.add_argument(
+        "--enable-profiling",
+        action="store_true",
+        help="Enable profiling mode"
+    )
+
+    parser.add_argument(
+        "--disable-gtt",
+        action="store_true",
+        help="Disable GTT in capability mode"
+    )
+
+    parser.add_argument(
+        "--dev-mode",
+        action="store_true",
+        help="Enable developer mode"
+    )
+
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -308,6 +434,73 @@ def override_config(config: dict, args: argparse.Namespace) -> dict:
     if args.temperature is not None:
         config["temperature"] = args.temperature
 
+    if args.top_k is not None:
+        config["top_k"] = args.top_k
+
+    if args.top_p is not None:
+        config["top_p"] = args.top_p
+
+    if args.min_p is not None:
+        config["min_p"] = args.min_p
+
+    if args.repeat_penalty is not None:
+        config["repeat_penalty"] = args.repeat_penalty
+
+    if args.max_tokens is not None:
+        config["max_tokens"] = args.max_tokens
+
+    if args.n_gpu_layers is not None:
+        config["n_gpu_layers"] = args.n_gpu_layers
+
+    if args.n_batch is not None:
+        config["n_batch"] = args.n_batch
+
+    if args.n_threads is not None:
+        config["n_threads"] = args.n_threads
+
+    if args.flash_attention and args.no_flash_attention:
+        raise ValueError(
+            "--flash-attention and --no-flash-attention cannot be used together"
+        )
+    if args.flash_attention:
+        config["flash_attention"] = True
+    if args.no_flash_attention:
+        config["flash_attention"] = False
+
+    if args.rope_freq_base is not None:
+        config["rope_freq_base"] = args.rope_freq_base
+
+    if args.rope_freq_scale is not None:
+        config["rope_freq_scale"] = args.rope_freq_scale
+
+    if args.use_mmap and args.no_mmap:
+        raise ValueError("--use-mmap and --no-mmap cannot be used together")
+    if args.use_mmap:
+        config["use_mmap"] = True
+    if args.no_mmap:
+        config["use_mmap"] = False
+
+    if args.use_mlock:
+        config["use_mlock"] = True
+
+    if args.kv_cache_quant:
+        config["kv_cache_quant"] = args.kv_cache_quant
+
+    if args.max_temp is not None:
+        config["max_temp"] = args.max_temp
+
+    if args.max_power is not None:
+        config["max_power"] = args.max_power
+
+    if args.enable_profiling:
+        config["enable_profiling"] = True
+
+    if args.disable_gtt:
+        config["disable_gtt"] = True
+
+    if args.dev_mode:
+        config["dev_mode"] = True
+
     return config
 
 
@@ -364,7 +557,7 @@ def main() -> int:
     """
     args = parse_args()
 
-    setup_logging(args.verbose)
+    setup_logging(args.verbose or args.dev_mode)
     logger = logging.getLogger(__name__)
     total_start = time.perf_counter()
 

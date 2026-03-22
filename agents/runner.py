@@ -459,7 +459,25 @@ class BenchmarkRunner:
             "context_length": self.config.get("context_length", 2048),
             "gpu_offload": self.config.get("gpu_offload", 1.0),
             "temperature": self.config.get("temperature", 0.1),
-            "max_tokens": self.config.get("max_tokens", 256)
+            "max_tokens": self.config.get("max_tokens", 256),
+            "top_k": self.config.get("top_k"),
+            "top_p": self.config.get("top_p"),
+            "min_p": self.config.get("min_p"),
+            "repeat_penalty": self.config.get("repeat_penalty"),
+            "n_gpu_layers": self.config.get("n_gpu_layers"),
+            "n_batch": self.config.get("n_batch"),
+            "n_threads": self.config.get("n_threads"),
+            "flash_attention": self.config.get("flash_attention"),
+            "rope_freq_base": self.config.get("rope_freq_base"),
+            "rope_freq_scale": self.config.get("rope_freq_scale"),
+            "use_mmap": self.config.get("use_mmap"),
+            "use_mlock": self.config.get("use_mlock"),
+            "kv_cache_quant": self.config.get("kv_cache_quant"),
+            "max_temp": self.config.get("max_temp"),
+            "max_power": self.config.get("max_power"),
+            "enable_profiling": self.config.get("enable_profiling"),
+            "disable_gtt": self.config.get("disable_gtt"),
+            "dev_mode": self.config.get("dev_mode"),
         }
 
     def _report_to_dict(self, report) -> Dict:

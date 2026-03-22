@@ -6,6 +6,7 @@ Manages model inference, metric computation, and result collection.
 
 from dataclasses import dataclass
 from datetime import datetime
+import inspect
 import json
 import logging
 from pathlib import Path
@@ -254,9 +255,26 @@ class LMStudioAdapter(ModelAdapter):
                     gpu_offload,
                 )
 
-            config = LlmLoadModelConfig(
-                context_length=context_length,
-            )
+            load_candidates = {
+                "context_length": context_length,
+                "n_gpu_layers": kwargs.get("n_gpu_layers"),
+                "n_batch": kwargs.get("n_batch"),
+                "n_threads": kwargs.get("n_threads"),
+                "flash_attention": kwargs.get("flash_attention"),
+                "rope_freq_base": kwargs.get("rope_freq_base"),
+                "rope_freq_scale": kwargs.get("rope_freq_scale"),
+                "try_mmap": kwargs.get("use_mmap"),
+                "use_mlock": kwargs.get("use_mlock"),
+                "kv_cache_quantization_type": kwargs.get("kv_cache_quant"),
+            }
+
+            supported_keys = set(inspect.signature(LlmLoadModelConfig).parameters)
+            filtered_load_config = {
+                key: value
+                for key, value in load_candidates.items()
+                if value is not None and key in supported_keys
+            }
+            config = LlmLoadModelConfig(**filtered_load_config)
 
             self.model = self.lms.llm(model_path, config=config)
             logger.info("Loaded model via SDK: %s", model_path)
@@ -304,10 +322,24 @@ class LMStudioAdapter(ModelAdapter):
                 "LM Studio SDK PredictionConfig is not instantiable"
             )
 
-        return prediction_config_factory(
-            temperature=kwargs.get("temperature", 0.1),
-            max_tokens=kwargs.get("max_tokens", 256)
+        prediction_candidates = {
+            "temperature": kwargs.get("temperature", 0.1),
+            "max_tokens": kwargs.get("max_tokens", 256),
+            "top_k": kwargs.get("top_k"),
+            "top_p": kwargs.get("top_p"),
+            "min_p": kwargs.get("min_p"),
+            "repeat_penalty": kwargs.get("repeat_penalty"),
+        }
+        supported_keys = set(
+            inspect.signature(prediction_config_factory).parameters
         )
+        filtered_prediction_config = {
+            key: value
+            for key, value in prediction_candidates.items()
+            if value is not None and key in supported_keys
+        }
+
+        return prediction_config_factory(**filtered_prediction_config)
 
     def infer(
         self,
@@ -349,6 +381,20 @@ class LMStudioAdapter(ModelAdapter):
                 chat_args: Dict[str, Any] = {"messages": messages}
                 if model_id is not None:
                     chat_args["model"] = model_id
+                if kwargs.get("context_length") is not None:
+                    chat_args["context_length"] = kwargs.get("context_length")
+                if kwargs.get("temperature") is not None:
+                    chat_args["temperature"] = kwargs.get("temperature")
+                if kwargs.get("max_tokens") is not None:
+                    chat_args["max_tokens"] = kwargs.get("max_tokens")
+                if kwargs.get("top_k") is not None:
+                    chat_args["top_k"] = kwargs.get("top_k")
+                if kwargs.get("top_p") is not None:
+                    chat_args["top_p"] = kwargs.get("top_p")
+                if kwargs.get("min_p") is not None:
+                    chat_args["min_p"] = kwargs.get("min_p")
+                if kwargs.get("repeat_penalty") is not None:
+                    chat_args["repeat_penalty"] = kwargs.get("repeat_penalty")
                 if image_path:
                     chat_args["messages"] = [
                         {
@@ -524,6 +570,7 @@ class BenchmarkAgent:
                 AccuracyMetric(extract_answer=False)
             ]
         }
+        self.inference_options: Dict[str, Any] = {}
 
     def evaluate_test_case(
         self,
@@ -541,7 +588,8 @@ class BenchmarkAgent:
         inference = self.adapter.infer(
             prompt=test_case.prompt,
             image_path=test_case.image_path,
-            test_id=test_case.id
+            test_id=test_case.id,
+            **self.inference_options,
         )
 
         self._save_raw_output(test_case, inference)
@@ -671,6 +719,16 @@ class BenchmarkAgent:
             model_name,
             len(test_cases),
         )
+
+        self.inference_options = {
+            "context_length": (config or {}).get("context_length"),
+            "temperature": (config or {}).get("temperature"),
+            "max_tokens": (config or {}).get("max_tokens"),
+            "top_k": (config or {}).get("top_k"),
+            "top_p": (config or {}).get("top_p"),
+            "min_p": (config or {}).get("min_p"),
+            "repeat_penalty": (config or {}).get("repeat_penalty"),
+        }
 
         results = []
         capability_results: Dict[str, List[Any]] = {}

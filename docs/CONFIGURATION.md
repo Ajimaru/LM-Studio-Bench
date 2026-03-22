@@ -143,9 +143,33 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
 
 ### Preset Defaults and Compatibility
 
-The readonly `default` preset contains explicit values for all benchmark
-fields that can be set in the web UI and CLI benchmark request model.
-This avoids `null` values in preset comparison output.
+The tool includes two readonly default presets:
+
+#### `default_classic` - Classic Benchmark Mode
+
+Default preset for standard model benchmarking. Contains explicit values for all benchmark
+fields to avoid `null` values in preset comparisons.
+
+- **benchmark_mode**: `classic`
+- **preset_mode**: `classic`
+- **runs**: 3
+- **context**: 2048
+- Capability fields (agent_model, agent_capabilities, agent_max_tests): `null`
+
+**Backwards Compatibility**: Loading `--preset default` automatically loads `default_classic`.
+
+#### `default_compatability_test` - Capability-Driven Test Mode
+
+Default preset for focused capability testing of a single model.
+
+- **benchmark_mode**: `capability`
+- **preset_mode**: `capability`
+- **runs**: 1
+- **context**: 2048
+- **agent_model**: `qwen2.5-7b-instruct`
+- **agent_capabilities**: `general_text,reasoning`
+- **agent_max_tests**: `10`
+- No `null` values - all fields have explicit defaults
 
 Compatibility mapping is applied automatically when loading and comparing
 presets with legacy keys:
