@@ -218,32 +218,28 @@ class CapabilityDetector:
         if not capabilities_str:
             return None
 
-        try:
-            cap_names = [c.strip().lower() for c in capabilities_str.split(",")]
-            capabilities = set()
+        cap_names = [c.strip().lower() for c in capabilities_str.split(",")]
+        capabilities: Set[Capability] = set()
 
-            for name in cap_names:
-                try:
-                    capabilities.add(Capability(name))
-                except ValueError:
-                    logger.warning(
-                        f"Invalid capability name: {name}, skipping"
-                    )
-                    continue
+        for name in cap_names:
+            try:
+                capabilities.add(Capability(name))
+            except ValueError:
+                logger.warning(
+                    "Invalid capability name: %s, skipping",
+                    name,
+                )
+                continue
 
-            if not capabilities:
-                return None
-
-            return CapabilityDetectionResult(
-                capabilities=capabilities,
-                source="cli_flags",
-                confidence=1.0,
-                metadata={"raw_input": capabilities_str}
-            )
-
-        except Exception as e:
-            logger.error(f"Error parsing capability flags: {e}")
+        if not capabilities:
             return None
+
+        return CapabilityDetectionResult(
+            capabilities=capabilities,
+            source="cli_flags",
+            confidence=1.0,
+            metadata={"raw_input": capabilities_str}
+        )
 
     def detect_from_metadata(
         self,
@@ -259,7 +255,7 @@ class CapabilityDetector:
             CapabilityDetectionResult or None if unavailable
         """
         if not metadata_path.exists():
-            logger.debug(f"Metadata file not found: {metadata_path}")
+            logger.debug("Metadata file not found: %s", metadata_path)
             return None
 
         try:
@@ -280,10 +276,10 @@ class CapabilityDetector:
             )
 
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON in metadata file: {e}")
+            logger.error("Invalid JSON in metadata file: %s", e)
             return None
-        except Exception as e:
-            logger.error(f"Error reading metadata: {e}")
+        except OSError as e:
+            logger.error("Error reading metadata: %s", e)
             return None
 
     def detect_from_model_name(

@@ -10,6 +10,7 @@ Implements quality metrics for different capabilities:
 
 from collections import Counter
 from dataclasses import dataclass
+import json
 import logging
 import re
 import string
@@ -486,8 +487,6 @@ class FunctionCallMetric(BaseMetric):
         Returns:
             MetricResult with accuracy score
         """
-        import json
-
         try:
             if isinstance(prediction, str):
                 pred_data = json.loads(prediction)

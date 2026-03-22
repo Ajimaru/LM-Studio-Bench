@@ -23,6 +23,18 @@ from cli.metrics import (
     aggregate_metrics,
 )
 
+try:
+    import lmstudio
+    from lmstudio import LlmLoadModelConfig
+except ImportError:
+    lmstudio = None
+    LlmLoadModelConfig = None
+
+try:
+    from core.client import LMStudioRESTClient
+except ImportError:
+    LMStudioRESTClient = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -189,17 +201,17 @@ class LMStudioAdapter(ModelAdapter):
             use_rest_api: Whether to use REST API instead of SDK
         """
         self.use_rest_api = use_rest_api
-        self.model = None
-        self.model_path = None
+        self.lms: Any = None
+        self.model: Optional[Any] = None
+        self.model_path: Optional[str] = None
+        self.rest_client: Any = None
         self._rest_instance_id: Optional[str] = None
 
         if not use_rest_api:
-            try:
-                import lmstudio
-                self.lms = lmstudio
-            except ImportError:
+            if lmstudio is None:
                 logger.error("lmstudio package not available")
-                raise
+                raise ImportError("lmstudio package not available")
+            self.lms = lmstudio
 
     def load(self, model_path: str, **kwargs: Any) -> None:
         """
@@ -212,7 +224,8 @@ class LMStudioAdapter(ModelAdapter):
         self.model_path = model_path
 
         if self.use_rest_api:
-            from core.client import LMStudioRESTClient
+            if LMStudioRESTClient is None:
+                raise ImportError("LMStudioRESTClient is not available")
 
             context_length = kwargs.get("context_length", 2048)
             gpu_offload = kwargs.get("gpu_offload", 1.0)
@@ -228,17 +241,25 @@ class LMStudioAdapter(ModelAdapter):
                 raise RuntimeError(f"Failed to load model: {model_path}")
 
             self._rest_instance_id = instance_id
-            logger.info(f"Loaded model via REST API: {model_path}")
+            logger.info("Loaded model via REST API: %s", model_path)
         else:
-            from lmstudio import LlmLoadModelConfig
+            if self.lms is None or LlmLoadModelConfig is None:
+                raise ImportError("lmstudio package not available")
+
+            context_length = kwargs.get("context_length", 2048)
+            gpu_offload = kwargs.get("gpu_offload")
+            if gpu_offload is not None:
+                logger.debug(
+                    "Ignoring gpu_offload=%s for SDK load config",
+                    gpu_offload,
+                )
 
             config = LlmLoadModelConfig(
-                context_length=kwargs.get("context_length", 2048),
-                gpu_offload=kwargs.get("gpu_offload", 1.0)
+                context_length=context_length,
             )
 
             self.model = self.lms.llm(model_path, config=config)
-            logger.info(f"Loaded model via SDK: {model_path}")
+            logger.info("Loaded model via SDK: %s", model_path)
 
     def unload(self) -> None:
         """
@@ -253,8 +274,14 @@ class LMStudioAdapter(ModelAdapter):
                     logger.warning(
                         "No REST instance id set; skipping unload_model call"
                     )
-            except Exception as e:
-                logger.warning(f"Error unloading model: {e}")
+            except (
+                AttributeError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+            ) as err:
+                logger.warning("Error unloading model: %s", err)
             finally:
                 self._rest_instance_id = None
         else:
@@ -262,6 +289,25 @@ class LMStudioAdapter(ModelAdapter):
             logger.info("Unloaded model via SDK")
 
         self.model_path = None
+
+    def _create_prediction_config(self, **kwargs: Any) -> Any:
+        if self.lms is None:
+            raise RuntimeError("LM Studio SDK is not initialized")
+
+        if not hasattr(self.lms, "PredictionConfig"):
+            raise RuntimeError(
+                "LM Studio SDK does not expose PredictionConfig"
+            )
+        prediction_config_factory = self.lms.PredictionConfig
+        if not callable(prediction_config_factory):
+            raise RuntimeError(
+                "LM Studio SDK PredictionConfig is not instantiable"
+            )
+
+        return prediction_config_factory(
+            temperature=kwargs.get("temperature", 0.1),
+            max_tokens=kwargs.get("max_tokens", 256)
+        )
 
     def infer(
         self,
@@ -285,7 +331,16 @@ class LMStudioAdapter(ModelAdapter):
         timestamp_start = start_time
 
         try:
+            response_text = ""
+            tokens_generated: Optional[int] = None
+
             if self.use_rest_api:
+                rest_client = self.rest_client
+                if rest_client is None:
+                    raise RuntimeError(
+                        "REST client is not initialized; call load() first"
+                    )
+
                 messages = [{"role": "user", "content": prompt}]
                 model_id = (
                     kwargs.get("model")
@@ -305,13 +360,9 @@ class LMStudioAdapter(ModelAdapter):
                         }
                     ]
 
-                response = self.rest_client.chat_stream(**chat_args)
-
-                response_text = ""
-                tokens_generated = 0
+                response = rest_client.chat_stream(**chat_args)
 
                 if isinstance(response, dict):
-                    # REST client returns a dict, e.g. {"text": ..., "stats": {...}}
                     response_text = (
                         response.get("text")
                         or response.get("content")
@@ -323,14 +374,12 @@ class LMStudioAdapter(ModelAdapter):
                         if completion_tokens is not None:
                             tokens_generated = completion_tokens
                     elif stats is not None:
-                        # Handle ChatStats-like objects with tokens_out attribute
                         tokens_generated = getattr(
                             stats,
                             "tokens_out",
                             getattr(stats, "completion_tokens", 0),
                         )
                 elif hasattr(response, "stats"):
-                    # Fallback for object-style responses with stats/text attrs
                     stats_obj = response.stats
                     tokens_generated = getattr(
                         stats_obj,
@@ -344,19 +393,22 @@ class LMStudioAdapter(ModelAdapter):
                     else:
                         response_text = ""
                 else:
-                    # Last-resort fallback: stringify unknown response type
                     response_text = str(response)
 
             else:
-                from lmstudio import PredictionConfig
+                model = self.model
+                if model is None:
+                    raise RuntimeError(
+                        "Model is not loaded; call load() before infer()"
+                    )
 
-                config = PredictionConfig(
-                    temperature=kwargs.get("temperature", 0.1),
-                    max_tokens=kwargs.get("max_tokens", 256)
+                config = self._create_prediction_config(**kwargs)
+                response = model.respond(prompt, config=config)
+                response_text = (
+                    getattr(response, "content", None)
+                    or getattr(response, "text", "")
+                    or ""
                 )
-
-                response = self.model.respond(prompt, config=config)
-                response_text = response.content
                 tokens_generated = getattr(
                     response,
                     "completion_tokens",
@@ -385,9 +437,15 @@ class LMStudioAdapter(ModelAdapter):
                 error=None
             )
 
-        except Exception as e:
+        except (
+            AttributeError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as err:
             end_time = time.time()
-            error_msg = f"Inference error: {str(e)}"
+            error_msg = f"Inference error: {err}"
             logger.error(error_msg)
 
             return InferenceResult(
@@ -490,7 +548,9 @@ class BenchmarkAgent:
 
         if inference.error:
             logger.error(
-                f"Inference failed for {test_case.id}: {inference.error}"
+                "Inference failed for %s: %s",
+                test_case.id,
+                inference.error,
             )
             return EvaluationResult(
                 test_id=test_case.id,
@@ -540,8 +600,12 @@ class BenchmarkAgent:
             try:
                 result = metric.compute(prediction, reference)
                 results.append(result)
-            except Exception as e:
-                logger.error(f"Error computing {metric.name}: {e}")
+            except (AttributeError, KeyError, TypeError, ValueError) as err:
+                logger.error(
+                    "Error computing %s: %s",
+                    metric.name,
+                    err,
+                )
                 continue
 
         return results
@@ -575,8 +639,8 @@ class BenchmarkAgent:
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
 
-        except Exception as e:
-            logger.error(f"Error saving raw output: {e}")
+        except (OSError, TypeError, ValueError) as err:
+            logger.error("Error saving raw output: %s", err)
 
     def run_benchmark(
         self,
@@ -603,15 +667,16 @@ class BenchmarkAgent:
             BenchmarkReport with all results.
         """
         logger.info(
-            f"Starting benchmark for {model_name} "
-            f"with {len(test_cases)} test cases"
+            "Starting benchmark for %s with %s test cases",
+            model_name,
+            len(test_cases),
         )
 
         results = []
         capability_results: Dict[str, List[Any]] = {}
 
         for test_case in test_cases:
-            logger.info(f"Evaluating test case: {test_case.id}")
+            logger.info("Evaluating test case: %s", test_case.id)
 
             eval_result = self.evaluate_test_case(test_case)
             results.append(eval_result)

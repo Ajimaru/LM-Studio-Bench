@@ -31,6 +31,11 @@ import httpx
 import psutil
 from tqdm import tqdm
 
+from core.client import LMStudioRESTClient
+from core.config import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
+from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.presets import PresetManager
+
 try:
     import cpuinfo
 except (ImportError, ModuleNotFoundError):
@@ -73,11 +78,6 @@ except (ImportError, ModuleNotFoundError):
     Table = None
     TableStyle = None
     REPORTLAB_AVAILABLE = False
-
-from core.client import LMStudioRESTClient
-from core.config import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
-from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
-from core.presets import PresetManager
 
 try:
     import plotly.graph_objects as go

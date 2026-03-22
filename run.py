@@ -437,7 +437,7 @@ elif HAS_AGENT_FLAG:
             check=False,
         )
         sys.exit(result.returncode)
-    except Exception as error:
+    except (subprocess.SubprocessError, OSError) as error:
         print(f"❌ Error starting agent: {error}")
         sys.exit(1)
 

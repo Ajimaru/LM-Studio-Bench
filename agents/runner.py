@@ -8,9 +8,15 @@ import json
 import logging
 from pathlib import Path
 import re
+import sqlite3
 from typing import Any, Dict, List, Optional
 
-from agents.benchmark import BenchmarkAgent, ModelAdapter, TestCase
+from agents.benchmark import (
+    BenchmarkAgent,
+    LMStudioAdapter,
+    ModelAdapter,
+    TestCase,
+)
 from agents.cache import AgentCache
 from agents.capabilities import Capability, CapabilityDetector
 from core.paths import USER_RESULTS_DIR
@@ -46,14 +52,14 @@ class TestLoader:
         """
         template_path = self.prompts_dir / template_name
         if not template_path.exists():
-            logger.warning(f"Template not found: {template_path}")
+            logger.warning("Template not found: %s", template_path)
             return None
 
         try:
             with open(template_path, "r", encoding="utf-8") as f:
                 return f.read()
-        except Exception as e:
-            logger.error(f"Error loading template {template_name}: {e}")
+        except (OSError, UnicodeDecodeError) as err:
+            logger.error("Error loading template %s: %s", template_name, err)
             return None
 
     def load_test_data(self, data_file: str) -> List[Dict]:
@@ -68,14 +74,14 @@ class TestLoader:
         """
         data_path = self.data_dir / "text" / data_file
         if not data_path.exists():
-            logger.warning(f"Data file not found: {data_path}")
+            logger.warning("Data file not found: %s", data_path)
             return []
 
         try:
             with open(data_path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading data {data_file}: {e}")
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
+            logger.error("Error loading data %s: %s", data_file, err)
             return []
 
     def create_test_cases(
@@ -316,7 +322,7 @@ class BenchmarkRunner:
         if model_name is None:
             model_name = Path(model_path).name
 
-        logger.info(f"Running benchmark for: {model_name}")
+        logger.info("Running benchmark for: %s", model_name)
 
         detected_caps = self._detect_capabilities(
             model_path,
@@ -324,14 +330,13 @@ class BenchmarkRunner:
             capabilities
         )
 
-        logger.info(f"Detected capabilities: {detected_caps}")
+        logger.info("Detected capabilities: %s", detected_caps)
 
         test_cases = self._load_test_cases(detected_caps)
 
-        logger.info(f"Loaded {len(test_cases)} test cases")
+        logger.info("Loaded %s test cases", len(test_cases))
 
         if adapter is None:
-            from agents.benchmark import LMStudioAdapter
             adapter = LMStudioAdapter(
                 use_rest_api=self.config.get("use_rest_api", True)
             )
@@ -526,7 +531,6 @@ class BenchmarkRunner:
                     success=error_message is None,
                 )
 
-            # Persist capability-level aggregates from the current report format.
             capability_summary = summary.get("by_capability", {})
             for capability, cap_data in capability_summary.items():
                 if not isinstance(cap_data, dict):
@@ -558,7 +562,7 @@ class BenchmarkRunner:
                     avg_accuracy=None,
                 )
 
-            logger.info(f"Benchmark results cached for {model_name}")
+            logger.info("Benchmark results cached for %s", model_name)
 
-        except Exception as e:
-            logger.error(f"Error caching results: {e}")
+        except (sqlite3.Error, TypeError, ValueError, KeyError) as err:
+            logger.error("Error caching results for %s: %s", model_name, err)

@@ -3,6 +3,7 @@
 GTK dependencies (gi, Gtk, AppIndicator3) are mocked throughout
 because the test environment does not guarantee a display server.
 """
+import importlib
 import logging
 from pathlib import Path
 import sys
@@ -10,6 +11,10 @@ import types
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def _build_gi_mock() -> tuple[MagicMock, MagicMock, MagicMock]:
@@ -36,7 +41,7 @@ def _import_tray() -> tuple[types.ModuleType, MagicMock, MagicMock]:
     ):
         if "tray" in sys.modules:
             del sys.modules["tray"]
-        import tray
+        tray = importlib.import_module("tray")
         setattr(tray, "gi", gi_mock)
         setattr(tray, "Gtk", gtk_mock)
         setattr(tray, "AppIndicator3", indicator_mock)

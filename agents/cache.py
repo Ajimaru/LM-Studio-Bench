@@ -6,6 +6,8 @@ from pathlib import Path
 import sqlite3
 from typing import Dict, List, Optional
 
+from core.paths import USER_RESULTS_DIR
+
 logger = logging.getLogger(__name__)
 
 
@@ -20,7 +22,6 @@ class AgentCache:
             db_path: Path to SQLite database (defaults to results dir)
         """
         if db_path is None:
-            from core.paths import USER_RESULTS_DIR
             db_path = Path(USER_RESULTS_DIR) / "agent_results.db"
 
         self.db_path = Path(db_path)
@@ -94,7 +95,7 @@ class AgentCache:
         conn.commit()
         conn.close()
 
-        logger.info(f"Agent cache initialized: {self.db_path}")
+        logger.info("Agent cache initialized: %s", self.db_path)
 
     def save_test_result(
         self,
@@ -170,11 +171,16 @@ class AgentCache:
             conn.commit()
             conn.close()
 
-            logger.debug(f"Saved result: {model_name}/{capability}/{test_id}")
+            logger.debug(
+                "Saved result: %s/%s/%s",
+                model_name,
+                capability,
+                test_id,
+            )
             return True
 
         except sqlite3.Error as e:
-            logger.error(f"Error saving test result: {e}")
+            logger.error("Error saving test result: %s", e)
             return False
 
     def save_summary(
@@ -241,11 +247,11 @@ class AgentCache:
             conn.commit()
             conn.close()
 
-            logger.info(f"Saved summary: {model_name}/{capability}")
+            logger.info("Saved summary: %s/%s", model_name, capability)
             return True
 
         except sqlite3.Error as e:
-            logger.error(f"Error saving summary: {e}")
+            logger.error("Error saving summary: %s", e)
             return False
 
     def get_model_results(
@@ -287,7 +293,7 @@ class AgentCache:
             return [dict(row) for row in rows]
 
         except sqlite3.Error as e:
-            logger.error(f"Error retrieving results: {e}")
+            logger.error("Error retrieving results: %s", e)
             return []
 
     def get_latest_summary(
@@ -322,5 +328,5 @@ class AgentCache:
             return dict(row) if row else None
 
         except sqlite3.Error as e:
-            logger.error(f"Error retrieving summary: {e}")
+            logger.error("Error retrieving summary: %s", e)
             return None

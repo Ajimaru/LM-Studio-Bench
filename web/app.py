@@ -51,6 +51,10 @@ from jinja2 import Environment, FileSystemLoader
 import psutil
 from pydantic import BaseModel
 
+from core.config import DEFAULT_CONFIG
+from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.presets import PresetManager
+
 try:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -77,9 +81,19 @@ except ImportError:
     TableStyle = None
     REPORTLAB_AVAILABLE = False
 
-from core.config import DEFAULT_CONFIG
-from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
-from core.presets import PresetManager
+try:
+    from core.version import (
+        compare_versions,
+        fetch_latest_release,
+        format_release_url,
+        get_current_version,
+    )
+except ImportError as e:
+    logging.getLogger(__name__).error("❌ Could not import core.version: %s", e)
+    get_current_version = None
+    fetch_latest_release = None
+    compare_versions = None
+    format_release_url = None
 
 try:
     from scipy import stats as scipy_stats
@@ -264,20 +278,6 @@ try:
 except ImportError as e:
     logger.error("❌ Could not import cli.benchmark: %s", e)
     BenchmarkCache = None
-
-try:
-    from core.version import (
-        compare_versions,
-        fetch_latest_release,
-        format_release_url,
-        get_current_version,
-    )
-except ImportError as e:
-    logger.error("❌ Could not import core.version: %s", e)
-    get_current_version = None
-    fetch_latest_release = None
-    compare_versions = None
-    format_release_url = None
 
 CONFIG_DEFAULTS = DEFAULT_CONFIG
 LMSTUDIO_HOST = CONFIG_DEFAULTS.get("lmstudio", {}).get("host", "localhost")

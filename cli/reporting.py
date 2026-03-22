@@ -9,9 +9,24 @@ from html import escape
 import json
 import logging
 from pathlib import Path
+import re
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+_INVALID_REPORT_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def sanitize_report_name(model_name: object) -> str:
+    """Return a safe file stem for generated report files."""
+    raw_name = str(model_name).strip()
+    if not raw_name:
+        return "model"
+
+    safe_name = raw_name.replace("/", "_").replace("\\", "_")
+    safe_name = _INVALID_REPORT_NAME_RE.sub("_", safe_name)
+    safe_name = safe_name.strip("._")
+    return safe_name or "model"
 
 
 class JSONReporter:
@@ -49,11 +64,11 @@ class JSONReporter:
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(enriched_data, f, indent=2)
 
-            logger.info(f"JSON report saved to: {output_path}")
+            logger.info("JSON report saved to: %s", output_path)
             return True
 
-        except Exception as e:
-            logger.error(f"Error generating JSON report: {e}")
+        except (OSError, TypeError, ValueError) as e:
+            logger.error("Error generating JSON report: %s", e)
             return False
 
     def _enrich_report(self, report_data: Dict) -> Dict:
@@ -78,12 +93,6 @@ class HTMLReporter:
     Generates HTML reports with visualizations.
     """
 
-    def __init__(self):
-        """
-        Initialize HTML reporter.
-        """
-        pass
-
     def generate(
         self,
         report_data: Dict,
@@ -100,17 +109,21 @@ class HTMLReporter:
             True if successful
         """
         try:
-            html = self._generate_html(report_data)
+            html = self.render(report_data)
 
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(html)
 
-            logger.info(f"HTML report saved to: {output_path}")
+            logger.info("HTML report saved to: %s", output_path)
             return True
 
-        except Exception as e:
-            logger.error(f"Error generating HTML report: {e}")
+        except (OSError, TypeError, ValueError) as e:
+            logger.error("Error generating HTML report: %s", e)
             return False
+
+    def render(self, report_data: Dict) -> str:
+        """Render report data as HTML without writing it to disk."""
+        return self._generate_html(report_data)
 
     def _generate_html(self, report_data: Dict) -> str:
         """
@@ -132,7 +145,7 @@ class HTMLReporter:
             self._html_header(model_name),
             self._html_summary_section(summary, capabilities, timestamp),
             self._html_results_section(results),
-            self._html_capability_breakdown(summary, results),
+            self._html_capability_breakdown(summary),
             self._html_footer()
         ]
 
@@ -389,15 +402,13 @@ class HTMLReporter:
 
     def _html_capability_breakdown(
         self,
-        summary: Dict,
-        results: List[Dict]
+        summary: Dict
     ) -> str:
         """
         Generate capability breakdown section.
 
         Args:
             summary: Summary statistics
-            results: Result list
 
         Returns:
             HTML capability breakdown
@@ -465,10 +476,11 @@ class HTMLReporter:
         return "score-low"
 
 
-def generate_reports(
+def export_reports(
     report_data: Dict,
     output_dir: Path,
-    formats: Optional[List[str]] = None
+    formats: Optional[List[str]] = None,
+    report_stem: Optional[str] = None,
 ) -> Dict[str, Path]:
     """
     Generate benchmark reports in multiple formats.
@@ -477,6 +489,7 @@ def generate_reports(
         report_data: Benchmark report data
         output_dir: Output directory
         formats: List of formats (json, html) - defaults to all
+        report_stem: Optional sanitized file stem for report filenames
 
     Returns:
         Dictionary mapping format to output path
@@ -484,12 +497,12 @@ def generate_reports(
     if formats is None:
         formats = ["json", "html"]
 
-    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     model_name = report_data.get("model_name", "model")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_name = f"{model_name}_{timestamp}"
+    safe_model_name = sanitize_report_name(report_stem or model_name)
+    base_name = f"{safe_model_name}_{timestamp}"
 
     outputs = {}
 
@@ -506,3 +519,18 @@ def generate_reports(
             outputs["html"] = html_path
 
     return outputs
+
+
+def generate_reports(
+    report_data: Dict,
+    output_dir: Path,
+    formats: Optional[List[str]] = None,
+    report_stem: Optional[str] = None,
+) -> Dict[str, Path]:
+    """Backward-compatible wrapper for report generation."""
+    return export_reports(
+        report_data=report_data,
+        output_dir=output_dir,
+        formats=formats,
+        report_stem=report_stem,
+    )

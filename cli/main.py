@@ -13,10 +13,25 @@ import random
 import subprocess
 import sys
 import time
+from types import ModuleType
 from typing import Optional
 
 from agents.runner import BenchmarkRunner
-from cli.reporting import generate_reports
+from cli.reporting import HTMLReporter, sanitize_report_name
+
+try:
+    import yaml as _yaml
+    from yaml import YAMLError as _yaml_error
+except ModuleNotFoundError:
+    YAML: Optional[ModuleType] = None
+
+    class _FallbackYAMLError(Exception):
+        """Fallback YAML error type when PyYAML is unavailable."""
+
+    YamlError: type[Exception] = _FallbackYAMLError
+else:
+    YAML = _yaml
+    YamlError = _yaml_error
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -48,7 +63,9 @@ def load_config(config_path: Optional[Path]) -> dict:
     Returns:
         Configuration dictionary
     """
-    import yaml
+    if YAML is None:
+        logging.error("PyYAML is not installed, using default configuration")
+        return _get_default_config()
 
     if config_path is None:
         config_path = Path(__file__).resolve().parent.parent / "config" / "bench.yaml"
@@ -61,9 +78,9 @@ def load_config(config_path: Optional[Path]) -> dict:
 
     try:
         with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
+            config = YAML.safe_load(f)
         return config or _get_default_config()
-    except (OSError, TypeError, ValueError, yaml.YAMLError) as error:
+    except (OSError, TypeError, ValueError, YamlError) as error:
         logging.error("Error loading config: %s", error)
         return _get_default_config()
 
@@ -134,9 +151,12 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--output-dir",
-        type=Path,
-        default=Path("output"),
-        help="Output directory for results (default: output)"
+        type=_sanitize_output_dir,
+        default=(Path.cwd() / "output").resolve(),
+        help=(
+            "Output directory for results inside current workspace "
+            "(default: output)"
+        )
     )
 
     parser.add_argument(
@@ -184,6 +204,45 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
+
+
+def _sanitize_output_dir(output_dir_arg: str | Path) -> Path:
+    """
+    Validate and sanitize CLI output directory input.
+
+    Args:
+        output_dir_arg: Raw CLI argument for output directory.
+
+    Returns:
+        Resolved output directory path inside current workspace.
+
+    Raises:
+        ValueError: If the path is empty or outside the current workspace.
+    """
+    raw_input = (
+        str(output_dir_arg)
+        if isinstance(output_dir_arg, Path)
+        else output_dir_arg
+    )
+    if not raw_input or not raw_input.strip():
+        raise ValueError("Output directory cannot be empty")
+
+    raw_path = Path(raw_input.strip()).expanduser()
+    resolved_path = (
+        raw_path.resolve()
+        if raw_path.is_absolute()
+        else (Path.cwd() / raw_path).resolve()
+    )
+    workspace_root = Path.cwd().resolve()
+
+    try:
+        resolved_path.relative_to(workspace_root)
+    except ValueError as error:
+        raise ValueError(
+            "Output directory must be inside the current workspace"
+        ) from error
+
+    return resolved_path
 
 
 def _list_installed_models() -> list[str]:
@@ -252,6 +311,50 @@ def override_config(config: dict, args: argparse.Namespace) -> dict:
     return config
 
 
+def _write_reports(
+    report_data: dict,
+    output_dir: Path,
+    formats: list[str],
+    report_stem: str,
+) -> dict[str, Path]:
+    """Write benchmark reports to sanitized paths inside output_dir."""
+    safe_output_dir = _sanitize_output_dir(str(output_dir))
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    base_name = f"{report_stem}_{timestamp}"
+    output_files: dict[str, Path] = {}
+
+    if "json" in formats:
+        json_path = safe_output_dir / f"{base_name}.json"
+        enriched_data = {
+            "schema_version": "1.0",
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "report": report_data,
+        }
+        try:
+            json_text = json.dumps(enriched_data, indent=2)
+            json_path.write_text(json_text, encoding="utf-8")
+            output_files["json"] = json_path
+        except (OSError, TypeError, ValueError) as error:
+            logging.getLogger(__name__).error(
+                "Error generating JSON report: %s",
+                error,
+            )
+
+    if "html" in formats:
+        html_path = safe_output_dir / f"{base_name}.html"
+        try:
+            html_output = HTMLReporter().render(report_data)
+            html_path.write_text(html_output, encoding="utf-8")
+            output_files["html"] = html_path
+        except (OSError, TypeError, ValueError) as error:
+            logging.getLogger(__name__).error(
+                "Error generating HTML report: %s",
+                error,
+            )
+
+    return output_files
+
+
 def main() -> int:
     """
     Main CLI entrypoint.
@@ -269,13 +372,19 @@ def main() -> int:
         config = load_config(args.config)
         config = override_config(config, args)
 
+        safe_output_dir = _sanitize_output_dir(args.output_dir)
+        workspace_root = Path.cwd().resolve()
+        safe_output_dir = workspace_root / safe_output_dir.relative_to(
+            workspace_root
+        )
+
         logger.info("🚀 === LM Studio Model Benchmark ===")
         logger.info("🔬 Mode: Capability-driven")
-        logger.info("📂 Output directory: %s", args.output_dir)
+        logger.info("📂 Output directory: %s", safe_output_dir)
 
         runner = BenchmarkRunner(
             config=config,
-            output_dir=args.output_dir
+            output_dir=safe_output_dir
         )
 
         capabilities = None
@@ -347,11 +456,15 @@ def main() -> int:
                 model_name=args.model_name,
                 capabilities=capabilities,
             )
+            report_stem = sanitize_report_name(
+                report_data.get("model_name", model_target)
+            )
             logger.info("📊 Exporting reports for %s...", model_target)
-            output_files = generate_reports(
+            output_files = _write_reports(
                 report_data=report_data,
-                output_dir=args.output_dir,
+                output_dir=safe_output_dir,
                 formats=formats,
+                report_stem=report_stem,
             )
 
             logger.info("Generated reports for %s:", model_target)
@@ -359,7 +472,11 @@ def main() -> int:
                 logger.info("  %s: %s", fmt.upper(), path)
 
             model_duration = time.perf_counter() - model_start
-            logger.info("✓ %s completed (Duration: %.2fs)", model_target, model_duration)
+            logger.info(
+                "✓ %s completed (Duration: %.2fs)",
+                model_target,
+                model_duration,
+            )
 
         total_duration = time.perf_counter() - total_start
         logger.info(
