@@ -9,23 +9,28 @@ class TestSanitizeOutputDir:
     """Tests for _sanitize_output_dir function."""
 
     def test_valid_relative_path(self, tmp_path):
-        """Relative path within workspace is accepted."""
+        """Relative path is resolved relative to cwd."""
+        from cli.main import _sanitize_output_dir
         with patch("pathlib.Path.cwd", return_value=tmp_path):
-            result = (tmp_path / "output").resolve()
+            result = _sanitize_output_dir("output")
             assert result.is_absolute()
+            assert result == (tmp_path / "output").resolve()
 
-    def test_absolute_path_in_workspace(self, tmp_path):
-        """Absolute path within workspace is accepted."""
+    def test_absolute_path_accepted(self, tmp_path):
+        """Absolute paths are accepted (including outside workspace)."""
+        from cli.main import _sanitize_output_dir
         output_dir = tmp_path / "results"
         output_dir.mkdir()
-        assert output_dir.resolve().is_absolute()
+        result = _sanitize_output_dir(str(output_dir))
+        assert result == output_dir.resolve()
 
-    def test_parent_directory_blocked(self, tmp_path):
-        """Paths trying to escape workspace are rejected."""
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-        outside = tmp_path / "outside"
-        assert outside.resolve() != workspace.resolve()
+    def test_user_home_expansion(self, tmp_path):
+        """~ is expanded to user home directory."""
+        from cli.main import _sanitize_output_dir
+
+        # This should not raise and should expand ~
+        result = _sanitize_output_dir("~/test")
+        assert result == Path.home() / "test"
 
 
 class TestLoadConfig:
@@ -77,11 +82,19 @@ class TestParseArgs:
         assert args.random_models == 5
 
     def test_output_dir_default(self):
-        """--output-dir defaults to ./output."""
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--output-dir", type=Path, default=Path("output"))
-        args = parser.parse_args([])
-        assert args.output_dir == Path("output")
+        """--output-dir defaults to USER_RESULTS_DIR."""
+        import sys
+
+        from cli.main import parse_args
+        from core.paths import USER_RESULTS_DIR
+
+        original_argv = sys.argv
+        try:
+            sys.argv = ["test"]
+            args = parse_args()
+            assert str(args.output_dir) == str(USER_RESULTS_DIR)
+        finally:
+            sys.argv = original_argv
 
     def test_capabilities_flag(self):
         """--capabilities accepts comma-separated list."""

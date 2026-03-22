@@ -29,7 +29,6 @@ class PresetManager:
     """Manage readonly and user-defined benchmark presets."""
 
     READONLY_PRESETS = {
-        "default",
         "default_classic",
         "default_compatability_test",
         "quick_test",
@@ -150,7 +149,7 @@ class PresetManager:
 
     def list_presets(self) -> List[str]:
         """Return all available preset names."""
-        names = ["default"]
+        names = []
         names.extend(sorted(self.PREDEFINED_PRESETS.keys()))
 
         user_names: List[str] = []

@@ -13,6 +13,8 @@ from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional, Union
 
+import httpx
+
 from agents.capabilities import Capability, CapabilityDetector
 from cli.metrics import (
     AccuracyMetric,
@@ -489,6 +491,7 @@ class LMStudioAdapter(ModelAdapter):
             RuntimeError,
             TypeError,
             ValueError,
+            httpx.HTTPError,
         ) as err:
             end_time = time.time()
             error_msg = f"Inference error: {err}"

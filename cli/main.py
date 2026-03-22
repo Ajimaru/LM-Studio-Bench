@@ -19,6 +19,7 @@ from typing import Optional
 from agents.runner import BenchmarkRunner
 from cli.reporting import HTMLReporter, sanitize_report_name
 from core.logging_utils import install_level_icons
+from core.paths import USER_RESULTS_DIR
 
 try:
     import yaml as _yaml
@@ -154,10 +155,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=_sanitize_output_dir,
-        default=(Path.cwd() / "output").resolve(),
+        default=str(USER_RESULTS_DIR),
         help=(
-            "Output directory for results inside current workspace "
-            "(default: output)"
+            "Output directory for results "
+            "(default: ~/.local/share/lm-studio-bench/results)"
         )
     )
 
@@ -342,10 +343,10 @@ def _sanitize_output_dir(output_dir_arg: str | Path) -> Path:
         output_dir_arg: Raw CLI argument for output directory.
 
     Returns:
-        Resolved output directory path inside current workspace.
+        Resolved output directory path.
 
     Raises:
-        ValueError: If the path is empty or outside the current workspace.
+        ValueError: If the path is empty.
     """
     raw_input = (
         str(output_dir_arg)
@@ -361,14 +362,6 @@ def _sanitize_output_dir(output_dir_arg: str | Path) -> Path:
         if raw_path.is_absolute()
         else (Path.cwd() / raw_path).resolve()
     )
-    workspace_root = Path.cwd().resolve()
-
-    try:
-        resolved_path.relative_to(workspace_root)
-    except ValueError as error:
-        raise ValueError(
-            "Output directory must be inside the current workspace"
-        ) from error
 
     return resolved_path
 
@@ -568,10 +561,6 @@ def main() -> int:
         config = override_config(config, args)
 
         safe_output_dir = _sanitize_output_dir(args.output_dir)
-        workspace_root = Path.cwd().resolve()
-        safe_output_dir = workspace_root / safe_output_dir.relative_to(
-            workspace_root
-        )
 
         logger.info("🚀 === LM Studio Model Benchmark ===")
         logger.info("🔬 Mode: Capability-driven")

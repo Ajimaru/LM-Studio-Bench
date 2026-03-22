@@ -336,6 +336,18 @@ class BenchmarkRunner:
 
         logger.info("Loaded %s test cases", len(test_cases))
 
+        if self._is_embedding_model(model_path, model_name):
+            logger.warning(
+                "Skipping chat benchmark for embedding model: %s",
+                model_name,
+            )
+            return self._build_skipped_report(
+                model_name=model_name,
+                model_path=model_path,
+                reason="embedding_model_not_chat_capable",
+                config=self.config,
+            )
+
         if adapter is None:
             adapter = LMStudioAdapter(
                 use_rest_api=self.config.get("use_rest_api", True)
@@ -397,6 +409,47 @@ class BenchmarkRunner:
         )
 
         return sorted(result.capabilities, key=lambda cap: cap.value)
+
+    def _is_embedding_model(self, model_path: str, model_name: str) -> bool:
+        """Return True if model name/path indicates an embedding-only model."""
+        combined = f"{model_name} {model_path}".lower()
+        patterns = [
+            r"\btext-embedding\b",
+            r"\bembedding\b",
+            r"\bnomic-embed\b",
+            r"\bbge[-_]",
+            r"\bgte[-_]",
+            r"\be5[-_]",
+        ]
+        return any(re.search(pattern, combined) for pattern in patterns)
+
+    def _build_skipped_report(
+        self,
+        model_name: str,
+        model_path: str,
+        reason: str,
+        config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build a report payload for intentionally skipped models."""
+        return {
+            "model_name": model_name,
+            "model_path": model_path,
+            "capabilities": [],
+            "timestamp": None,
+            "results": [],
+            "summary": {
+                "total_tests": 0,
+                "successful_tests": 0,
+                "success_rate": 0,
+                "avg_latency_ms": 0,
+                "avg_quality_score": 0,
+                "avg_throughput_tokens_per_sec": None,
+                "by_capability": {},
+            },
+            "config": config,
+            "raw_outputs_dir": str(self.output_dir / "raw"),
+            "skipped_reason": reason,
+        }
 
     def _resolve_metadata_json_path(
         self,

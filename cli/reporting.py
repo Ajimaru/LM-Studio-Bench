@@ -321,7 +321,7 @@ class HTMLReporter:
         </div>
         <div class="metric">
             <span class="metric-label">Avg Latency:</span>
-            <span class="metric-value">{avg_latency:.2f} ms</span>
+            <span class="metric-value">{avg_latency / 1000:.2f} s</span>
         </div>
         <div class="metric">
             <span class="metric-label">Avg Quality:</span>
@@ -373,7 +373,7 @@ class HTMLReporter:
                 <td>{safe_test_id}</td>
                 <td>{safe_capability}</td>
                 <td>{status}</td>
-                <td>{latency:.2f}</td>
+                <td>{latency / 1000:.2f}</td>
                 <td>{safe_tokens}</td>
                 <td>{safe_throughput}</td>
                 <td><span class="score {score_class}">{quality:.3f}</span></td>
@@ -388,7 +388,7 @@ class HTMLReporter:
                     <th>Test ID</th>
                     <th>Capability</th>
                     <th>Status</th>
-                    <th>Latency (ms)</th>
+                    <th>Latency (s)</th>
                     <th>Tokens</th>
                     <th>Throughput</th>
                     <th>Quality</th>
@@ -476,6 +476,36 @@ class HTMLReporter:
         return "score-low"
 
 
+def _convert_latency_ms_to_seconds(report_data: Dict) -> Dict:
+    """
+    Convert latency values from ms to seconds in report data.
+
+    Args:
+        report_data: Report data with latency in milliseconds
+
+    Returns:
+        Report data with latency converted to seconds
+    """
+    result = report_data.copy()
+
+    if "summary" in result:
+        summary = result["summary"].copy()
+        if "avg_latency_ms" in summary:
+            summary["avg_latency_ms"] = round(summary["avg_latency_ms"] / 1000, 2)
+        result["summary"] = summary
+
+    if "results" in result:
+        results = []
+        for item in result["results"]:
+            item_copy = item.copy()
+            if "latency_ms" in item_copy:
+                item_copy["latency_ms"] = round(item_copy["latency_ms"] / 1000, 2)
+            results.append(item_copy)
+        result["results"] = results
+
+    return result
+
+
 def export_reports(
     report_data: Dict,
     output_dir: Path,
@@ -496,6 +526,8 @@ def export_reports(
     """
     if formats is None:
         formats = ["json", "html"]
+
+    report_data = _convert_latency_ms_to_seconds(report_data)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
