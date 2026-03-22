@@ -20,7 +20,7 @@ class AgentCache:
             db_path: Path to SQLite database (defaults to results dir)
         """
         if db_path is None:
-            from src.user_paths import USER_RESULTS_DIR
+            from core.paths import USER_RESULTS_DIR
             db_path = Path(USER_RESULTS_DIR) / "agent_results.db"
 
         self.db_path = Path(db_path)

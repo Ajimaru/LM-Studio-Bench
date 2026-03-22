@@ -16,7 +16,7 @@ import time
 from typing import Optional
 
 from agents.runner import BenchmarkRunner
-from bench.reporting import generate_reports
+from cli.reporting import generate_reports
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -51,7 +51,7 @@ def load_config(config_path: Optional[Path]) -> dict:
     import yaml
 
     if config_path is None:
-        config_path = Path(__file__).parent / "config.yaml"
+        config_path = Path(__file__).resolve().parent.parent / "config" / "bench.yaml"
 
     if not config_path.exists():
         logging.warning(

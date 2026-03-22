@@ -1,6 +1,8 @@
-Capability-Driven Benchmark Agent for LM Studio Bench
+# Capability-Driven Benchmark Agent for LM Studio Bench
 
-This benchmark agent implements capability-driven evaluation for language models and multimodal models. It detects model capabilities, runs targeted tests, computes quality metrics, and generates comprehensive reports.
+This benchmark agent implements capability-driven evaluation for language
+models and multimodal models. It detects model capabilities, runs targeted
+tests, computes quality metrics, and generates comprehensive reports.
 
 ## Features
 
@@ -20,13 +22,13 @@ This benchmark agent implements capability-driven evaluation for language models
 Run a benchmark on a model:
 
 ```bash
-python -m bench.cli "path/to/model" --output-dir output
+python -m cli.main "path/to/model" --output-dir output
 ```
 
 With specific capabilities:
 
 ```bash
-python -m bench.cli "model-id" \
+python -m cli.main "model-id" \
   --capabilities general_text,reasoning \
   --output-dir results
 ```
@@ -36,8 +38,7 @@ python -m bench.cli "model-id" \
 Build the Docker image:
 
 ```bash
-cd bench
-docker build -t lm-bench-agent .
+docker build -f bench/Dockerfile -t lm-bench-agent .
 ```
 
 Run benchmark in container:
@@ -55,6 +56,7 @@ The agent supports four primary capabilities:
 ### 1. General Text
 
 Tests basic language understanding and generation:
+
 - Question answering
 - Summarization
 - Classification
@@ -64,6 +66,7 @@ Metrics: ROUGE-1, ROUGE-L, F1
 ### 2. Reasoning
 
 Tests logical and mathematical reasoning:
+
 - Logical reasoning (syllogisms)
 - Math problem solving
 - Chain-of-thought reasoning
@@ -73,6 +76,7 @@ Metrics: Exact Match, F1, Accuracy
 ### 3. Vision
 
 Tests multimodal understanding (requires vision models):
+
 - Image captioning
 - Visual Question Answering (VQA)
 - OCR and visual reasoning
@@ -82,6 +86,7 @@ Metrics: Accuracy, ROUGE-L
 ### 4. Tooling
 
 Tests function calling and tool use:
+
 - Function selection
 - Parameter extraction
 - API interaction patterns
@@ -93,7 +98,7 @@ Metrics: Function Call Accuracy, Parameter Accuracy
 ### Basic Usage
 
 ```bash
-python -m bench.cli MODEL_PATH [OPTIONS]
+python -m cli.main MODEL_PATH [OPTIONS]
 ```
 
 ### Arguments
@@ -134,7 +139,7 @@ python -m bench.cli MODEL_PATH [OPTIONS]
 Benchmark with custom configuration:
 
 ```bash
-python -m bench.cli "mymodel" \
+python -m cli.main "mymodel" \
   --config custom_config.yaml \
   --max-tests 20 \
   --verbose
@@ -143,7 +148,7 @@ python -m bench.cli "mymodel" \
 Test only reasoning capability:
 
 ```bash
-python -m bench.cli "reasoning-model" \
+python -m cli.main "reasoning-model" \
   --capabilities reasoning \
   --temperature 0.0 \
   --max-tests 50
@@ -152,14 +157,14 @@ python -m bench.cli "reasoning-model" \
 Generate only JSON output:
 
 ```bash
-python -m bench.cli "model" \
+python -m cli.main "model" \
   --formats json \
   --output-dir json_results
 ```
 
 ## Configuration File
 
-The agent reads configuration from `bench/config.yaml` by default. Override with `--config` flag.
+The agent reads configuration from `config/bench.yaml` by default. Override with `--config` flag.
 
 ### Configuration Schema
 
@@ -270,6 +275,7 @@ The JSON report follows this schema:
 ### HTML Report
 
 The HTML report provides:
+
 - Summary statistics with visual indicators
 - Per-test results table with status, latency, and quality scores
 - Capability breakdown with aggregated metrics
@@ -414,12 +420,13 @@ ls tests/data/text/
 Verify capabilities are correctly specified:
 
 ```bash
-python -m bench.cli "model" --capabilities general_text --verbose
+python -m cli.main "model" --capabilities general_text --verbose
 ```
 
 ### Metrics Are Zero
 
 This usually means:
+
 - Model output format doesn't match expected format
 - Reference answers need normalization
 - Wrong capability assigned to test
@@ -437,7 +444,7 @@ timeout_seconds: 600
 Or reduce test count:
 
 ```bash
-python -m bench.cli "model" --max-tests 5
+python -m cli.main "model" --max-tests 5
 ```
 
 ## API Integration
@@ -447,7 +454,7 @@ python -m bench.cli "model" --max-tests 5
 ```python
 from pathlib import Path
 from agents.runner import BenchmarkRunner
-from bench.reporting import generate_reports
+from cli.reporting import generate_reports
 
 config = {
     "context_length": 2048,
@@ -481,7 +488,7 @@ print(f"HTML: {outputs['html']}")
 Implement `ModelAdapter` interface:
 
 ```python
-from agents.bench_agent import ModelAdapter, InferenceResult
+from agents.benchmark import ModelAdapter, InferenceResult
 
 class CustomAdapter(ModelAdapter):
     def load(self, model_path, **kwargs):
@@ -512,12 +519,12 @@ report = runner.run(
 ### Components
 
 - `agents/capabilities.py`: Capability detection logic
-- `agents/bench_agent.py`: Core benchmark agent and model adapters
+- `agents/benchmark.py`: Core benchmark agent and model adapters
 - `agents/runner.py`: Test orchestration and loading
-- `bench/metrics.py`: Metric implementations
-- `bench/reporting.py`: Report generation (JSON, HTML)
-- `bench/cli.py`: Command-line interface
-- `bench/config.yaml`: Default configuration
+- `cli/metrics.py`: Metric implementations
+- `cli/reporting.py`: Report generation (JSON, HTML)
+- `cli/main.py`: Command-line interface
+- `config/bench.yaml`: Default configuration
 - `tests/data/`: Test datasets
 - `tests/prompts/`: Prompt templates
 

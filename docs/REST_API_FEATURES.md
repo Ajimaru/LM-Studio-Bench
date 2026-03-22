@@ -184,14 +184,14 @@ Example (excerpt):
 
 ### New files
 
-- **`src/rest_client.py`**: REST API client with wrapper functions
+- **`core/client.py`**: REST API client with wrapper functions
   - `LMStudioRESTClient`: main class
   - `ModelInfo`, `ModelCapabilities`, `ChatStats`: data classes
   - `is_vision_model()`, `is_tool_model()`: helpers
 
 ### Modified files
 
-- **`src/benchmark.py`**:
+- **`cli/benchmark.py`**:
   - `_run_inference()`: dispatcher (SDK vs REST)
   - `_run_inference_rest()`: REST-based inference
   - `_run_inference_sdk()`: SDK-based inference (renamed)
@@ -199,7 +199,7 @@ Example (excerpt):
 
 - **`config/defaults.json`**: added `api_token`, `use_rest_api` fields
 
-- **`src/config_loader.py`**: new config fields in `BASE_DEFAULT_CONFIG`
+- **`core/config.py`**: new config fields in `BASE_DEFAULT_CONFIG`
 
 ### CLI flags
 

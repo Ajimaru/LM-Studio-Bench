@@ -1,10 +1,10 @@
-"""Tests for src/version_checker.py."""
+"""Tests for core/version.py."""
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
-from version_checker import (
+from core.version import (
     compare_versions,
     fetch_latest_release,
     format_release_url,
@@ -23,9 +23,9 @@ class TestGetCurrentVersion:
 
     def test_returns_unknown_when_file_missing(self):
         """Returns 'unknown' when VERSION file does not exist."""
-        import version_checker as vc
+        import core.version as vc
 
-        with patch("version_checker.Path") as mock_path:
+        with patch("core.version.Path") as mock_path:
             proj_root = MagicMock()
             version_f = MagicMock()
             version_f.exists.return_value = False
@@ -37,7 +37,7 @@ class TestGetCurrentVersion:
 
     def test_raises_on_empty_file(self):
         """Raises ValueError when VERSION file is empty."""
-        with patch("version_checker.Path") as mock_path:
+        with patch("core.version.Path") as mock_path:
             proj_root = MagicMock()
             version_f = MagicMock()
             version_f.exists.return_value = True
@@ -46,12 +46,12 @@ class TestGetCurrentVersion:
             mock_path.return_value.resolve.return_value.parent.parent = proj_root
 
             with pytest.raises(ValueError):
-                import version_checker as vc
+                import core.version as vc
                 vc.get_current_version()
 
     def test_returns_non_empty_string_from_version_file(self):
         """Returns string with version data when VERSION exists."""
-        with patch("version_checker.Path") as mock_path:
+        with patch("core.version.Path") as mock_path:
             proj_root = MagicMock()
             version_f = MagicMock()
             version_f.exists.return_value = True
@@ -59,13 +59,13 @@ class TestGetCurrentVersion:
             proj_root.__truediv__ = MagicMock(return_value=version_f)
             mock_path.return_value.resolve.return_value.parent.parent = proj_root
 
-            import version_checker as vc
+            import core.version as vc
             result = vc.get_current_version()
             assert result == "v1.2.3"
 
     def test_raises_on_os_error(self):
         """Raises ValueError on OSError reading version file."""
-        with patch("version_checker.Path") as mock_path:
+        with patch("core.version.Path") as mock_path:
             proj_root = MagicMock()
             version_f = MagicMock()
             version_f.exists.return_value = True
@@ -74,7 +74,7 @@ class TestGetCurrentVersion:
             mock_path.return_value.resolve.return_value.parent.parent = proj_root
 
             with pytest.raises(ValueError):
-                import version_checker as vc
+                import core.version as vc
                 vc.get_current_version()
 
 
@@ -90,7 +90,7 @@ class TestFetchLatestRelease:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("version_checker.httpx.Client") as mock_client_cls:
+        with patch("core.version.httpx.Client") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.__enter__ = MagicMock(return_value=mock_client)
             mock_client.__exit__ = MagicMock(return_value=False)
@@ -106,7 +106,7 @@ class TestFetchLatestRelease:
         mock_response = MagicMock()
         mock_response.status_code = 404
 
-        with patch("version_checker.httpx.Client") as mock_client_cls:
+        with patch("core.version.httpx.Client") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.__enter__ = MagicMock(return_value=mock_client)
             mock_client.__exit__ = MagicMock(return_value=False)
@@ -123,7 +123,7 @@ class TestFetchLatestRelease:
 
     def test_returns_none_on_connection_error(self):
         """Returns None on network connection error."""
-        with patch("version_checker.httpx.Client") as mock_client_cls:
+        with patch("core.version.httpx.Client") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.__enter__ = MagicMock(return_value=mock_client)
             mock_client.__exit__ = MagicMock(return_value=False)
@@ -135,7 +135,7 @@ class TestFetchLatestRelease:
 
     def test_returns_none_on_timeout(self):
         """Returns None on request timeout."""
-        with patch("version_checker.httpx.Client") as mock_client_cls:
+        with patch("core.version.httpx.Client") as mock_client_cls:
             mock_client = MagicMock()
             mock_client.__enter__ = MagicMock(return_value=mock_client)
             mock_client.__exit__ = MagicMock(return_value=False)

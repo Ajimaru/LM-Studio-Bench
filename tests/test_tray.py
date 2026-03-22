@@ -1,4 +1,4 @@
-"""Tests for src/tray.py.
+"""Tests for core/tray.py.
 
 GTK dependencies (gi, Gtk, AppIndicator3) are mocked throughout
 because the test environment does not guarantee a display server.

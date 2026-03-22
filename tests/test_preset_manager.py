@@ -1,10 +1,10 @@
-"""Tests for src/preset_manager.py."""
+"""Tests for core/presets.py."""
 import json
 from pathlib import Path
 
 import pytest
 
-from preset_manager import PresetManager
+from core.presets import PresetManager
 
 
 class TestPresetManagerInit:

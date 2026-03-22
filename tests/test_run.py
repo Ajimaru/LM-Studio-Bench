@@ -171,15 +171,15 @@ class TestBuildSubprocessEnv:
         env = run._build_subprocess_env()
         assert "LD_PRELOAD" not in env
 
-    def test_adds_src_to_pythonpath(self):
-        """src/ directory is prepended to PYTHONPATH."""
+    def test_adds_core_to_pythonpath(self):
+        """core/ directory is prepended to PYTHONPATH."""
         run = _import_run()
         env = run._build_subprocess_env()
         assert "PYTHONPATH" in env
-        assert "src" in env["PYTHONPATH"]
+        assert "core" in env["PYTHONPATH"]
 
     def test_preserves_existing_pythonpath(self, monkeypatch):
-        """Existing PYTHONPATH is preserved after the src/ prefix."""
+        """Existing PYTHONPATH is preserved after the core/ prefix."""
         run = _import_run()
         monkeypatch.setenv("PYTHONPATH", "/custom/path")
         env = run._build_subprocess_env()
@@ -316,7 +316,7 @@ class TestStartTrayProcess:
         """_start_tray_process returns None when tray.py does not exist."""
         run = _import_run()
         monkeypatch.setattr(run, "project_root", tmp_path)
-        (tmp_path / "src").mkdir(exist_ok=True)
+        (tmp_path / "core").mkdir(exist_ok=True)
         with patch.object(run, "USER_LOGS_DIR", tmp_path / "logs"), \
                 patch.object(run, "_tray_python_candidates",
                              return_value=[sys.executable]):
@@ -328,7 +328,7 @@ class TestStartTrayProcess:
     ):
         """_start_tray_process returns Popen when tray starts (poll=None)."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir(exist_ok=True)
         tray_script = src_dir / "tray.py"
         tray_script.write_text("# tray stub")
@@ -352,7 +352,7 @@ class TestStartTrayProcess:
     ):
         """_start_tray_process returns None when tray exits for all candidates."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir(exist_ok=True)
         tray_script = src_dir / "tray.py"
         tray_script.write_text("# tray stub")
@@ -377,7 +377,7 @@ class TestStartTrayProcess:
     ):
         """_start_tray_process continues to next candidate on OSError."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir(exist_ok=True)
         tray_script = src_dir / "tray.py"
         tray_script.write_text("# tray stub")
@@ -409,7 +409,7 @@ class TestStartTrayProcess:
     ):
         """_start_tray_process appends --debug to command when debug=True."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir(exist_ok=True)
         tray_script = src_dir / "tray.py"
         tray_script.write_text("# tray stub")
@@ -439,7 +439,7 @@ class TestStartTrayProcessSymbolLookup:
     def test_logs_symbol_lookup_warning(self, tmp_path, monkeypatch):
         """Prints warning when launcher log contains 'symbol lookup error'."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir()
         (src_dir / "tray.py").write_text("# tray stub")
         logs_dir = tmp_path / "logs"
@@ -469,7 +469,7 @@ class TestStartTrayProcessSymbolLookup:
     def test_launcher_log_os_error_ignored(self, tmp_path, monkeypatch):
         """OSError reading launcher log is silently ignored."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir()
         (src_dir / "tray.py").write_text("# tray stub")
         logs_dir = tmp_path / "logs"
@@ -656,5 +656,5 @@ class TestRunModuleEntrypointCoverage:
         )
         assert result["exit_code"] == 5
         called_cmd = result["mock_run"].call_args[0][0]
-        assert str(Path("src") / "benchmark.py") in called_cmd[1]
+        assert str(Path("cli") / "benchmark.py") in called_cmd[1]
         tray_proc.terminate.assert_called_once()

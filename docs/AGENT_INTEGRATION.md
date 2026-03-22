@@ -55,7 +55,7 @@ Results are automatically saved to:
 
 - **JSON Reports:** `./output/benchmark_results_*.json`
 - **HTML Reports:** `./output/benchmark_results_*.html`
-- **SQLite Cache:** `~/.local/share/lm-studio-bench/results/agent_results.db`
+- **SQLite Cache:** `~/.local/share/lm-studio-cli/results/agent_results.db`
 
 The SQLite database stores individual test results and capability summaries, allowing you to:
 
@@ -124,7 +124,7 @@ tests/
 ./run.py --agent "my-model" --capabilities general_text,reasoning
 
 # With custom config
-./run.py --agent "my-model" --config bench/config.yaml
+./run.py --agent "my-model" --config config/bench.yaml
 
 # Verbose with all details
 ./run.py --agent "my-model" --verbose --max-tests 20
@@ -136,22 +136,31 @@ tests/
 ## Code Structure
 
 ```files
-bench/
-├── cli.py                    # CLI entrypoint for agent
-├── __main__.py              # Makes bench package executable
-├── config.yaml              # Default configuration
+cli/
+├── main.py                  # CLI entrypoint for agent
+├── __main__.py              # Makes cli package executable
+├── benchmark.py             # Classic benchmark runner
 ├── metrics.py               # Metric implementations
 ├── reporting.py             # JSON & HTML report generation
-└── Dockerfile               # Container definition
+└── report_template.html.template
+
+config/
+└── bench.yaml               # Default configuration
 
 agents/
-├── bench_agent.py           # Benchmark executor
+├── benchmark.py           # Benchmark executor
 ├── runner.py                # Test orchestration
 └── capabilities.py          # Capability detection
+
+core/
+├── config.py                # Configuration loading
+├── paths.py                 # XDG/user path handling
+├── client.py                # LM Studio REST API client
+└── tray.py                  # Linux tray controller
 ```
 
 ## Documentation
 
-- [README-bench.md](../README-bench.md) - Detailed agent documentation
+- [README-bench.md](README-bench.md) - Detailed agent documentation
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
 - [CONFIGURATION.md](CONFIGURATION.md) - Configuration guide

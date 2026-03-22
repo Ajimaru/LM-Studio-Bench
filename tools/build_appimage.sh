@@ -101,7 +101,7 @@ done
 
 if [ "$HAS_REAL_ARGS" -eq 0 ]; then
     exec "$APPDIR/usr/venv/bin/python" \
-        "$PROJECT_DIR/src/tray.py" "$@"
+    "$PROJECT_DIR/core/tray.py" "$@"
 else
     exec "$APPDIR/usr/venv/bin/python" \
         "$PROJECT_DIR/run.py" "$@"

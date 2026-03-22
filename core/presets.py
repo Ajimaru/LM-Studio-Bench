@@ -8,8 +8,8 @@ from pathlib import Path
 import re
 from typing import Any, Dict, List
 
-from config_loader import DEFAULT_CONFIG
-from user_paths import USER_PRESETS_DIR
+from core.config import DEFAULT_CONFIG
+from core.paths import USER_PRESETS_DIR
 
 logger = logging.getLogger(__name__)
 

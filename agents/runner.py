@@ -10,10 +10,10 @@ from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional
 
-from agents.bench_agent import BenchmarkAgent, ModelAdapter, TestCase
+from agents.benchmark import BenchmarkAgent, ModelAdapter, TestCase
+from agents.cache import AgentCache
 from agents.capabilities import Capability, CapabilityDetector
-from bench.agent_cache import AgentCache
-from src.user_paths import USER_RESULTS_DIR
+from core.paths import USER_RESULTS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -331,7 +331,7 @@ class BenchmarkRunner:
         logger.info(f"Loaded {len(test_cases)} test cases")
 
         if adapter is None:
-            from agents.bench_agent import LMStudioAdapter
+            from agents.benchmark import LMStudioAdapter
             adapter = LMStudioAdapter(
                 use_rest_api=self.config.get("use_rest_api", True)
             )

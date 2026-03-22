@@ -13,7 +13,7 @@ import time
 from typing import Any, Dict, List, Optional, Union
 
 from agents.capabilities import Capability, CapabilityDetector
-from bench.metrics import (
+from cli.metrics import (
     AccuracyMetric,
     ExactMatchMetric,
     F1Metric,
@@ -212,7 +212,7 @@ class LMStudioAdapter(ModelAdapter):
         self.model_path = model_path
 
         if self.use_rest_api:
-            from src.rest_client import LMStudioRESTClient
+            from core.client import LMStudioRESTClient
 
             context_length = kwargs.get("context_length", 2048)
             gpu_offload = kwargs.get("gpu_offload", 1.0)

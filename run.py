@@ -27,7 +27,7 @@ import subprocess  # nosec B404
 import sys
 import time
 
-from src.user_paths import USER_LOGS_DIR, format_path_for_logs
+from core.paths import USER_LOGS_DIR, format_path_for_logs
 
 project_root = Path(__file__).parent
 os.chdir(project_root)
@@ -108,9 +108,9 @@ def _build_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("LD_LIBRARY_PATH", None)
     env.pop("LD_PRELOAD", None)
-    src_dir = str(project_root / "src")
+    core_dir = str(project_root / "core")
     root_dir = str(project_root)
-    pythonpath_entries = [root_dir, src_dir]
+    pythonpath_entries = [root_dir, core_dir]
     existing_path = env.get("PYTHONPATH", "")
     if existing_path:
         pythonpath_entries.append(existing_path)
@@ -206,7 +206,7 @@ def _start_tray_process(
     tray_debug_enabled: bool,
 ) -> subprocess.Popen | None:
     """Start tray app as background subprocess."""
-    tray_script = project_root / "src" / "tray.py"
+    tray_script = project_root / "core" / "tray.py"
     if not tray_script.exists():
         print(f"⚠️ Tray script not found: {format_path_for_logs(tray_script)}")
         return None
@@ -342,7 +342,7 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print("📋 CLASSIC BENCHMARK OPTIONS:")
     print()
 
-    benchmark_script = project_root / "src" / "benchmark.py"
+    benchmark_script = project_root / "cli" / "benchmark.py"
     if benchmark_script.exists():
         result = subprocess.run(  # nosec B603
             [PYTHON_EXECUTABLE, str(benchmark_script), "--help"],
@@ -423,7 +423,7 @@ elif HAS_AGENT_FLAG:
         print(f"❌ Invalid CLI arguments: {error}")
         sys.exit(2)
 
-    agent_script = project_root / "bench" / "cli.py"
+    agent_script = project_root / "cli" / "main.py"
     if not agent_script.exists():
         print(f"❌ Error: {agent_script} not found")
         sys.exit(1)
@@ -431,7 +431,7 @@ elif HAS_AGENT_FLAG:
     print("🤖 Starting capability-driven benchmark agent...")
     try:
         result = subprocess.run(
-            [PYTHON_EXECUTABLE, "-m", "bench.cli"] + safe_args,
+            [PYTHON_EXECUTABLE, "-m", "cli.main"] + safe_args,
             cwd=project_root,
             env=_build_subprocess_env(),
             check=False,
@@ -442,7 +442,7 @@ elif HAS_AGENT_FLAG:
         sys.exit(1)
 
 else:
-    benchmark_script = project_root / "src" / "benchmark.py"
+    benchmark_script = project_root / "cli" / "benchmark.py"
     TRAY_PROCESS = _start_tray_process("http://localhost:1234", DEBUG_ENABLED)
 
     if not benchmark_script.exists():

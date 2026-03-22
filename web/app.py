@@ -77,9 +77,9 @@ except ImportError:
     TableStyle = None
     REPORTLAB_AVAILABLE = False
 
-from src.config_loader import DEFAULT_CONFIG
-from src.preset_manager import PresetManager
-from src.user_paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.config import DEFAULT_CONFIG
+from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.presets import PresetManager
 
 try:
     from scipy import stats as scipy_stats
@@ -87,7 +87,6 @@ except ImportError:
     scipy_stats = None
 
 PROJECT_ROOT = Path(__file__).parent.parent
-SRC_DIR = PROJECT_ROOT / "src"
 
 SCIPY_AVAILABLE = scipy_stats is not None
 
@@ -252,7 +251,7 @@ def find_free_port() -> int:
     return free_port
 
 
-BENCHMARK_SCRIPT = SRC_DIR / "benchmark.py"
+BENCHMARK_SCRIPT = PROJECT_ROOT / "cli" / "benchmark.py"
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 RESULTS_DIR = USER_RESULTS_DIR
 DATABASE_FILE = RESULTS_DIR / "benchmark_cache.db"
@@ -260,22 +259,21 @@ METADATA_DATABASE_FILE = RESULTS_DIR / "model_metadata.db"
 SCRAPER_SCRIPT = PROJECT_ROOT / "tools" / "scrape_metadata.py"
 
 
-sys.path.insert(0, str(SRC_DIR))
 try:
-    from benchmark import BenchmarkCache
+    from cli.benchmark import BenchmarkCache
 except ImportError as e:
-    logger.error("❌ Could not import benchmark.py: %s", e)
+    logger.error("❌ Could not import cli.benchmark: %s", e)
     BenchmarkCache = None
 
 try:
-    from version_checker import (
+    from core.version import (
         compare_versions,
         fetch_latest_release,
         format_release_url,
         get_current_version,
     )
 except ImportError as e:
-    logger.error("❌ Could not import version_checker.py: %s", e)
+    logger.error("❌ Could not import core.version: %s", e)
     get_current_version = None
     fetch_latest_release = None
     compare_versions = None
@@ -708,7 +706,7 @@ class BenchmarkManager:
 
         interpreter = str(sys.executable)
         if mode == "capability":
-            base_cmd = [interpreter, "-u", "-m", "bench.cli"]
+            base_cmd = [interpreter, "-u", "-m", "cli.main"]
         else:
             script = str(BENCHMARK_SCRIPT.resolve())
             base_cmd = [interpreter, script]

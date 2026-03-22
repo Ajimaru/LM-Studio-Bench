@@ -1,9 +1,9 @@
-"""Tests for src/rest_client.py."""
+"""Tests for core/client.py."""
 from unittest.mock import MagicMock, patch
 
 import httpx
 
-from rest_client import (
+from core.client import (
     LMStudioRESTClient,
     ModelCapabilities,
     ModelInfo,
@@ -303,7 +303,7 @@ class TestCacheOperations:
 
     def test_clear_cache_returns_zero_when_empty(self):
         """clear_cache returns 0 when nothing is cached."""
-        from rest_client import _RESPONSE_CACHE
+        from core.client import _RESPONSE_CACHE
         _RESPONSE_CACHE.clear()
         client = LMStudioRESTClient()
         count = client.clear_cache()
@@ -498,7 +498,7 @@ class TestChatStreamMethod:
 
     def test_chat_stream_with_caching(self):
         """chat_stream() returns cached result on second call."""
-        import rest_client as rc
+        import core.client as rc
         rc._RESPONSE_CACHE.clear()
         client = LMStudioRESTClient(enable_cache=True)
         event = {

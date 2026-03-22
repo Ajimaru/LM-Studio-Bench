@@ -74,7 +74,7 @@ fi
 echo ""
 if command -v pylint &> /dev/null; then
     echo -e "${GREEN}✓ pylint is installed${NC}"
-    echo -e "${YELLOW}Pylint will run for src/ and web/ directories during pre-commit${NC}"
+    echo -e "${YELLOW}Pylint runs for core/, cli/, agents/ and web/ during pre-commit${NC}"
     echo -e "${YELLOW}To skip pylint: ${YELLOW}SKIP_PYLINT=1 git commit${NC}"
 else
     echo -e "${YELLOW}Note: pylint is not installed but is optional${NC}"

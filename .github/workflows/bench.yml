@@ -54,7 +54,7 @@ jobs:
             CAPABILITIES="${{ github.event.inputs.capabilities }}"
             # Temporarily disable 'set -e' so we can capture the exit code
             set +e
-            python -m bench.cli \
+            python -m cli.main \
               "$MODEL_PATH" \
               --capabilities "$CAPABILITIES" \
               --output-dir output \

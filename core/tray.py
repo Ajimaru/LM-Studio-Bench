@@ -22,8 +22,8 @@ from urllib.parse import urlparse
 from urllib import request as urllib_request
 import webbrowser
 
-from user_paths import USER_LOGS_DIR
-from version_checker import fetch_latest_release
+from core.paths import USER_LOGS_DIR
+from core.version import fetch_latest_release
 
 _LATEST_RELEASE_LOCK = threading.Lock()
 _LATEST_RELEASE_STATE: dict[str, Any] = {

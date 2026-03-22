@@ -4,14 +4,14 @@ Unit tests for metrics computation module.
 
 import json
 
-from bench.metrics import (
+from cli.metrics import (
     AccuracyMetric,
     ExactMatchMetric,
     F1Metric,
     FunctionCallMetric,
     MetricResult,
     RougeMetric,
-    aggregate_metrics
+    aggregate_metrics,
 )
 
 

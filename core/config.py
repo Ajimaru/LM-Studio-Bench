@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-from user_paths import USER_CONFIG_FILE
+from core.paths import USER_CONFIG_FILE
 
 logger = logging.getLogger(__name__)
 

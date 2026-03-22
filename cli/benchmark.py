@@ -74,10 +74,10 @@ except (ImportError, ModuleNotFoundError):
     TableStyle = None
     REPORTLAB_AVAILABLE = False
 
-from config_loader import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
-from preset_manager import PresetManager
-from rest_client import LMStudioRESTClient
-from user_paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.client import LMStudioRESTClient
+from core.config import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
+from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.presets import PresetManager
 
 try:
     import plotly.graph_objects as go

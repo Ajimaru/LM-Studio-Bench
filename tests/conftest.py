@@ -8,14 +8,17 @@ from unittest.mock import MagicMock
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = PROJECT_ROOT / "src"
+CORE_DIR = PROJECT_ROOT / "core"
+CLI_DIR = PROJECT_ROOT / "cli"
 WEB_DIR = PROJECT_ROOT / "web"
 TOOLS_DIR = PROJECT_ROOT / "tools"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+if str(CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(CORE_DIR))
+if str(CLI_DIR) not in sys.path:
+    sys.path.insert(0, str(CLI_DIR))
 if str(WEB_DIR) not in sys.path:
     sys.path.insert(0, str(WEB_DIR))
 if str(TOOLS_DIR) not in sys.path:

@@ -45,11 +45,11 @@ graph TB
     User([User]) --> RunPy[run.py<br/>Entry Point]
 
     RunPy -->|--webapp/-w flag| WebApp[web/app.py<br/>FastAPI Server]
-    RunPy -->|benchmark mode| Benchmark[src/benchmark.py<br/>Benchmark Engine]
+    RunPy -->|benchmark mode| Benchmark[cli/benchmark.py<br/>Benchmark Engine]
     
-    Benchmark --> ConfigLoader[src/config_loader.py<br/>Configuration Manager]
-    Benchmark --> PresetManager[src/preset_manager.py<br/>Preset Manager]
-    Benchmark --> RestClient[src/rest_client.py<br/>REST API Client]
+    Benchmark --> ConfigLoader[core/config.py<br/>Configuration Manager]
+    Benchmark --> PresetManager[core/presets.py<br/>Preset Manager]
+    Benchmark --> RestClient[core/client.py<br/>REST API Client]
     
     ConfigLoader -->|reads| ProjectConfig[config/defaults.json<br/>Project Defaults]
     ConfigLoader -->|reads| UserConfig[~/.config/lm-studio-bench/defaults.json<br/>User Overrides]
@@ -64,7 +64,7 @@ graph TB
     WebApp -->|launches| Benchmark
     WebApp -->|reads| ResultsDB
     WebApp -->|serves| Dashboard[Web Dashboard<br/>http://localhost:PORT]
-    RunPy -->|starts background process| Tray[src/tray.py<br/>Linux Tray Controller]
+    RunPy -->|starts background process| Tray[core/tray.py<br/>Linux Tray Controller]
     Tray -->|polls /api/status| WebApp
     Tray -->|calls /api/benchmark/*| WebApp
     Tray -->|Quit calls /api/system/shutdown| WebApp
@@ -126,8 +126,8 @@ flowchart TD
     FindWebApp -->|No| ErrorWeb[Error: app.py not found]
 
     CheckWebFlag -->|No| StartTrayCLI[start tray.py<br/>with localhost:1234]
-    StartTrayCLI --> FindBenchmark{src/benchmark.py<br/>exists?}
-    FindBenchmark -->|Yes| StartBenchmark[subprocess.call<br/>python src/benchmark.py + args]
+    StartTrayCLI --> FindBenchmark{cli/benchmark.py<br/>exists?}
+    FindBenchmark -->|Yes| StartBenchmark[subprocess.call<br/>python cli/benchmark.py + args]
     FindBenchmark -->|No| ErrorBench[Error: benchmark.py not found]
 
     ShowHelp --> Exit1([exit 0])
@@ -835,15 +835,15 @@ graph TB
     Tests --> MetadataTests[test_scrape_metadata.py<br/>24+ tests]
     Tests --> RunTests[test_run.py<br/>10+ tests]
 
-    BenchmarkTests --> Benchmark[src/benchmark.py]
+    BenchmarkTests --> Benchmark[cli/benchmark.py]
     AppTests --> WebApp[web/app.py]
     APITests --> WebApp
-    RestTests --> RestClient[src/rest_client.py]
-    TrayTests --> Tray[src/tray.py]
-    PresetTests --> PresetMgr[src/preset_manager.py]
-    ConfigTests --> ConfigLoader[src/config_loader.py]
-    PathTests --> UserPaths[src/user_paths.py]
-    VersionTests --> VersionChecker[src/version_checker.py]
+    RestTests --> RestClient[core/client.py]
+    TrayTests --> Tray[core/tray.py]
+    PresetTests --> PresetMgr[core/presets.py]
+    ConfigTests --> ConfigLoader[core/config.py]
+    PathTests --> UserPaths[core/paths.py]
+    VersionTests --> VersionChecker[core/version.py]
     MetadataTests --> Metadata[tools/scrape_metadata.py]
     RunTests --> RunPy[run.py]
 
@@ -905,7 +905,7 @@ pytest -v
 pytest tests/test_benchmark.py
 
 # Run with coverage report
-pytest --cov=src --cov=web --cov-report=html
+pytest --cov=core --cov=cli --cov=agents --cov=web --cov=tools --cov=run --cov-report=html
 
 # Run tests matching a pattern
 pytest -k "test_gpu_detection"

@@ -30,9 +30,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-user_paths = importlib.import_module("src.user_paths")
-USER_LOGS_DIR = user_paths.USER_LOGS_DIR
-USER_RESULTS_DIR = user_paths.USER_RESULTS_DIR
+core_paths = importlib.import_module("core.paths")
+USER_LOGS_DIR = core_paths.USER_LOGS_DIR
+USER_RESULTS_DIR = core_paths.USER_RESULTS_DIR
 RESULTS_DIR = USER_RESULTS_DIR
 METADATA_DB = RESULTS_DIR / "model_metadata.db"
 LOGS_DIR = USER_LOGS_DIR

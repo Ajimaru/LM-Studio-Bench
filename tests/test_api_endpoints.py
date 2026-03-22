@@ -229,9 +229,9 @@ class TestResultsEndpoints:
     def test_results_returns_formatted_data(self):
         """Returns properly formatted result data."""
         app_mod = sys.modules["app"]
-        bm = sys.modules.get("benchmark", None)
+        bm = sys.modules.get("cli.benchmark", None)
         if bm is None:
-            import benchmark as bm
+            import cli.benchmark as bm
         client = _get_client()
         result = bm.BenchmarkResult(
             **_make_bench_result_dict(),

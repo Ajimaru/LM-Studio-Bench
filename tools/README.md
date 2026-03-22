@@ -130,7 +130,7 @@ npm install -g markdownlint-cli2
 
 ### Skip pylint (optional)
 
-Pylint runs by default on `src/` and `web/` files with a 10-second timeout. To skip it:
+Pylint runs by default on `core/`, `cli/`, `agents/` and `web/` files with a 10-second timeout. To skip it:
 
 ```bash
 SKIP_PYLINT=1 git commit -m "Your message"
@@ -179,14 +179,14 @@ Sort and organize Python imports automatically.
 
 ```bash
 # Check imports without modifying files
-isort --check-only --diff src/ web/ tools/
+isort --check-only --diff core/ cli/ agents/ web/ tools/
 
 # Apply changes
-isort src/ web/ tools/
+isort core/ cli/ agents/ web/ tools/
 
 # Check specific file
-isort --check-only src/benchmark.py
-isort src/benchmark.py  # Apply changes
+isort --check-only cli/benchmark.py
+isort cli/benchmark.py  # Apply changes
 ```
 
 **Configuration:** `pyproject.toml` → `[tool.isort]`
@@ -197,10 +197,10 @@ Check Python code for style and errors (PEP 8, errors, complexity).
 
 ```bash
 # Check all Python files
-flake8 src/ web/ tools/
+flake8 core/ cli/ agents/ web/ tools/
 
 # Check specific file
-flake8 src/benchmark.py
+flake8 cli/benchmark.py
 ```
 
 **Configuration:** `.flake8`
@@ -218,20 +218,20 @@ Advanced Python code analysis (complexity, maintainability, conventions).
 
 ```bash
 # Check specific file
-pylint src/benchmark.py
+pylint cli/benchmark.py
 
 # Check with specific options
-pylint --disable=fixme src/
+pylint --disable=fixme core/ cli/ agents/
 
-# Check src/ and web/ directories
-pylint src/ web/
+# Check core/, cli/, agents/ and web/ directories
+pylint core/ cli/ agents/ web/
 ```
 
 **Configuration:** `.pylintrc`
 
 **In pre-commit:**
 
-- Runs on `src/` and `web/` directories only (not on `tools/`)
+- Runs on `core/`, `cli/`, `agents/` and `web/` directories (not on `tools/`)
 - Has 10-second timeout (prevents slowdown)
 - Optional: `SKIP_PYLINT=1 git commit`
 
@@ -352,9 +352,9 @@ djlint --reformat web/templates/dashboard.html.jinja
 
 ```bash
 # Run all checks manually
-isort --check-only src/ web/ tools/
-flake8 src/ web/ tools/
-pylint src/ web/                    # Code quality (optional)
+isort --check-only core/ cli/ agents/ web/ tools/
+flake8 core/ cli/ agents/ web/ tools/
+pylint core/ cli/ agents/ web/      # Code quality (optional)
 shellcheck tools/*.sh
 markdownlint docs/**/*.md
 djlint --check web/templates/
@@ -399,7 +399,7 @@ Automatically fix issues that can be auto-corrected:
 
 ```bash
 # Fix import order
-isort src/ web/ tools/
+isort core/ cli/ agents/ web/ tools/
 
 # Auto-format templates
 djlint --reformat web/templates/
@@ -493,7 +493,7 @@ Pylint has a 10-second timeout in the pre-commit hook. If it's still timing out:
 SKIP_PYLINT=1 git commit -m "Your message"
 
 # Run pylint manually later on specific files
-pylint src/benchmark.py
+pylint cli/benchmark.py
 ```
 
 ### Hook doesn't run

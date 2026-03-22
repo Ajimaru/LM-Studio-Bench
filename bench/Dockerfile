@@ -18,13 +18,13 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY agents/ ./agents/
-COPY bench/ ./bench/
+COPY cli/ ./cli/
+COPY core/ ./core/
 COPY tests/data/ ./tests/data/
 COPY tests/prompts/ ./tests/prompts/
-COPY src/ ./src/
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-ENTRYPOINT ["python", "-m", "bench.cli"]
+ENTRYPOINT ["python", "-m", "cli.main"]
 CMD ["--help"]

@@ -1,4 +1,4 @@
-"""Tests for src/benchmark.py."""
+"""Tests for cli/benchmark.py."""
 from dataclasses import asdict
 from pathlib import Path
 import sys
@@ -12,9 +12,9 @@ def _import_benchmark():
     """Import benchmark module with lmstudio mocked."""
     if "lmstudio" not in sys.modules:
         sys.modules["lmstudio"] = MagicMock()
-    if "benchmark" in sys.modules:
-        return sys.modules["benchmark"]
-    import benchmark
+    if "cli.benchmark" in sys.modules:
+        return sys.modules["cli.benchmark"]
+    import cli.benchmark as benchmark
     return benchmark
 
 
