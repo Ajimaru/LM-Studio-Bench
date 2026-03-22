@@ -150,7 +150,7 @@ class PresetManager:
 
     def list_presets(self) -> List[str]:
         """Return all available preset names."""
-        names = ["default", "default_classic", "default_compatability_test"]
+        names = ["default"]
         names.extend(sorted(self.PREDEFINED_PRESETS.keys()))
 
         user_names: List[str] = []
