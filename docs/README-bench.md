@@ -38,7 +38,7 @@ python -m cli.main "model-id" \
 Build the Docker image:
 
 ```bash
-docker build -f bench/Dockerfile -t lm-bench-agent .
+docker build -f tools/Dockerfile.bench -t lm-bench-agent .
 ```
 
 Run benchmark in container:
