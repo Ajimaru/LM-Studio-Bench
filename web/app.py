@@ -56,6 +56,20 @@ from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
 from core.presets import PresetManager
 
 try:
+    from core.version import (
+        compare_versions,
+        fetch_latest_release,
+        format_release_url,
+        get_current_version,
+    )
+except ImportError as e:
+    logging.getLogger(__name__).error("❌ Could not import core.version: %s", e)
+    get_current_version = None
+    fetch_latest_release = None
+    compare_versions = None
+    format_release_url = None
+
+try:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import getSampleStyleSheet
@@ -80,20 +94,6 @@ except ImportError:
     Table = None
     TableStyle = None
     REPORTLAB_AVAILABLE = False
-
-try:
-    from core.version import (
-        compare_versions,
-        fetch_latest_release,
-        format_release_url,
-        get_current_version,
-    )
-except ImportError as e:
-    logging.getLogger(__name__).error("❌ Could not import core.version: %s", e)
-    get_current_version = None
-    fetch_latest_release = None
-    compare_versions = None
-    format_release_url = None
 
 try:
     from scipy import stats as scipy_stats
