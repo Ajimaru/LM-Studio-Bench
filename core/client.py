@@ -553,9 +553,9 @@ class LMStudioRESTClient:
 
         if model:
             payload["model"] = model
-        if context_length:
+        if context_length is not None:
             payload["context_length"] = context_length
-        if max_tokens:
+        if max_tokens is not None:
             payload["max_output_tokens"] = max_tokens
         if top_k is not None:
             payload["top_k"] = top_k
