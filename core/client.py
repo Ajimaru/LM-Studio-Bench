@@ -257,14 +257,37 @@ class LMStudioRESTClient:
                         "offload_kv_cache_to_gpu: %s",
                         model_key,
                     )
-                    response = self.client.post(
-                        url,
-                        headers=self._headers(),
-                        json=retry_payload,
-                    )
-                    response.raise_for_status()
-                    break
+                    try:
+                        response = self.client.post(
+                            url,
+                            headers=self._headers(),
+                            json=retry_payload,
+                        )
+                        response.raise_for_status()
+                        break
+                    except httpx.HTTPStatusError as retry_error:
+                        response_obj = retry_error.response
+                        is_not_found = (
+                            response_obj is not None
+                            and response_obj.status_code == 404
+                        )
+                        has_fallback = (
+                            index < len(load_endpoints) - 1
+                        )
+                        if is_not_found and has_fallback:
+                            fallback_endpoint = load_endpoints[
+                                index + 1
+                            ]
+                            logger.warning(
+                                "⚠️ Model load retry on %s returned "
+                                "404. Trying fallback endpoint %s",
+                                endpoint,
+                                fallback_endpoint,
+                            )
+                            continue
 
+                        last_error = retry_error
+                        break
                 response_obj = error.response
                 is_not_found = (
                     response_obj is not None
