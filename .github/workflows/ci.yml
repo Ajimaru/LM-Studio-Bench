@@ -30,16 +30,18 @@ jobs:
       - name: Python syntax check (main script)
         run: python -m py_compile run.py
 
-      # check all Python modules in src/
-      - name: Python syntax check (src modules)
+      # check Python modules in core/ and cli/
+      - name: Python syntax check (project modules)
         run: |
-          python -m py_compile src/benchmark.py
-          python -m py_compile src/config_loader.py
-          python -m py_compile src/user_paths.py
-          python -m py_compile src/tray.py
-          python -m py_compile src/version_checker.py
-          python -m py_compile src/rest_client.py
-          python -m py_compile src/preset_manager.py
+          python -m py_compile cli/benchmark.py
+          python -m py_compile cli/main.py
+          python -m py_compile core/config.py
+          python -m py_compile core/paths.py
+          python -m py_compile core/tray.py
+          python -m py_compile core/version.py
+          python -m py_compile core/client.py
+          python -m py_compile core/presets.py
+          python -m py_compile tools/hardware_monitor.py
 
       # verify shell script syntax
       - name: Bash syntax check

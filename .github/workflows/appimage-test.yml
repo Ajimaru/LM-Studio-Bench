@@ -1,6 +1,7 @@
 name: AppImage Compatibility Test
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ["Release"]
     types:
@@ -79,20 +80,7 @@ jobs:
               echo "=== Testing Python imports ==="
               cd squashfs-root/usr/share/lm-studio-bench
               PYTHONPATH="." \
-                ../../../venv/bin/python3 -c "
-import sys
-sys.path.insert(0, \".\")
-import importlib, pathlib
-
-modules = [\"config_loader\", \"user_paths\", \"version_checker\"]
-for mod in modules:
-    try:
-        importlib.import_module(mod)
-        print(f\"  OK: {mod}\")
-    except Exception as e:
-        print(f\"  WARN: {mod}: {e}\")
-print(\"Import check done\")
-"
+                  ../../../venv/bin/python3 -c "import importlib, sys; sys.path.insert(0, \".\"); modules = [\"core.config\", \"core.paths\", \"core.version\", \"tools.hardware_monitor\"]; [importlib.import_module(mod) for mod in modules]; print(\"Import check done\")"
 
               echo "=== PASS: $APPIMAGE on $(cat /etc/os-release | grep PRETTY | cut -d= -f2) ==="
             '

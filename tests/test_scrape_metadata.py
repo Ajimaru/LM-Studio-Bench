@@ -25,8 +25,8 @@ def _import_scrape_metadata(tmp_path: Path):
     if tools_dir not in sys.path:
         sys.path.insert(0, tools_dir)
 
-    with patch("user_paths.USER_RESULTS_DIR", results_dir), \
-            patch("user_paths.USER_LOGS_DIR", logs_dir):
+    with patch("core.paths.USER_RESULTS_DIR", results_dir), \
+            patch("core.paths.USER_LOGS_DIR", logs_dir):
         sm = importlib.import_module("scrape_metadata")
         setattr(sm, "RESULTS_DIR", results_dir)
         setattr(sm, "METADATA_DB", results_dir / "model_metadata.db")

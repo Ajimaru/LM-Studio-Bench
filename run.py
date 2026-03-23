@@ -3,15 +3,18 @@
 Wrapper script - Entry point for the benchmark tool
 
 Usage:
-    ./run.py [args]              - Starts normal benchmark
-    ./run.py --webapp            - Starts FastAPI web dashboard
-    ./run.py -w                  - Starts FastAPI web dashboard (short form)
+    ./run.py [args]                 - Starts classic benchmark
+    ./run.py --agent MODEL [args]   - Starts capability-driven agent
+    ./run.py --webapp               - Starts FastAPI web dashboard
+    ./run.py -w                     - Starts FastAPI web dashboard (short form)
 
 Examples:
-    ./run.py --limit 5           - Tests 5 new models
-    ./run.py --export-only       - Generates reports from cache
-    ./run.py --webapp            - Starts web dashboard
-    ./run.py -w                  - Starts web dashboard (short form)
+    ./run.py --limit 5                    - Tests 5 new models (classic)
+    ./run.py --export-only                - Generates reports from cache
+    ./run.py --agent 'llama-13b'          - Tests model capabilities
+    ./run.py --agent 'llama-13b' --capabilities general_text,reasoning
+    ./run.py --webapp                     - Starts web dashboard
+    ./run.py -w                           - Starts web dashboard (short form)
 """
 
 from datetime import datetime
@@ -22,9 +25,11 @@ import shutil
 import socket
 import subprocess  # nosec B404
 import sys
+import threading
 import time
+from typing import TextIO
 
-from src.user_paths import USER_LOGS_DIR, format_path_for_logs
+from core.paths import USER_LOGS_DIR, format_path_for_logs
 
 project_root = Path(__file__).parent
 os.chdir(project_root)
@@ -93,14 +98,20 @@ def _extract_port(cli_args: list[str]) -> int | None:
     return None
 
 
+def _has_agent_flag(cli_args: list[str]) -> bool:
+    """Check if --agent flag is present in CLI arguments."""
+    return "--agent" in cli_args or any(
+        arg.startswith("--agent=") for arg in cli_args
+    )
+
+
 def _build_subprocess_env() -> dict[str, str]:
     """Build a sanitized environment for child Python processes."""
     env = os.environ.copy()
     env.pop("LD_LIBRARY_PATH", None)
     env.pop("LD_PRELOAD", None)
-    src_dir = str(project_root / "src")
     root_dir = str(project_root)
-    pythonpath_entries = [root_dir, src_dir]
+    pythonpath_entries = [root_dir]
     existing_path = env.get("PYTHONPATH", "")
     if existing_path:
         pythonpath_entries.append(existing_path)
@@ -196,7 +207,7 @@ def _start_tray_process(
     tray_debug_enabled: bool,
 ) -> subprocess.Popen | None:
     """Start tray app as background subprocess."""
-    tray_script = project_root / "src" / "tray.py"
+    tray_script = project_root / "core" / "tray.py"
     if not tray_script.exists():
         print(f"⚠️ Tray script not found: {format_path_for_logs(tray_script)}")
         return None
@@ -217,15 +228,21 @@ def _start_tray_process(
             tray_cmd.append("--debug")
 
         try:
-            with open(launcher_log, "a", encoding="utf-8") as log_handle:
-                log_handle.write(f"CMD: {' '.join(tray_cmd)}\n")
-                tray_proc = subprocess.Popen(  # nosec B603
-                    tray_cmd,
-                    cwd=project_root,
-                    stdout=log_handle,
-                    stderr=log_handle,
-                    env=env,
-                )
+            start_offset = launcher_log.stat().st_size if launcher_log.exists() else 0
+            _append_tray_launcher_log(
+                launcher_log,
+                f"CMD: {' '.join(tray_cmd)}",
+            )
+            tray_proc = subprocess.Popen(  # nosec B603
+                tray_cmd,
+                cwd=project_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=env,
+            )
+            log_thread = _start_tray_log_thread(tray_proc, launcher_log)
 
             time.sleep(0.6)
             if tray_proc.poll() is None:
@@ -233,12 +250,27 @@ def _start_tray_process(
                 print(f"📝 Run log: {format_path_for_logs(launcher_log)}")
                 return tray_proc
 
+            if log_thread is not None:
+                log_thread.join(timeout=1.0)
+
+            failure_excerpt = _read_tray_launcher_excerpt(
+                launcher_log,
+                start_offset,
+            )
+
             print(
                 "⚠️ Tray exited early "
                 f"(code {tray_proc.returncode}) "
                 f"with {format_path_for_logs(candidate)}"
             )
+            failure_summary = _summarize_tray_failure(failure_excerpt)
+            if failure_summary:
+                print(failure_summary)
         except OSError as error:
+            _append_tray_launcher_log(
+                launcher_log,
+                f"ERROR: Could not launch {candidate}: {error}",
+            )
             print(
                 "⚠️ Could not launch tray with "
                 f"{format_path_for_logs(candidate)}: {error}"
@@ -253,9 +285,75 @@ def _start_tray_process(
                 "💡 Try launching from a non-Snap terminal/session or "
                 "restart VS Code outside Snap."
             )
+        if "ModuleNotFoundError: No module named 'httpx'" in launcher_text:
+            print(
+                "⚠️ System Python fallback failed because dependency "
+                "'httpx' is missing."
+            )
     except OSError:
         pass
     return None
+
+
+def _append_tray_launcher_log(log_path: Path, message: str) -> None:
+    """Append a timestamped tray launcher log entry."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+    with open(log_path, "a", encoding="utf-8") as log_handle:
+        log_handle.write(f"{timestamp} {message.rstrip()}\n")
+
+
+def _stream_tray_output_to_log(stream: TextIO, log_path: Path) -> None:
+    """Write tray subprocess output to the launcher log with timestamps."""
+    try:
+        for output_line in stream:
+            _append_tray_launcher_log(log_path, output_line)
+    finally:
+        stream.close()
+
+
+def _start_tray_log_thread(
+    tray_proc: subprocess.Popen,
+    log_path: Path,
+) -> threading.Thread | None:
+    """Start background log streaming for tray subprocess output."""
+    stream = tray_proc.stdout
+    if stream is None:
+        return None
+
+    log_thread = threading.Thread(
+        target=_stream_tray_output_to_log,
+        args=(stream, log_path),
+        daemon=True,
+    )
+    log_thread.start()
+    return log_thread
+
+
+def _read_tray_launcher_excerpt(log_path: Path, start_offset: int) -> str:
+    """Read launcher log text appended after a given file offset."""
+    try:
+        with open(log_path, "r", encoding="utf-8") as log_handle:
+            log_handle.seek(start_offset)
+            return log_handle.read()
+    except OSError:
+        return ""
+
+
+def _summarize_tray_failure(log_text: str) -> str:
+    """Summarize known tray launcher failures for console output."""
+    if "symbol lookup error" in log_text:
+        return (
+            "💥 Bundled tray Python failed due to a GLIBC/Snap library "
+            "mismatch."
+        )
+    if "ModuleNotFoundError: No module named 'httpx'" in log_text:
+        return (
+            "📦 System Python fallback is missing required dependency "
+            "'httpx'."
+        )
+    if "Traceback" in log_text:
+        return "🐍 System Python fallback failed with a Python traceback."
+    return ""
 
 
 def _stop_tray_process(tray_proc: subprocess.Popen | None) -> None:
@@ -290,11 +388,19 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print()
     print("📊 BENCHMARK MODES:")
     print()
-    print("  1️⃣  CLI Benchmark (Default):")
+    print("  1️⃣  Classic Benchmark (Default):")
     print("      ./run.py [benchmark-args]")
-    print("      → Runs benchmark directly and shows results")
+    print("      → Tests token/s speed on all models")
     print()
-    print("  2️⃣  Web Dashboard (Recommended):")
+    print("  2️⃣  Capability-Driven Agent:")
+    print("      ./run.py --agent 'model-id' [agent-args]")
+    print("      → Tests model capabilities (general, reasoning, vision, tooling)")
+    print(
+        "      → Generates JSON, CSV, PDF & HTML reports "
+        "with quality/performance metrics"
+    )
+    print()
+    print("  3️⃣  Web Dashboard (Recommended):")
     print("      ./run.py --webapp  (or -w)")
     print("      → Starts modern web interface with live streaming")
     print("      → Automatically opens browser at http://localhost:8080")
@@ -308,10 +414,26 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print()
     print("=" * 60)
     print()
-    print("📋 BENCHMARK OPTIONS (for CLI mode):")
+    print("🤖 CAPABILITY-DRIVEN AGENT OPTIONS:")
+    print()
+    print("  --agent MODEL_PATH    Runs capability-driven benchmark")
+    print("  --capabilities CAPS   Comma-separated capabilities to test")
+    print("                        (general_text,reasoning,vision,tooling)")
+    print("  --output-dir DIR      Output directory for results")
+    print("  --config FILE         Configuration YAML file")
+    print("  --formats FORMATS     Output formats (json,html,csv,pdf)")
+    print("  --max-tests N         Maximum tests per capability")
+    print("  --context-length N    Model context length")
+    print("  --gpu-offload RATIO   GPU offload ratio (0.0-1.0)")
+    print("  --temperature TEMP    Generation temperature")
+    print("  -v, --verbose         Enable verbose logging")
+    print()
+    print("=" * 60)
+    print()
+    print("📋 CLASSIC BENCHMARK OPTIONS:")
     print()
 
-    benchmark_script = project_root / "src" / "benchmark.py"
+    benchmark_script = project_root / "cli" / "benchmark.py"
     if benchmark_script.exists():
         result = subprocess.run(  # nosec B603
             [PYTHON_EXECUTABLE, str(benchmark_script), "--help"],
@@ -328,9 +450,23 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
             if IN_OPTIONS:
                 print(line)
 
+    print()
+    print("📚 EXAMPLES:")
+    print()
+    print("  Classic benchmark:")
+    print("    ./run.py --limit 5")
+    print()
+    print("  Capability-driven agent:")
+    print("    ./run.py --agent 'llama-13b' --capabilities general_text,reasoning")
+    print()
+    print("  Web dashboard:")
+    print("    ./run.py --webapp")
+    print()
+
     sys.exit(0)
 
 HAS_WEB_FLAG = "--webapp" in CLI_ARGS or "-w" in CLI_ARGS
+HAS_AGENT_FLAG = _has_agent_flag(CLI_ARGS)
 DEBUG_ENABLED = "--debug" in CLI_ARGS or "-d" in CLI_ARGS
 
 TRAY_PROCESS = None
@@ -367,8 +503,53 @@ if HAS_WEB_FLAG:
         sys.exit(result.returncode)
     finally:
         _stop_tray_process(TRAY_PROCESS)
+elif HAS_AGENT_FLAG:
+    AGENT_MODEL = None
+    for cli_arg in CLI_ARGS:
+        if cli_arg.startswith("--agent="):
+            extracted = cli_arg.split("=", 1)[1]
+            if not extracted:
+                print(
+                    "❌ Invalid --agent argument: expected "
+                    "--agent MODEL or --agent=MODEL"
+                )
+                sys.exit(2)
+            AGENT_MODEL = extracted
+
+    args = [
+        arg
+        for arg in CLI_ARGS
+        if arg != "--agent" and not arg.startswith("--agent=")
+    ]
+
+    if AGENT_MODEL is not None:
+        args.insert(0, AGENT_MODEL)
+    try:
+        safe_args = _sanitize_cli_args(args)
+    except ValueError as error:
+        print(f"❌ Invalid CLI arguments: {error}")
+        sys.exit(2)
+
+    agent_script = project_root / "cli" / "main.py"
+    if not agent_script.exists():
+        print(f"❌ Error: {agent_script} not found")
+        sys.exit(1)
+
+    print("🤖 Starting capability-driven benchmark agent...")
+    try:
+        result = subprocess.run(
+            [PYTHON_EXECUTABLE, "-m", "cli.main"] + safe_args,
+            cwd=project_root,
+            env=_build_subprocess_env(),
+            check=False,
+        )
+        sys.exit(result.returncode)
+    except (subprocess.SubprocessError, OSError) as error:
+        print(f"❌ Error starting agent: {error}")
+        sys.exit(1)
+
 else:
-    benchmark_script = project_root / "src" / "benchmark.py"
+    benchmark_script = project_root / "cli" / "benchmark.py"
     TRAY_PROCESS = _start_tray_process("http://localhost:1234", DEBUG_ENABLED)
 
     if not benchmark_script.exists():

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.Ajimaru.LMStudioBench.desktop</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>LM Studio Bench</name>
+  <summary>
+    Benchmark local LM Studio models and compare throughput metrics
+  </summary>
+  <description>
+    <p>
+      LM Studio Bench benchmarks locally installed language models from
+      LM Studio and compares token throughput, latency, and hardware
+      utilization.
+    </p>
+    <p>
+      It includes a CLI workflow and a web dashboard with filters,
+      ranking, charts, and export options.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.Ajimaru.LMStudioBench.desktop</launchable>
+  <developer id="io.github.ajimaru">
+    <name>Ajimaru</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Utility</category>
+    <category>Development</category>
+  </categories>
+  <url type="homepage">https://github.com/Ajimaru/LM-Studio-Bench</url>
+  <provides>
+    <binary>lmstudio-bench</binary>
+  </provides>
+</component>

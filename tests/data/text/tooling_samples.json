@@ -1,0 +1,23 @@
+[
+    {
+        "id": "tool_001",
+        "task": "What is the weather in New York?",
+        "expected_function": "get_weather",
+        "expected_parameters": {"location": "New York"},
+        "category": "function_calling"
+    },
+    {
+        "id": "tool_002",
+        "task": "Calculate 15 times 7",
+        "expected_function": "calculate",
+        "expected_parameters": {"expression": "15 * 7"},
+        "category": "function_calling"
+    },
+    {
+        "id": "tool_003",
+        "task": "Search for information about machine learning",
+        "expected_function": "search_web",
+        "expected_parameters": {"query": "machine learning"},
+        "category": "function_calling"
+    }
+]

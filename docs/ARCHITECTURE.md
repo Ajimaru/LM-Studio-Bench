@@ -45,11 +45,11 @@ graph TB
     User([User]) --> RunPy[run.py<br/>Entry Point]
 
     RunPy -->|--webapp/-w flag| WebApp[web/app.py<br/>FastAPI Server]
-    RunPy -->|benchmark mode| Benchmark[src/benchmark.py<br/>Benchmark Engine]
+    RunPy -->|benchmark mode| Benchmark[cli/benchmark.py<br/>Benchmark Engine]
     
-    Benchmark --> ConfigLoader[src/config_loader.py<br/>Configuration Manager]
-    Benchmark --> PresetManager[src/preset_manager.py<br/>Preset Manager]
-    Benchmark --> RestClient[src/rest_client.py<br/>REST API Client]
+    Benchmark --> ConfigLoader[core/config.py<br/>Configuration Manager]
+    Benchmark --> PresetManager[core/presets.py<br/>Preset Manager]
+    Benchmark --> RestClient[core/client.py<br/>REST API Client]
     
     ConfigLoader -->|reads| ProjectConfig[config/defaults.json<br/>Project Defaults]
     ConfigLoader -->|reads| UserConfig[~/.config/lm-studio-bench/defaults.json<br/>User Overrides]
@@ -64,7 +64,7 @@ graph TB
     WebApp -->|launches| Benchmark
     WebApp -->|reads| ResultsDB
     WebApp -->|serves| Dashboard[Web Dashboard<br/>http://localhost:PORT]
-    RunPy -->|starts background process| Tray[src/tray.py<br/>Linux Tray Controller]
+    RunPy -->|starts background process| Tray[core/tray.py<br/>Linux Tray Controller]
     Tray -->|polls /api/status| WebApp
     Tray -->|calls /api/benchmark/*| WebApp
     Tray -->|Quit calls /api/system/shutdown| WebApp
@@ -80,9 +80,13 @@ graph TB
 **Key Components:**
 
 - **run.py**: Wrapper script that decides between web dashboard and CLI benchmark mode
-- **benchmark.py**: Main benchmark engine (~4,683 lines) with argparse, model discovery, and execution
+- **benchmark.py**: Main benchmark engine with argparse, model discovery,
+  and execution
 - **config_loader.py**: Loads and merges configuration from JSON file with built-in defaults
-- **preset_manager.py**: Manages readonly/user presets and maps presets to CLI args
+- **core/presets.py**: Manages readonly/user presets and maps presets to
+  CLI args
+- **tools/hardware_monitor.py**: Shared `GPUMonitor` and `HardwareMonitor`
+  implementation for classic and capability flows
 - **rest_client.py**: REST API client for LM Studio v1 endpoints (optional mode)
 - **web/app.py**: FastAPI web dashboard with live streaming and results browser
 - **tray.py**: Linux AppIndicator tray controller for benchmark controls
@@ -126,8 +130,8 @@ flowchart TD
     FindWebApp -->|No| ErrorWeb[Error: app.py not found]
 
     CheckWebFlag -->|No| StartTrayCLI[start tray.py<br/>with localhost:1234]
-    StartTrayCLI --> FindBenchmark{src/benchmark.py<br/>exists?}
-    FindBenchmark -->|Yes| StartBenchmark[subprocess.call<br/>python src/benchmark.py + args]
+    StartTrayCLI --> FindBenchmark{cli/benchmark.py<br/>exists?}
+    FindBenchmark -->|Yes| StartBenchmark[subprocess.call<br/>python cli/benchmark.py + args]
     FindBenchmark -->|No| ErrorBench[Error: benchmark.py not found]
 
     ShowHelp --> Exit1([exit 0])
@@ -626,8 +630,8 @@ flowchart TD
 
 - `LMStudioBenchmark`: Main orchestrator
 - `BenchmarkCache`: SQLite caching
-- `GPUMonitor`: GPU detection (NVIDIA/AMD/Intel)
-- `HardwareMonitor`: Live profiling (GPU temp, power, VRAM, GTT, CPU, RAM)
+- `tools/hardware_monitor.py`: Shared GPU detection and live profiling
+  (`GPUMonitor`, `HardwareMonitor`)
 - `ModelDiscovery`: Model listing and metadata
 
 **Reliability Behaviors (2026-03):**
@@ -815,7 +819,8 @@ graph LR
 
 ## Testing Architecture
 
-LM-Studio-Bench includes a comprehensive test suite with 520+ tests and 51% code coverage to ensure reliability and maintainability.
+LM-Studio-Bench includes a comprehensive test suite with 900+ tests and
+strong coverage to ensure reliability and maintainability.
 
 ### Test Organization
 
@@ -824,6 +829,7 @@ graph TB
     Tests[tests/] --> Fixtures[conftest.py<br/>Test Fixtures & Utilities]
 
     Tests --> BenchmarkTests[test_benchmark.py<br/>55+ tests]
+    Tests --> HardwareTests[test_hardware_monitor.py<br/>57+ tests]
     Tests --> AppTests[test_app.py<br/>23+ tests]
     Tests --> APITests[test_api_endpoints.py<br/>32+ tests]
     Tests --> RestTests[test_rest_client.py<br/>22+ tests]
@@ -835,15 +841,16 @@ graph TB
     Tests --> MetadataTests[test_scrape_metadata.py<br/>24+ tests]
     Tests --> RunTests[test_run.py<br/>10+ tests]
 
-    BenchmarkTests --> Benchmark[src/benchmark.py]
+    BenchmarkTests --> Benchmark[cli/benchmark.py]
+    HardwareTests --> HardwareMon[tools/hardware_monitor.py]
     AppTests --> WebApp[web/app.py]
     APITests --> WebApp
-    RestTests --> RestClient[src/rest_client.py]
-    TrayTests --> Tray[src/tray.py]
-    PresetTests --> PresetMgr[src/preset_manager.py]
-    ConfigTests --> ConfigLoader[src/config_loader.py]
-    PathTests --> UserPaths[src/user_paths.py]
-    VersionTests --> VersionChecker[src/version_checker.py]
+    RestTests --> RestClient[core/client.py]
+    TrayTests --> Tray[core/tray.py]
+    PresetTests --> PresetMgr[core/presets.py]
+    ConfigTests --> ConfigLoader[core/config.py]
+    PathTests --> UserPaths[core/paths.py]
+    VersionTests --> VersionChecker[core/version.py]
     MetadataTests --> Metadata[tools/scrape_metadata.py]
     RunTests --> RunPy[run.py]
 
@@ -905,7 +912,7 @@ pytest -v
 pytest tests/test_benchmark.py
 
 # Run with coverage report
-pytest --cov=src --cov=web --cov-report=html
+pytest --cov=core --cov=cli --cov=agents --cov=web --cov=tools --cov=run --cov-report=html
 
 # Run tests matching a pattern
 pytest -k "test_gpu_detection"

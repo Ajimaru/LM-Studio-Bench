@@ -261,22 +261,46 @@ Start the modern web UI with live streaming and an interactive results browser:
 # Show all available presets (readonly + user)
 ./LM-Studio-Bench-x86_64.AppImage --list-presets
 
-# Load preset (default is loaded if omitted)
+# Load default classic preset (benchmarks all models, 3 runs)
+./LM-Studio-Bench-x86_64.AppImage --preset default_classic
+
+# Load capability-driven preset (tests one model, 1 run; alias: default_compatability_test)
+./LM-Studio-Bench-x86_64.AppImage --preset default_compatibility_test --agent-model qwen2.5-7b-instruct
+
+# Load other presets
 ./LM-Studio-Bench-x86_64.AppImage --preset quick_test
+./LM-Studio-Bench-x86_64.AppImage --preset high_quality
 
 # Load preset and override individual values
-./LM-Studio-Bench-x86_64.AppImage --preset high_quality --runs 3 --context 4096
+./LM-Studio-Bench-x86_64.AppImage --preset default_classic --runs 5 --context 4096
 
-# Prompt short flag is -P (because -p is used for --preset)
+# Backwards compatibility: "default" loads "default_classic"
 ./LM-Studio-Bench-x86_64.AppImage --preset default -P "Explain machine learning in 3 sentences"
 ```
 
 Built-in readonly presets:
 
-- `default`
-- `quick_test`
-- `high_quality`
-- `resource_limited`
+**Default Presets (Mode Selection):**
+
+- `default_classic` - Full model benchmarking (3 runs per model)
+- `default_compatibility_test` - Single model capability testing (1 run)
+- `default` - Alias for `default_classic` (backwards compatible)
+
+**Other Presets:**
+
+- `quick_test` - Fast test (1 run, 1K context, dev mode)
+- `high_quality` - Accurate testing (5 runs, 8K context)
+- `resource_limited` - Low-resource mode (8GB max, memory-efficient)
+
+Readonly preset names cannot be overwritten or deleted by user presets,
+including the legacy alias `default`.
+
+Notes:
+
+- Capability-driven runs across many installed models continue when one model
+  fails to load; the failed model is logged and skipped.
+- Embedding models are retried automatically without KV-cache offload if LM
+  Studio rejects that load option.
 
 </details>
 
@@ -756,8 +780,8 @@ The benchmark tool generates separate log files for each component:
 **Log Format**:
 
 ```bash
-2026-03-06 10:15:30,123 - INFO - Starting benchmark...
-YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message
+2026-03-22 13:35:32,445 - INFO - ℹ️ Starting benchmark...
+YYYY-MM-DD HH:MM:SS,mmm - LEVEL - LEVEL_ICON message
 ```
 
 **Log Levels**:
@@ -765,6 +789,14 @@ YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message
 - `INFO`: General information, progress updates, hardware metrics
 - `WARNING`: Non-fatal issues (GPU tool missing, falling back to CLI)
 - `ERROR`: Runtime errors (model load failure, API unavailable)
+
+**Level Icons**:
+
+- `🐛` Debug details
+- `ℹ️` Informational progress messages
+- `⚠️` Warnings and recoverable issues
+- `❌` Errors
+- `🔥` Critical failures
 
 **Third-Party Logging**:
 

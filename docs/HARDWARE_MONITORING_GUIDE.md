@@ -5,6 +5,9 @@
 Hardware monitoring is now fully functional with stable live charts for all
 metrics and improved GPU model detection.
 
+Monitoring logic is shared in `tools/hardware_monitor.py` and used by both
+classic benchmark flows and capability-driven agent flows.
+
 ## 📊 Implemented Metrics
 
 ### GPU Detection and Model Info
@@ -103,7 +106,9 @@ These outputs are:
 ## 🎯 Data Flow
 
 ```text
-Backend (benchmark.py)
+Backend (cli/benchmark.py / agents/benchmark.py)
+   ↓
+Shared Module (tools/hardware_monitor.py)
   ↓
 HardwareMonitor._monitor_loop()
   ├─ _get_temperature()

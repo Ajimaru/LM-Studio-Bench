@@ -1,0 +1,121 @@
+name: Capability-Driven Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_path:
+        description: 'Model path or identifier'
+        required: false
+        default: ''
+      capabilities:
+        description: 'Comma-separated capabilities'
+        required: false
+        default: 'general_text'
+
+jobs:
+  benchmark:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-gi \
+            gir1.2-gtk-3.0 \
+            libgirepository1.0-dev \
+            gobject-introspection \
+            libcairo2-dev \
+            pkg-config
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Create output directory
+        run: mkdir -p output
+
+      - name: Run capability-driven benchmark
+        id: benchmark
+        continue-on-error: true
+        run: |
+          if [ -n "${{ github.event.inputs.model_path }}" ]; then
+            MODEL_PATH="${{ github.event.inputs.model_path }}"
+            CAPABILITIES="${{ github.event.inputs.capabilities }}"
+            # Temporarily disable 'set -e' so we can capture the exit code
+            set +e
+            python -m cli.main \
+              "$MODEL_PATH" \
+              --capabilities "$CAPABILITIES" \
+              --output-dir output \
+              --verbose
+            exit_code=$?
+            # Optionally re-enable 'set -e' for any subsequent commands
+            set -e
+
+            if [ "$exit_code" -eq 0 ]; then
+              echo "status=completed" >> "$GITHUB_OUTPUT"
+            else
+              echo "status=failed" >> "$GITHUB_OUTPUT"
+            fi
+
+            exit "$exit_code"
+          else
+            echo "No model path provided, skipping benchmark execution"
+            echo "This workflow can be triggered manually with model path"
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+      - name: Upload JSON results
+        if: steps.benchmark.outputs.status == 'completed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-json
+          path: output/*.json
+          retention-days: 30
+
+      - name: Upload HTML reports
+        if: steps.benchmark.outputs.status == 'completed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-html
+          path: output/*.html
+          retention-days: 30
+
+      - name: Upload CSV reports
+        if: steps.benchmark.outputs.status == 'completed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-csv
+          path: output/*.csv
+          retention-days: 30
+
+      - name: Upload PDF reports
+        if: steps.benchmark.outputs.status == 'completed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-pdf
+          path: output/*.pdf
+          retention-days: 30
+
+      - name: Upload raw outputs
+        if: steps.benchmark.outputs.status == 'completed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-raw-outputs
+          path: output/raw/*.json
+          retention-days: 7
+

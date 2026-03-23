@@ -1,10 +1,10 @@
-"""Tests for src/preset_manager.py."""
+"""Tests for core/presets.py."""
 import json
 from pathlib import Path
 
 import pytest
 
-from preset_manager import PresetManager
+from core.presets import PresetManager
 
 
 class TestPresetManagerInit:
@@ -31,10 +31,11 @@ class TestListPresets:
     """Tests for PresetManager.list_presets()."""
 
     def test_always_contains_default(self, tmp_presets_dir: Path):
-        """'default' is always the first entry."""
+        """'default_classic' and 'default_compatibility_test' are always listed."""
         pm = PresetManager(presets_dir=tmp_presets_dir)
         presets = pm.list_presets()
-        assert presets[0] == "default"
+        assert "default_classic" in presets
+        assert "default_compatibility_test" in presets
 
     def test_predefined_presets_present(self, tmp_presets_dir: Path):
         """All predefined readonly presets are listed."""
@@ -71,10 +72,10 @@ class TestListPresetsDetailed:
         assert all(isinstance(item, tuple) and len(item) == 2 for item in detailed)
 
     def test_default_is_readonly(self, tmp_presets_dir: Path):
-        """'default' preset is marked as readonly."""
+        """'default_classic' preset is marked as readonly."""
         pm = PresetManager(presets_dir=tmp_presets_dir)
         for name, readonly in pm.list_presets_detailed():
-            if name == "default":
+            if name == "default_classic":
                 assert readonly is True
                 break
 
@@ -262,6 +263,12 @@ class TestSavePreset:
         """ValueError raised when trying to save with a reserved name."""
         pm = PresetManager(presets_dir=tmp_presets_dir)
         with pytest.raises(ValueError):
+            pm.save_preset("default_classic", {"runs": 1})
+
+    def test_raises_for_default_alias(self, tmp_presets_dir: Path):
+        """ValueError raised when trying to save using readonly alias."""
+        pm = PresetManager(presets_dir=tmp_presets_dir)
+        with pytest.raises(ValueError):
             pm.save_preset("default", {"runs": 1})
 
 
@@ -285,6 +292,12 @@ class TestDeletePreset:
 
     def test_raises_for_reserved_name(self, tmp_presets_dir: Path):
         """ValueError raised when trying to delete a reserved preset."""
+        pm = PresetManager(presets_dir=tmp_presets_dir)
+        with pytest.raises(ValueError):
+            pm.delete_preset("default_classic")
+
+    def test_raises_for_default_alias(self, tmp_presets_dir: Path):
+        """ValueError raised when trying to delete readonly alias."""
         pm = PresetManager(presets_dir=tmp_presets_dir)
         with pytest.raises(ValueError):
             pm.delete_preset("default")

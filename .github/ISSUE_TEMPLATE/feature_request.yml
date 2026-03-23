@@ -39,7 +39,7 @@ body:
     attributes:
       label: Affected area
       options:
-        - src/benchmark.py
+        - cli/benchmark.py
         - web/app.py
         - Web Dashboard
         - GPU detection / hardware info

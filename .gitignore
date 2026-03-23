@@ -50,6 +50,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+output/
 
 # User Data (Symlinks to ~/.local/share and ~/.config)
 results/                      # Symlink to user results directory

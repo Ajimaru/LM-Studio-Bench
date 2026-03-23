@@ -1,0 +1,41 @@
+[
+  {
+    "local_name": "test_image_001.jpg",
+    "query": "cat couch",
+    "title": "File:Black tabby domestic short-haired cat.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/7/7c/Black_tabby_domestic_short-haired_cat.jpg",
+    "mime": "image/jpeg",
+    "size": 5104062,
+    "license": "cc0",
+    "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+    "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:TooManyKarats&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:TooManyKarats (page does not exist)\">TooManyKarats</a>",
+    "credit": "<span class=\"int-own-work\" lang=\"en\">Own work</span>",
+    "source_page": "https://commons.wikimedia.org/wiki/File:Black_tabby_domestic_short-haired_cat.jpg"
+  },
+  {
+    "local_name": "test_image_002.jpg",
+    "query": "street scene pedestrians cars",
+    "title": "File:\"Olive Street Canyon.\" Olive Street looking west from Fourth Street.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/2/2a/%22Olive_Street_Canyon.%22_Olive_Street_looking_west_from_Fourth_Street.jpg",
+    "mime": "image/jpeg",
+    "size": 3811616,
+    "license": "public domain",
+    "license_url": "",
+    "artist": "W.C Persons",
+    "credit": "Missouri History Museum<br>URL: <a rel=\"nofollow\" class=\"external free\" href=\"http://images.mohistory.org/image/B830A88D-AD4B-97DD-8868-3B3E5AB7AD33/original.jpg\">http://images.mohistory.org/image/B830A88D-AD4B-97DD-8868-3B3E5AB7AD33/original.jpg</a><br>Gallery: <a rel=\"nofollow\" class=\"external free\" href=\"http://collections.mohistory.org/resource/153878\">http://collections.mohistory.org/resource/153878</a>",
+    "source_page": "https://commons.wikimedia.org/wiki/File:\"Olive_Street_Canyon.\"_Olive_Street_looking_west_from_Fourth_Street.jpg"
+  },
+  {
+    "local_name": "test_image_003.jpg",
+    "query": "stop sign",
+    "title": "File:Stop sign UAE.jpg",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/a/a6/Stop_sign_UAE.jpg",
+    "mime": "image/jpeg",
+    "size": 1096185,
+    "license": "public domain",
+    "license_url": "",
+    "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Katzenmeier&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Katzenmeier (page does not exist)\">Katzenmeier</a>",
+    "credit": "<span class=\"int-own-work\" lang=\"en\">Own work</span>",
+    "source_page": "https://commons.wikimedia.org/wiki/File:Stop_sign_UAE.jpg"
+  }
+]

@@ -21,7 +21,7 @@ lexicographical = true
 
 # Group imports
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
-known_first_party = ["src", "web", "tools"]
+known_first_party = ["core", "cli", "agents", "web", "tools"]
 
 # Skip directories
 skip_glob = [

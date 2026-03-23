@@ -391,6 +391,11 @@ grep ERROR ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 **Load a built-in preset:**
 
 ```bash
+# Default presets (readonly)
+./run.py --preset default_classic              # Classic benchmark (default)
+./run.py --preset default_compatibility_test   # Capability-driven test
+
+# Other presets
 ./run.py --preset quick_test
 ./run.py --preset high_quality
 ./run.py --preset resource_limited
@@ -400,12 +405,26 @@ grep ERROR ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 
 ```bash
 ./run.py --preset quick_test --runs 2 --context 2048
+./run.py --preset default_classic --runs 5 --context 4096
+```
+
+**Backwards Compatibility:**
+
+```bash
+./run.py --preset default      # Automatically loads default_classic
 ```
 
 Notes:
 
-- `default` includes explicit values for all benchmark form fields, so
+- Default presets include explicit values for all benchmark form fields, so
   preset comparisons do not show `null` values for missing keys.
+- `default_classic` is optimized for full model benchmarking (3 runs)
+- `default_compatibility_test` (alias: `default_compatability_test`) is
+  optimized for focused capability testing (1 run)
+- Capability-driven runs over many installed models continue when a single
+  model fails to load; the failed model is logged and skipped.
+- Embedding models are retried automatically without KV-cache offload if
+  LM Studio rejects that load option.
 - Legacy keys in imported/user presets are normalized automatically
   (`context_length`/`top_k`/`top_p`/`min_p` -> current key names).
 

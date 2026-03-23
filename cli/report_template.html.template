@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LM Studio Benchmark Report</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: white;
+            --text-primary: #333;
+            --text-secondary: #666;
+            --border-color: #e0e0e0;
+            --shadow: rgba(0,0,0,0.1);
+            --chart-bg: #fafafa;
+            --h1-color: #1f4788;
+            --h1-border: #2d5aa8;
+            --h2-color: #2d5aa8;
+        }
+        
+        [data-theme="dark"] {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --border-color: #404040;
+            --shadow: rgba(0,0,0,0.3);
+            --chart-bg: #252525;
+            --h1-color: #6b9aff;
+            --h1-border: #5580d9;
+            --h2-color: #7ba8ff;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: var(--bg-secondary);
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px var(--shadow);
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        h1 {
+            color: var(--h1-color);
+            text-align: center;
+            border-bottom: 3px solid var(--h1-border);
+            padding-bottom: 10px;
+            transition: color 0.3s ease, border-color 0.3s ease;
+        }
+        h2 {
+            color: var(--h2-color);
+            margin-top: 30px;
+            border-left: 4px solid var(--h2-color);
+            padding-left: 10px;
+            transition: color 0.3s ease, border-color 0.3s ease;
+        }
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .summary-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px var(--shadow);
+        }
+        .summary-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        .summary-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .chart {
+            margin: 30px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 15px;
+            background-color: var(--chart-bg);
+            transition: background-color 0.3s ease, border-color 0.3s ease;
+        }
+        .timestamp {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 12px;
+            margin-top: 30px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+            transition: color 0.3s ease, border-color 0.3s ease;
+        }
+        
+        /* Best Practices Section */
+        .best-practices {
+            background-color: var(--bg-secondary);
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+        }
+        
+        /* Category Tables */
+        .category-table {
+            width: 100%;
+            margin: 20px 0;
+            border-collapse: collapse;
+            background-color: var(--bg-secondary);
+        }
+        .category-table thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .category-table thead.vision {
+            background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+        }
+        .category-table thead.tools {
+            background: linear-gradient(135deg, #e27a4a 0%, #c96538 100%);
+        }
+        .category-table thead.arch {
+            background: linear-gradient(135deg, #6a4ae2 0%, #5638c9 100%);
+        }
+        .category-table th, .category-table td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid var(--border-color);
+        }
+        .category-table tbody tr:nth-child(even) {
+            background-color: var(--chart-bg);
+        }
+        .category-table tbody tr:hover {
+            background-color: var(--border-color);
+        }
+        
+        /* Theme Toggle Button */
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 2px 8px var(--shadow);
+            transition: all 0.3s ease;
+        }
+        .theme-toggle:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px var(--shadow);
+        }
+        
+        /* Back to Top Button */
+        .back-to-top {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 1000;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+        .back-to-top:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+        }
+        .back-to-top.show {
+            display: flex;
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" onclick="toggleTheme()" title="Theme wechseln">
+        🌙
+    </button>
+    
+    <button class="back-to-top" onclick="scrollToTop()" title="Nach oben">
+        ↑
+    </button>
+    
+    <div class="container">
+        <h1>📊 LM Studio Model Benchmark Report</h1>
+        
+        <div class="summary">
+            {{SUMMARY_BOXES}}
+        </div>
+        
+        {{CLI_SECTION}}
+        
+        <h2>Performance Rankings</h2>
+        <div class="chart" id="bar-chart"></div>
+        
+        <h2>Model Size vs Performance</h2>
+        <div class="chart" id="scatter-chart"></div>
+        
+        <h2>Efficiency Analysis</h2>
+        <div class="chart" id="efficiency-chart"></div>
+        
+        {{TREND_SECTION}}
+        
+        <h2>💡 Best-Practice-Empfehlungen</h2>
+        <div class="best-practices">{{BEST_PRACTICES}}</div>
+        
+        {{VISION_SECTION}}
+        
+        {{TOOLS_SECTION}}
+        
+        {{ARCH_SECTION}}
+
+        {{PROFILING_SECTION}}
+        
+        <div class="timestamp">
+            Generiert: {{TIMESTAMP}}
+        </div>
+    </div>
+    
+    <script>
+        /* eslint-disable */
+        /* @ts-nocheck */
+        
+        // Theme Management
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            
+            // Update theme toggle icon
+            const btn = document.querySelector('.theme-toggle');
+            btn.textContent = newTheme === 'dark' ? '🌙' : '☀️';
+            
+            // Update Plotly chart colors
+            updateChartThemes(newTheme);
+        }
+        
+        function updateChartThemes(theme) {
+            const isDark = theme === 'dark';
+            const bgColor = isDark ? '#252525' : '#fafafa';
+            const textColor = isDark ? '#e0e0e0' : '#333';
+            const gridColor = isDark ? '#404040' : '#e0e0e0';
+            
+            // Update all plotly divs
+            document.querySelectorAll('[id$="-chart"]').forEach(chartDiv => {
+                if (chartDiv.data) {
+                    Plotly.relayout(chartDiv, {
+                        'paper_bgcolor': bgColor,
+                        'plot_bgcolor': bgColor,
+                        'font.color': textColor,
+                        'xaxis.gridcolor': gridColor,
+                        'yaxis.gridcolor': gridColor
+                    });
+                }
+            });
+        }
+        
+        // Initialize theme on load
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedTheme = localStorage.getItem('theme') || 'dark';  // Default: dark
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            
+            const btn = document.querySelector('.theme-toggle');
+            btn.textContent = savedTheme === 'dark' ? '🌙' : '☀️';
+            
+            // Initialize charts after theme is set
+            initializeCharts();
+        });
+        
+        // Back to Top Button
+        function scrollToTop() {
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        }
+        
+        window.addEventListener('scroll', () => {
+            const backToTopBtn = document.querySelector('.back-to-top');
+            if (window.pageYOffset > 300) {
+                backToTopBtn.classList.add('show');
+            } else {
+                backToTopBtn.classList.remove('show');
+            }
+        });
+        
+        // Chart initialization
+        function initializeCharts() {
+            Plotly.newPlot('bar-chart', {{BAR_DATA}}, {{BAR_LAYOUT}});
+            Plotly.newPlot('scatter-chart', {{SCATTER_DATA}}, {{SCATTER_LAYOUT}});
+            Plotly.newPlot('efficiency-chart', {{EFFICIENCY_DATA}}, {{EFFICIENCY_LAYOUT}});
+            {{TREND_SCRIPT}}
+            
+            // Apply initial theme to charts
+            const theme = document.documentElement.getAttribute('data-theme');
+            updateChartThemes(theme);
+        }
+    </script>
+</body>
+</html>

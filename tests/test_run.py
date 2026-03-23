@@ -4,7 +4,9 @@ run.py executes module-level code that starts subprocesses on import.
 We patch subprocess and sys.exit before importing to avoid side effects.
 """
 import importlib
+import io
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -171,19 +173,61 @@ class TestBuildSubprocessEnv:
         env = run._build_subprocess_env()
         assert "LD_PRELOAD" not in env
 
-    def test_adds_src_to_pythonpath(self):
-        """src/ directory is prepended to PYTHONPATH."""
+    def test_adds_project_root_to_pythonpath(self):
+        """Project root is prepended to PYTHONPATH."""
         run = _import_run()
         env = run._build_subprocess_env()
         assert "PYTHONPATH" in env
-        assert "src" in env["PYTHONPATH"]
+        path_entries = env["PYTHONPATH"].split(":")
+        assert path_entries[0] == str(run.project_root)
 
     def test_preserves_existing_pythonpath(self, monkeypatch):
-        """Existing PYTHONPATH is preserved after the src/ prefix."""
+        """Existing PYTHONPATH is preserved after the project-root prefix."""
         run = _import_run()
         monkeypatch.setenv("PYTHONPATH", "/custom/path")
         env = run._build_subprocess_env()
+        path_entries = env["PYTHONPATH"].split(":")
+        assert path_entries[0] == str(run.project_root)
         assert "/custom/path" in env["PYTHONPATH"]
+
+    def test_appimage_runtime_sets_gi_typelib_path(self, tmp_path, monkeypatch):
+        """AppImage-style runtime adds GI_TYPELIB_PATH entries."""
+        run = _import_run()
+
+        project_root = tmp_path / "a" / "b" / "project"
+        project_root.mkdir(parents=True)
+        appdir = project_root.parents[2]
+        gi_dir = appdir / "usr" / "lib" / "girepository-1.0"
+        gi_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(run, "project_root", project_root)
+        monkeypatch.delenv("GI_TYPELIB_PATH", raising=False)
+
+        env = run._build_subprocess_env()
+        assert "GI_TYPELIB_PATH" in env
+        assert str(gi_dir) in env["GI_TYPELIB_PATH"]
+
+    def test_appimage_runtime_appends_existing_gi_typelib_path(
+        self, tmp_path, monkeypatch
+    ):
+        """Existing GI_TYPELIB_PATH is appended after discovered AppImage dirs."""
+        run = _import_run()
+
+        project_root = tmp_path / "x" / "y" / "project"
+        project_root.mkdir(parents=True)
+        appdir = project_root.parents[2]
+        gi_arch_dir = (
+            appdir / "usr" / "lib" / "x86_64-linux-gnu" / "girepository-1.0"
+        )
+        gi_arch_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(run, "project_root", project_root)
+        monkeypatch.setenv("GI_TYPELIB_PATH", "/already/present")
+
+        env = run._build_subprocess_env()
+        value = env.get("GI_TYPELIB_PATH", "")
+        assert str(gi_arch_dir) in value
+        assert value.endswith("/already/present")
 
 
 class TestSanitizeCliArgs:
@@ -308,6 +352,18 @@ class TestStopTrayProcess:
         run._stop_tray_process(mock_proc)
         mock_proc.kill.assert_called_once()
 
+    def test_kill_errors_are_ignored(self):
+        """kill() exceptions are swallowed in final fallback path."""
+        run = _import_run()
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        mock_proc.wait.side_effect = TimeoutError("timeout")
+        mock_proc.kill.side_effect = OSError("already gone")
+
+        run._stop_tray_process(mock_proc)
+        mock_proc.terminate.assert_called_once()
+        mock_proc.kill.assert_called_once()
+
 
 class TestStartTrayProcess:
     """Tests for _start_tray_process() in run.py."""
@@ -316,7 +372,7 @@ class TestStartTrayProcess:
         """_start_tray_process returns None when tray.py does not exist."""
         run = _import_run()
         monkeypatch.setattr(run, "project_root", tmp_path)
-        (tmp_path / "src").mkdir(exist_ok=True)
+        (tmp_path / "core").mkdir(exist_ok=True)
         with patch.object(run, "USER_LOGS_DIR", tmp_path / "logs"), \
                 patch.object(run, "_tray_python_candidates",
                              return_value=[sys.executable]):
@@ -328,7 +384,7 @@ class TestStartTrayProcess:
     ):
         """_start_tray_process returns Popen when tray starts (poll=None)."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir(exist_ok=True)
         tray_script = src_dir / "tray.py"
         tray_script.write_text("# tray stub")
@@ -337,6 +393,7 @@ class TestStartTrayProcess:
         logs_dir.mkdir(exist_ok=True)
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
+        mock_proc.stdout = None
         with patch.object(run, "USER_LOGS_DIR", logs_dir), \
                 patch.object(run, "_tray_python_candidates",
                              return_value=[sys.executable]), \
@@ -352,7 +409,7 @@ class TestStartTrayProcess:
     ):
         """_start_tray_process returns None when tray exits for all candidates."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir(exist_ok=True)
         tray_script = src_dir / "tray.py"
         tray_script.write_text("# tray stub")
@@ -362,6 +419,7 @@ class TestStartTrayProcess:
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1
         mock_proc.returncode = 1
+        mock_proc.stdout = None
         with patch.object(run, "USER_LOGS_DIR", logs_dir), \
                 patch.object(run, "_tray_python_candidates",
                              return_value=[sys.executable]), \
@@ -377,7 +435,7 @@ class TestStartTrayProcess:
     ):
         """_start_tray_process continues to next candidate on OSError."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir(exist_ok=True)
         tray_script = src_dir / "tray.py"
         tray_script.write_text("# tray stub")
@@ -386,6 +444,7 @@ class TestStartTrayProcess:
         logs_dir.mkdir(exist_ok=True)
         good_proc = MagicMock()
         good_proc.poll.return_value = None
+        good_proc.stdout = None
         call_count = [0]
 
         def popen_side_effect(*args, **kwargs):
@@ -409,7 +468,7 @@ class TestStartTrayProcess:
     ):
         """_start_tray_process appends --debug to command when debug=True."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir(exist_ok=True)
         tray_script = src_dir / "tray.py"
         tray_script.write_text("# tray stub")
@@ -419,6 +478,7 @@ class TestStartTrayProcess:
         captured_cmd = []
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
+        mock_proc.stdout = None
 
         def capture_popen(cmd, **kwargs):
             captured_cmd.extend(cmd)
@@ -439,7 +499,7 @@ class TestStartTrayProcessSymbolLookup:
     def test_logs_symbol_lookup_warning(self, tmp_path, monkeypatch):
         """Prints warning when launcher log contains 'symbol lookup error'."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir()
         (src_dir / "tray.py").write_text("# tray stub")
         logs_dir = tmp_path / "logs"
@@ -447,6 +507,7 @@ class TestStartTrayProcessSymbolLookup:
 
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1
+        mock_proc.stdout = None
 
         original_read_text = Path.read_text
 
@@ -469,7 +530,7 @@ class TestStartTrayProcessSymbolLookup:
     def test_launcher_log_os_error_ignored(self, tmp_path, monkeypatch):
         """OSError reading launcher log is silently ignored."""
         run = _import_run()
-        src_dir = tmp_path / "src"
+        src_dir = tmp_path / "core"
         src_dir.mkdir()
         (src_dir / "tray.py").write_text("# tray stub")
         logs_dir = tmp_path / "logs"
@@ -477,6 +538,7 @@ class TestStartTrayProcessSymbolLookup:
 
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1
+        mock_proc.stdout = None
 
         original_read_text = Path.read_text
 
@@ -499,6 +561,47 @@ class TestStartTrayProcessSymbolLookup:
 
 class TestRunPyHelperFunctions:
     """Tests for small helper functions in run.py."""
+
+    def test_append_tray_launcher_log_adds_timestamp(self, tmp_path: Path):
+        """Timestamped tray launcher log entries are written to disk."""
+        run = _import_run()
+        log_path = tmp_path / "runapp_test.log"
+
+        run._append_tray_launcher_log(log_path, "CMD: python tray.py")
+
+        log_text = log_path.read_text(encoding="utf-8")
+        assert re.match(
+            r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} CMD:",
+            log_text,
+        )
+
+    def test_summarize_tray_failure_for_missing_httpx(self):
+        """Known missing dependency errors get a concise summary."""
+        run = _import_run()
+
+        summary = run._summarize_tray_failure(
+            "Traceback\nModuleNotFoundError: No module named 'httpx'"
+        )
+
+        assert "httpx" in summary
+
+    def test_stream_tray_output_to_log_adds_timestamp(self, tmp_path: Path):
+        """Tray subprocess output is persisted with timestamps."""
+        run = _import_run()
+        log_path = tmp_path / "runapp_test.log"
+
+        run._stream_tray_output_to_log(
+            io.StringIO("first line\nsecond line\n"),
+            log_path,
+        )
+
+        log_text = log_path.read_text(encoding="utf-8")
+        assert "first line" in log_text
+        assert "second line" in log_text
+        assert re.search(
+            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} first line",
+            log_text,
+        )
 
     def test_format_path_for_logs_home(self):
         """format_path_for_logs replaces home dir with ~."""
@@ -656,5 +759,50 @@ class TestRunModuleEntrypointCoverage:
         )
         assert result["exit_code"] == 5
         called_cmd = result["mock_run"].call_args[0][0]
-        assert str(Path("src") / "benchmark.py") in called_cmd[1]
+        assert str(Path("cli") / "benchmark.py") in called_cmd[1]
         tray_proc.terminate.assert_called_once()
+
+    def test_webapp_mode_missing_app_script_exits_one(self):
+        """Webapp mode exits with code 1 when web/app.py is missing."""
+        original_exists = Path.exists
+
+        def patched_exists(path_obj):
+            path_str = str(path_obj)
+            if path_str.endswith("web/app.py"):
+                return False
+            return original_exists(path_obj)
+
+        with patch.object(Path, "exists", patched_exists):
+            result = _execute_run_module_with_args(["run.py", "--webapp"])
+
+        assert result["exit_code"] == 1
+
+    def test_agent_mode_invalid_args_exits_two(self):
+        """Invalid agent args trigger sanitize failure and exit code 2."""
+        result = _execute_run_module_with_args(
+            ["run.py", "--agent", "model-x", "--bad$arg"]
+        )
+
+        assert result["exit_code"] == 2
+
+    def test_agent_mode_subprocess_oserror_exits_one(self):
+        """Agent mode handles subprocess OSError with exit code 1."""
+        if "run" in sys.modules:
+            del sys.modules["run"]
+
+        def _raise_system_exit(code=0):
+            raise SystemExit(code)
+
+        with patch.object(sys, "argv", ["run.py", "--agent", "model-x"]), \
+                patch("subprocess.run", side_effect=OSError("boom")), \
+                patch("subprocess.Popen") as mock_popen, \
+                patch("time.sleep"), \
+                patch("sys.exit", side_effect=_raise_system_exit):
+            exit_code = None
+            try:
+                importlib.import_module("run")
+            except SystemExit as exc:
+                exit_code = exc.code
+
+        assert exit_code == 1
+        assert mock_popen.call_count == 0

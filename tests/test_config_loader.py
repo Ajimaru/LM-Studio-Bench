@@ -1,9 +1,9 @@
-"""Tests for src/config_loader.py."""
+"""Tests for core/config.py."""
 import json
 from pathlib import Path
 from unittest.mock import patch
 
-from config_loader import (
+from core.config import (
     BASE_DEFAULT_CONFIG,
     _deep_merge,
     _normalize_ports,
@@ -123,8 +123,8 @@ class TestLoadDefaultConfig:
     def test_returns_base_keys_when_no_files(self, tmp_path: Path):
         """Returns BASE_DEFAULT_CONFIG keys when no config files exist."""
         non_existent = tmp_path / "no_config.json"
-        with patch("config_loader.PROJECT_CONFIG_PATH", non_existent), \
-             patch("config_loader.USER_CONFIG_FILE", non_existent):
+        with patch("core.config.PROJECT_CONFIG_PATH", non_existent), \
+             patch("core.config.USER_CONFIG_FILE", non_existent):
             result = load_default_config()
         assert "prompt" in result
         assert "lmstudio" in result
@@ -138,8 +138,8 @@ class TestLoadDefaultConfig:
             json.dumps({"prompt": "custom_prompt"}), encoding="utf-8"
         )
         non_existent = tmp_path / "no_user.json"
-        with patch("config_loader.PROJECT_CONFIG_PATH", project_cfg), \
-             patch("config_loader.USER_CONFIG_FILE", non_existent):
+        with patch("core.config.PROJECT_CONFIG_PATH", project_cfg), \
+             patch("core.config.USER_CONFIG_FILE", non_existent):
             result = load_default_config()
         assert result["prompt"] == "custom_prompt"
 
@@ -153,8 +153,8 @@ class TestLoadDefaultConfig:
         user_cfg.write_text(
             json.dumps({"prompt": "user_prompt"}), encoding="utf-8"
         )
-        with patch("config_loader.PROJECT_CONFIG_PATH", project_cfg), \
-             patch("config_loader.USER_CONFIG_FILE", user_cfg):
+        with patch("core.config.PROJECT_CONFIG_PATH", project_cfg), \
+             patch("core.config.USER_CONFIG_FILE", user_cfg):
             result = load_default_config()
         assert result["prompt"] == "user_prompt"
 
@@ -163,8 +163,8 @@ class TestLoadDefaultConfig:
         bad_cfg = tmp_path / "bad.json"
         bad_cfg.write_text("{ not valid json }", encoding="utf-8")
         non_existent = tmp_path / "no_user.json"
-        with patch("config_loader.PROJECT_CONFIG_PATH", bad_cfg), \
-             patch("config_loader.USER_CONFIG_FILE", non_existent):
+        with patch("core.config.PROJECT_CONFIG_PATH", bad_cfg), \
+             patch("core.config.USER_CONFIG_FILE", non_existent):
             result = load_default_config()
         assert "prompt" in result
 
@@ -174,8 +174,8 @@ class TestLoadDefaultConfig:
         project_cfg.write_text(json.dumps({"prompt": "p"}), encoding="utf-8")
         bad_user = tmp_path / "bad_user.json"
         bad_user.write_text("not json", encoding="utf-8")
-        with patch("config_loader.PROJECT_CONFIG_PATH", project_cfg), \
-             patch("config_loader.USER_CONFIG_FILE", bad_user):
+        with patch("core.config.PROJECT_CONFIG_PATH", project_cfg), \
+             patch("core.config.USER_CONFIG_FILE", bad_user):
             result = load_default_config()
         assert "prompt" in result
 
@@ -187,8 +187,8 @@ class TestLoadDefaultConfig:
             encoding="utf-8",
         )
         non_existent = tmp_path / "no_user.json"
-        with patch("config_loader.PROJECT_CONFIG_PATH", project_cfg), \
-             patch("config_loader.USER_CONFIG_FILE", non_existent):
+        with patch("core.config.PROJECT_CONFIG_PATH", project_cfg), \
+             patch("core.config.USER_CONFIG_FILE", non_existent):
             result = load_default_config()
         ports = result["lmstudio"]["ports"]
         assert isinstance(ports, list)
@@ -201,8 +201,8 @@ class TestLoadDefaultConfig:
             json.dumps({"lmstudio": {}}), encoding="utf-8"
         )
         non_existent = tmp_path / "no_user.json"
-        with patch("config_loader.PROJECT_CONFIG_PATH", project_cfg), \
-             patch("config_loader.USER_CONFIG_FILE", non_existent):
+        with patch("core.config.PROJECT_CONFIG_PATH", project_cfg), \
+             patch("core.config.USER_CONFIG_FILE", non_existent):
             result = load_default_config()
         assert result["lmstudio"]["host"] == BASE_DEFAULT_CONFIG["lmstudio"]["host"]
 
@@ -214,8 +214,8 @@ class TestLoadDefaultConfig:
             encoding="utf-8",
         )
         non_existent = tmp_path / "no_user.json"
-        with patch("config_loader.PROJECT_CONFIG_PATH", project_cfg), \
-             patch("config_loader.USER_CONFIG_FILE", non_existent):
+        with patch("core.config.PROJECT_CONFIG_PATH", project_cfg), \
+             patch("core.config.USER_CONFIG_FILE", non_existent):
             result = load_default_config()
         assert result["lmstudio"]["host"] == "remotehost"
         assert "ports" in result["lmstudio"]

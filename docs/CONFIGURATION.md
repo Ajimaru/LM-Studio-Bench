@@ -143,9 +143,35 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
 
 ### Preset Defaults and Compatibility
 
-The readonly `default` preset contains explicit values for all benchmark
-fields that can be set in the web UI and CLI benchmark request model.
-This avoids `null` values in preset comparison output.
+The tool includes two readonly default presets:
+
+#### `default_classic` - Classic Benchmark Mode
+
+Default preset for standard model benchmarking. Contains explicit values for all benchmark
+fields to avoid `null` values in preset comparisons.
+
+- **benchmark_mode**: `classic`
+- **preset_mode**: `classic`
+- **runs**: 3
+- **context**: 2048
+- Capability fields (agent_model, agent_capabilities, agent_max_tests): `null`
+
+**Backwards Compatibility**: Loading `--preset default` automatically loads `default_classic`.
+
+#### `default_compatibility_test` - Capability-Driven Test Mode
+
+Default preset for focused capability testing of a single model.
+
+**Alias**: The legacy name `default_compatability_test` is accepted as an alias
+for this preset for backward compatibility.
+- **benchmark_mode**: `capability`
+- **preset_mode**: `capability`
+- **runs**: 1
+- **context**: 2048
+- **agent_model**: `qwen2.5-7b-instruct`
+- **agent_capabilities**: `general_text,reasoning`
+- **agent_max_tests**: `10`
+- No `null` values - all fields have explicit defaults
 
 Compatibility mapping is applied automatically when loading and comparing
 presets with legacy keys:
@@ -203,19 +229,31 @@ List all available presets (readonly + user presets) and exit.
 #### `--preset`, `-p` (string)
 
 Load a preset before parsing all remaining CLI arguments.
-If omitted, `default` is loaded automatically.
+If omitted, `default_classic` is used. The legacy alias `default` still
+loads `default_classic` automatically.
 
 ```bash
 ./run.py --preset quick_test
 ./run.py --preset high_quality --runs 3
+./run.py --preset default_classic
+./run.py --preset default_compatability_test
 ```
 
 Built-in readonly presets:
 
-- `default`
+- `default_classic`
+- `default_compatability_test`
+- `default` (alias for `default_classic`)
 - `quick_test`
 - `high_quality`
 - `resource_limited`
+
+Readonly preset names cannot be saved, deleted, or imported as user presets.
+This restriction also applies to the legacy alias `default`.
+
+For capability-driven runs across many models, individual model load failures
+are logged and skipped so the benchmark can continue with the remaining
+models.
 
 ---
 
@@ -835,8 +873,8 @@ logs/
 Each log entry follows this format:
 
 ```bash
-YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message
-2026-03-06 10:15:30,123 - INFO - Starting benchmark...
+YYYY-MM-DD HH:MM:SS,mmm - LEVEL - LEVEL_ICON message
+2026-03-22 13:35:32,445 - INFO - ℹ️ Starting benchmark...
 ```
 
 ### Log Levels
@@ -848,6 +886,18 @@ The tool uses standard Python logging levels:
 | `INFO` | General information and progress | Model loading, benchmark completion, hardware metrics |
 | `WARNING` | Non-fatal issues and fallbacks | GPU tool missing, using CLI fallback, skipped models |
 | `ERROR` | Runtime errors requiring attention | Model load failure, API unavailable, VRAM exceeded |
+
+### Level Icons
+
+Each log level also gets an automatic icon prefix:
+
+| Level | Icon |
+| ----- | ---- |
+| `DEBUG` | `🐛` |
+| `INFO` | `ℹ️` |
+| `WARNING` | `⚠️` |
+| `ERROR` | `❌` |
+| `CRITICAL` | `🔥` |
 
 ### Hardware Metrics in Logs
 

@@ -803,6 +803,11 @@
             cursor: pointer;
         }
 
+        .mode-disabled {
+            opacity: 0.45;
+            filter: saturate(0.7);
+        }
+
         .hidden {
             display: none;
         }
@@ -1522,6 +1527,11 @@
                      class="btn-primary"
                      style="text-decoration: none">📊 CSV</a>
                 </div>
+                <div id="exportBatchLinks"
+                     style="margin-top: 0.75rem;
+                            font-size: 0.85rem;
+                            color: var(--text-light);
+                            display: none"></div>
               </div>
             </div>
           </div>
@@ -1571,413 +1581,6 @@
               <button onclick="showImportModal()"
                       class="btn-secondary"
                       title="Import presets from ZIP file">📥 Import</button>
-            </div>
-          </div>
-
-          <!-- Start Modal -->
-          <div id="startModal"
-               class="card hidden"
-               style="margin-bottom: 2rem;
-                      border: 2px solid var(--primary)">
-            <h2>Start Benchmark</h2>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-              <!-- Left Column: Basic Parameters -->
-              <div>
-                <h3 style="font-size: 0.9rem;
-                           color: var(--text-light);
-                           margin-bottom: 1rem;
-                           text-transform: uppercase">📋 Basic Parameters</h3>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon" data-tooltip="Number of test runs per model">?</span> Runs
-                  </label>
-                  <input type="number" id="paramRuns" value="3" min="1" max="10">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon" data-tooltip="Input context length in tokens">?</span> Context Length
-                  </label>
-                  <input type="number" id="paramContext" value="2048" min="512" max="32768">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon" data-tooltip="Max. number of models to test">?</span> Model Limit
-                  </label>
-                  <input type="number"
-                         id="paramLimit"
-                         placeholder="Empty = all models"
-                         min="1">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon"
-                          data-tooltip="Minimum context length of the model">?</span> Min. Context
-                  </label>
-                  <input type="number" id="paramMinContext" placeholder="e.g. 32000" min="512">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon" data-tooltip="Size limit for models in GB">?</span> Max. Size
-                  </label>
-                  <input type="number"
-                         id="paramMaxSize"
-                         placeholder="e.g. 10.0"
-                         min="0.1"
-                         step="0.1">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon"
-                          data-tooltip="Custom test prompt instead of default">?</span> Custom Prompt
-                  </label>
-                  <input type="text" id="paramPrompt" placeholder="Empty = default">
-                </div>
-              </div>
-
-              <!-- Right Column: Filter & Options -->
-              <div>
-                <h3 style="font-size: 0.9rem;
-                           color: var(--text-light);
-                           margin-bottom: 1rem;
-                           text-transform: uppercase">🔍 Filter & Options</h3>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon"
-                          data-tooltip="Regex: only models matching the pattern">?</span> Include Pattern
-                  </label>
-                  <input type="text" id="paramInclude" placeholder="e.g. mistral|llama">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon"
-                          data-tooltip="Regex: exclude models matching the pattern">?</span> Exclude Pattern
-                  </label>
-                  <input type="text" id="paramExclude" placeholder="e.g. gpt|claude">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon"
-                          data-tooltip="Only specific quantizations (e.g. q4,q5)">?</span> Quantizations
-                  </label>
-                  <input type="text" id="paramQuants" placeholder="e.g. q4,q5,q6">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon"
-                          data-tooltip="Only specific architectures (e.g. llama,mistral)">?</span> Architectures
-                  </label>
-                  <input type="text" id="paramArch" placeholder="e.g. llama,mistral">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon"
-                          data-tooltip="Only specific parameter sizes (e.g. 3B,7B)">?</span> Parameter Sizes
-                  </label>
-                  <input type="text" id="paramParams" placeholder="e.g. 3B,7B">
-                </div>
-
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon" data-tooltip="Sorting of results">?</span> Rank By
-                  </label>
-                  <select id="paramRankBy"
-                          style="padding: 0.5rem;
-                                 border: 1px solid var(--border);
-                                 border-radius: 0.25rem;
-                                 font-size: 0.9rem">
-                    <option value="">Default (Names)</option>
-                    <option value="speed">⚡ Speed (Tokens/s)</option>
-                    <option value="efficiency">📊 Efficiency (Tokens/GB)</option>
-                    <option value="ttft">⏱️ Time to First Token</option>
-                    <option value="vram">💾 VRAM Usage</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div style="border-top: 1px solid var(--border);
-                        padding-top: 1rem;
-                        margin-top: 1rem">
-              <h3 style="font-size: 0.9rem;
-                         color: var(--text-light);
-                         margin-bottom: 1rem;
-                         text-transform: uppercase">✅ Flags & Profiling</h3>
-
-              <div class="checkbox-group"
-                   style="display: grid;
-                          grid-template-columns: 1fr 1fr;
-                          gap: 0.75rem">
-                <div class="checkbox-item">
-                  <input type="checkbox" id="paramVisionOnly">
-                  <label for="paramVisionOnly">
-                    <span class="tooltip-icon"
-                          data-tooltip="Only multimodal models (with image support)">?</span> Vision Models
-                  </label>
-                </div>
-                <div class="checkbox-item">
-                  <input type="checkbox" id="paramDisableGTT">
-                  <label for="paramDisableGTT">
-                    <span class="tooltip-icon"
-                          data-tooltip="Disable shared system RAM (GTT), use only VRAM">?</span> Disable GTT
-                  </label>
-                </div>
-                <div class="checkbox-item">
-                  <input type="checkbox" id="paramToolsOnly">
-                  <label for="paramToolsOnly">
-                    <span class="tooltip-icon"
-                          data-tooltip="Only models with function calling/tool support">?</span> Tool Models
-                  </label>
-                </div>
-                <div class="checkbox-item">
-                  <input type="checkbox" id="paramDevMode">
-                  <label for="paramDevMode">
-                    <span class="tooltip-icon" data-tooltip="Fast: smallest model, 1 run">?</span> Dev Mode
-                  </label>
-                </div>
-                <div class="checkbox-item">
-                  <input type="checkbox" id="paramRetest">
-                  <label for="paramRetest">
-                    <span class="tooltip-icon"
-                          data-tooltip="Re-test cached models (overwrite results)">?</span> Re-test
-                  </label>
-                </div>
-                <div class="checkbox-item">
-                  <input type="checkbox" id="paramEnableProfiling" checked>
-                  <label for="paramEnableProfiling">
-                    <span class="tooltip-icon"
-                          data-tooltip="Measure GPU temperature and power consumption during benchmark">?</span> Profiling
-                  </label>
-                </div>
-              </div>
-
-              <!-- Load-Config Parameters (Performance Tuning) -->
-              <details style="margin-top: 1rem;">
-                <summary style="cursor: pointer;
-                                font-weight: bold;
-                                padding: 0.5rem;
-                                background: rgba(255,255,255,0.05);
-                                border-radius: 4px">⚙️ Advanced Load Options (Performance Tuning)</summary>
-                <div style="display: grid;
-                            grid-template-columns: 1fr 1fr;
-                            gap: 1rem;
-                            margin-top: 1rem;
-                            padding: 1rem;
-                            background: rgba(255,255,255,0.03);
-                            border-radius: 4px">
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="GPU-Layers determine how many model layers run on GPU. -1=automatic (uses all available layers based on VRAM), 0=CPU only (very slow, for large models without GPU), >0=specific number (e.g. 32 for partial offloading with VRAM shortage). Default: -1 for best performance.">?</span> GPU-Layers
-                    </label>
-                    <input type="number" id="paramNGpuLayers" value="-1" min="-1" max="100">
-                  </div>
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="Batch size controls how many tokens are processed in parallel during prompt processing. Higher=faster prompt processing but more VRAM. 512=default (balanced), 256=less VRAM, 1024+=faster with lots of VRAM. Only affects prompt phase, not generation.">?</span> Batch Size
-                    </label>
-                    <input type="number"
-                           id="paramNBatch"
-                           value="512"
-                           min="1"
-                           max="2048"
-                           step="128">
-                  </div>
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="CPU threads for non-GPU computations (e.g. when layers run on CPU or with multi-GPU setup). -1=automatic (uses all CPU cores), 4-8=reduces CPU load for other tasks. Only relevant if n_gpu_layers < total layers. Default: -1.">?</span> CPU Threads
-                    </label>
-                    <input type="number" id="paramNThreads" value="-1" min="-1" max="64">
-                  </div>
-                  <div class="checkbox-item" style="grid-column: span 1;">
-                    <input type="checkbox" id="paramFlashAttention" checked>
-                    <label for="paramFlashAttention">
-                      <span class="tooltip-icon"
-                            data-tooltip="Flash Attention is an optimized implementation of the attention mechanism that is 20-30% faster and uses less VRAM (with same quality). Enabled=faster+more efficient. Disabled=slower standard implementation. Only active with compatible models. Default: ON (recommended).">?</span> Flash Attention
-                    </label>
-                  </div>
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="RoPE (Rotary Position Embedding) frequency base controls how positions are encoded. Higher values (e.g. 500000) allow longer context windows. Only change if model was trained for extended context (e.g. Code Llama with 100k context). Wrong values → worse quality. Empty=model default (recommended).">?</span> RoPE Freq Base
-                    </label>
-                    <input type="number"
-                           id="paramRopeFreqBase"
-                           placeholder="e.g. 10000.0"
-                           min="0"
-                           step="1000">
-                  </div>
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="RoPE frequency scaling for context extension. <1.0=compresses positions for longer contexts (e.g. 0.5 for double context), >1.0=expands (rare). Enables larger contexts than model training, with quality loss. Only for experimental context extension. Empty=1.0 (model default, recommended).">?</span> RoPE Freq Scale
-                    </label>
-                    <input type="number"
-                           id="paramRopeFreqScale"
-                           placeholder="e.g. 1.0"
-                           min="0"
-                           step="0.1">
-                  </div>
-                  <div class="checkbox-item">
-                    <input type="checkbox" id="paramUseMmap" checked>
-                    <label for="paramUseMmap">
-                      <span class="tooltip-icon"
-                            data-tooltip="Memory-Mapping (mmap) loads model files directly from disk instead of copying to RAM. Advantages: faster load start, lower RAM peak. Disadvantage: first access to new layers slower (from SSD). Enabled=recommended (especially for large models). Disabled=loads everything into RAM (faster after load, needs lots of RAM).">?</span> Use Memory-Mapping
-                    </label>
-                  </div>
-                  <div class="checkbox-item">
-                    <input type="checkbox" id="paramUseMlock">
-                    <label for="paramUseMlock">
-                      <span class="tooltip-icon"
-                            data-tooltip="Memory-Locking (mlock) pins model weights in RAM and prevents swapping to disk. Advantage: consistent performance (no swap slowdown). Disadvantage: permanently blocks RAM, system can become unstable with RAM shortage. Only enable if enough RAM available. Default: OFF (safer).">?</span> Use Memory-Locking
-                    </label>
-                  </div>
-                  <div class="form-group" style="grid-column: span 2;">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="KV-Cache quantization compresses key-value cache in memory to save VRAM. f32/f16=full quality (lots of VRAM), q8_0=8-bit (minor quality loss, -50% VRAM), q4_0/q4_1=4-bit (noticeable loss, -75% VRAM). Recommended: empty (model default) or f16 with VRAM issues. For long contexts, VRAM savings can be critical.">?</span> KV-Cache Quantization
-                    </label>
-                    <select id="paramKvCacheQuant">
-                      <option value="">Model-Default</option>
-                      <option value="f32">f32 (Full Precision)</option>
-                      <option value="f16">f16 (Half Precision)</option>
-                      <option value="q8_0">q8_0 (8-bit)</option>
-                      <option value="q4_0">q4_0 (4-bit)</option>
-                      <option value="q4_1">q4_1 (4-bit v2)</option>
-                      <option value="iq4_nl">iq4_nl (4-bit improved)</option>
-                      <option value="q5_0">q5_0 (5-bit)</option>
-                      <option value="q5_1">q5_1 (5-bit v2)</option>
-                    </select>
-                  </div>
-                </div>
-              </details>
-
-              <!-- Inference Parameters (Special Parameters) -->
-              <details style="margin-top: 1rem;">
-                <summary style="cursor: pointer;
-                                font-weight: bold;
-                                padding: 0.5rem;
-                                background: rgba(255,255,255,0.05);
-                                border-radius: 4px">🎯 Inference Parameters (Special Parameters)</summary>
-                <div style="display: grid;
-                            grid-template-columns: 1fr 1fr;
-                            gap: 1rem;
-                            margin-top: 1rem;
-                            padding: 1rem;
-                            background: rgba(255,255,255,0.03);
-                            border-radius: 4px">
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="Controls randomness of output. Low (0.1-0.3) = more predictable/focused. High (0.7-1.0) = more creative/diverse. Default: 0.7">?</span> Temperature
-                    </label>
-                    <input type="number"
-                           id="paramTemperature"
-                           placeholder="0.7"
-                           step="0.1"
-                           min="0"
-                           max="2">
-                  </div>
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="Limits selection to K most likely tokens. Low (10-20) = more conservative. High (50-100) = more variable. Default: 40">?</span> Top-K
-                    </label>
-                    <input type="number" id="paramTopK" placeholder="40" step="1" min="1">
-                  </div>
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="Nucleus Sampling: selects smallest token set with probability >= P. Low (0.5-0.7) = more precise. High (0.9-0.95) = more diverse. Default: 0.9">?</span> Top-P
-                    </label>
-                    <input type="number"
-                           id="paramTopP"
-                           placeholder="0.9"
-                           step="0.05"
-                           min="0"
-                           max="1">
-                  </div>
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="Min-P Sampling: discards tokens with p < min_p * p_max. Alternative to Top-P with dynamic threshold. Low (0.01-0.03) = diverse. High (0.1-0.2) = focused. Default: 0.05">?</span> Min-P
-                    </label>
-                    <input type="number"
-                           id="paramMinP"
-                           placeholder="0.05"
-                           step="0.01"
-                           min="0"
-                           max="1">
-                  </div>
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="Repeat Penalty: penalizes repeated tokens. Low (1.0-1.1) = more natural, more repetitions. High (1.3-1.5) = fewer repetitions. Default: 1.2">?</span> Repeat Penalty
-                    </label>
-                    <input type="number"
-                           id="paramRepeatPenalty"
-                           placeholder="1.2"
-                           step="0.1"
-                           min="1"
-                           max="2">
-                  </div>
-                  <div class="form-group">
-                    <label>
-                      <span class="tooltip-icon"
-                            data-tooltip="Max Tokens: Maximum number of generated tokens. Low (128-256) = short answers, faster. High (512-2048) = detailed answers, slower. Default: 256">?</span> Max Tokens
-                    </label>
-                    <input type="number" id="paramMaxTokens" placeholder="256" step="64" min="1">
-                  </div>
-                </div>
-              </details>
-
-              <div style="display: grid;
-                          grid-template-columns: 1fr 1fr;
-                          gap: 1rem;
-                          margin-top: 1rem">
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon"
-                          data-tooltip="Warning when GPU temperature is exceeded">?</span> Max. GPU Temp
-                  </label>
-                  <input type="number"
-                         id="paramMaxTemp"
-                         placeholder="e.g. 85.0"
-                         min="30"
-                         max="120"
-                         step="0.1">
-                </div>
-                <div class="form-group">
-                  <label>
-                    <span class="tooltip-icon"
-                          data-tooltip="Warning when GPU power consumption is exceeded">?</span> Max. GPU Power
-                  </label>
-                  <input type="number"
-                         id="paramMaxPower"
-                         placeholder="e.g. 400.0"
-                         min="50"
-                         max="1000"
-                         step="0.1">
-                </div>
-              </div>
-            </div>
-
-            <div class="controls" style="gap: 1rem; margin-top: 1rem;">
-              <button class="btn-success" onclick="startBenchmark()">✅ Start Benchmark</button>
-              <button class="btn-primary" onclick="toggleStartModal()">❌ Cancel</button>
             </div>
           </div>
 
@@ -2097,6 +1700,494 @@
             <div class="controls" style="gap: 1rem; margin-top: 1.5rem;">
               <button class="btn-success" onclick="confirmImportPresets()">✅ Import</button>
               <button class="btn-primary" onclick="hideImportModal()">❌ Cancel</button>
+            </div>
+          </div>
+
+          <!-- Start Modal -->
+          <div id="startModal"
+               class="card hidden"
+               style="margin-bottom: 2rem;
+                      border: 2px solid var(--primary)">
+            <h2>Start Benchmark</h2>
+
+            <div style="margin-bottom: 1rem;">
+              <div class="form-group" style="max-width: 520px;">
+                <label>
+                  <span class="tooltip-icon"
+                        data-tooltip="Classic runs full model benchmark; capability runs focused capability tests for one model">?</span> Benchmark Mode
+                </label>
+                <select id="paramBenchmarkMode"
+                        onchange="updateBenchmarkModeUI()"
+                        style="padding: 0.5rem;
+                               border: 1px solid var(--border);
+                               border-radius: 0.25rem;
+                               font-size: 0.9rem">
+                  <option value="classic">Classic (default prompt benchmark)</option>
+                  <option value="capability">Capability-driven test</option>
+                </select>
+              </div>
+
+              <div id="capabilityModeSettings"
+                   style="display: none;
+                          padding: 0.75rem;
+                          border: 1px solid var(--border);
+                          border-radius: 0.4rem;
+                          background: rgba(255,255,255,0.03)">
+                <div class="form-group" style="margin-bottom: 0.6rem;">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Model ID or path for capability benchmark (required in capability mode)">?</span> Agent Model ID/Path
+                  </label>
+                  <input type="text"
+                         id="paramAgentModel"
+                         list="installedModelsList"
+                         placeholder="e.g. qwen2.5-7b-instruct"
+                         autocomplete="off">
+                  <datalist id="installedModelsList"></datalist>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.6rem;">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Run only selected capability suites">?</span> Capabilities
+                  </label>
+                  <div class="checkbox-group"
+                       style="display: grid;
+                              grid-template-columns: 1fr 1fr;
+                              gap: 0.5rem">
+                    <div class="checkbox-item">
+                      <input type="checkbox" id="capGeneralText" checked>
+                      <label for="capGeneralText">General Text</label>
+                    </div>
+                    <div class="checkbox-item">
+                      <input type="checkbox" id="capReasoning" checked>
+                      <label for="capReasoning">Reasoning</label>
+                    </div>
+                    <div class="checkbox-item">
+                      <input type="checkbox" id="capVision">
+                      <label for="capVision">Vision</label>
+                    </div>
+                    <div class="checkbox-item">
+                      <input type="checkbox" id="capTooling">
+                      <label for="capTooling">Tooling</label>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label>
+                    <span class="tooltip-icon" data-tooltip="Maximum tests per capability">?</span> Max Tests per Capability
+                  </label>
+                  <input type="number" id="paramAgentMaxTests" value="10" min="1" max="100">
+                </div>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+              <!-- Left Column: Basic Parameters -->
+              <div>
+                <h3 style="font-size: 0.9rem;
+                           color: var(--text-light);
+                           margin-bottom: 1rem;
+                           text-transform: uppercase">📋 Basic Parameters</h3>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon" data-tooltip="Number of test runs per model">?</span> Runs
+                  </label>
+                  <input type="number" id="paramRuns" value="3" min="1" max="10">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon" data-tooltip="Input context length in tokens">?</span> Context Length
+                  </label>
+                  <input type="number" id="paramContext" value="2048" min="512" max="32768">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Max. number of models to test. In Capability mode with Re-test enabled: if set, picks this many random installed models; if empty, tests all installed models.">?</span> Model Limit
+                  </label>
+                  <input type="number"
+                         id="paramLimit"
+                         placeholder="Empty = all models"
+                         min="1">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Minimum context length of the model">?</span> Min. Context
+                  </label>
+                  <input type="number" id="paramMinContext" placeholder="e.g. 32000" min="512">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon" data-tooltip="Size limit for models in GB">?</span> Max. Size
+                  </label>
+                  <input type="number"
+                         id="paramMaxSize"
+                         placeholder="e.g. 10.0"
+                         min="0.1"
+                         step="0.1">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Custom test prompt instead of default">?</span> Custom Prompt
+                  </label>
+                  <input type="text" id="paramPrompt" placeholder="Empty = default">
+                </div>
+
+              </div>
+
+              <!-- Right Column: Filter & Options -->
+              <div>
+                <h3 style="font-size: 0.9rem;
+                           color: var(--text-light);
+                           margin-bottom: 1rem;
+                           text-transform: uppercase">🔍 Filter & Options</h3>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Regex: only models matching the pattern">?</span> Include Pattern
+                  </label>
+                  <input type="text" id="paramInclude" placeholder="e.g. mistral|llama">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Regex: exclude models matching the pattern">?</span> Exclude Pattern
+                  </label>
+                  <input type="text" id="paramExclude" placeholder="e.g. gpt|claude">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Only specific quantizations (e.g. q4,q5)">?</span> Quantizations
+                  </label>
+                  <input type="text" id="paramQuants" placeholder="e.g. q4,q5,q6">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Only specific architectures (e.g. llama,mistral)">?</span> Architectures
+                  </label>
+                  <input type="text" id="paramArch" placeholder="e.g. llama,mistral">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Only specific parameter sizes (e.g. 3B,7B)">?</span> Parameter Sizes
+                  </label>
+                  <input type="text" id="paramParams" placeholder="e.g. 3B,7B">
+                </div>
+
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon" data-tooltip="Sorting of results">?</span> Rank By
+                  </label>
+                  <select id="paramRankBy"
+                          style="padding: 0.5rem;
+                                 border: 1px solid var(--border);
+                                 border-radius: 0.25rem;
+                                 font-size: 0.9rem">
+                    <option value="">Default (Names)</option>
+                    <option value="speed">⚡ Speed (Tokens/s)</option>
+                    <option value="efficiency">📊 Efficiency (Tokens/GB)</option>
+                    <option value="ttft">⏱️ Time to First Token</option>
+                    <option value="vram">💾 VRAM Usage</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div style="border-top: 1px solid var(--border);
+                        padding-top: 1rem;
+                        margin-top: 1rem">
+              <h3 style="font-size: 0.9rem;
+                         color: var(--text-light);
+                         margin-bottom: 1rem;
+                         text-transform: uppercase">✅ Flags & Profiling</h3>
+              <p style="font-size: 0.82rem;
+                        color: var(--text-light);
+                        margin-bottom: 0.75rem">
+                Mode hints: [Classic + Capability] = active in both modes,
+                [Classic focused] = full effect in classic, reduced/compat in
+                capability.
+              </p>
+
+              <div class="checkbox-group"
+                   style="display: grid;
+                          grid-template-columns: 1fr 1fr;
+                          gap: 0.75rem">
+                <div class="checkbox-item">
+                  <input type="checkbox" id="paramVisionOnly">
+                  <label for="paramVisionOnly">
+                    <span class="tooltip-icon"
+                          data-tooltip="Only multimodal models (with image support)">?</span> Vision Models
+                  </label>
+                </div>
+                <div class="checkbox-item">
+                  <input type="checkbox" id="paramDisableGTT">
+                  <label for="paramDisableGTT">
+                    <span class="tooltip-icon"
+                          data-tooltip="Disable shared system RAM (GTT), use only VRAM. [Classic focused: full effect in classic path, compatibility flag in capability path]">?</span> Disable GTT
+                  </label>
+                </div>
+                <div class="checkbox-item">
+                  <input type="checkbox" id="paramToolsOnly">
+                  <label for="paramToolsOnly">
+                    <span class="tooltip-icon"
+                          data-tooltip="Only models with function calling/tool support">?</span> Tool Models
+                  </label>
+                </div>
+                <div class="checkbox-item">
+                  <input type="checkbox" id="paramDevMode">
+                  <label for="paramDevMode">
+                    <span class="tooltip-icon"
+                          data-tooltip="Classic: fast mode with smallest model and minimal run setup. Capability: enables dev/verbose style behavior. [Classic focused]">?</span> Dev Mode
+                  </label>
+                </div>
+                <div class="checkbox-item">
+                  <input type="checkbox" id="paramRetest">
+                  <label for="paramRetest">
+                    <span class="tooltip-icon"
+                          data-tooltip="Re-test cached models (overwrite results)">?</span> Re-test
+                  </label>
+                </div>
+                <div class="checkbox-item">
+                  <input type="checkbox" id="paramEnableProfiling" checked>
+                  <label for="paramEnableProfiling">
+                    <span class="tooltip-icon"
+                          data-tooltip="Measure GPU temperature and power consumption during benchmark. [Classic focused: full profiling in classic path, compatibility flag in capability path]">?</span> Profiling
+                  </label>
+                </div>
+              </div>
+
+              <!-- Load-Config Parameters (Performance Tuning) -->
+              <details style="margin-top: 1rem;">
+                <summary style="cursor: pointer;
+                                font-weight: bold;
+                                padding: 0.5rem;
+                                background: rgba(255,255,255,0.05);
+                                border-radius: 4px">⚙️ Advanced Load Options (Performance Tuning)</summary>
+                <div style="display: grid;
+                            grid-template-columns: 1fr 1fr;
+                            gap: 1rem;
+                            margin-top: 1rem;
+                            padding: 1rem;
+                            background: rgba(255,255,255,0.03);
+                            border-radius: 4px">
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="GPU-Layers determine how many model layers run on GPU. -1=automatic (uses all available layers based on VRAM), 0=CPU only (very slow, for large models without GPU), >0=specific number (e.g. 32 for partial offloading with VRAM shortage). Default: -1 for best performance. [Classic + Capability]">?</span> GPU-Layers
+                    </label>
+                    <input type="number" id="paramNGpuLayers" value="-1" min="-1" max="100">
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="Batch size controls how many tokens are processed in parallel during prompt processing. Higher=faster prompt processing but more VRAM. 512=default (balanced), 256=less VRAM, 1024+=faster with lots of VRAM. Only affects prompt phase, not generation. [Classic + Capability]">?</span> Batch Size
+                    </label>
+                    <input type="number"
+                           id="paramNBatch"
+                           value="512"
+                           min="1"
+                           max="2048"
+                           step="128">
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="CPU threads for non-GPU computations (e.g. when layers run on CPU or with multi-GPU setup). -1=automatic (uses all CPU cores), 4-8=reduces CPU load for other tasks. Only relevant if n_gpu_layers < total layers. Default: -1. [Classic + Capability]">?</span> CPU Threads
+                    </label>
+                    <input type="number" id="paramNThreads" value="-1" min="-1" max="64">
+                  </div>
+                  <div class="checkbox-item" style="grid-column: span 1;">
+                    <input type="checkbox" id="paramFlashAttention" checked>
+                    <label for="paramFlashAttention">
+                      <span class="tooltip-icon"
+                            data-tooltip="Flash Attention is an optimized implementation of the attention mechanism that is 20-30% faster and uses less VRAM (with same quality). Enabled=faster+more efficient. Disabled=slower standard implementation. Only active with compatible models. Default: ON (recommended). [Classic + Capability]">?</span> Flash Attention
+                    </label>
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="RoPE (Rotary Position Embedding) frequency base controls how positions are encoded. Higher values (e.g. 500000) allow longer context windows. Only change if model was trained for extended context (e.g. Code Llama with 100k context). Wrong values -> worse quality. Empty=model default (recommended). [Classic + Capability]">?</span> RoPE Freq Base
+                    </label>
+                    <input type="number"
+                           id="paramRopeFreqBase"
+                           placeholder="e.g. 10000.0"
+                           min="0"
+                           step="1000">
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="RoPE frequency scaling for context extension. <1.0=compresses positions for longer contexts (e.g. 0.5 for double context), >1.0=expands (rare). Enables larger contexts than model training, with quality loss. Only for experimental context extension. Empty=1.0 (model default, recommended). [Classic + Capability]">?</span> RoPE Freq Scale
+                    </label>
+                    <input type="number"
+                           id="paramRopeFreqScale"
+                           placeholder="e.g. 1.0"
+                           min="0"
+                           step="0.1">
+                  </div>
+                  <div class="checkbox-item">
+                    <input type="checkbox" id="paramUseMmap" checked>
+                    <label for="paramUseMmap">
+                      <span class="tooltip-icon"
+                            data-tooltip="Memory-Mapping (mmap) loads model files directly from disk instead of copying to RAM. Advantages: faster load start, lower RAM peak. Disadvantage: first access to new layers slower (from SSD). Enabled=recommended (especially for large models). Disabled=loads everything into RAM (faster after load, needs lots of RAM). [Classic + Capability]">?</span> Use Memory-Mapping
+                    </label>
+                  </div>
+                  <div class="checkbox-item">
+                    <input type="checkbox" id="paramUseMlock">
+                    <label for="paramUseMlock">
+                      <span class="tooltip-icon"
+                            data-tooltip="Memory-Locking (mlock) pins model weights in RAM and prevents swapping to disk. Advantage: consistent performance (no swap slowdown). Disadvantage: permanently blocks RAM, system can become unstable with RAM shortage. Only enable if enough RAM available. Default: OFF (safer). [Classic + Capability]">?</span> Use Memory-Locking
+                    </label>
+                  </div>
+                  <div class="form-group" style="grid-column: span 2;">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="KV-Cache quantization compresses key-value cache in memory to save VRAM. f32/f16=full quality (lots of VRAM), q8_0=8-bit (minor quality loss, -50% VRAM), q4_0/q4_1=4-bit (noticeable loss, -75% VRAM). Recommended: empty (model default) or f16 with VRAM issues. For long contexts, VRAM savings can be critical. [Classic + Capability]">?</span> KV-Cache Quantization
+                    </label>
+                    <select id="paramKvCacheQuant">
+                      <option value="">Model-Default</option>
+                      <option value="f32">f32 (Full Precision)</option>
+                      <option value="f16">f16 (Half Precision)</option>
+                      <option value="q8_0">q8_0 (8-bit)</option>
+                      <option value="q4_0">q4_0 (4-bit)</option>
+                      <option value="q4_1">q4_1 (4-bit v2)</option>
+                      <option value="iq4_nl">iq4_nl (4-bit improved)</option>
+                      <option value="q5_0">q5_0 (5-bit)</option>
+                      <option value="q5_1">q5_1 (5-bit v2)</option>
+                    </select>
+                  </div>
+                </div>
+              </details>
+
+              <!-- Inference Parameters (Special Parameters) -->
+              <details style="margin-top: 1rem;">
+                <summary style="cursor: pointer;
+                                font-weight: bold;
+                                padding: 0.5rem;
+                                background: rgba(255,255,255,0.05);
+                                border-radius: 4px">🎯 Inference Parameters (Special Parameters)</summary>
+                <div style="display: grid;
+                            grid-template-columns: 1fr 1fr;
+                            gap: 1rem;
+                            margin-top: 1rem;
+                            padding: 1rem;
+                            background: rgba(255,255,255,0.03);
+                            border-radius: 4px">
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="Controls randomness of output. Low (0.1-0.3) = more predictable/focused. High (0.7-1.0) = more creative/diverse. Default: 0.7. [Classic + Capability]">?</span> Temperature
+                    </label>
+                    <input type="number"
+                           id="paramTemperature"
+                           placeholder="0.7"
+                           step="0.1"
+                           min="0"
+                           max="2">
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="Limits selection to K most likely tokens. Low (10-20) = more conservative. High (50-100) = more variable. Default: 40. [Classic + Capability]">?</span> Top-K
+                    </label>
+                    <input type="number" id="paramTopK" placeholder="40" step="1" min="1">
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="Nucleus Sampling: selects smallest token set with probability >= P. Low (0.5-0.7) = more precise. High (0.9-0.95) = more diverse. Default: 0.9. [Classic + Capability]">?</span> Top-P
+                    </label>
+                    <input type="number"
+                           id="paramTopP"
+                           placeholder="0.9"
+                           step="0.05"
+                           min="0"
+                           max="1">
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="Min-P Sampling: discards tokens with p < min_p * p_max. Alternative to Top-P with dynamic threshold. Low (0.01-0.03) = diverse. High (0.1-0.2) = focused. Default: 0.05. [Classic + Capability]">?</span> Min-P
+                    </label>
+                    <input type="number"
+                           id="paramMinP"
+                           placeholder="0.05"
+                           step="0.01"
+                           min="0"
+                           max="1">
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="Repeat Penalty: penalizes repeated tokens. Low (1.0-1.1) = more natural, more repetitions. High (1.3-1.5) = fewer repetitions. Default: 1.2. [Classic + Capability]">?</span> Repeat Penalty
+                    </label>
+                    <input type="number"
+                           id="paramRepeatPenalty"
+                           placeholder="1.2"
+                           step="0.1"
+                           min="1"
+                           max="2">
+                  </div>
+                  <div class="form-group">
+                    <label>
+                      <span class="tooltip-icon"
+                            data-tooltip="Max Tokens: Maximum number of generated tokens. Low (128-256) = short answers, faster. High (512-2048) = detailed answers, slower. Default: 256. [Classic + Capability]">?</span> Max Tokens
+                    </label>
+                    <input type="number" id="paramMaxTokens" placeholder="256" step="64" min="1">
+                  </div>
+                </div>
+              </details>
+
+              <div style="display: grid;
+                          grid-template-columns: 1fr 1fr;
+                          gap: 1rem;
+                          margin-top: 1rem">
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Warning/limit threshold for GPU temperature. [Classic focused: active monitoring in classic path, compatibility setting in capability path]">?</span> Max. GPU Temp
+                  </label>
+                  <input type="number"
+                         id="paramMaxTemp"
+                         placeholder="e.g. 85.0"
+                         min="30"
+                         max="120"
+                         step="0.1">
+                </div>
+                <div class="form-group">
+                  <label>
+                    <span class="tooltip-icon"
+                          data-tooltip="Warning/limit threshold for GPU power consumption. [Classic focused: active monitoring in classic path, compatibility setting in capability path]">?</span> Max. GPU Power
+                  </label>
+                  <input type="number"
+                         id="paramMaxPower"
+                         placeholder="e.g. 400.0"
+                         min="50"
+                         max="1000"
+                         step="0.1">
+                </div>
+              </div>
+            </div>
+
+            <div class="controls" style="gap: 1rem; margin-top: 1rem;">
+              <button class="btn-success" onclick="startBenchmark()">✅ Start Benchmark</button>
+              <button class="btn-primary" onclick="toggleStartModal()">❌ Cancel</button>
             </div>
           </div>
 
@@ -2322,6 +2413,30 @@
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              <div style="margin-top: 1.5rem;">
+                <h4 style="margin-bottom: 0.5rem;">🧾 Raw SQLite Rows (1:1 Schema)</h4>
+                <p style="margin: 0 0 0.6rem 0; opacity: 0.8; font-size: 0.9rem;">
+                  Ungruppierte Rohdaten aus `benchmark_results`
+                  (max. 200 Zeilen).
+                </p>
+                <div style="overflow-x: auto;
+                            border: 1px solid var(--border);
+                            border-radius: 0.5rem">
+                  <table id="results-raw-table"
+                         style="width: 100%;
+                                border-collapse: collapse;
+                                font-size: 0.82rem">
+                    <thead id="results-raw-thead">
+                    </thead>
+                    <tbody id="results-raw-tbody">
+                      <tr>
+                        <td style="padding: 0.75rem; opacity: 0.7;">No raw rows loaded yet.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -3479,34 +3594,98 @@
 
         // ===== Update Export Links =====
         async function updateExportLinks() {
+            const setExportLinkState = (id, href, enabled) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.href = href;
+                el.style.opacity = enabled ? '1' : '0.5';
+                el.style.pointerEvents = enabled ? 'auto' : 'none';
+                el.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+            };
+
+            const renderBatchLinks = (batchExports) => {
+                const host = document.getElementById('exportBatchLinks');
+                if (!host) return;
+
+                if (!Array.isArray(batchExports) || batchExports.length <= 1) {
+                    host.style.display = 'none';
+                    host.innerHTML = '';
+                    return;
+                }
+
+                const links = batchExports
+                    .map((entry) => {
+                        const exportsObj = entry.exports || {};
+                        const availableObj = entry.available || {};
+                        const htmlLink = exportsObj.html || '/results/';
+                        const jsonLink = exportsObj.json || '/results/';
+                        const href = availableObj.html ? htmlLink : jsonLink;
+                        const label = entry.base || entry.latest || 'report';
+                        return `<a href="${href}" style="color: var(--primary); text-decoration: none">${label}</a>`;
+                    })
+                    .join(' | ');
+
+                host.innerHTML =
+                    `<div><strong>Latest run (${batchExports.length} reports):</strong></div><div style="margin-top: 0.25rem">${links}</div>`;
+                host.style.display = 'block';
+            };
+
             try {
                 // Fetch the latest benchmark results from the server
                 const response = await fetch('/api/latest-results');
                 const data = await response.json();
                 
                 if (data.latest) {
-                    // data.latest contains only the filename (e.g. "benchmark_results_20260105_195003.json")
-                    const baseFileName = data.latest.replace(/\.\w+$/, '');
-                    
-                    // Update the links
-                    document.getElementById('exportHTML').href = `/results/${baseFileName}.html`;
-                    document.getElementById('exportPDF').href = `/results/${baseFileName}.pdf`;
-                    document.getElementById('exportJSON').href = `/results/${baseFileName}.json`;
-                    document.getElementById('exportCSV').href = `/results/${baseFileName}.csv`;
+                    const apiExports = data.exports || {};
+                    const apiAvailable = data.available || {};
+
+                    if (Object.keys(apiExports).length > 0) {
+                        setExportLinkState(
+                            'exportHTML',
+                            apiExports.html || '/results/',
+                            !!apiAvailable.html,
+                        );
+                        setExportLinkState(
+                            'exportPDF',
+                            apiExports.pdf || '/results/',
+                            !!apiAvailable.pdf,
+                        );
+                        setExportLinkState(
+                            'exportJSON',
+                            apiExports.json || '/results/',
+                            !!apiAvailable.json,
+                        );
+                        setExportLinkState(
+                            'exportCSV',
+                            apiExports.csv || '/results/',
+                            !!apiAvailable.csv,
+                        );
+                        renderBatchLinks(data.batch_exports || []);
+                    } else {
+                        // Backward-compatible fallback for older API shape.
+                        const baseFileName = data.latest.replace(/\.\w+$/, '');
+                        setExportLinkState('exportHTML', `/results/${baseFileName}.html`, true);
+                        setExportLinkState('exportPDF', `/results/${baseFileName}.pdf`, true);
+                        setExportLinkState('exportJSON', `/results/${baseFileName}.json`, true);
+                        setExportLinkState('exportCSV', `/results/${baseFileName}.csv`, true);
+                        renderBatchLinks([]);
+                    }
                 } else {
                     // Fallback: All links to results directory
-                    const links = ['exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
-                    links.forEach(id => {
-                        document.getElementById(id).href = '/results/';
-                    });
+                    setExportLinkState('exportHTML', '/results/', false);
+                    setExportLinkState('exportPDF', '/results/', false);
+                    setExportLinkState('exportJSON', '/results/', false);
+                    setExportLinkState('exportCSV', '/results/', false);
+                    renderBatchLinks([]);
                 }
             } catch (error) {
                 console.error('Error loading export links:', error);
                 // Fallback: All links to results directory
-                const links = ['exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
-                links.forEach(id => {
-                    document.getElementById(id).href = '/results/';
-                });
+                setExportLinkState('exportHTML', '/results/', false);
+                setExportLinkState('exportPDF', '/results/', false);
+                setExportLinkState('exportJSON', '/results/', false);
+                setExportLinkState('exportCSV', '/results/', false);
+                renderBatchLinks([]);
             }
         }
 
@@ -3515,6 +3694,7 @@
         // WebSocket & Timers starten
         window.addEventListener('DOMContentLoaded', () => {
             applyConfigDefaults();
+            updateBenchmarkModeUI();
             // Stelle Theme aus localStorage wieder her
             restoreTheme();
             
@@ -3545,8 +3725,7 @@
             if (s == null) return '';
             return String(s)
                 .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
+                .replace(/</g , '&lt;') .replace( />/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
@@ -4215,14 +4394,125 @@
             if (termAB) termAB.textContent = '';
         }
 
+        function getSelectedCapabilities() {
+            const selected = [];
+            if (document.getElementById('capGeneralText')?.checked) {
+                selected.push('general_text');
+            }
+            if (document.getElementById('capReasoning')?.checked) {
+                selected.push('reasoning');
+            }
+            if (document.getElementById('capVision')?.checked) {
+                selected.push('vision');
+            }
+            if (document.getElementById('capTooling')?.checked) {
+                selected.push('tooling');
+            }
+            return selected;
+        }
+
+        function updateBenchmarkModeUI() {
+            const mode = document.getElementById('paramBenchmarkMode')?.value || 'classic';
+            const capabilitySettings = document.getElementById('capabilityModeSettings');
+            const promptInput = document.getElementById('paramPrompt');
+            const classicOnlyFields = [
+                'paramRuns',
+                'paramMinContext',
+                'paramMaxSize',
+                'paramPrompt',
+                'paramInclude',
+                'paramExclude',
+                'paramQuants',
+                'paramArch',
+                'paramParams',
+                'paramRankBy',
+                'paramVisionOnly',
+                'paramToolsOnly',
+            ];
+            const capabilityOnlyFields = [
+                'paramAgentModel',
+                'paramAgentMaxTests',
+                'capGeneralText',
+                'capReasoning',
+                'capVision',
+                'capTooling',
+            ];
+
+            const setModeDisabled = (fieldIds, disabled) => {
+                fieldIds.forEach((fieldId) => {
+                    const element = document.getElementById(fieldId);
+                    if (!element) return;
+                    element.disabled = disabled;
+                    const container =
+                        element.closest('.form-group') ||
+                        element.closest('.checkbox-item');
+                    if (container) {
+                        container.classList.toggle('mode-disabled', disabled);
+                    }
+                });
+            };
+
+            if (capabilitySettings) {
+                capabilitySettings.style.display = 'block';
+                capabilitySettings.classList.toggle(
+                    'mode-disabled',
+                    mode !== 'capability',
+                );
+            }
+            if (promptInput) {
+                promptInput.disabled = mode === 'capability';
+                promptInput.placeholder =
+                    mode === 'capability'
+                        ? 'Unused in capability mode'
+                        : 'Empty = default';
+            }
+
+            setModeDisabled(classicOnlyFields, mode === 'capability');
+            setModeDisabled(capabilityOnlyFields, mode !== 'capability');
+
+            if (mode === 'capability') {
+                _populateInstalledModelsList();
+            }
+        }
+
+        let _installedModelsLoaded = false;
+        async function _populateInstalledModelsList() {
+            if (_installedModelsLoaded) return;
+            try {
+                const resp = await fetch('/api/models/installed');
+                const data = await resp.json();
+                if (!data.success || !data.models) return;
+                const dl = document.getElementById('installedModelsList');
+                if (!dl) return;
+                dl.innerHTML = data.models
+                    .map(m => `<option value="${m.replace(/"/g, '&quot;')}">`)
+                    .join('');
+                _installedModelsLoaded = true;
+            } catch (_e) {
+                // silently ignore — autocomplete is best-effort
+            }
+        }
+
         // ===== Benchmark Kontrolle =====
         async function startBenchmark() {
+            const benchmarkMode =
+                document.getElementById('paramBenchmarkMode').value || 'classic';
+            const selectedCapabilities = getSelectedCapabilities();
             const params = {
                 // Basis-Parameter
                 runs: parseInt(document.getElementById('paramRuns').value) || null,
                 context: parseInt(document.getElementById('paramContext').value) || null,
                 limit: parseInt(document.getElementById('paramLimit').value) || null,
                 prompt: document.getElementById('paramPrompt').value || null,
+                benchmark_mode: benchmarkMode,
+                agent_model: document.getElementById('paramAgentModel').value || null,
+                agent_capabilities:
+                    selectedCapabilities.length > 0
+                        ? selectedCapabilities.join(',')
+                        : null,
+                agent_max_tests:
+                    parseInt(document.getElementById('paramAgentMaxTests').value) ||
+                    null,
                 
                 // Neue Filter-Parameter
                 min_context: parseInt(document.getElementById('paramMinContext').value) || null,
@@ -4267,6 +4557,15 @@
                 use_mlock: document.getElementById('paramUseMlock').checked,
                 kv_cache_quant: document.getElementById('paramKvCacheQuant').value || null
             };
+
+            if (
+                benchmarkMode === 'capability' &&
+                !params.retest &&
+                !params.agent_model
+            ) {
+                showToast('Capability mode requires Agent Model ID/Path', 'error');
+                return;
+            }
 
             try {
                 clearTerminal();
@@ -4332,24 +4631,89 @@
 
         // ===== Results Browser =====
         let resultsData = [];
+        let rawResultsColumns = [];
+        let rawResultsRows = [];
         let sortColumn = 2; // Default: Tokens/s
         let sortAscending = false;
 
         async function loadResults() {
             try {
-                console.log('📥 Lade Results von /api/results...');
-                const response = await fetch('/api/results');
-                const data = await response.json();
-                console.log('📊 API Response:', data);
+                console.log('📥 Lade Results von /api/results + /api/results/raw...');
+                const [summaryResp, rawResp] = await Promise.all([
+                    fetch('/api/results'),
+                    fetch('/api/results/raw?limit=200'),
+                ]);
+                const data = await summaryResp.json();
+                const rawData = await rawResp.json();
+                console.log('📊 API Response summary:', data);
+                console.log('📊 API Response raw:', rawData);
                 resultsData = data.results || [];
+                rawResultsColumns = rawData.columns || [];
+                rawResultsRows = rawData.rows || [];
                 console.log(`✅ ${resultsData.length} results loaded:`, resultsData);
                 renderResults();
+                renderRawResults();
                 updateCacheStats();
-                addAlert(`✅ ${resultsData.length} results loaded`, 'success');
+                addAlert(
+                    `✅ ${resultsData.length} summary + ` +
+                    `${rawResultsRows.length} raw rows loaded`,
+                    'success'
+                );
             } catch (error) {
                 console.error('❌ Error loading:', error);
                 addAlert(`Error loading: ${error.message}`, 'error');
             }
+        }
+
+        function renderRawResults() {
+            const thead = document.getElementById('results-raw-thead');
+            const tbody = document.getElementById('results-raw-tbody');
+            if (!thead || !tbody) {
+                return;
+            }
+
+            if (!Array.isArray(rawResultsColumns) || rawResultsColumns.length === 0) {
+                thead.innerHTML = '';
+                tbody.innerHTML =
+                    '<tr><td style="padding: 0.75rem; opacity: 0.7;">' +
+                    'No raw schema columns available.</td></tr>';
+                return;
+            }
+
+            const headerCells = rawResultsColumns
+                .map(
+                    (col) =>
+                        `<th style="padding: 0.55rem; text-align: left; ` + `font-weight: 700; white-space: nowrap; ` + `border-bottom: 1px solid rgba(255,255,255,0.12);">` +
+                        `${col}</th>`
+                )
+                .join('');
+            thead.innerHTML = `<tr style="background: rgba(255,255,255,0.05);">${headerCells}</tr>`;
+
+            if (!Array.isArray(rawResultsRows) || rawResultsRows.length === 0) {
+                tbody.innerHTML =
+                    `<tr><td colspan="${rawResultsColumns.length}" ` + `style="padding: 0.75rem; opacity: 0.7;">` +
+                    `No raw rows in benchmark_results.</td></tr>`;
+                return;
+            }
+
+            const rowsHtml = rawResultsRows
+                .map((row) => {
+                    const tds = rawResultsColumns
+                        .map((col) => {
+                            const val = row[col];
+                            const text =
+                                val === null || val === undefined ? 'NULL' : String(val);
+                            const escaped = text
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g , '&lt;') .replace( />/g, '&gt;');
+                            return `<td style="padding: 0.45rem; white-space: nowrap; ` + `border-bottom: 1px solid rgba(255,255,255,0.06);">${escaped}</td>`;
+                        })
+                        .join('');
+                    return `<tr>${tds}</tr>`;
+                })
+                .join('');
+
+            tbody.innerHTML = rowsHtml;
         }
 
         async function updateCacheStats() {
@@ -5887,8 +6251,12 @@
                 data.presets.forEach(preset => {
                     const option = document.createElement('option');
                     option.value = preset.name;
+                    const modeLabel =
+                        preset.preset_mode === 'capability'
+                            ? 'capability-driven'
+                            : 'classic';
                     const badge = preset.readonly ? ' [readonly]' : ' [user]';
-                    option.textContent = preset.name + badge;
+                    option.textContent = `${preset.name}${badge} (${modeLabel})`;
                     dropdown.appendChild(option);
                 });
                 
@@ -5959,49 +6327,100 @@
          * Apply config object to form fields
          */
         function applyConfigToForm(config) {
+            const presetMode =
+                config.benchmark_mode || config.preset_mode || 'classic';
+
             // Basic Parameters
             if (config.runs !== undefined)
                 document.getElementById('paramRuns').value = config.runs;
+            if (config.context !== undefined)
+                document.getElementById('paramContext').value = config.context;
             if (config.context_length !== undefined)
                 document.getElementById('paramContext').value = config.context_length;
+            if (config.limit !== undefined)
+                document.getElementById('paramLimit').value = config.limit;
+            if (config.min_context !== undefined)
+                document.getElementById('paramMinContext').value = config.min_context;
+            if (config.max_size !== undefined)
+                document.getElementById('paramMaxSize').value = config.max_size;
             if (config.prompt !== undefined)
                 document.getElementById('paramPrompt').value = config.prompt;
+            if (document.getElementById('paramBenchmarkMode'))
+                document.getElementById('paramBenchmarkMode').value = presetMode;
+            if (config.agent_model !== undefined && document.getElementById('paramAgentModel'))
+                document.getElementById('paramAgentModel').value = config.agent_model || '';
+            if (config.agent_max_tests !== undefined && document.getElementById('paramAgentMaxTests'))
+                document.getElementById('paramAgentMaxTests').value = config.agent_max_tests || 10;
+            if (config.agent_capabilities !== undefined) {
+                const caps = String(config.agent_capabilities || '').split(',').map(s => s.trim());
+                const setCap = (id, key) => {
+                    const el = document.getElementById(id);
+                    if (el) el.checked = caps.includes(key);
+                };
+                setCap('capGeneralText', 'general_text');
+                setCap('capReasoning', 'reasoning');
+                setCap('capVision', 'vision');
+                setCap('capTooling', 'tooling');
+            }
+            updateBenchmarkModeUI();
             if (config.warmup_runs !== undefined)
                 document.getElementById('paramWarmup').value = config.warmup_runs;
             
             // Filters
-            if (config.include_quant !== undefined)
-                document.getElementById('filterQuants').value = config.include_quant || '';
-            if (config.include_arch !== undefined)
-                document.getElementById('filterArchs').value = config.include_arch || '';
-            if (config.include_size !== undefined)
-                document.getElementById('filterSizes').value = config.include_size || '';
-            if (config.include_context !== undefined)
-                document.getElementById('filterContext').value = config.include_context || '';
+            if (config.include_models !== undefined)
+                document.getElementById('paramInclude').value = config.include_models || '';
+            if (config.exclude_models !== undefined)
+                document.getElementById('paramExclude').value = config.exclude_models || '';
+            if (config.quants !== undefined)
+                document.getElementById('paramQuants').value = config.quants || '';
+            if (config.arch !== undefined)
+                document.getElementById('paramArch').value = config.arch || '';
+            if (config.params !== undefined)
+                document.getElementById('paramParams').value = config.params || '';
             
             // Ranking
             if (config.rank_by !== undefined)
                 document.getElementById('paramRankBy').value = config.rank_by || '';
             
-            // Resource Limits
-            if (config.max_size !== undefined)
-                document.getElementById('paramMaxSize').value = config.max_size || '';
-            if (config.gpu_offload !== undefined)
-                document.getElementById('paramGpuOffload').value = config.gpu_offload || '';
-            
             // Advanced: LLM Inference
             if (config.temperature !== undefined)
                 document.getElementById('paramTemperature').value = config.temperature || '';
+            if (config.top_k_sampling !== undefined)
+                document.getElementById('paramTopK').value = config.top_k_sampling || '';
             if (config.top_k !== undefined)
                 document.getElementById('paramTopK').value = config.top_k || '';
+            if (config.top_p_sampling !== undefined)
+                document.getElementById('paramTopP').value = config.top_p_sampling || '';
             if (config.top_p !== undefined)
                 document.getElementById('paramTopP').value = config.top_p || '';
+            if (config.min_p_sampling !== undefined)
+                document.getElementById('paramMinP').value = config.min_p_sampling || '';
             if (config.min_p !== undefined)
                 document.getElementById('paramMinP').value = config.min_p || '';
             if (config.repeat_penalty !== undefined)
                 document.getElementById('paramRepeatPenalty').value = config.repeat_penalty || '';
             if (config.max_tokens !== undefined)
                 document.getElementById('paramMaxTokens').value = config.max_tokens || '';
+
+            // Advanced Load
+            if (config.n_gpu_layers !== undefined)
+                document.getElementById('paramNGpuLayers').value = config.n_gpu_layers;
+            if (config.n_batch !== undefined)
+                document.getElementById('paramNBatch').value = config.n_batch;
+            if (config.n_threads !== undefined)
+                document.getElementById('paramNThreads').value = config.n_threads;
+            if (config.flash_attention !== undefined)
+                document.getElementById('paramFlashAttention').checked = !!config.flash_attention;
+            if (config.rope_freq_base !== undefined)
+                document.getElementById('paramRopeFreqBase').value = config.rope_freq_base || '';
+            if (config.rope_freq_scale !== undefined)
+                document.getElementById('paramRopeFreqScale').value = config.rope_freq_scale || '';
+            if (config.use_mmap !== undefined)
+                document.getElementById('paramUseMmap').checked = !!config.use_mmap;
+            if (config.use_mlock !== undefined)
+                document.getElementById('paramUseMlock').checked = !!config.use_mlock;
+            if (config.kv_cache_quant !== undefined)
+                document.getElementById('paramKvCacheQuant').value = config.kv_cache_quant || '';
             
             // Hardware Limits
             if (config.max_temp !== undefined)
@@ -6010,12 +6429,18 @@
                 document.getElementById('paramMaxPower').value = config.max_power || '';
             
             // Flags (checkboxes, if they exist)
+            if (config.only_vision !== undefined && document.getElementById('paramVisionOnly'))
+                document.getElementById('paramVisionOnly').checked = config.only_vision;
+            if (config.only_tools !== undefined && document.getElementById('paramToolsOnly'))
+                document.getElementById('paramToolsOnly').checked = config.only_tools;
             if (config.retest !== undefined && document.getElementById('paramRetest'))
                 document.getElementById('paramRetest').checked = config.retest;
+            if (config.disable_gtt !== undefined && document.getElementById('paramDisableGTT'))
+                document.getElementById('paramDisableGTT').checked = config.disable_gtt;
             if (config.dev_mode !== undefined && document.getElementById('paramDevMode'))
                 document.getElementById('paramDevMode').checked = config.dev_mode;
-            if (config.enable_profiling !== undefined && document.getElementById('paramProfiling'))
-                document.getElementById('paramProfiling').checked = config.enable_profiling;
+            if (config.enable_profiling !== undefined && document.getElementById('paramEnableProfiling'))
+                document.getElementById('paramEnableProfiling').checked = config.enable_profiling;
         }
 
         /**
@@ -6043,27 +6468,46 @@
             
             return {
                 runs: getValue('paramRuns'),
-                context_length: getValue('paramContext'),
+                context: getValue('paramContext'),
                 prompt: getValue('paramPrompt'),
-                warmup_runs: getValue('paramWarmup'),
-                include_quant: getValue('filterQuants'),
-                include_arch: getValue('filterArchs'),
-                include_size: getValue('filterSizes'),
-                include_context: getValue('filterContext'),
-                rank_by: getValue('paramRankBy'),
+                benchmark_mode: getValue('paramBenchmarkMode'),
+                preset_mode: getValue('paramBenchmarkMode'),
+                limit: getValue('paramLimit'),
+                min_context: getValue('paramMinContext'),
                 max_size: getValue('paramMaxSize'),
-                gpu_offload: getValue('paramGpuOffload'),
+                quants: getValue('paramQuants'),
+                arch: getValue('paramArch'),
+                params: getValue('paramParams'),
+                include_models: getValue('paramInclude'),
+                exclude_models: getValue('paramExclude'),
+                rank_by: getValue('paramRankBy'),
+                agent_model: getValue('paramAgentModel'),
+                agent_capabilities: getSelectedCapabilities().join(',') || undefined,
+                agent_max_tests: getValue('paramAgentMaxTests'),
+                warmup_runs: getValue('paramWarmup'),
                 temperature: getValue('paramTemperature'),
-                top_k: getValue('paramTopK'),
-                top_p: getValue('paramTopP'),
-                min_p: getValue('paramMinP'),
+                top_k_sampling: getValue('paramTopK'),
+                top_p_sampling: getValue('paramTopP'),
+                min_p_sampling: getValue('paramMinP'),
                 repeat_penalty: getValue('paramRepeatPenalty'),
                 max_tokens: getValue('paramMaxTokens'),
+                n_gpu_layers: getValue('paramNGpuLayers'),
+                n_batch: getValue('paramNBatch'),
+                n_threads: getValue('paramNThreads'),
+                flash_attention: getValue('paramFlashAttention'),
+                rope_freq_base: getValue('paramRopeFreqBase'),
+                rope_freq_scale: getValue('paramRopeFreqScale'),
+                use_mmap: getValue('paramUseMmap'),
+                use_mlock: getValue('paramUseMlock'),
+                kv_cache_quant: getValue('paramKvCacheQuant'),
                 max_temp: getValue('paramMaxTemp'),
                 max_power: getValue('paramMaxPower'),
+                only_vision: getValue('paramVisionOnly'),
+                only_tools: getValue('paramToolsOnly'),
                 retest: getValue('paramRetest'),
+                disable_gtt: getValue('paramDisableGTT'),
                 dev_mode: getValue('paramDevMode'),
-                enable_profiling: getValue('paramProfiling')
+                enable_profiling: getValue('paramEnableProfiling')
             };
         }
 

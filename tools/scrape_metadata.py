@@ -30,9 +30,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-user_paths = importlib.import_module("src.user_paths")
-USER_LOGS_DIR = user_paths.USER_LOGS_DIR
-USER_RESULTS_DIR = user_paths.USER_RESULTS_DIR
+core_paths = importlib.import_module("core.paths")
+core_logging_utils = importlib.import_module("core.logging_utils")
+install_level_icons = core_logging_utils.install_level_icons
+USER_LOGS_DIR = core_paths.USER_LOGS_DIR
+USER_RESULTS_DIR = core_paths.USER_RESULTS_DIR
 RESULTS_DIR = USER_RESULTS_DIR
 METADATA_DB = RESULTS_DIR / "model_metadata.db"
 LOGS_DIR = USER_LOGS_DIR
@@ -95,9 +97,10 @@ def setup_logger() -> logging.Logger:
     latest_link.unlink(missing_ok=True)
     latest_link.symlink_to(log_file.name)
 
+    install_level_icons()
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(levelname)s - %(level_icon)s %(message)s",
         handlers=[
             logging.FileHandler(log_file, encoding="utf-8"),
             logging.StreamHandler(sys.stdout),
