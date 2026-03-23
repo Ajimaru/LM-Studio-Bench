@@ -173,18 +173,21 @@ class TestBuildSubprocessEnv:
         env = run._build_subprocess_env()
         assert "LD_PRELOAD" not in env
 
-    def test_adds_core_to_pythonpath(self):
-        """core/ directory is prepended to PYTHONPATH."""
+    def test_adds_project_root_to_pythonpath(self):
+        """Project root is prepended to PYTHONPATH."""
         run = _import_run()
         env = run._build_subprocess_env()
         assert "PYTHONPATH" in env
-        assert "core" in env["PYTHONPATH"]
+        path_entries = env["PYTHONPATH"].split(":")
+        assert path_entries[0] == str(run.project_root)
 
     def test_preserves_existing_pythonpath(self, monkeypatch):
-        """Existing PYTHONPATH is preserved after the core/ prefix."""
+        """Existing PYTHONPATH is preserved after the project-root prefix."""
         run = _import_run()
         monkeypatch.setenv("PYTHONPATH", "/custom/path")
         env = run._build_subprocess_env()
+        path_entries = env["PYTHONPATH"].split(":")
+        assert path_entries[0] == str(run.project_root)
         assert "/custom/path" in env["PYTHONPATH"]
 
     def test_appimage_runtime_sets_gi_typelib_path(self, tmp_path, monkeypatch):

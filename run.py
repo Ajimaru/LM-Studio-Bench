@@ -110,9 +110,8 @@ def _build_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("LD_LIBRARY_PATH", None)
     env.pop("LD_PRELOAD", None)
-    core_dir = str(project_root / "core")
     root_dir = str(project_root)
-    pythonpath_entries = [root_dir, core_dir]
+    pythonpath_entries = [root_dir]
     existing_path = env.get("PYTHONPATH", "")
     if existing_path:
         pythonpath_entries.append(existing_path)
@@ -505,8 +504,7 @@ if HAS_WEB_FLAG:
     finally:
         _stop_tray_process(TRAY_PROCESS)
 elif HAS_AGENT_FLAG:
-    agent_model = None
-    # Support both "--agent MODEL" and "--agent=MODEL" forms.
+    AGENT_MODEL = None
     for cli_arg in CLI_ARGS:
         if cli_arg.startswith("--agent="):
             extracted = cli_arg.split("=", 1)[1]
@@ -516,7 +514,7 @@ elif HAS_AGENT_FLAG:
                     "--agent MODEL or --agent=MODEL"
                 )
                 sys.exit(2)
-            agent_model = extracted
+            AGENT_MODEL = extracted
 
     args = [
         arg
@@ -524,9 +522,8 @@ elif HAS_AGENT_FLAG:
         if arg != "--agent" and not arg.startswith("--agent=")
     ]
 
-    if agent_model is not None:
-        # For the "--agent=MODEL" form, inject MODEL as positional argument.
-        args.insert(0, agent_model)
+    if AGENT_MODEL is not None:
+        args.insert(0, AGENT_MODEL)
     try:
         safe_args = _sanitize_cli_args(args)
     except ValueError as error:
