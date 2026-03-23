@@ -158,10 +158,12 @@ fields to avoid `null` values in preset comparisons.
 
 **Backwards Compatibility**: Loading `--preset default` automatically loads `default_classic`.
 
-#### `default_compatability_test` - Capability-Driven Test Mode
+#### `default_compatibility_test` - Capability-Driven Test Mode
 
 Default preset for focused capability testing of a single model.
 
+**Alias**: The legacy name `default_compatability_test` is accepted as an alias
+for this preset for backward compatibility.
 - **benchmark_mode**: `capability`
 - **preset_mode**: `capability`
 - **runs**: 1
