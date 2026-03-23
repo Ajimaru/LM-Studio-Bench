@@ -31,7 +31,7 @@ Notes:
 | Row id | `id` | `id` | `[x]` |
 | Model name | `model_name` | `model_name` | `[x]` |
 | Timestamp | `timestamp` | `timestamp` | `[x]` |
-| Model path/source | `model_key` | `model_path` | `[x]` |
+| Model path/source | `model_key` | `model_key` | `[x]` |
 | Capability label | `capability` | `capability` | `[x]` |
 | Test case id | `test_id` | `test_id` | `[x]` |
 | Test case name | `test_name` | `test_name` | `[x]` |

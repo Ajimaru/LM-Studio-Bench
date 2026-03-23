@@ -78,7 +78,7 @@ types, so missing metrics are easy to spot.
 
 | Metric Group | Classic Benchmark (`benchmark_results`) | Capability Benchmark (`agent_results`, `agent_summaries`) |
 | --- | --- | --- |
-| Run identity | `id`, `model_key`, `model_name`, `quantization`, `timestamp` | `id`, `model_name`, `model_path`, `capability`, `test_id`, `test_name`, `timestamp` |
+| Run identity | `id`, `model_key`, `model_name`, `quantization`, `timestamp` | `id`, `model_name`, `model_key`, `capability`, `test_id`, `test_name`, `timestamp` |
 | Throughput/latency | `avg_tokens_per_sec`, `avg_ttft`, `avg_gen_time`, `tokens_per_sec_p50`, `tokens_per_sec_p95`, `tokens_per_sec_std`, `ttft_p50`, `ttft_p95`, `ttft_std` | `latency_ms`, `throughput_tokens_per_sec` (per test), `avg_latency_ms`, `avg_throughput` (summary) |
 | Token volume | `prompt_tokens`, `completion_tokens` | `prompt_tokens`, `tokens_generated` |
 | Quality metrics | Stored for parity columns but normally `NULL` for classic runs | `quality_score`, `rouge_score`, `f1_score`, `exact_match_score`, `accuracy_score`, `function_call_accuracy`, `avg_quality_score`, `avg_rouge`, `avg_f1`, `avg_exact_match`, `avg_accuracy` |

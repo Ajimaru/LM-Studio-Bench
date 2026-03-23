@@ -115,7 +115,7 @@ class AgentCache:
             if cursor.fetchone() is not None:
                 cursor.execute("""
                     INSERT OR IGNORE INTO agent_results (
-                        model_name, model_path, timestamp, capability,
+                        model_name, model_key, timestamp, capability,
                         test_id, test_name, latency_ms, tokens_generated,
                         throughput_tokens_per_sec, quality_score, rouge_score,
                         f1_score, exact_match_score, accuracy_score,
@@ -140,7 +140,7 @@ class AgentCache:
             if cursor.fetchone() is not None:
                 cursor.execute("""
                     INSERT OR IGNORE INTO agent_summaries (
-                        model_name, model_path, timestamp, capability,
+                        model_name, model_key, timestamp, capability,
                         total_tests, successful_tests, failed_tests,
                         success_rate, avg_latency_ms, avg_throughput,
                         avg_quality_score, avg_rouge, avg_f1,
@@ -174,7 +174,7 @@ class AgentCache:
             CREATE TABLE IF NOT EXISTS agent_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 model_name TEXT NOT NULL,
-                model_path TEXT,
+                model_key TEXT,
                 timestamp TEXT NOT NULL,
                 capability TEXT NOT NULL,
                 test_id TEXT,
@@ -257,6 +257,13 @@ class AgentCache:
 
         cursor.execute("PRAGMA table_info(agent_results)")
         existing_columns = {row[1] for row in cursor.fetchall()}
+        if "model_key" not in existing_columns and "model_path" in existing_columns:
+            cursor.execute(
+                "ALTER TABLE agent_results RENAME COLUMN model_path TO model_key"
+            )
+            cursor.execute("PRAGMA table_info(agent_results)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+
         for col_name, col_type in self.CLASSIC_METRIC_COLUMNS:
             if col_name in existing_columns:
                 continue
@@ -268,7 +275,7 @@ class AgentCache:
             CREATE TABLE IF NOT EXISTS agent_summaries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 model_name TEXT NOT NULL,
-                model_path TEXT,
+                model_key TEXT,
                 timestamp TEXT NOT NULL,
                 capability TEXT NOT NULL,
                 total_tests INTEGER,
@@ -285,6 +292,13 @@ class AgentCache:
                 UNIQUE (model_name, timestamp, capability)
             )
         """)
+
+        cursor.execute("PRAGMA table_info(agent_summaries)")
+        summary_columns = {row[1] for row in cursor.fetchall()}
+        if "model_key" not in summary_columns and "model_path" in summary_columns:
+            cursor.execute(
+                "ALTER TABLE agent_summaries RENAME COLUMN model_path TO model_key"
+            )
 
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_model_timestamp
@@ -505,7 +519,7 @@ class AgentCache:
             cursor.execute(
                 f"""
                 INSERT OR REPLACE INTO agent_results (
-                    model_name, model_path, timestamp, capability, test_id,
+                    model_name, model_key, timestamp, capability, test_id,
                     test_name, latency_ms, tokens_generated,
                     throughput_tokens_per_sec, quality_score, rouge_score,
                     f1_score, exact_match_score, accuracy_score,
@@ -597,7 +611,7 @@ class AgentCache:
 
             cursor.execute("""
                 INSERT OR REPLACE INTO agent_summaries (
-                    model_name, model_path, timestamp, capability,
+                    model_name, model_key, timestamp, capability,
                     total_tests, successful_tests, failed_tests,
                     success_rate, avg_latency_ms, avg_throughput,
                     avg_quality_score, avg_rouge, avg_f1,

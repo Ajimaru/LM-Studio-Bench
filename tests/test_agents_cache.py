@@ -29,6 +29,7 @@ class TestAgentCache:
         conn.close()
 
         expected = {
+            "model_key",
             "error_count",
             "gpu_type",
             "gpu_offload",
@@ -52,6 +53,54 @@ class TestAgentCache:
             "benchmark_duration_seconds",
         }
         assert expected.issubset(columns)
+        assert "model_path" not in columns
+
+    def test_initializer_renames_legacy_model_path_columns(self, tmp_path):
+        """Legacy model_path columns are renamed to model_key."""
+        db_file = tmp_path / "cache.db"
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            CREATE TABLE agent_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_name TEXT NOT NULL,
+                model_path TEXT,
+                timestamp TEXT NOT NULL,
+                capability TEXT NOT NULL,
+                test_id TEXT
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE agent_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_name TEXT NOT NULL,
+                model_path TEXT,
+                timestamp TEXT NOT NULL,
+                capability TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        AgentCache(db_path=db_file)
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(agent_results)")
+        result_columns = {row[1] for row in cursor.fetchall()}
+        cursor.execute("PRAGMA table_info(agent_summaries)")
+        summary_columns = {row[1] for row in cursor.fetchall()}
+        conn.close()
+
+        assert "model_key" in result_columns
+        assert "model_path" not in result_columns
+        assert "model_key" in summary_columns
+        assert "model_path" not in summary_columns
 
     def test_initializer_default_path(self, tmp_path):
         """AgentCache uses default path when none provided."""
