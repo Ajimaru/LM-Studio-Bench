@@ -320,6 +320,18 @@ def load_config(config_path: Optional[Path]) -> dict:
         return _get_default_config()
 
 
+DEFAULT_CONFIG: dict = {
+    "context_length": 2048,
+    "gpu_offload": 1.0,
+    "temperature": 0.1,
+    "max_tokens": 256,
+    "max_tests_per_capability": 10,
+    "use_rest_api": True,
+    "data_dir": "tests/data",
+    "prompts_dir": "tests/prompts"
+}
+
+
 def _get_default_config() -> dict:
     """
     Get default configuration.
@@ -327,16 +339,7 @@ def _get_default_config() -> dict:
     Returns:
         Default configuration dictionary
     """
-    return {
-        "context_length": 2048,
-        "gpu_offload": 1.0,
-        "temperature": 0.1,
-        "max_tokens": 256,
-        "max_tests_per_capability": 10,
-        "use_rest_api": True,
-        "data_dir": "tests/data",
-        "prompts_dir": "tests/prompts"
-    }
+    return DEFAULT_CONFIG.copy()
 
 
 def parse_args() -> argparse.Namespace:
