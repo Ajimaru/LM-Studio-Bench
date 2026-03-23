@@ -216,7 +216,7 @@ class TestResultsEndpoints:
 
     def test_results_empty_when_no_cache(self):
         """Returns empty results when cache has no data."""
-        app_mod = sys.modules["app"]
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
         client = _get_client()
         mock_cache = MagicMock()
         mock_cache.get_all_results.return_value = []
@@ -228,7 +228,7 @@ class TestResultsEndpoints:
 
     def test_results_returns_formatted_data(self):
         """Returns properly formatted result data."""
-        app_mod = sys.modules["app"]
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
         bm = sys.modules.get("cli.benchmark", None)
         if bm is None:
             import cli.benchmark as bm
@@ -252,7 +252,7 @@ class TestResultsEndpoints:
 
     def test_results_handles_exception(self):
         """Returns error on cache exception."""
-        app_mod = sys.modules["app"]
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
         client = _get_client()
         with patch.object(
             app_mod, "BenchmarkCache",
@@ -262,6 +262,55 @@ class TestResultsEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is False
+
+
+class TestRawResultsEndpoint:
+    """Tests for /api/results/raw endpoint."""
+
+    def test_raw_results_returns_schema_rows(self):
+        """Returns ungrouped rows with full schema column list."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        client = _get_client()
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.side_effect = [
+            [(0, "id"), (1, "model_name"), (2, "avg_tokens_per_sec")],
+            [(7, "qwen3", 23.8), (8, "gemma", 19.1)],
+        ]
+
+        with patch.object(
+            app_mod,
+            "DATABASE_FILE",
+            MagicMock(exists=MagicMock(return_value=True)),
+        ), patch("sqlite3.connect", return_value=mock_conn):
+            response = client.get("/api/results/raw?limit=2")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["count"] == 2
+        assert data["columns"] == ["id", "model_name", "avg_tokens_per_sec"]
+        assert data["rows"][0]["model_name"] == "qwen3"
+
+    def test_raw_results_handles_sql_error(self):
+        """Returns sanitized error payload on sqlite failure."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        client = _get_client()
+
+        with patch.object(
+            app_mod,
+            "DATABASE_FILE",
+            MagicMock(exists=MagicMock(return_value=True)),
+        ), patch("sqlite3.connect", side_effect=RuntimeError("db broken")):
+            response = client.get("/api/results/raw")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert data["rows"] == []
+        assert data["columns"] == []
 
 
 class TestCacheStatsEndpoint:
@@ -624,7 +673,7 @@ class TestLatestResultsEndpoint:
 
     def test_returns_none_when_no_results(self):
         """Returns null latest when no result files."""
-        app_mod = sys.modules["app"]
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
         client = _get_client()
         with patch.object(app_mod, "RESULTS_DIR", MagicMock(
             glob=MagicMock(return_value=[])
@@ -2013,6 +2062,69 @@ class TestLatestResultsWithFiles:
         assert response.status_code == 200
         data = response.json()
         assert data["latest"] == f2.name
+
+    def test_prefers_newer_capability_over_older_classic(self):
+        """Newest capability file wins over older classic benchmark file."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        client = _get_client()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            real_dir = Path(tmpdir)
+            classic = real_dir / "benchmark_results_20240101_100000.json"
+            capability = real_dir / "model_x_20240101_120000.json"
+            classic.write_text("[]")
+            capability.write_text("[]")
+            os.utime(classic, (1_000_000, 1_000_000))
+            os.utime(capability, (2_000_000, 2_000_000))
+            with patch.object(app_mod, "RESULTS_DIR", real_dir):
+                response = client.get("/api/latest-results")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["latest"] == capability.name
+
+    def test_returns_batch_exports_for_multi_model_run(self):
+        """Returns grouped exports when latest run produced multiple model files."""
+        app_mod = sys.modules.get("app") or importlib.import_module("app")
+        client = _get_client()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            real_dir = Path(tmpdir)
+            logs_dir = real_dir / "logs"
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            model_a = real_dir / "model_a_20240101_120000.json"
+            model_b = real_dir / "model_b_20240101_120001.json"
+            model_c = real_dir / "model_c_20240101_120002.json"
+
+            model_a.write_text("[]")
+            model_b.write_text("[]")
+            model_c.write_text("[]")
+
+            for model_file in (model_a, model_b, model_c):
+                for ext in ("html", "pdf", "csv"):
+                    model_file.with_suffix(f".{ext}").write_text("ok")
+
+            now = time.time()
+            os.utime(model_a, (now, now))
+            os.utime(model_b, (now + 1, now + 1))
+            os.utime(model_c, (now + 2, now + 2))
+
+            with patch.object(app_mod, "RESULTS_DIR", real_dir), patch.object(
+                app_mod,
+                "USER_LOGS_DIR",
+                logs_dir,
+            ):
+                response = client.get("/api/latest-results")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["latest"] == model_c.name
+        assert data["batch_size"] == 3
+        assert len(data["batch_exports"]) == 3
+        assert data["batch_exports"][0]["available"]["html"] is True
+        assert data["batch_exports"][2]["exports"]["json"].endswith(
+            model_c.name
+        )
 
     def test_returns_none_on_os_error(self):
         """Returns null latest on OS error."""

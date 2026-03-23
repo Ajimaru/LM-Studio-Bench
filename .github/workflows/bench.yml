@@ -93,6 +93,22 @@ jobs:
           path: output/*.html
           retention-days: 30
 
+      - name: Upload CSV reports
+        if: steps.benchmark.outputs.status == 'completed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-csv
+          path: output/*.csv
+          retention-days: 30
+
+      - name: Upload PDF reports
+        if: steps.benchmark.outputs.status == 'completed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-pdf
+          path: output/*.pdf
+          retention-days: 30
+
       - name: Upload raw outputs
         if: steps.benchmark.outputs.status == 'completed'
         uses: actions/upload-artifact@v4

@@ -62,7 +62,7 @@ Results are automatically saved to:
 
 - **JSON Reports:** `./output/benchmark_results_*.json`
 - **HTML Reports:** `./output/benchmark_results_*.html`
-- **SQLite Cache:** `~/.local/share/lm-studio-cli/results/agent_results.db`
+- **SQLite Cache:** `~/.local/share/lm-studio-bench/results/benchmark_cache.db`
 
 The SQLite database stores individual test results and capability summaries, allowing you to:
 
@@ -70,6 +70,40 @@ The SQLite database stores individual test results and capability summaries, all
 - Compare results across models
 - Query specific capability metrics
 - Build custom dashboards from cached data
+
+### SQLite Metrics Matrix (Classic vs Capability)
+
+The table below lists what is currently persisted in SQLite for both test
+types, so missing metrics are easy to spot.
+
+| Metric Group | Classic Benchmark (`benchmark_results`) | Capability Benchmark (`agent_results`, `agent_summaries`) |
+| --- | --- | --- |
+| Run identity | `id`, `model_key`, `model_name`, `quantization`, `timestamp` | `id`, `model_name`, `model_path`, `capability`, `test_id`, `test_name`, `timestamp` |
+| Throughput/latency | `avg_tokens_per_sec`, `avg_ttft`, `avg_gen_time`, `tokens_per_sec_p50`, `tokens_per_sec_p95`, `tokens_per_sec_std`, `ttft_p50`, `ttft_p95`, `ttft_std` | `latency_ms`, `throughput_tokens_per_sec` (per test), `avg_latency_ms`, `avg_throughput` (summary) |
+| Token volume | `prompt_tokens`, `completion_tokens` | `prompt_tokens`, `tokens_generated` |
+| Quality metrics | Stored for parity columns but normally `NULL` for classic runs | `quality_score`, `rouge_score`, `f1_score`, `exact_match_score`, `accuracy_score`, `function_call_accuracy`, `avg_quality_score`, `avg_rouge`, `avg_f1`, `avg_exact_match`, `avg_accuracy` |
+| Success/failure | `success`, `error_message`, `error_count` | `success`, `error_message` (per test), `total_tests`, `successful_tests`, `failed_tests`, `success_rate`, `error_count` |
+| Hardware profiling | `gpu_type`, `gpu_offload`, `vram_mb`, `temp_celsius_min/max/avg`, `power_watts_min/max/avg`, `vram_gb_min/max/avg`, `gtt_gb_min/max/avg`, `cpu_percent_min/max/avg`, `ram_gb_min/max/avg` | Same run-level hardware fields are persisted on each capability test row |
+| Inference/load params | `context_length`, `temperature`, `top_k_sampling`, `top_p_sampling`, `min_p_sampling`, `repeat_penalty`, `max_tokens`, `n_gpu_layers`, `n_batch`, `n_threads`, `flash_attention`, `rope_freq_base`, `rope_freq_scale`, `use_mmap`, `use_mlock`, `kv_cache_quant` | Same run-level inference/load fields are persisted on each capability test row |
+| Environment/version | `lmstudio_version`, `app_version`, `nvidia_driver_version`, `rocm_driver_version`, `intel_driver_version`, `os_name`, `os_version`, `cpu_model`, `python_version` | Same environment/version fields are persisted on each capability test row |
+| Derived/comparison | `tokens_per_sec_per_gb`, `tokens_per_sec_per_billion_params`, `speed_delta_pct`, `prev_timestamp` | Same derived/comparison fields are persisted on each capability test row |
+| Raw text/reference | `prompt` (full input prompt), `raw_output`, `reference_output` | `prompt`, `raw_output`, `reference_output` |
+
+#### Quick gap summary
+
+- Missing in capability mode: TTFT distribution stats and classic-only
+  aggregate throughput percentiles.
+- Missing in classic mode: meaningful per-test quality metrics
+  (ROUGE/F1/Exact/Accuracy) because classic benchmarks do not execute
+  capability test cases.
+
+#### Variant selection in REST mode
+
+- Capability mode now forwards the exact requested model identifier,
+  including any `@quantization` suffix, to the LM Studio REST API.
+- This keeps `load`, `chat`, and `unload` aligned with the selected
+  variant and avoids silently falling back to a server-side default
+  quantization.
 
 ### 3. Web Dashboard
 

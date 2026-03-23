@@ -298,6 +298,57 @@ class HTMLReporter:
                 f'tokens/sec</span></div>'
             )
 
+        hardware_html = ""
+        temp_avg = summary.get("temp_celsius_avg")
+        power_avg = summary.get("power_watts_avg")
+        vram_avg = summary.get("vram_gb_avg")
+        cpu_avg = summary.get("cpu_percent_avg")
+        ram_avg = summary.get("ram_gb_avg")
+
+        if any(
+            value is not None
+            for value in [
+                temp_avg,
+                power_avg,
+                vram_avg,
+                cpu_avg,
+                ram_avg,
+            ]
+        ):
+            hardware_html = """
+        <h3>Hardware Profiling</h3>
+"""
+            if temp_avg is not None:
+                hardware_html += (
+                    '<div class="metric">'
+                    '<span class="metric-label">GPU Temp Avg:</span> '
+                    f'<span class="metric-value">{temp_avg:.2f} C</span></div>'
+                )
+            if power_avg is not None:
+                hardware_html += (
+                    '<div class="metric">'
+                    '<span class="metric-label">GPU Power Avg:</span> '
+                    f'<span class="metric-value">{power_avg:.2f} W</span></div>'
+                )
+            if vram_avg is not None:
+                hardware_html += (
+                    '<div class="metric">'
+                    '<span class="metric-label">VRAM Avg:</span> '
+                    f'<span class="metric-value">{vram_avg:.2f} GB</span></div>'
+                )
+            if cpu_avg is not None:
+                hardware_html += (
+                    '<div class="metric">'
+                    '<span class="metric-label">CPU Avg:</span> '
+                    f'<span class="metric-value">{cpu_avg:.2f}%</span></div>'
+                )
+            if ram_avg is not None:
+                hardware_html += (
+                    '<div class="metric">'
+                    '<span class="metric-label">RAM Avg:</span> '
+                    f'<span class="metric-value">{ram_avg:.2f} GB</span></div>'
+                )
+
         caps_str = ", ".join(capabilities) if capabilities else "general_text"
 
         return f"""
@@ -328,6 +379,7 @@ class HTMLReporter:
             <span class="metric-value">{avg_quality:.3f}</span>
         </div>
         {throughput_html}
+        {hardware_html}
 """
 
     def _html_results_section(self, results: List[Dict]) -> str:

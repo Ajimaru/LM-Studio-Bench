@@ -134,3 +134,157 @@ class TestParseArgs:
         assert args.n_gpu_layers == 32
         assert args.n_batch == 512
         assert args.flash_attention is True
+
+
+class TestWriteReports:
+    """Tests for capability report export writer."""
+
+    def test_write_reports_generates_all_formats(self, tmp_path):
+        """_write_reports writes json/html/csv/pdf outputs."""
+        from cli.main import _write_reports
+
+        report_data = {
+            "model_name": "test-model",
+            "timestamp": "2026-03-23T10:00:00",
+            "results": [
+                {
+                    "test_id": "qa_001",
+                    "test_name": "QA test",
+                    "capability": "general_text",
+                    "latency_ms": 123.45,
+                    "tokens_generated": 42,
+                    "throughput": 78.9,
+                    "quality_score": 0.87,
+                    "error": None,
+                }
+            ],
+            "summary": {
+                "total_tests": 1,
+                "successful_tests": 1,
+                "success_rate": 1.0,
+                "avg_latency_ms": 123.45,
+                "avg_quality_score": 0.87,
+            },
+        }
+
+        outputs = _write_reports(
+            report_data=report_data,
+            output_dir=tmp_path,
+            formats=["json", "html", "csv", "pdf"],
+            report_stem="test-model",
+        )
+
+        assert "json" in outputs
+        assert "html" in outputs
+        assert "csv" in outputs
+        assert "pdf" in outputs
+        for output_path in outputs.values():
+            assert output_path.exists()
+
+
+class TestHardwareMonitoring:
+    """Tests for capability hardware monitoring wiring."""
+
+    def test_hardware_monitor_initialization_pattern(self):
+        """Verify HardwareMonitor uses same init pattern as classic mode."""
+        from tools.hardware_monitor import GPUMonitor, HardwareMonitor
+
+        gpu_monitor = GPUMonitor()
+        monitor = HardwareMonitor(
+            gpu_monitor.gpu_type or "Unknown",
+            gpu_monitor.gpu_tool or "",
+            enabled=True,
+        )
+
+        assert monitor is not None
+        assert monitor.enabled is True
+        assert monitor.gpu_type in ("NVIDIA", "AMD", "Intel", "Unknown")
+
+
+class TestBenchmarkAgentConfig:
+    """Tests for BenchmarkAgent config handling."""
+
+    def test_dev_mode_flag_stored_in_agent(self, tmp_path):
+        """dev_mode config flag is stored in BenchmarkAgent."""
+        from unittest.mock import MagicMock
+
+        from agents.benchmark import BenchmarkAgent
+
+        adapter = MagicMock()
+        config = {"dev_mode": True}
+
+        agent = BenchmarkAgent(
+            adapter=adapter,
+            output_dir=tmp_path,
+            config=config
+        )
+
+        assert agent.dev_mode is True
+        assert agent.config == config
+
+    def test_disable_gtt_flag_stored_in_agent(self, tmp_path):
+        """disable_gtt config flag is stored in BenchmarkAgent."""
+        from unittest.mock import MagicMock
+
+        from agents.benchmark import BenchmarkAgent
+
+        adapter = MagicMock()
+        config = {"disable_gtt": True}
+
+        agent = BenchmarkAgent(
+            adapter=adapter,
+            output_dir=tmp_path,
+            config=config
+        )
+
+        assert agent.disable_gtt is True
+        assert agent.config == config
+
+    def test_config_defaults_to_empty_dict(self, tmp_path):
+        """BenchmarkAgent initializes with empty dict if no config provided."""
+        from unittest.mock import MagicMock
+
+        from agents.benchmark import BenchmarkAgent
+
+        adapter = MagicMock()
+
+        agent = BenchmarkAgent(
+            adapter=adapter,
+            output_dir=tmp_path
+        )
+
+        assert agent.config == {}
+        assert agent.dev_mode is False
+        assert agent.disable_gtt is False
+
+    def test_dev_mode_defaults_to_false(self, tmp_path):
+        """dev_mode defaults to False if not in config."""
+        from unittest.mock import MagicMock
+
+        from agents.benchmark import BenchmarkAgent
+
+        adapter = MagicMock()
+
+        agent = BenchmarkAgent(
+            adapter=adapter,
+            output_dir=tmp_path,
+            config={"other_option": "value"}
+        )
+
+        assert agent.dev_mode is False
+
+    def test_disable_gtt_defaults_to_false(self, tmp_path):
+        """disable_gtt defaults to False if not in config."""
+        from unittest.mock import MagicMock
+
+        from agents.benchmark import BenchmarkAgent
+
+        adapter = MagicMock()
+
+        agent = BenchmarkAgent(
+            adapter=adapter,
+            output_dir=tmp_path,
+            config={"other_option": "value"}
+        )
+
+        assert agent.disable_gtt is False

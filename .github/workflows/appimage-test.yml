@@ -79,7 +79,7 @@ jobs:
               echo "=== Testing Python imports ==="
               cd squashfs-root/usr/share/lm-studio-bench
               PYTHONPATH="." \
-                ../../../venv/bin/python3 -c "import importlib, sys; sys.path.insert(0, \".\"); modules = [\"core.config\", \"core.paths\", \"core.version\"]; [importlib.import_module(mod) for mod in modules]; print(\"Import check done\")"
+                  ../../../venv/bin/python3 -c "import importlib, sys; sys.path.insert(0, \".\"); modules = [\"core.config\", \"core.paths\", \"core.version\", \"tools.hardware_monitor\"]; [importlib.import_module(mod) for mod in modules]; print(\"Import check done\")"
 
               echo "=== PASS: $APPIMAGE on $(cat /etc/os-release | grep PRETTY | cut -d= -f2) ==="
             '

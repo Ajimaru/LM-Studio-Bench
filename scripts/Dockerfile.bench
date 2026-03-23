@@ -20,6 +20,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY agents/ ./agents/
 COPY cli/ ./cli/
 COPY core/ ./core/
+COPY tools/ ./tools/
+COPY config/ ./config/
 COPY tests/data/ ./tests/data/
 COPY tests/prompts/ ./tests/prompts/
 

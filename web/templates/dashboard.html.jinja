@@ -1527,6 +1527,11 @@
                      class="btn-primary"
                      style="text-decoration: none">📊 CSV</a>
                 </div>
+                <div id="exportBatchLinks"
+                     style="margin-top: 0.75rem;
+                            font-size: 0.85rem;
+                            color: var(--text-light);
+                            display: none"></div>
               </div>
             </div>
           </div>
@@ -2408,6 +2413,30 @@
                     </tr>
                   </tbody>
                 </table>
+              </div>
+
+              <div style="margin-top: 1.5rem;">
+                <h4 style="margin-bottom: 0.5rem;">🧾 Raw SQLite Rows (1:1 Schema)</h4>
+                <p style="margin: 0 0 0.6rem 0; opacity: 0.8; font-size: 0.9rem;">
+                  Ungruppierte Rohdaten aus `benchmark_results`
+                  (max. 200 Zeilen).
+                </p>
+                <div style="overflow-x: auto;
+                            border: 1px solid var(--border);
+                            border-radius: 0.5rem">
+                  <table id="results-raw-table"
+                         style="width: 100%;
+                                border-collapse: collapse;
+                                font-size: 0.82rem">
+                    <thead id="results-raw-thead">
+                    </thead>
+                    <tbody id="results-raw-tbody">
+                      <tr>
+                        <td style="padding: 0.75rem; opacity: 0.7;">No raw rows loaded yet.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -3565,34 +3594,98 @@
 
         // ===== Update Export Links =====
         async function updateExportLinks() {
+            const setExportLinkState = (id, href, enabled) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.href = href;
+                el.style.opacity = enabled ? '1' : '0.5';
+                el.style.pointerEvents = enabled ? 'auto' : 'none';
+                el.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+            };
+
+            const renderBatchLinks = (batchExports) => {
+                const host = document.getElementById('exportBatchLinks');
+                if (!host) return;
+
+                if (!Array.isArray(batchExports) || batchExports.length <= 1) {
+                    host.style.display = 'none';
+                    host.innerHTML = '';
+                    return;
+                }
+
+                const links = batchExports
+                    .map((entry) => {
+                        const exportsObj = entry.exports || {};
+                        const availableObj = entry.available || {};
+                        const htmlLink = exportsObj.html || '/results/';
+                        const jsonLink = exportsObj.json || '/results/';
+                        const href = availableObj.html ? htmlLink : jsonLink;
+                        const label = entry.base || entry.latest || 'report';
+                        return `<a href="${href}" style="color: var(--primary); text-decoration: none">${label}</a>`;
+                    })
+                    .join(' | ');
+
+                host.innerHTML =
+                    `<div><strong>Latest run (${batchExports.length} reports):</strong></div><div style="margin-top: 0.25rem">${links}</div>`;
+                host.style.display = 'block';
+            };
+
             try {
                 // Fetch the latest benchmark results from the server
                 const response = await fetch('/api/latest-results');
                 const data = await response.json();
                 
                 if (data.latest) {
-                    // data.latest contains only the filename (e.g. "benchmark_results_20260105_195003.json")
-                    const baseFileName = data.latest.replace(/\.\w+$/, '');
-                    
-                    // Update the links
-                    document.getElementById('exportHTML').href = `/results/${baseFileName}.html`;
-                    document.getElementById('exportPDF').href = `/results/${baseFileName}.pdf`;
-                    document.getElementById('exportJSON').href = `/results/${baseFileName}.json`;
-                    document.getElementById('exportCSV').href = `/results/${baseFileName}.csv`;
+                    const apiExports = data.exports || {};
+                    const apiAvailable = data.available || {};
+
+                    if (Object.keys(apiExports).length > 0) {
+                        setExportLinkState(
+                            'exportHTML',
+                            apiExports.html || '/results/',
+                            !!apiAvailable.html,
+                        );
+                        setExportLinkState(
+                            'exportPDF',
+                            apiExports.pdf || '/results/',
+                            !!apiAvailable.pdf,
+                        );
+                        setExportLinkState(
+                            'exportJSON',
+                            apiExports.json || '/results/',
+                            !!apiAvailable.json,
+                        );
+                        setExportLinkState(
+                            'exportCSV',
+                            apiExports.csv || '/results/',
+                            !!apiAvailable.csv,
+                        );
+                        renderBatchLinks(data.batch_exports || []);
+                    } else {
+                        // Backward-compatible fallback for older API shape.
+                        const baseFileName = data.latest.replace(/\.\w+$/, '');
+                        setExportLinkState('exportHTML', `/results/${baseFileName}.html`, true);
+                        setExportLinkState('exportPDF', `/results/${baseFileName}.pdf`, true);
+                        setExportLinkState('exportJSON', `/results/${baseFileName}.json`, true);
+                        setExportLinkState('exportCSV', `/results/${baseFileName}.csv`, true);
+                        renderBatchLinks([]);
+                    }
                 } else {
                     // Fallback: All links to results directory
-                    const links = ['exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
-                    links.forEach(id => {
-                        document.getElementById(id).href = '/results/';
-                    });
+                    setExportLinkState('exportHTML', '/results/', false);
+                    setExportLinkState('exportPDF', '/results/', false);
+                    setExportLinkState('exportJSON', '/results/', false);
+                    setExportLinkState('exportCSV', '/results/', false);
+                    renderBatchLinks([]);
                 }
             } catch (error) {
                 console.error('Error loading export links:', error);
                 // Fallback: All links to results directory
-                const links = ['exportHTML', 'exportPDF', 'exportJSON', 'exportCSV'];
-                links.forEach(id => {
-                    document.getElementById(id).href = '/results/';
-                });
+                setExportLinkState('exportHTML', '/results/', false);
+                setExportLinkState('exportPDF', '/results/', false);
+                setExportLinkState('exportJSON', '/results/', false);
+                setExportLinkState('exportCSV', '/results/', false);
+                renderBatchLinks([]);
             }
         }
 
@@ -4538,24 +4631,89 @@
 
         // ===== Results Browser =====
         let resultsData = [];
+        let rawResultsColumns = [];
+        let rawResultsRows = [];
         let sortColumn = 2; // Default: Tokens/s
         let sortAscending = false;
 
         async function loadResults() {
             try {
-                console.log('📥 Lade Results von /api/results...');
-                const response = await fetch('/api/results');
-                const data = await response.json();
-                console.log('📊 API Response:', data);
+                console.log('📥 Lade Results von /api/results + /api/results/raw...');
+                const [summaryResp, rawResp] = await Promise.all([
+                    fetch('/api/results'),
+                    fetch('/api/results/raw?limit=200'),
+                ]);
+                const data = await summaryResp.json();
+                const rawData = await rawResp.json();
+                console.log('📊 API Response summary:', data);
+                console.log('📊 API Response raw:', rawData);
                 resultsData = data.results || [];
+                rawResultsColumns = rawData.columns || [];
+                rawResultsRows = rawData.rows || [];
                 console.log(`✅ ${resultsData.length} results loaded:`, resultsData);
                 renderResults();
+                renderRawResults();
                 updateCacheStats();
-                addAlert(`✅ ${resultsData.length} results loaded`, 'success');
+                addAlert(
+                    `✅ ${resultsData.length} summary + ` +
+                    `${rawResultsRows.length} raw rows loaded`,
+                    'success'
+                );
             } catch (error) {
                 console.error('❌ Error loading:', error);
                 addAlert(`Error loading: ${error.message}`, 'error');
             }
+        }
+
+        function renderRawResults() {
+            const thead = document.getElementById('results-raw-thead');
+            const tbody = document.getElementById('results-raw-tbody');
+            if (!thead || !tbody) {
+                return;
+            }
+
+            if (!Array.isArray(rawResultsColumns) || rawResultsColumns.length === 0) {
+                thead.innerHTML = '';
+                tbody.innerHTML =
+                    '<tr><td style="padding: 0.75rem; opacity: 0.7;">' +
+                    'No raw schema columns available.</td></tr>';
+                return;
+            }
+
+            const headerCells = rawResultsColumns
+                .map(
+                    (col) =>
+                        `<th style="padding: 0.55rem; text-align: left; ` + `font-weight: 700; white-space: nowrap; ` + `border-bottom: 1px solid rgba(255,255,255,0.12);">` +
+                        `${col}</th>`
+                )
+                .join('');
+            thead.innerHTML = `<tr style="background: rgba(255,255,255,0.05);">${headerCells}</tr>`;
+
+            if (!Array.isArray(rawResultsRows) || rawResultsRows.length === 0) {
+                tbody.innerHTML =
+                    `<tr><td colspan="${rawResultsColumns.length}" ` + `style="padding: 0.75rem; opacity: 0.7;">` +
+                    `No raw rows in benchmark_results.</td></tr>`;
+                return;
+            }
+
+            const rowsHtml = rawResultsRows
+                .map((row) => {
+                    const tds = rawResultsColumns
+                        .map((col) => {
+                            const val = row[col];
+                            const text =
+                                val === null || val === undefined ? 'NULL' : String(val);
+                            const escaped = text
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g , '&lt;') .replace( />/g, '&gt;');
+                            return `<td style="padding: 0.45rem; white-space: nowrap; ` + `border-bottom: 1px solid rgba(255,255,255,0.06);">${escaped}</td>`;
+                        })
+                        .join('');
+                    return `<tr>${tds}</tr>`;
+                })
+                .join('');
+
+            tbody.innerHTML = rowsHtml;
         }
 
         async function updateCacheStats() {

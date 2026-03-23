@@ -265,6 +265,12 @@ class TestSavePreset:
         with pytest.raises(ValueError):
             pm.save_preset("default_classic", {"runs": 1})
 
+    def test_raises_for_default_alias(self, tmp_presets_dir: Path):
+        """ValueError raised when trying to save using readonly alias."""
+        pm = PresetManager(presets_dir=tmp_presets_dir)
+        with pytest.raises(ValueError):
+            pm.save_preset("default", {"runs": 1})
+
 
 class TestDeletePreset:
     """Tests for PresetManager.delete_preset()."""
@@ -289,6 +295,12 @@ class TestDeletePreset:
         pm = PresetManager(presets_dir=tmp_presets_dir)
         with pytest.raises(ValueError):
             pm.delete_preset("default_classic")
+
+    def test_raises_for_default_alias(self, tmp_presets_dir: Path):
+        """ValueError raised when trying to delete readonly alias."""
+        pm = PresetManager(presets_dir=tmp_presets_dir)
+        with pytest.raises(ValueError):
+            pm.delete_preset("default")
 
 
 class TestComparePresets:

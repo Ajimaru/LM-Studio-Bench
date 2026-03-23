@@ -307,7 +307,10 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print("  2️⃣  Capability-Driven Agent:")
     print("      ./run.py --agent 'model-id' [agent-args]")
     print("      → Tests model capabilities (general, reasoning, vision, tooling)")
-    print("      → Generates JSON & HTML reports with quality/performance metrics")
+    print(
+        "      → Generates JSON, CSV, PDF & HTML reports "
+        "with quality/performance metrics"
+    )
     print()
     print("  3️⃣  Web Dashboard (Recommended):")
     print("      ./run.py --webapp  (or -w)")
@@ -330,7 +333,7 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print("                        (general_text,reasoning,vision,tooling)")
     print("  --output-dir DIR      Output directory for results")
     print("  --config FILE         Configuration YAML file")
-    print("  --formats FORMATS     Output formats (json,html)")
+    print("  --formats FORMATS     Output formats (json,html,csv,pdf)")
     print("  --max-tests N         Maximum tests per capability")
     print("  --context-length N    Model context length")
     print("  --gpu-offload RATIO   GPU offload ratio (0.0-1.0)")

@@ -215,8 +215,7 @@ class LMStudioRESTClient:
         Raises:
             httpx.HTTPError: on API errors
         """
-        base_key = model_key.split("@")[0] if "@" in model_key else model_key
-        payload: Dict[str, Any] = {"model": base_key}
+        payload: Dict[str, Any] = {"model": model_key}
 
         if context_length is not None:
             payload["context_length"] = context_length
@@ -230,7 +229,7 @@ class LMStudioRESTClient:
         if gpu_offload is not None:
             payload["offload_kv_cache_to_gpu"] = bool(gpu_offload)
 
-        logger.info("Loading model: %s", base_key)
+        logger.info("Loading model: %s", model_key)
         try:
             response = self.client.post(
                 f"{self.base_url}/api/v1/models/load",
@@ -246,7 +245,7 @@ class LMStudioRESTClient:
             retry_payload.pop("offload_kv_cache_to_gpu", None)
             logger.warning(
                 "Retrying model load without offload_kv_cache_to_gpu: %s",
-                base_key,
+                model_key,
             )
             response = self.client.post(
                 f"{self.base_url}/api/v1/models/load",
@@ -256,7 +255,7 @@ class LMStudioRESTClient:
             response.raise_for_status()
 
         result = response.json()
-        instance_id = result.get("instance_id", base_key)
+        instance_id = result.get("instance_id", model_key)
         logger.info("Model loaded: %s", instance_id)
         return instance_id
 
@@ -458,14 +457,10 @@ class LMStudioRESTClient:
             if cache_key in _RESPONSE_CACHE:
                 logger.debug("Returning cached response")
                 return _RESPONSE_CACHE[cache_key]
-        base_model = None
-        if model:
-            base_model = model.split("@")[0] if "@" in model else model
-
         payload: Dict[str, Any] = {"temperature": temperature, "stream": True}
 
-        if base_model:
-            payload["model"] = base_model
+        if model:
+            payload["model"] = model
         if context_length:
             payload["context_length"] = context_length
         if max_tokens:

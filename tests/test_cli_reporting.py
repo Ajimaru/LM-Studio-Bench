@@ -221,6 +221,31 @@ class TestHTMLReporter:
         assert "tokens/sec" not in result
         assert "reasoning" in result
 
+    def test_html_summary_with_hardware_profile(self):
+        """_html_summary_section renders hardware metrics when available."""
+        reporter = HTMLReporter()
+        summary = {
+            "total_tests": 5,
+            "successful_tests": 5,
+            "success_rate": 1.0,
+            "avg_latency_ms": 50.0,
+            "avg_quality_score": 0.95,
+            "temp_celsius_avg": 68.2,
+            "power_watts_avg": 210.5,
+            "vram_gb_avg": 8.1,
+            "cpu_percent_avg": 42.0,
+            "ram_gb_avg": 12.4,
+        }
+
+        result = reporter._html_summary_section(
+            summary, ["reasoning"], "2026-01-01T00:00:00"
+        )
+
+        assert "Hardware Profiling" in result
+        assert "GPU Temp Avg" in result
+        assert "GPU Power Avg" in result
+        assert "VRAM Avg" in result
+
     def test_html_results_empty(self):
         """_html_results_section handles empty results."""
         reporter = HTMLReporter()

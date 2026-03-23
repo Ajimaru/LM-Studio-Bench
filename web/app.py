@@ -35,7 +35,7 @@ import sys
 import threading
 import time
 import traceback
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 from urllib.parse import unquote
 import uuid
 import webbrowser
@@ -1247,6 +1247,212 @@ def match_parameters(row_params: Dict[str, Any], target_params: Dict[str, Any]) 
     return True
 
 
+def _model_name_candidates(model_name: str) -> List[str]:
+    """Return exact and normalized model-name candidates for lookups."""
+    candidates = [model_name]
+    if "@" in model_name:
+        base_name = model_name.split("@")[0]
+        if base_name and base_name not in candidates:
+            candidates.append(base_name)
+    return candidates
+
+
+def _collect_comparison_entries(
+    conn: sqlite3.Connection,
+    model_filter: Optional[str] = None,
+    start_filter: Optional[str] = None,
+    end_filter: Optional[str] = None,
+    quant_filters: Optional[Sequence[Optional[str]]] = None,
+) -> List[Dict[str, Any]]:
+    """Collect normalized comparison entries from classic and capability runs."""
+    cursor = conn.cursor()
+
+    def row_value(row: Sequence[Any], index: int) -> Any:
+        return row[index] if len(row) > index else None
+
+    classic_query = """
+        SELECT timestamp, model_name, quantization,
+               avg_tokens_per_sec, avg_ttft, avg_gen_time,
+               gpu_offload, vram_mb, temperature, top_k_sampling,
+               top_p_sampling, min_p_sampling, repeat_penalty,
+               max_tokens, num_runs, benchmark_duration_seconds,
+               error_count
+        FROM benchmark_results
+        WHERE 1=1
+    """
+    classic_params: List[Any] = []
+
+    if model_filter:
+        model_candidates = _model_name_candidates(model_filter)
+        if len(model_candidates) == 1:
+            classic_query += " AND model_name = ?"
+            classic_params.append(model_candidates[0])
+        else:
+            placeholders = ",".join(["?"] * len(model_candidates))
+            classic_query += f" AND model_name IN ({placeholders})"
+            classic_params.extend(model_candidates)
+    if start_filter:
+        classic_query += " AND timestamp >= ?"
+        classic_params.append(start_filter)
+    if end_filter:
+        classic_query += " AND timestamp <= ?"
+        classic_params.append(end_filter)
+
+    classic_query += " ORDER BY timestamp ASC"
+    cursor.execute(classic_query, tuple(classic_params))
+
+    entries: List[Dict[str, Any]] = []
+    for row in cursor.fetchall():
+        if len(row) < 2:
+            continue
+        entries.append(
+            {
+                "timestamp": row_value(row, 0),
+                "model_name": row_value(row, 1),
+                "quantization": row_value(row, 2),
+                "speed": row_value(row, 3),
+                "ttft": row_value(row, 4),
+                "gen_time": row_value(row, 5),
+                "gpu_offload": row_value(row, 6),
+                "vram_mb": row_value(row, 7),
+                "temperature": row_value(row, 8),
+                "top_k_sampling": row_value(row, 9),
+                "top_p_sampling": row_value(row, 10),
+                "min_p_sampling": row_value(row, 11),
+                "repeat_penalty": row_value(row, 12),
+                "max_tokens": row_value(row, 13),
+                "num_runs": row_value(row, 14),
+                "benchmark_duration_seconds": row_value(row, 15),
+                "error_count": row_value(row, 16),
+                "source": "classic",
+            }
+        )
+
+    capability_query = """
+        SELECT timestamp, model_name, capability,
+               throughput_tokens_per_sec, latency_ms
+        FROM agent_results
+        WHERE 1=1
+    """
+    capability_params: List[Any] = []
+
+    if model_filter:
+        model_candidates = _model_name_candidates(model_filter)
+        if len(model_candidates) == 1:
+            capability_query += " AND model_name = ?"
+            capability_params.append(model_candidates[0])
+        else:
+            placeholders = ",".join(["?"] * len(model_candidates))
+            capability_query += f" AND model_name IN ({placeholders})"
+            capability_params.extend(model_candidates)
+    if start_filter:
+        capability_query += " AND timestamp >= ?"
+        capability_params.append(start_filter)
+    if end_filter:
+        capability_query += " AND timestamp <= ?"
+        capability_params.append(end_filter)
+
+    capability_query += " ORDER BY timestamp ASC"
+    cursor.execute(capability_query, tuple(capability_params))
+
+    for row in cursor.fetchall():
+        if len(row) < 5:
+            continue
+        entries.append(
+            {
+                "timestamp": row_value(row, 0),
+                "model_name": row_value(row, 1),
+                "quantization": f"capability:{row_value(row, 2) or 'unknown'}",
+                "speed": row_value(row, 3),
+                "ttft": row_value(row, 4),
+                "gen_time": None,
+                "gpu_offload": 0.0,
+                "vram_mb": None,
+                "temperature": None,
+                "top_k_sampling": None,
+                "top_p_sampling": None,
+                "min_p_sampling": None,
+                "repeat_penalty": None,
+                "max_tokens": None,
+                "num_runs": 1,
+                "benchmark_duration_seconds": None,
+                "error_count": 0,
+                "source": "capability",
+            }
+        )
+
+    if quant_filters:
+        allowed = set(quant_filters)
+        entries = [
+            entry
+            for entry in entries
+            if entry.get("quantization") in allowed
+            or (entry.get("quantization") is None and None in allowed)
+        ]
+
+    entries.sort(key=lambda item: item.get("timestamp") or "")
+    return entries
+
+
+def _capability_ab_fallback(
+    conn: sqlite3.Connection,
+    model_name: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Build baseline/test sets from capability data when classic data is missing."""
+    entries = _collect_comparison_entries(
+        conn=conn,
+        model_filter=model_name,
+        start_filter=start_date,
+        end_filter=end_date,
+    )
+    capability_entries = [
+        entry
+        for entry in entries
+        if entry.get("source") == "capability" and entry.get("speed") is not None
+    ]
+
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for entry in capability_entries:
+        quant = str(entry.get("quantization") or "capability:unknown")
+        groups.setdefault(quant, []).append(entry)
+
+    if len(groups) < 2:
+        return None
+
+    ranked = sorted(
+        groups.items(),
+        key=lambda item: (
+            -len(item[1]),
+            max((e.get("timestamp") or "") for e in item[1]),
+        ),
+    )
+    baseline_quant, baseline_group = ranked[0]
+    test_quant, test_group = ranked[1]
+
+    def map_group(group: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        mapped: List[Dict[str, Any]] = []
+        for index, item in enumerate(group, start=1):
+            mapped.append(
+                {
+                    "timestamp": item.get("timestamp"),
+                    "speed": item.get("speed"),
+                    "ttft": item.get("ttft"),
+                    "gen_time": item.get("gen_time"),
+                    "run_index": index,
+                }
+            )
+        return mapped
+
+    return {
+        "baseline_data": map_group(baseline_group),
+        "test_data": map_group(test_group),
+        "baseline_label": baseline_quant,
+        "test_label": test_quant,
+    }
+
+
 def calculate_effect_size(
     baseline_speeds: List[float], test_speeds: List[float]
 ) -> Dict[str, Union[float, str]]:
@@ -1781,6 +1987,84 @@ async def get_results() -> dict:
         return _safe_api_error({"results": []})
 
 
+@app.get("/api/results/raw")
+async def get_results_raw(limit: int = 200) -> dict:
+    """Return raw benchmark rows with full DB schema columns (1:1)."""
+    safe_limit = max(1, min(int(limit), 1000))
+    conn: sqlite3.Connection | None = None
+
+    if not DATABASE_FILE.exists():
+        return {
+            "success": True,
+            "count": 0,
+            "limit": safe_limit,
+            "columns": [],
+            "rows": [],
+        }
+
+    try:
+        conn = sqlite3.connect(DATABASE_FILE)
+        cursor = conn.cursor()
+
+        cursor.execute("PRAGMA table_info(benchmark_results)")
+        table_info = cursor.fetchall()
+        columns = [row[1] for row in table_info if len(row) > 1]
+
+        if not columns:
+            return {
+                "success": True,
+                "count": 0,
+                "limit": safe_limit,
+                "columns": [],
+                "rows": [],
+            }
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM benchmark_results
+            ORDER BY timestamp DESC, id DESC
+            LIMIT ?
+            """,
+            (safe_limit,),
+        )
+        fetched_rows = cursor.fetchall()
+
+        rows: list[dict[str, Any]] = []
+        for row in fetched_rows:
+            row_dict: dict[str, Any] = {}
+            for idx, col_name in enumerate(columns):
+                value = row[idx] if idx < len(row) else None
+                if isinstance(value, bytes):
+                    row_dict[col_name] = value.decode("utf-8", "replace")
+                else:
+                    row_dict[col_name] = value
+            rows.append(row_dict)
+
+        return {
+            "success": True,
+            "count": len(rows),
+            "limit": safe_limit,
+            "columns": columns,
+            "rows": rows,
+        }
+    except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as e:
+        logger.error("❌ Error loading raw benchmark rows: %s", e)
+        return _safe_api_error(
+            {
+                "columns": [],
+                "rows": [],
+                "limit": safe_limit,
+            }
+        )
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except (NameError, OSError, RuntimeError, sqlite3.Error):
+            pass
+
+
 @app.get("/api/cache/stats")
 async def get_cache_stats() -> dict:
     """Returns cache statistics"""
@@ -2022,52 +2306,45 @@ async def get_comparison_models() -> dict:
 
     try:
         conn = sqlite3.connect(DATABASE_FILE)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT DISTINCT model_name, COUNT(*) as entry_count
-            FROM benchmark_results
-            GROUP BY model_name
-            ORDER BY entry_count DESC, model_name ASC
-        """)
+        all_entries = _collect_comparison_entries(conn)
+
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for entry in all_entries:
+            model_name = str(entry.get("model_name") or "").strip()
+            if not model_name:
+                continue
+            grouped.setdefault(model_name, []).append(entry)
 
         models = []
-        for model_name, count in cursor.fetchall():
-            cursor.execute(
-                """
-                SELECT timestamp, avg_tokens_per_sec FROM benchmark_results
-                WHERE model_name = ?
-                ORDER BY timestamp DESC
-                LIMIT 1
-            """,
-                (model_name,),
+        for model_name, entries in grouped.items():
+            sorted_entries = sorted(
+                entries,
+                key=lambda item: item.get("timestamp") or "",
             )
-            latest = cursor.fetchone()
+            oldest = sorted_entries[0]
+            latest = sorted_entries[-1]
+            oldest_speed = oldest.get("speed")
+            latest_speed = latest.get("speed")
 
-            cursor.execute(
-                """
-                SELECT timestamp, avg_tokens_per_sec FROM benchmark_results
-                WHERE model_name = ?
-                ORDER BY timestamp ASC
-                LIMIT 1
-            """,
-                (model_name,),
+            if latest_speed is None:
+                continue
+
+            delta = 0.0
+            if isinstance(oldest_speed, (int, float)) and oldest_speed > 0:
+                delta = ((latest_speed - oldest_speed) / oldest_speed) * 100
+
+            models.append(
+                {
+                    "model_name": model_name,
+                    "entry_count": len(entries),
+                    "latest_speed": round(latest_speed, 2),
+                    "latest_timestamp": latest.get("timestamp"),
+                    "oldest_timestamp": oldest.get("timestamp"),
+                    "speed_delta_pct": round(delta, 2),
+                }
             )
-            oldest = cursor.fetchone()
 
-            if latest and oldest:
-                delta = (
-                    ((latest[1] - oldest[1]) / oldest[1] * 100) if oldest[1] > 0 else 0
-                )
-                models.append(
-                    {
-                        "model_name": model_name,
-                        "entry_count": count,
-                        "latest_speed": round(latest[1], 2),
-                        "latest_timestamp": latest[0],
-                        "oldest_timestamp": oldest[0],
-                        "speed_delta_pct": round(delta, 2),
-                    }
-                )
+        models.sort(key=lambda item: (-item["entry_count"], item["model_name"]))
 
         conn.close()
         return {"success": True, "models": models}
@@ -2096,43 +2373,33 @@ async def get_model_history(model_name: str) -> dict:
 
     try:
         conn = sqlite3.connect(DATABASE_FILE)
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            SELECT
-                timestamp, quantization, avg_tokens_per_sec, avg_ttft,
-                avg_gen_time, gpu_offload, vram_mb, temperature,
-                top_k_sampling, top_p_sampling, min_p_sampling,
-                repeat_penalty, max_tokens, num_runs,
-                benchmark_duration_seconds, error_count
-            FROM benchmark_results
-            WHERE model_name = ?
-            ORDER BY timestamp ASC
-        """,
-            (model_name,),
-        )
+        entries = _collect_comparison_entries(conn=conn, model_filter=model_name)
 
         history = []
-        for row in cursor.fetchall():
+        for row in entries:
+            speed = row.get("speed")
+            ttft = row.get("ttft")
+            gen_time = row.get("gen_time")
             history.append(
                 {
-                    "timestamp": row[0],
-                    "quantization": row[1],
-                    "speed_tokens_sec": round(row[2], 2),
-                    "ttft": round(row[3], 3),
-                    "gen_time": round(row[4], 3),
-                    "gpu_offload": row[5],
-                    "vram_mb": row[6],
-                    "temperature": row[7],
-                    "top_k_sampling": row[8],
-                    "top_p_sampling": row[9],
-                    "min_p_sampling": row[10],
-                    "repeat_penalty": row[11],
-                    "max_tokens": row[12],
-                    "num_runs": row[13],
-                    "benchmark_duration_seconds": row[14],
-                    "error_count": row[15],
+                    "timestamp": row.get("timestamp"),
+                    "quantization": row.get("quantization"),
+                    "speed_tokens_sec": round(speed, 2) if speed is not None else 0,
+                    "ttft": round(ttft, 3) if ttft is not None else 0,
+                    "gen_time": round(gen_time, 3) if gen_time is not None else 0,
+                    "gpu_offload": row.get("gpu_offload") or 0,
+                    "vram_mb": row.get("vram_mb"),
+                    "temperature": row.get("temperature"),
+                    "top_k_sampling": row.get("top_k_sampling"),
+                    "top_p_sampling": row.get("top_p_sampling"),
+                    "min_p_sampling": row.get("min_p_sampling"),
+                    "repeat_penalty": row.get("repeat_penalty"),
+                    "max_tokens": row.get("max_tokens"),
+                    "num_runs": row.get("num_runs"),
+                    "benchmark_duration_seconds": row.get(
+                        "benchmark_duration_seconds"
+                    ),
+                    "error_count": row.get("error_count"),
                 }
             )
 
@@ -2199,35 +2466,13 @@ async def export_comparison_csv(
             quant_filters = [quant_filters]
 
         conn = sqlite3.connect(DATABASE_FILE)
-        cursor = conn.cursor()
-
-        query = (
-            "SELECT timestamp, model_name, quantization, "
-            "avg_tokens_per_sec, avg_ttft, avg_gen_time, "
-            "gpu_offload, vram_mb, temperature, top_k_sampling, "
-            "top_p_sampling, min_p_sampling, repeat_penalty, "
-            "max_tokens, num_runs, benchmark_duration_seconds, "
-            "error_count FROM benchmark_results WHERE 1=1"
+        rows = _collect_comparison_entries(
+            conn=conn,
+            model_filter=model_filter,
+            start_filter=start_filter,
+            end_filter=end_filter,
+            quant_filters=quant_filters,
         )
-        params: list = []
-
-        if model_filter:
-            query += " AND model_name = ?"
-            params.append(model_filter)
-        if start_filter:
-            query += " AND timestamp >= ?"
-            params.append(start_filter)
-        if end_filter:
-            query += " AND timestamp <= ?"
-            params.append(end_filter)
-        if quant_filters:
-            placeholders = ",".join(["?"] * len(quant_filters))
-            query += f" AND quantization IN ({placeholders})"
-            params.extend(quant_filters)
-
-        query += " ORDER BY timestamp ASC"
-        cursor.execute(query, tuple(params))
-        rows = cursor.fetchall()
         conn.close()
 
         if not rows:
@@ -2266,23 +2511,23 @@ async def export_comparison_csv(
         for row in rows:
             writer.writerow(
                 [
-                    row[0],
-                    row[1],
-                    row[2],
-                    safe_round(row[3], 2),
-                    safe_round(row[4], 3),
-                    safe_round(row[5], 3),
-                    safe_round(row[6], 2),
-                    row[7],
-                    row[8],
-                    row[9],
-                    row[10],
-                    row[11],
-                    row[12],
-                    row[13],
-                    row[14],
-                    safe_round(row[15], 2),
-                    row[16],
+                    row.get("timestamp"),
+                    row.get("model_name"),
+                    row.get("quantization"),
+                    safe_round(row.get("speed"), 2),
+                    safe_round(row.get("ttft"), 3),
+                    safe_round(row.get("gen_time"), 3),
+                    safe_round(row.get("gpu_offload"), 2),
+                    row.get("vram_mb"),
+                    row.get("temperature"),
+                    row.get("top_k_sampling"),
+                    row.get("top_p_sampling"),
+                    row.get("min_p_sampling"),
+                    row.get("repeat_penalty"),
+                    row.get("max_tokens"),
+                    row.get("num_runs"),
+                    safe_round(row.get("benchmark_duration_seconds"), 2),
+                    row.get("error_count"),
                 ]
             )
 
@@ -2343,40 +2588,19 @@ async def export_comparison_pdf(request: Request) -> dict:
             quant_filters = [quant_filters]
 
         conn = sqlite3.connect(DATABASE_FILE)
-        cursor = conn.cursor()
-
-        query = """
-            SELECT timestamp, model_name, quantization,
-                   avg_tokens_per_sec, avg_ttft,
-                   avg_gen_time, gpu_offload, vram_mb, temperature
-            FROM benchmark_results
-            WHERE 1=1
-        """
-        params: list = []
-
-        if model_filter:
-            query += " AND model_name = ?"
-            params.append(model_filter)
-        if start_filter:
-            query += " AND timestamp >= ?"
-            params.append(start_filter)
-        if end_filter:
-            query += " AND timestamp <= ?"
-            params.append(end_filter)
-        if quant_filters:
-            placeholders = ",".join(["?"] * len(quant_filters))
-            query += f" AND quantization IN ({placeholders})"
-            params.extend(quant_filters)
-
-        query += " ORDER BY timestamp ASC"
-        cursor.execute(query, tuple(params))
-        rows = cursor.fetchall()
+        rows = _collect_comparison_entries(
+            conn=conn,
+            model_filter=model_filter,
+            start_filter=start_filter,
+            end_filter=end_filter,
+            quant_filters=quant_filters,
+        )
         conn.close()
 
         if not rows:
             return {"success": False, "error": "No data found"}
 
-        speeds = [row[3] for row in rows if row[3] is not None]
+        speeds = [row["speed"] for row in rows if row.get("speed") is not None]
         stats = {
             "min_speed": round(min(speeds), 2) if speeds else None,
             "max_speed": round(max(speeds), 2) if speeds else None,
@@ -2454,11 +2678,16 @@ async def export_comparison_pdf(request: Request) -> dict:
         ]
 
         for row in rows[:50]:
-            spd = round(row[3], 2) if row[3] is not None else "-"
-            ttft = round(row[4], 3) if row[4] is not None else "-"
-            gen = round(row[5], 3) if row[5] is not None else "-"
+            spd = round(row["speed"], 2) if row.get("speed") is not None else "-"
+            ttft = round(row["ttft"], 3) if row.get("ttft") is not None else "-"
+            gen = (
+                round(row["gen_time"], 3)
+                if row.get("gen_time") is not None
+                else "-"
+            )
             header_lines.append(
-                f"{row[0]} | {row[1]} | {row[2]} | {spd} tok/s | "
+                f"{row['timestamp']} | {row['model_name']} | "
+                f"{row['quantization']} | {spd} tok/s | "
                 f"TTFT {ttft} | Gen {gen}"
             )
 
@@ -2509,18 +2738,49 @@ async def get_advanced_statistics(model_name: str) -> dict:
         """,
             (model_name,),
         )
+        classic_data = cursor.fetchall()
 
-        data = cursor.fetchall()
+        model_candidates = _model_name_candidates(model_name)
+        capability_query = """
+            SELECT timestamp, throughput_tokens_per_sec
+            FROM agent_results
+            WHERE 1=1
+        """
+        capability_params: List[Any] = []
+        if len(model_candidates) == 1:
+            capability_query += " AND model_name = ?"
+            capability_params.append(model_candidates[0])
+        else:
+            placeholders = ",".join(["?"] * len(model_candidates))
+            capability_query += f" AND model_name IN ({placeholders})"
+            capability_params.extend(model_candidates)
+        capability_query += " ORDER BY timestamp ASC"
+
+        cursor.execute(capability_query, tuple(capability_params))
+        capability_data = cursor.fetchall()
         conn.close()
 
-        if not data or len(data) < 2:
+        merged_data = list(classic_data)
+        merged_data.extend(capability_data)
+
+        deduplicated_data = list(dict.fromkeys(merged_data))
+
+        if not deduplicated_data or len(deduplicated_data) < 2:
             return {
                 "success": False,
                 "error": "Insufficient data for statistical analysis",
             }
 
-        speeds = [row[1] for row in data]
-        timestamps = [row[0] for row in data]
+        valid_data = [row for row in deduplicated_data if row[1] is not None]
+        if len(valid_data) < 2:
+            return {
+                "success": False,
+                "error": "Insufficient data for statistical analysis",
+            }
+
+        valid_data.sort(key=lambda row: row[0])
+        speeds = [row[1] for row in valid_data]
+        timestamps = [row[0] for row in valid_data]
 
         mean = statistics.mean(speeds)
         variance = statistics.variance(speeds) if len(speeds) > 1 else 0
@@ -2683,14 +2943,17 @@ async def list_presets() -> dict:
 async def get_preset(name: str) -> dict:
     """Get a single preset by name"""
     try:
-        is_valid_name, _ = preset_mgr.validate_preset_name(name)
-        if not is_valid_name and name not in preset_mgr.READONLY_PRESETS:
-            return {"success": False, "error": f"Invalid preset name: {name}"}
+        if not preset_mgr.is_readonly_name(name):
+            is_valid_name, _ = preset_mgr.validate_preset_name(name)
+            if not is_valid_name:
+                return {"success": False, "error": f"Invalid preset name: {name}"}
 
         preset_config = preset_mgr.load_preset(name)
 
         all_presets = preset_mgr.list_presets_detailed()
-        is_readonly = any(pname == name and ro for pname, ro in all_presets)
+        is_readonly = preset_mgr.is_readonly_name(name) or any(
+            pname == name and ro for pname, ro in all_presets
+        )
 
         logger.info("📦 Loaded preset: %s", name)
         mode = (
@@ -2719,24 +2982,15 @@ async def get_preset(name: str) -> dict:
 async def save_preset(request: PresetSaveRequest) -> dict:
     """Save a new user preset"""
     try:
-        is_valid_name, _ = preset_mgr.validate_preset_name(request.name)
-        if not is_valid_name:
-            return {"success": False, "error": f"Invalid preset name: {request.name}"}
-
-        if request.name in preset_mgr.READONLY_PRESETS:
-            return {
-                "success": False,
-                "error": f"Cannot overwrite readonly preset: {request.name}",
-            }
-
         preset_mgr.save_preset(request.name, request.config)
-
         logger.info("💾 Saved user preset: %s", request.name)
         return {
             "success": True,
             "message": f"Preset '{request.name}' saved successfully",
         }
-    except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+    except (OSError, TypeError) as e:
         logger.error("❌ Error saving preset %s: %s", request.name, e)
         return _safe_api_error()
 
@@ -2745,17 +2999,11 @@ async def save_preset(request: PresetSaveRequest) -> dict:
 async def delete_preset(name: str) -> dict:
     """Delete a user preset"""
     try:
-        is_valid_name, _ = preset_mgr.validate_preset_name(name)
-        if not is_valid_name:
-            return {"success": False, "error": f"Invalid preset name: {name}"}
-
-        if name in preset_mgr.READONLY_PRESETS:
-            return {"success": False, "error": f"Cannot delete readonly preset: {name}"}
-
         preset_mgr.delete_preset(name)
-
         logger.info("🗑️ Deleted user preset: %s", name)
         return {"success": True, "message": f"Preset '{name}' deleted successfully"}
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     except FileNotFoundError:
         return {"success": False, "error": f"Preset not found: {name}"}
     except (OSError, PermissionError) as e:
@@ -2855,20 +3103,14 @@ async def import_presets(request: Request) -> dict:
 
                 preset_name = Path(file_info).stem
 
-                is_valid_name, _ = preset_mgr.validate_preset_name(preset_name)
-                if not is_valid_name:
-                    skipped.append(f"{preset_name} (invalid name)")
-                    continue
-
-                if preset_name in preset_mgr.READONLY_PRESETS:
-                    skipped.append(f"{preset_name} (readonly)")
-                    continue
-
                 json_content = zip_file.read(file_info).decode("utf-8")
                 preset_config = json.loads(json_content)
 
-                preset_mgr.save_preset(preset_name, preset_config)
-                imported_count += 1
+                try:
+                    preset_mgr.save_preset(preset_name, preset_config)
+                    imported_count += 1
+                except ValueError as ve:
+                    skipped.append(f"{preset_name} ({ve})")
 
         logger.info("📥 Imported %s presets, skipped %s", imported_count, len(skipped))
 
@@ -2947,15 +3189,24 @@ async def get_experiment_comparison(
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
 
+        model_candidates = _model_name_candidates(model_name)
         query = """
             SELECT
                 timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
                 temperature, top_k_sampling, top_p_sampling, min_p_sampling,
                 repeat_penalty, max_tokens, num_runs, error_count
             FROM benchmark_results
-            WHERE model_name = ?
+            WHERE 1=1
         """
-        params: List[Any] = [model_name]
+        params: List[Any] = []
+
+        if len(model_candidates) == 1:
+            query += " AND model_name = ?"
+            params.append(model_candidates[0])
+        else:
+            placeholders = ",".join(["?"] * len(model_candidates))
+            query += f" AND model_name IN ({placeholders})"
+            params.extend(model_candidates)
 
         if start_date:
             query += " AND timestamp >= ?"
@@ -2968,9 +3219,9 @@ async def get_experiment_comparison(
 
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
-        conn.close()
 
         if not rows:
+            conn.close()
             return {
                 "success": False,
                 "error": "No data for this model",
@@ -3029,6 +3280,19 @@ async def get_experiment_comparison(
                         "gen_time": gen_time,
                     }
                 )
+
+        if not baseline_data or not test_data:
+            fallback = _capability_ab_fallback(
+                conn=conn,
+                model_name=model_name,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            if fallback:
+                baseline_data = fallback["baseline_data"]
+                test_data = fallback["test_data"]
+
+        conn.close()
 
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
         test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
@@ -3147,15 +3411,25 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
         conn = sqlite3.connect(DATABASE_FILE)
         cursor = conn.cursor()
 
+        model_candidates = _model_name_candidates(model_name)
         query = """
             SELECT
                 timestamp, avg_tokens_per_sec, avg_ttft, avg_gen_time,
                 temperature, top_k_sampling, top_p_sampling, min_p_sampling,
                 repeat_penalty, max_tokens, num_runs, error_count
             FROM benchmark_results
-            WHERE model_name = ?
+            WHERE 1=1
         """
-        params: list = [model_name]
+        params: List[Any] = []
+
+        if len(model_candidates) == 1:
+            query += " AND model_name = ?"
+            params.append(model_candidates[0])
+        else:
+            placeholders = ",".join(["?"] * len(model_candidates))
+            query += f" AND model_name IN ({placeholders})"
+            params.extend(model_candidates)
+
         if start_date:
             query += " AND timestamp >= ?"
             params.append(start_date)
@@ -3166,9 +3440,9 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
 
         cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
-        conn.close()
 
         if not rows:
+            conn.close()
             return {
                 "success": False,
                 "error": "No data for this model",
@@ -3220,6 +3494,19 @@ async def post_experiment_comparison(experiment_id: str, request: Request) -> di
                         "gen_time": gen_time,
                     }
                 )
+
+        if not baseline_data or not test_data:
+            fallback = _capability_ab_fallback(
+                conn=conn,
+                model_name=model_name,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            if fallback:
+                baseline_data = fallback["baseline_data"]
+                test_data = fallback["test_data"]
+
+        conn.close()
 
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
         test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
@@ -3619,8 +3906,6 @@ async def run_experiment(request: Request) -> dict:
         )
         all_rows = cursor.fetchall()
 
-        conn.close()
-
         baseline_data: List[Dict[str, Any]] = []
         test_data: List[Dict[str, Any]] = []
 
@@ -3711,6 +3996,22 @@ async def run_experiment(request: Request) -> dict:
 
         baseline_speeds = [d["speed"] for d in baseline_data if d["speed"] is not None]
         test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
+
+        if not baseline_speeds or not test_speeds:
+            fallback = _capability_ab_fallback(
+                conn=conn,
+                model_name=model_name,
+                start_date=baseline_start_str,
+            )
+            if fallback:
+                baseline_data = fallback["baseline_data"]
+                test_data = fallback["test_data"]
+                baseline_speeds = [
+                    d["speed"] for d in baseline_data if d["speed"] is not None
+                ]
+                test_speeds = [d["speed"] for d in test_data if d["speed"] is not None]
+
+        conn.close()
 
         if not baseline_speeds or not test_speeds:
             return {
@@ -4130,9 +4431,42 @@ async def get_dashboard_stats() -> dict:
     if not BenchmarkCache:
         return {"success": False, "error": "BenchmarkCache not available"}
 
+    capability_runs: list[dict[str, Any]] = []
+
     try:
         cache = BenchmarkCache(DATABASE_FILE)
         results = cache.get_all_results()
+        try:
+            if DATABASE_FILE.exists():
+                cconn = sqlite3.connect(DATABASE_FILE)
+                ccur = cconn.cursor()
+                ccur.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='table' AND name='agent_results'"
+                )
+                if ccur.fetchone() is not None:
+                    ccur.execute(
+                        "SELECT model_name, capability, "
+                        "throughput_tokens_per_sec, timestamp "
+                        "FROM agent_results "
+                        "ORDER BY timestamp DESC"
+                    )
+                    for model_name, capability, throughput, timestamp in (
+                        ccur.fetchall()
+                    ):
+                        speed = float(throughput) if throughput is not None else 0.0
+                        cap_name = str(capability) if capability else "general_text"
+                        capability_runs.append(
+                            {
+                                "model_name": str(model_name),
+                                "capability": cap_name,
+                                "speed": round(speed, 2),
+                                "timestamp": str(timestamp),
+                            }
+                        )
+                cconn.close()
+        except (sqlite3.Error, TypeError, ValueError):
+            capability_runs = []
 
         capabilities_by_model: Dict[str, List[str]] = {}
         distinct_capabilities: set[str] = set()
@@ -4504,9 +4838,11 @@ async def get_dashboard_stats() -> dict:
                 "total_gb": system_info["ram_gb"],
             }
 
+        classic_models = {r.model_name for r in results}
+        capability_models = {r["model_name"] for r in capability_runs}
         cache_stats = {
-            "total_models": len(results),
-            "total_runs": len(results),
+            "total_models": len(classic_models | capability_models),
+            "total_runs": len(results) + len(capability_runs),
             "db_size_mb": (
                 round(DATABASE_FILE.stat().st_size / (1024 * 1024), 2)
                 if DATABASE_FILE.exists()
@@ -4539,19 +4875,22 @@ async def get_dashboard_stats() -> dict:
             "p95": 0,
             "max": 0,
         }
-        if results:
-            speeds = [r.avg_tokens_per_sec for r in results]
+        all_speeds = [r.avg_tokens_per_sec for r in results]
+        all_speeds.extend(
+            r["speed"] for r in capability_runs if float(r["speed"]) > 0.0
+        )
+        if all_speeds:
             perf_stats = {
-                "avg_speed": round(sum(speeds) / len(speeds), 2),
-                "max_speed": round(max(speeds), 2),
-                "min_speed": round(min(speeds), 2),
+                "avg_speed": round(sum(all_speeds) / len(all_speeds), 2),
+                "max_speed": round(max(all_speeds), 2),
+                "min_speed": round(min(all_speeds), 2),
             }
             speed_summary = {
-                "min": round(min(speeds), 2),
-                "p50": round(calc_percentile(speeds, 0.5), 2),
-                "avg": round(sum(speeds) / len(speeds), 2),
-                "p95": round(calc_percentile(speeds, 0.95), 2),
-                "max": round(max(speeds), 2),
+                "min": round(min(all_speeds), 2),
+                "p50": round(calc_percentile(all_speeds, 0.5), 2),
+                "avg": round(sum(all_speeds) / len(all_speeds), 2),
+                "p95": round(calc_percentile(all_speeds, 0.95), 2),
+                "max": round(max(all_speeds), 2),
             }
 
         quantization_distribution: Dict[str, int] = {}
@@ -4566,49 +4905,84 @@ async def get_dashboard_stats() -> dict:
                 architecture_distribution.get(arch_key, 0) + 1
             )
 
+        for run in capability_runs:
+            cap_name = run.get("capability", "general_text")
+            distinct_capabilities.add(str(cap_name))
+            quantization_distribution["capability"] = (
+                quantization_distribution.get("capability", 0) + 1
+            )
+            architecture_distribution["capability"] = (
+                architecture_distribution.get("capability", 0) + 1
+            )
+
         top_models = []
         top_models_extended = []
         fastest_model = None
-        if results:
-            sorted_results = sorted(
-                results, key=lambda r: r.avg_tokens_per_sec, reverse=True
-            )
-            for i, r in enumerate(sorted_results[:5]):
-                base_key = r.model_name.split("@")[0]
-                top_models.append(
-                    {
-                        "model_name": r.model_name,
-                        "quantization": r.quantization,
-                        "speed": round(r.avg_tokens_per_sec, 2),
-                        "vram_mb": r.vram_mb,
-                        "params_size": r.params_size,
-                        "capabilities": capabilities_by_model.get(r.model_name, []),
-                        "source_url": f"https://lmstudio.ai/models/{base_key}",
-                    }
-                )
-                if i == 0:
-                    fastest_model = {
-                        "name": r.model_name,
-                        "speed": round(r.avg_tokens_per_sec, 2),
-                        "capabilities": capabilities_by_model.get(r.model_name, []),
-                    }
+        combined_top_entries: list[dict[str, Any]] = []
 
-            for r in sorted_results[:10]:
-                base_key = r.model_name.split("@")[0]
-                top_models_extended.append(
-                    {
-                        "model_name": r.model_name,
-                        "quantization": r.quantization,
-                        "speed": round(r.avg_tokens_per_sec, 2),
-                        "vram_mb": r.vram_mb,
-                        "params_size": r.params_size,
-                        "architecture": r.architecture,
-                        "capabilities": capabilities_by_model.get(
-                            r.model_name, []
-                        ),
-                        "source_url": f"https://lmstudio.ai/models/{base_key}",
-                    }
-                )
+        for r in results:
+            base_key = r.model_name.split("@")[0]
+            combined_top_entries.append(
+                {
+                    "model_name": r.model_name,
+                    "quantization": r.quantization,
+                    "speed": round(r.avg_tokens_per_sec, 2),
+                    "vram_mb": r.vram_mb,
+                    "params_size": r.params_size,
+                    "architecture": r.architecture,
+                    "capabilities": capabilities_by_model.get(r.model_name, []),
+                    "source_url": f"https://lmstudio.ai/models/{base_key}",
+                }
+            )
+
+        capability_model_stats: dict[tuple[str, str], dict[str, Any]] = {}
+        for run in capability_runs:
+            key = (run["model_name"], run["capability"])
+            stats = capability_model_stats.setdefault(
+                key,
+                {
+                    "sum_speed": 0.0,
+                    "count": 0,
+                    "timestamp": run["timestamp"],
+                },
+            )
+            stats["sum_speed"] += float(run["speed"])
+            stats["count"] += 1
+            if str(run["timestamp"]) > str(stats["timestamp"]):
+                stats["timestamp"] = run["timestamp"]
+
+        for (model_name, cap_name), stats in capability_model_stats.items():
+            count = max(int(stats["count"]), 1)
+            speed = round(float(stats["sum_speed"]) / count, 2)
+            base_key = model_name.split("@", maxsplit=1)[0]
+            model_caps = list(capabilities_by_model.get(model_name, []))
+            if cap_name not in model_caps:
+                model_caps.append(cap_name)
+            combined_top_entries.append(
+                {
+                    "model_name": model_name,
+                    "quantization": f"capability:{cap_name}",
+                    "speed": speed,
+                    "vram_mb": "--",
+                    "params_size": "--",
+                    "architecture": "capability",
+                    "capabilities": model_caps,
+                    "source_url": f"https://lmstudio.ai/models/{base_key}",
+                }
+            )
+
+        combined_top_entries.sort(
+            key=lambda item: float(item.get("speed", 0.0)),
+            reverse=True,
+        )
+        top_models = combined_top_entries[:5]
+        top_models_extended = combined_top_entries[:10]
+        if top_models:
+            fastest_model = {
+                "name": str(top_models[0].get("model_name", "--")),
+                "speed": float(top_models[0].get("speed", 0.0)),
+                "capabilities": top_models[0].get("capabilities", []),
+            }
 
         efficiency_top = []
         if results:
@@ -4637,23 +5011,44 @@ async def get_dashboard_stats() -> dict:
 
         recent_runs = []
         last_run_timestamp = None
-        if results:
-            sorted_by_time = sorted(results, key=lambda r: r.timestamp, reverse=True)
-            for i, r in enumerate(sorted_by_time[:10]):
-                base_key = r.model_name.split("@")[0]
-                recent_runs.append(
-                    {
-                        "model_name": r.model_name,
-                        "quantization": r.quantization,
-                        "speed": round(r.avg_tokens_per_sec, 2),
-                        "timestamp": r.timestamp,
-                        "gpu_offload": r.gpu_offload,
-                        "capabilities": capabilities_by_model.get(r.model_name, []),
-                        "source_url": f"https://lmstudio.ai/models/{base_key}",
-                    }
-                )
-                if i == 0:
-                    last_run_timestamp = r.timestamp
+        recent_entries: list[dict[str, Any]] = []
+        for r in results:
+            base_key = r.model_name.split("@")[0]
+            recent_entries.append(
+                {
+                    "model_name": r.model_name,
+                    "quantization": r.quantization,
+                    "speed": round(r.avg_tokens_per_sec, 2),
+                    "timestamp": r.timestamp,
+                    "gpu_offload": r.gpu_offload,
+                    "capabilities": capabilities_by_model.get(r.model_name, []),
+                    "source_url": f"https://lmstudio.ai/models/{base_key}",
+                }
+            )
+
+        for run in capability_runs:
+            model_name = str(run["model_name"])
+            cap_name = str(run["capability"])
+            base_key = model_name.split("@", maxsplit=1)[0]
+            model_caps = list(capabilities_by_model.get(model_name, []))
+            if cap_name not in model_caps:
+                model_caps.append(cap_name)
+            recent_entries.append(
+                {
+                    "model_name": model_name,
+                    "quantization": f"capability:{cap_name}",
+                    "speed": round(float(run["speed"]), 2),
+                    "timestamp": run["timestamp"],
+                    "gpu_offload": "--",
+                    "capabilities": model_caps,
+                    "source_url": f"https://lmstudio.ai/models/{base_key}",
+                }
+            )
+
+        recent_entries.sort(key=lambda item: str(item["timestamp"]), reverse=True)
+        recent_runs = recent_entries[:10]
+        if recent_runs:
+            last_run_timestamp = str(recent_runs[0]["timestamp"])
 
         return {
             "success": True,
@@ -4851,17 +5246,138 @@ async def get_latest_results() -> dict:
     try:
         results_dir = RESULTS_DIR
 
-        json_files = list(results_dir.glob("benchmark_results_*.json"))
+        candidate_json_files = []
+        for json_file in results_dir.glob("*.json"):
+            name = json_file.name
+            if name.startswith("ab_test_results_"):
+                continue
+            if name.startswith("experiment_"):
+                continue
+            if name.startswith("benchmark_results_"):
+                candidate_json_files.append(json_file)
+                continue
+            if re.search(r"_\d{8}_\d{6}\.json$", name):
+                candidate_json_files.append(json_file)
 
-        if not json_files:
-            return {"latest": None}
+        if not candidate_json_files:
+            return {
+                "latest": None,
+                "base": None,
+                "exports": {},
+                "available": {},
+                "batch_exports": [],
+                "batch_size": 0,
+            }
 
-        latest_file = max(json_files, key=lambda x: x.stat().st_mtime)
+        latest_json = max(candidate_json_files, key=lambda x: x.stat().st_mtime)
 
-        return {"latest": latest_file.name}
+        ts_pattern = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3}")
+
+        def _latest_benchmark_log_bounds() -> tuple[float, float] | None:
+            """Return start/end epoch bounds from the most recent benchmark log."""
+            try:
+                log_candidates = list(USER_LOGS_DIR.glob("benchmark_*.log"))
+                if not log_candidates:
+                    return None
+
+                latest_log = max(log_candidates, key=lambda p: p.stat().st_mtime)
+                start_dt: datetime | None = None
+                end_dt: datetime | None = None
+
+                with latest_log.open("r", encoding="utf-8", errors="ignore") as fh:
+                    for line in fh:
+                        match = ts_pattern.match(line)
+                        if not match:
+                            continue
+                        parsed = datetime.strptime(
+                            match.group(1),
+                            "%Y-%m-%d %H:%M:%S",
+                        )
+                        if start_dt is None:
+                            start_dt = parsed
+                        end_dt = parsed
+
+                if start_dt is None or end_dt is None:
+                    return None
+
+                return (start_dt.timestamp() - 2.0, end_dt.timestamp() + 2.0)
+            except (OSError, ValueError):
+                return None
+
+        run_bounds = _latest_benchmark_log_bounds()
+
+        def _is_in_latest_run(path: Path) -> bool:
+            file_ts = path.stat().st_mtime
+            if run_bounds is not None:
+                start_ts, end_ts = run_bounds
+                return start_ts <= file_ts <= end_ts
+            return abs(file_ts - latest_json.stat().st_mtime) <= 180.0
+
+        batch_json_files = [
+            path for path in candidate_json_files if _is_in_latest_run(path)
+        ]
+
+        if not batch_json_files:
+            batch_json_files = [latest_json]
+
+        batch_json_files.sort(key=lambda x: x.stat().st_mtime)
+
+        def _build_export_entry(json_file: Path) -> dict[str, Any]:
+            base = json_file.stem
+            export_paths = {
+                "html": results_dir / f"{base}.html",
+                "pdf": results_dir / f"{base}.pdf",
+                "json": results_dir / f"{base}.json",
+                "csv": results_dir / f"{base}.csv",
+            }
+            available = {
+                fmt: path.exists() for fmt, path in export_paths.items()
+            }
+            exports = {
+                fmt: (
+                    f"/results/{path.name}" if available[fmt] else "/results/"
+                )
+                for fmt, path in export_paths.items()
+            }
+            return {
+                "base": base,
+                "latest": json_file.name,
+                "available": available,
+                "exports": exports,
+            }
+
+        batch_exports = [
+            _build_export_entry(path) for path in batch_json_files
+        ]
+
+        preferred_primary = [
+            entry
+            for entry in batch_exports
+            if entry["base"].startswith("benchmark_results_")
+        ]
+        if preferred_primary:
+            primary = preferred_primary[-1]
+        else:
+            primary = batch_exports[-1]
+
+        return {
+            "latest": primary["latest"],
+            "base": primary["base"],
+            "exports": primary["exports"],
+            "available": primary["available"],
+            "batch_exports": batch_exports,
+            "batch_size": len(batch_exports),
+        }
     except (OSError, RuntimeError, ValueError) as e:
         logger.error("Error finding latest results: %s", e)
-        return {"latest": None}
+        return {
+            "latest": None,
+            "base": None,
+            "exports": {},
+            "available": {},
+            "batch_exports": [],
+            "batch_size": 0,
+        }
 
 
 # ============================================================================

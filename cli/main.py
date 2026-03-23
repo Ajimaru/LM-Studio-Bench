@@ -9,17 +9,41 @@ import argparse
 import json
 import logging
 from pathlib import Path
+import platform
 import random
+import re
 import subprocess
 import sys
 import time
 from types import ModuleType
-from typing import Optional
+from typing import Any, Optional
 
 from agents.runner import BenchmarkRunner
 from cli.reporting import HTMLReporter, sanitize_report_name
 from core.logging_utils import install_level_icons
 from core.paths import USER_RESULTS_DIR
+from tools.hardware_monitor import GPUMonitor, HardwareMonitor
+
+try:
+    import cpuinfo as _cpuinfo
+except ModuleNotFoundError:
+    CPUINFO: Optional[ModuleType] = None
+else:
+    CPUINFO = _cpuinfo
+
+try:
+    import distro as _distro
+except ModuleNotFoundError:
+    DISTRO: Optional[ModuleType] = None
+else:
+    DISTRO = _distro
+
+try:
+    import lmstudio as _lmstudio
+except ModuleNotFoundError:
+    LMSTUDIO_MODULE: Optional[ModuleType] = None
+else:
+    LMSTUDIO_MODULE = _lmstudio
 
 try:
     import yaml as _yaml
@@ -34,6 +58,173 @@ except ModuleNotFoundError:
 else:
     YAML = _yaml
     YamlError = _yaml_error
+
+
+def _get_app_version() -> str:
+    """Read app version from VERSION file."""
+    version_file = Path(__file__).resolve().parent.parent / "VERSION"
+    try:
+        if version_file.exists():
+            return version_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        return "unknown"
+    return "unknown"
+
+
+def _run_command(cmd: list[str], timeout: int = 5) -> Optional[str]:
+    """Run a subprocess command and return stdout when successful."""
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    if result.returncode != 0:
+        return None
+    output = result.stdout.strip()
+    return output if output else None
+
+
+def _get_lmstudio_version() -> Optional[str]:
+    """Get LM Studio version string from CLI."""
+    output = _run_command(["lms", "version"])
+    if not output:
+        return None
+
+    match = re.search(r"v\d+\.\d+\.\d+", output)
+    if match:
+        return match.group(0)
+
+    m2 = re.search(r"CLI commit:\s*([0-9a-fA-F]{6,40})", output)
+    if m2:
+        commit = m2.group(1)
+        pkg_ver = (
+            getattr(LMSTUDIO_MODULE, "__version__", None)
+            if LMSTUDIO_MODULE is not None
+            else None
+        )
+        if pkg_ver:
+            return f"{pkg_ver} (commit:{commit})"
+        return f"commit:{commit}"
+
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped and not set(stripped).issubset(set(" _/|\\")):
+            return stripped
+    return None
+
+
+def _get_driver_versions() -> dict[str, Optional[str]]:
+    """Collect GPU driver versions across NVIDIA/AMD/Intel tools."""
+    nvidia = _run_command(
+        ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]
+    )
+    rocm = _run_command(["rocm-smi", "--version"])
+    intel = _run_command(["intel_gpu_top", "--help"])
+
+    if nvidia:
+        nvidia = nvidia.splitlines()[0].strip()
+    if rocm:
+        rocm = rocm.splitlines()[0].strip()
+    if intel:
+        intel = intel.splitlines()[0].strip()
+
+    return {
+        "nvidia_driver_version": nvidia,
+        "rocm_driver_version": rocm,
+        "intel_driver_version": intel,
+    }
+
+
+def _get_os_info() -> tuple[Optional[str], Optional[str]]:
+    """Get operating system name and version."""
+    try:
+        if platform.system() == "Linux" and DISTRO is not None:
+            return DISTRO.name(), DISTRO.version()
+        return platform.system(), platform.release()
+    except OSError:
+        return None, None
+
+
+def _get_cpu_model() -> Optional[str]:
+    """Get CPU model if available."""
+    if CPUINFO is None:
+        return None
+    try:
+        info = CPUINFO.get_cpu_info()
+        brand = info.get("brand_raw", "")
+        return brand if brand else None
+    except OSError:
+        return None
+
+
+def _build_classic_metrics(
+    config: dict[str, Any],
+    report_data: dict[str, Any],
+    gpu_monitor: GPUMonitor,
+    benchmark_duration_seconds: float,
+) -> dict[str, Any]:
+    """Map capability run metadata into classic benchmark metric fields."""
+    summary = report_data.get("summary", {})
+    os_name, os_version = _get_os_info()
+    driver_versions = _get_driver_versions()
+
+    metrics: dict[str, Any] = {
+        "error_count": len(
+            [r for r in report_data.get("results", []) if r.get("error")]
+        ),
+        "gpu_type": gpu_monitor.gpu_type,
+        "gpu_offload": config.get("gpu_offload"),
+        "vram_mb": gpu_monitor.get_vram_usage(),
+        "context_length": config.get("context_length"),
+        "temperature": config.get("temperature"),
+        "top_k_sampling": config.get("top_k"),
+        "top_p_sampling": config.get("top_p"),
+        "min_p_sampling": config.get("min_p"),
+        "repeat_penalty": config.get("repeat_penalty"),
+        "max_tokens": config.get("max_tokens"),
+        "n_gpu_layers": config.get("n_gpu_layers"),
+        "n_batch": config.get("n_batch"),
+        "n_threads": config.get("n_threads"),
+        "flash_attention": config.get("flash_attention"),
+        "rope_freq_base": config.get("rope_freq_base"),
+        "rope_freq_scale": config.get("rope_freq_scale"),
+        "use_mmap": config.get("use_mmap"),
+        "use_mlock": config.get("use_mlock"),
+        "kv_cache_quant": config.get("kv_cache_quant"),
+        "lmstudio_version": _get_lmstudio_version(),
+        "app_version": _get_app_version(),
+        "os_name": os_name,
+        "os_version": os_version,
+        "cpu_model": _get_cpu_model(),
+        "python_version": platform.python_version(),
+        "benchmark_duration_seconds": benchmark_duration_seconds,
+        "temp_celsius_min": summary.get("temp_celsius_min"),
+        "temp_celsius_max": summary.get("temp_celsius_max"),
+        "temp_celsius_avg": summary.get("temp_celsius_avg"),
+        "power_watts_min": summary.get("power_watts_min"),
+        "power_watts_max": summary.get("power_watts_max"),
+        "power_watts_avg": summary.get("power_watts_avg"),
+        "vram_gb_min": summary.get("vram_gb_min"),
+        "vram_gb_max": summary.get("vram_gb_max"),
+        "vram_gb_avg": summary.get("vram_gb_avg"),
+        "gtt_gb_min": summary.get("gtt_gb_min"),
+        "gtt_gb_max": summary.get("gtt_gb_max"),
+        "gtt_gb_avg": summary.get("gtt_gb_avg"),
+        "cpu_percent_min": summary.get("cpu_percent_min"),
+        "cpu_percent_max": summary.get("cpu_percent_max"),
+        "cpu_percent_avg": summary.get("cpu_percent_avg"),
+        "ram_gb_min": summary.get("ram_gb_min"),
+        "ram_gb_max": summary.get("ram_gb_max"),
+        "ram_gb_avg": summary.get("ram_gb_avg"),
+    }
+    metrics.update(driver_versions)
+    return metrics
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -171,8 +362,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--formats",
         type=str,
-        default="json,html",
-        help="Output formats: json,html (default: json,html)"
+        default="json,html,csv,pdf",
+        help=(
+            "Output formats: json,html,csv,pdf "
+            "(default: json,html,csv,pdf)"
+        )
     )
 
     parser.add_argument(
@@ -510,6 +704,77 @@ def _write_reports(
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     base_name = f"{report_stem}_{timestamp}"
     output_files: dict[str, Path] = {}
+    safe_output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _to_number(value: object, digits: int = 3) -> object:
+        if isinstance(value, (int, float)):
+            return round(value, digits)
+        return value if value is not None else ""
+
+    def _csv_cell(value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        if value.startswith(("=", "+", "-", "@", "\t")):
+            return f"'{value}"
+        return value
+
+    def _csv_quote(value: object) -> str:
+        text = str(_csv_cell(value))
+        if any(char in text for char in [",", '"', "\n", "\r"]):
+            text = '"' + text.replace('"', '""') + '"'
+        return text
+
+    def _render_simple_pdf(text_lines: list[str]) -> bytes:
+        pdf_bytes = bytearray()
+        pdf_bytes.extend(b"%PDF-1.4\n")
+        offsets: list[int] = []
+
+        def add_obj(content: str) -> None:
+            offsets.append(len(pdf_bytes))
+            pdf_bytes.extend(content.encode("latin-1", errors="replace"))
+
+        add_obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+        add_obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+
+        stream_lines: list[str] = []
+        y = 770
+        for line in text_lines:
+            safe_line = line.replace("(", "\\(").replace(")", "\\)")
+            stream_lines.append(f"BT /F1 10 Tf 50 {y} Td ({safe_line}) Tj ET")
+            y -= 12
+            if y < 50:
+                break
+        stream = "\n".join(stream_lines).encode("latin-1", errors="replace")
+
+        add_obj(
+            "3 0 obj\n"
+            "<< /Type /Page /Parent 2 0 R "
+            "/MediaBox [0 0 612 792] /Contents 4 0 R "
+            "/Resources << /Font << /F1 5 0 R >> >> >>\n"
+            "endobj\n"
+        )
+        add_obj(f"4 0 obj\n<< /Length {len(stream)} >>\nstream\n")
+        pdf_bytes.extend(stream)
+        pdf_bytes.extend(b"\nendstream\nendobj\n")
+        add_obj(
+            "5 0 obj\n"
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\n"
+            "endobj\n"
+        )
+
+        xref_offset = len(pdf_bytes)
+        pdf_bytes.extend(f"xref\n0 {len(offsets) + 1}\n".encode("latin-1"))
+        pdf_bytes.extend(b"0000000000 65535 f \n")
+        for off in offsets:
+            pdf_bytes.extend(f"{off:010d} 00000 n \n".encode("latin-1"))
+        pdf_bytes.extend(b"trailer\n")
+        pdf_bytes.extend(
+            f"<< /Size {len(offsets) + 1} /Root 1 0 R >>\n".encode("latin-1")
+        )
+        pdf_bytes.extend(b"startxref\n")
+        pdf_bytes.extend(f"{xref_offset}\n".encode("latin-1"))
+        pdf_bytes.extend(b"%%EOF")
+        return bytes(pdf_bytes)
 
     if "json" in formats:
         json_path = safe_output_dir / f"{base_name}.json"
@@ -537,6 +802,253 @@ def _write_reports(
         except (OSError, TypeError, ValueError) as error:
             logging.getLogger(__name__).error(
                 "Error generating HTML report: %s",
+                error,
+            )
+
+    if "csv" in formats:
+        csv_path = (safe_output_dir / f"{base_name}.csv").resolve()
+        try:
+            safe_output_resolved = safe_output_dir.resolve()
+            if not str(csv_path).startswith(str(safe_output_resolved)):
+                raise ValueError("Path traversal detected in CSV export path")
+
+            rows = report_data.get("results", []) or []
+            summary = report_data.get("summary", {}) or {}
+            hardware = report_data.get("hardware_profiling", {}) or {}
+
+            csv_lines: list[str] = []
+
+            def _append_csv_row(row: list[object]) -> None:
+                csv_lines.append(",".join(_csv_quote(cell) for cell in row))
+
+            _append_csv_row(["Capability Benchmark Report"])
+            _append_csv_row(["Model", report_data.get("model_name", "-")])
+            _append_csv_row(["Timestamp", report_data.get("timestamp", "-")])
+            _append_csv_row(["Total Tests", summary.get("total_tests", 0)])
+            _append_csv_row(
+                ["Successful Tests", summary.get("successful_tests", 0)]
+            )
+            _append_csv_row(
+                ["Success Rate", _to_number(summary.get("success_rate"), 4)]
+            )
+            _append_csv_row(
+                ["Avg Latency ms", _to_number(summary.get("avg_latency_ms"), 3)]
+            )
+            _append_csv_row(
+                ["Avg Quality", _to_number(summary.get("avg_quality_score"), 4)]
+            )
+
+            if hardware.get("enabled"):
+                _append_csv_row([])
+                _append_csv_row(["Hardware Profiling", "enabled"])
+                _append_csv_row(
+                    [
+                        "GPU Temp min/max/avg (C)",
+                        (
+                            f"{_to_number(hardware.get('temp_celsius_min'), 2)} / "
+                            f"{_to_number(hardware.get('temp_celsius_max'), 2)} / "
+                            f"{_to_number(hardware.get('temp_celsius_avg'), 2)}"
+                        ),
+                    ]
+                )
+                _append_csv_row(
+                    [
+                        "GPU Power min/max/avg (W)",
+                        (
+                            f"{_to_number(hardware.get('power_watts_min'), 2)} / "
+                            f"{_to_number(hardware.get('power_watts_max'), 2)} / "
+                            f"{_to_number(hardware.get('power_watts_avg'), 2)}"
+                        ),
+                    ]
+                )
+                _append_csv_row(
+                    [
+                        "VRAM min/max/avg (GB)",
+                        (
+                            f"{_to_number(hardware.get('vram_gb_min'), 2)} / "
+                            f"{_to_number(hardware.get('vram_gb_max'), 2)} / "
+                            f"{_to_number(hardware.get('vram_gb_avg'), 2)}"
+                        ),
+                    ]
+                )
+                _append_csv_row(
+                    [
+                        "GTT min/max/avg (GB)",
+                        (
+                            f"{_to_number(hardware.get('gtt_gb_min'), 2)} / "
+                            f"{_to_number(hardware.get('gtt_gb_max'), 2)} / "
+                            f"{_to_number(hardware.get('gtt_gb_avg'), 2)}"
+                        ),
+                    ]
+                )
+                _append_csv_row(
+                    [
+                        "CPU min/max/avg (%)",
+                        (
+                            f"{_to_number(hardware.get('cpu_percent_min'), 2)} / "
+                            f"{_to_number(hardware.get('cpu_percent_max'), 2)} / "
+                            f"{_to_number(hardware.get('cpu_percent_avg'), 2)}"
+                        ),
+                    ]
+                )
+                _append_csv_row(
+                    [
+                        "RAM min/max/avg (GB)",
+                        (
+                            f"{_to_number(hardware.get('ram_gb_min'), 2)} / "
+                            f"{_to_number(hardware.get('ram_gb_max'), 2)} / "
+                            f"{_to_number(hardware.get('ram_gb_avg'), 2)}"
+                        ),
+                    ]
+                )
+                _append_csv_row(
+                    [
+                        "Temp Limit Exceeded",
+                        str(bool(hardware.get("max_temp_exceeded"))),
+                    ]
+                )
+                _append_csv_row(
+                    [
+                        "Power Limit Exceeded",
+                        str(bool(hardware.get("max_power_exceeded"))),
+                    ]
+                )
+
+            _append_csv_row([])
+            _append_csv_row(
+                [
+                    "test_id",
+                    "test_name",
+                    "capability",
+                    "latency_ms",
+                    "tokens_generated",
+                    "throughput",
+                    "quality_score",
+                    "status",
+                    "error",
+                ]
+            )
+
+            for entry in rows:
+                has_error = bool(entry.get("error"))
+                _append_csv_row(
+                    [
+                        entry.get("test_id", ""),
+                        entry.get("test_name", ""),
+                        entry.get("capability", ""),
+                        _to_number(entry.get("latency_ms"), 3),
+                        entry.get("tokens_generated", ""),
+                        _to_number(entry.get("throughput"), 3),
+                        _to_number(entry.get("quality_score"), 4),
+                        "error" if has_error else "success",
+                        entry.get("error", ""),
+                    ]
+                )
+
+            csv_path.write_text("\n".join(csv_lines) + "\n", encoding="utf-8")
+
+            output_files["csv"] = csv_path
+        except (OSError, TypeError, ValueError) as error:
+            logging.getLogger(__name__).error(
+                "Error generating CSV report: %s",
+                error,
+            )
+
+    if "pdf" in formats:
+        pdf_path = safe_output_dir / f"{base_name}.pdf"
+        try:
+            summary = report_data.get("summary", {}) or {}
+            rows = report_data.get("results", []) or []
+            hardware = report_data.get("hardware_profiling", {}) or {}
+            lines = [
+                "Capability Benchmark Report",
+                f"Model: {report_data.get('model_name', '-')}",
+                f"Timestamp: {report_data.get('timestamp', '-')}",
+                f"Total tests: {summary.get('total_tests', 0)}",
+                f"Successful tests: {summary.get('successful_tests', 0)}",
+                (
+                    "Avg latency ms: "
+                    f"{_to_number(summary.get('avg_latency_ms'), 3)}"
+                ),
+                (
+                    "Avg quality score: "
+                    f"{_to_number(summary.get('avg_quality_score'), 4)}"
+                ),
+            ]
+
+            if hardware.get("enabled"):
+                lines.extend(
+                    [
+                        "",
+                        "Hardware Profiling:",
+                        (
+                            "GPU Temp min/max/avg (C): "
+                            f"{_to_number(hardware.get('temp_celsius_min'), 2)} / "
+                            f"{_to_number(hardware.get('temp_celsius_max'), 2)} / "
+                            f"{_to_number(hardware.get('temp_celsius_avg'), 2)}"
+                        ),
+                        (
+                            "GPU Power min/max/avg (W): "
+                            f"{_to_number(hardware.get('power_watts_min'), 2)} / "
+                            f"{_to_number(hardware.get('power_watts_max'), 2)} / "
+                            f"{_to_number(hardware.get('power_watts_avg'), 2)}"
+                        ),
+                        (
+                            "VRAM min/max/avg (GB): "
+                            f"{_to_number(hardware.get('vram_gb_min'), 2)} / "
+                            f"{_to_number(hardware.get('vram_gb_max'), 2)} / "
+                            f"{_to_number(hardware.get('vram_gb_avg'), 2)}"
+                        ),
+                        (
+                            "GTT min/max/avg (GB): "
+                            f"{_to_number(hardware.get('gtt_gb_min'), 2)} / "
+                            f"{_to_number(hardware.get('gtt_gb_max'), 2)} / "
+                            f"{_to_number(hardware.get('gtt_gb_avg'), 2)}"
+                        ),
+                        (
+                            "CPU min/max/avg (%): "
+                            f"{_to_number(hardware.get('cpu_percent_min'), 2)} / "
+                            f"{_to_number(hardware.get('cpu_percent_max'), 2)} / "
+                            f"{_to_number(hardware.get('cpu_percent_avg'), 2)}"
+                        ),
+                        (
+                            "RAM min/max/avg (GB): "
+                            f"{_to_number(hardware.get('ram_gb_min'), 2)} / "
+                            f"{_to_number(hardware.get('ram_gb_max'), 2)} / "
+                            f"{_to_number(hardware.get('ram_gb_avg'), 2)}"
+                        ),
+                        (
+                            "Temp limit exceeded: "
+                            f"{bool(hardware.get('max_temp_exceeded'))}"
+                        ),
+                        (
+                            "Power limit exceeded: "
+                            f"{bool(hardware.get('max_power_exceeded'))}"
+                        ),
+                    ]
+                )
+
+            lines.extend([
+                "",
+                "Results:",
+            ])
+
+            for entry in rows[:40]:
+                status = "error" if entry.get("error") else "ok"
+                line = (
+                    f"{entry.get('test_id', '-')}: "
+                    f"{entry.get('capability', '-')} | "
+                    f"lat {_to_number(entry.get('latency_ms'), 2)} ms | "
+                    f"q {_to_number(entry.get('quality_score'), 3)} | "
+                    f"{status}"
+                )
+                lines.append(line)
+
+            pdf_path.write_bytes(_render_simple_pdf(lines))
+            output_files["pdf"] = pdf_path
+        except (OSError, TypeError, ValueError) as error:
+            logging.getLogger(__name__).error(
+                "Error generating PDF report: %s",
                 error,
             )
 
@@ -569,6 +1081,13 @@ def main() -> int:
         runner = BenchmarkRunner(
             config=config,
             output_dir=safe_output_dir
+        )
+
+        gpu_monitor = GPUMonitor()
+        hardware_monitor = HardwareMonitor(
+            gpu_monitor.gpu_type or "Unknown",
+            gpu_monitor.gpu_tool or "",
+            enabled=config.get("enable_profiling", False),
         )
 
         capabilities = None
@@ -638,34 +1157,18 @@ def main() -> int:
                 index,
                 len(model_targets),
             )
+            hardware_monitor.start()
+
+            report_data: Optional[dict] = None
+            profiling_stats: Optional[dict] = None
+
             try:
                 report_data = runner.run(
                     model_path=model_target,
                     model_name=args.model_name,
                     capabilities=capabilities,
+                    cache_results=False,
                 )
-                report_stem = sanitize_report_name(
-                    report_data.get("model_name", model_target)
-                )
-                logger.info("📊 Exporting reports for %s...", model_target)
-                output_files = _write_reports(
-                    report_data=report_data,
-                    output_dir=safe_output_dir,
-                    formats=formats,
-                    report_stem=report_stem,
-                )
-
-                logger.info("🧾 Generated reports for %s:", model_target)
-                for fmt, path in output_files.items():
-                    logger.info("📄 %s: %s", fmt.upper(), path)
-
-                model_duration = time.perf_counter() - model_start
-                logger.info(
-                    "✅ %s completed (Duration: %.2fs)",
-                    model_target,
-                    model_duration,
-                )
-                successful_models += 1
             except (OSError, RuntimeError, TypeError, ValueError) as error:
                 failed_models += 1
                 model_duration = time.perf_counter() - model_start
@@ -681,6 +1184,140 @@ def main() -> int:
                     index,
                     len(model_targets),
                 )
+                continue
+            finally:
+                profiling_stats = hardware_monitor.stop()
+                if profiling_stats:
+                    logger.info(
+                        "📈 Hardware summary (%s): "
+                        "Temp avg=%.2f°C max=%.2f°C | "
+                        "Power avg=%.2fW max=%.2fW",
+                        model_target,
+                        profiling_stats.get("temp_celsius_avg") or 0.0,
+                        profiling_stats.get("temp_celsius_max") or 0.0,
+                        profiling_stats.get("power_watts_avg") or 0.0,
+                        profiling_stats.get("power_watts_max") or 0.0,
+                    )
+
+            if report_data is None:
+                continue
+
+            model_duration = time.perf_counter() - model_start
+
+            if profiling_stats is not None and config.get("enable_profiling"):
+                summary = report_data.setdefault("summary", {})
+                summary["temp_celsius_min"] = profiling_stats.get(
+                    "temp_celsius_min"
+                )
+                summary["temp_celsius_max"] = profiling_stats.get(
+                    "temp_celsius_max"
+                )
+                summary["temp_celsius_avg"] = profiling_stats.get(
+                    "temp_celsius_avg"
+                )
+                summary["power_watts_min"] = profiling_stats.get(
+                    "power_watts_min"
+                )
+                summary["power_watts_max"] = profiling_stats.get(
+                    "power_watts_max"
+                )
+                summary["power_watts_avg"] = profiling_stats.get(
+                    "power_watts_avg"
+                )
+                summary["vram_gb_min"] = profiling_stats.get("vram_gb_min")
+                summary["vram_gb_max"] = profiling_stats.get("vram_gb_max")
+                summary["vram_gb_avg"] = profiling_stats.get("vram_gb_avg")
+                summary["gtt_gb_min"] = profiling_stats.get("gtt_gb_min")
+                summary["gtt_gb_max"] = profiling_stats.get("gtt_gb_max")
+                summary["gtt_gb_avg"] = profiling_stats.get("gtt_gb_avg")
+                summary["cpu_percent_min"] = profiling_stats.get(
+                    "cpu_percent_min"
+                )
+                summary["cpu_percent_max"] = profiling_stats.get(
+                    "cpu_percent_max"
+                )
+                summary["cpu_percent_avg"] = profiling_stats.get(
+                    "cpu_percent_avg"
+                )
+                summary["ram_gb_min"] = profiling_stats.get("ram_gb_min")
+                summary["ram_gb_max"] = profiling_stats.get("ram_gb_max")
+                summary["ram_gb_avg"] = profiling_stats.get("ram_gb_avg")
+
+                max_temp = config.get("max_temp")
+                max_power = config.get("max_power")
+
+                if (
+                    max_temp
+                    and summary.get("temp_celsius_max")
+                    and summary["temp_celsius_max"] > max_temp
+                ):
+                    logger.warning(
+                        "⚠️ Max. temperature exceeded: %.2f°C > %.2f°C",
+                        summary["temp_celsius_max"],
+                        max_temp,
+                    )
+
+                if (
+                    max_power
+                    and summary.get("power_watts_max")
+                    and summary["power_watts_max"] > max_power
+                ):
+                    logger.warning(
+                        "⚠️ Max. power exceeded: %.2fW > %.2fW",
+                        summary["power_watts_max"],
+                        max_power,
+                    )
+
+                report_data["hardware_profiling"] = {
+                    "enabled": True,
+                    "max_temp_limit": max_temp,
+                    "max_power_limit": max_power,
+                    "max_temp_exceeded": bool(
+                        max_temp
+                        and summary.get("temp_celsius_max")
+                        and summary["temp_celsius_max"] > max_temp
+                    ),
+                    "max_power_exceeded": bool(
+                        max_power
+                        and summary.get("power_watts_max")
+                        and summary["power_watts_max"] > max_power
+                    ),
+                } | {k: v for k, v in profiling_stats.items()}
+
+            classic_metrics = _build_classic_metrics(
+                config=config,
+                report_data=report_data,
+                gpu_monitor=gpu_monitor,
+                benchmark_duration_seconds=model_duration,
+            )
+            runner.cache_report(
+                report_dict=report_data,
+                model_name=report_data.get("model_name", model_target),
+                model_path=report_data.get("model_path", model_target),
+                classic_metrics=classic_metrics,
+            )
+
+            report_stem = sanitize_report_name(
+                report_data.get("model_name", model_target)
+            )
+            logger.info("📊 Exporting reports for %s...", model_target)
+            output_files = _write_reports(
+                report_data=report_data,
+                output_dir=safe_output_dir,
+                formats=formats,
+                report_stem=report_stem,
+            )
+
+            logger.info("🧾 Generated reports for %s:", model_target)
+            for fmt, path in output_files.items():
+                logger.info("📄 %s: %s", fmt.upper(), path)
+
+            logger.info(
+                "✅ %s completed (Duration: %.2fs)",
+                model_target,
+                model_duration,
+            )
+            successful_models += 1
 
         total_duration = time.perf_counter() - total_start
         logger.info(

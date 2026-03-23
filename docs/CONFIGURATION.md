@@ -246,6 +246,9 @@ Built-in readonly presets:
 - `high_quality`
 - `resource_limited`
 
+Readonly preset names cannot be saved, deleted, or imported as user presets.
+This restriction also applies to the legacy alias `default`.
+
 For capability-driven runs across many models, individual model load failures
 are logged and skipped so the benchmark can continue with the remaining
 models.

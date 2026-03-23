@@ -292,6 +292,9 @@ Built-in readonly presets:
 - `high_quality` - Accurate testing (5 runs, 8K context)
 - `resource_limited` - Low-resource mode (8GB max, memory-efficient)
 
+Readonly preset names cannot be overwritten or deleted by user presets,
+including the legacy alias `default`.
+
 Notes:
 
 - Capability-driven runs across many installed models continue when one model

@@ -28,6 +28,9 @@ LEGACY_KEY_MAP: Dict[str, str] = {
 class PresetManager:
     """Manage readonly and user-defined benchmark presets."""
 
+    DEFAULT_ALIAS = "default"
+    DEFAULT_PRESET_NAME = "default_classic"
+
     READONLY_PRESETS = {
         "default_classic",
         "default_compatability_test",
@@ -165,11 +168,24 @@ class PresetManager:
 
     def list_presets_detailed(self) -> List[tuple[str, bool]]:
         """Return presets with readonly status."""
-        return [(name, name in self.READONLY_PRESETS) for name in self.list_presets()]
+        return [
+            (name, self.is_readonly_name(name))
+            for name in self.list_presets()
+        ]
+
+    def resolve_preset_name(self, name: str) -> str:
+        """Resolve public preset aliases to their canonical preset name."""
+        if name == self.DEFAULT_ALIAS:
+            return self.DEFAULT_PRESET_NAME
+        return name
+
+    def is_readonly_name(self, name: str) -> bool:
+        """Return True when a public preset name maps to a readonly preset."""
+        return self.resolve_preset_name(name) in self.READONLY_PRESETS
 
     def load_preset(self, name: str) -> Dict[str, Any]:
         """Load a preset by name."""
-        name_to_load = "default_classic" if name == "default" else name
+        name_to_load = self.resolve_preset_name(name)
 
         if name_to_load in self.PREDEFINED_PRESETS:
             logger.info("Loading readonly preset: %s", name_to_load)
@@ -259,6 +275,9 @@ class PresetManager:
 
     def save_preset(self, name: str, config: Dict[str, Any]) -> None:
         """Save a user preset as JSON in the presets directory."""
+        if self.is_readonly_name(name):
+            raise ValueError("Readonly preset names cannot be used")
+
         valid, reason = self.validate_preset_name(name)
         if not valid:
             raise ValueError(reason)
@@ -271,6 +290,9 @@ class PresetManager:
 
     def delete_preset(self, name: str) -> None:
         """Delete a user preset file."""
+        if self.is_readonly_name(name):
+            raise ValueError("Readonly preset names cannot be used")
+
         valid, reason = self.validate_preset_name(name)
         if not valid:
             raise ValueError(reason)

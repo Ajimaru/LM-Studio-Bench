@@ -14,7 +14,7 @@ Uses Ubuntu 24.04 Docker container for reproducible builds:
 # Make script executable once
 chmod +x ./scripts/build_appimage_docker.sh
 
-# Build dist/LM-Studio-Bench-x86_64.AppImage
+# Build dist/LM-Studio-Bench-<VERSION>-x86_64.AppImage
 ./scripts/build_appimage_docker.sh
 ```
 
@@ -31,7 +31,7 @@ Build directly on Ubuntu 24.04 (or compatible):
 # Make script executable once
 chmod +x ./scripts/build_appimage.sh
 
-# Build dist/LM-Studio-Bench-x86_64.AppImage
+# Build dist/LM-Studio-Bench-<VERSION>-x86_64.AppImage
 ./scripts/build_appimage.sh
 ```
 
@@ -45,7 +45,7 @@ Requirements:
 
 Output:
 
-- `dist/LM-Studio-Bench-x86_64.AppImage`
+- `dist/LM-Studio-Bench-<VERSION>-x86_64.AppImage`
 
 ### Docker Details
 

@@ -219,8 +219,8 @@ class TestLoadModel:
         result = client.load_model("pub/model")
         assert result == "inst-abc"
 
-    def test_strips_quantization_suffix(self):
-        """@ quantization suffix is stripped before sending to API."""
+    def test_preserves_quantization_suffix(self):
+        """Exact model variant is forwarded to the load API."""
         client = LMStudioRESTClient()
         client.client = MagicMock()
         mock_resp = MagicMock()
@@ -229,7 +229,7 @@ class TestLoadModel:
         client.client.post.return_value = mock_resp
         client.load_model("pub/model@q4")
         call_args = client.client.post.call_args
-        assert call_args[1]["json"]["model"] == "pub/model"
+        assert call_args[1]["json"]["model"] == "pub/model@q4"
 
     def test_context_length_added_when_provided(self):
         """context_length is included in payload when specified."""
@@ -724,6 +724,37 @@ class TestChatStreamMethod:
         assert captured_payload["repeat_penalty"] == 1.1
         assert captured_payload["previous_response_id"] == "prev-1"
         assert captured_payload["integrations"] == [{"name": "tool-a"}]
+
+    def test_chat_stream_preserves_quantization_suffix(self):
+        """Exact model variant is forwarded to the chat API."""
+        client = LMStudioRESTClient(enable_cache=False)
+        captured_payload = {}
+
+        end_event = {
+            "type": "chat.end",
+            "result": {
+                "output": [{"type": "message", "content": "ok"}],
+                "stats": {
+                    "input_tokens": 1,
+                    "total_output_tokens": 1,
+                    "time_to_first_token_seconds": 0.0,
+                    "tokens_per_second": 5.0,
+                },
+            },
+        }
+        mock_resp = self._make_sse_response([end_event])
+
+        def capture_stream(*_args, **kwargs):
+            captured_payload.update(kwargs.get("json", {}))
+            return mock_resp
+
+        with patch.object(client.client, "stream", side_effect=capture_stream):
+            client.chat_stream(
+                messages=[{"role": "user", "content": "hello"}],
+                model="test/model@q4_k_m",
+            )
+
+        assert captured_payload["model"] == "test/model@q4_k_m"
 
     def test_chat_stream_handles_invalid_message_payload(self):
         """Invalid message shapes fall back to empty input text."""

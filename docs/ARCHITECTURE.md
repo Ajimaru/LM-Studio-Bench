@@ -80,9 +80,13 @@ graph TB
 **Key Components:**
 
 - **run.py**: Wrapper script that decides between web dashboard and CLI benchmark mode
-- **benchmark.py**: Main benchmark engine (~4,683 lines) with argparse, model discovery, and execution
+- **benchmark.py**: Main benchmark engine with argparse, model discovery,
+  and execution
 - **config_loader.py**: Loads and merges configuration from JSON file with built-in defaults
-- **preset_manager.py**: Manages readonly/user presets and maps presets to CLI args
+- **core/presets.py**: Manages readonly/user presets and maps presets to
+  CLI args
+- **tools/hardware_monitor.py**: Shared `GPUMonitor` and `HardwareMonitor`
+  implementation for classic and capability flows
 - **rest_client.py**: REST API client for LM Studio v1 endpoints (optional mode)
 - **web/app.py**: FastAPI web dashboard with live streaming and results browser
 - **tray.py**: Linux AppIndicator tray controller for benchmark controls
@@ -626,8 +630,8 @@ flowchart TD
 
 - `LMStudioBenchmark`: Main orchestrator
 - `BenchmarkCache`: SQLite caching
-- `GPUMonitor`: GPU detection (NVIDIA/AMD/Intel)
-- `HardwareMonitor`: Live profiling (GPU temp, power, VRAM, GTT, CPU, RAM)
+- `tools/hardware_monitor.py`: Shared GPU detection and live profiling
+  (`GPUMonitor`, `HardwareMonitor`)
 - `ModelDiscovery`: Model listing and metadata
 
 **Reliability Behaviors (2026-03):**
@@ -815,7 +819,8 @@ graph LR
 
 ## Testing Architecture
 
-LM-Studio-Bench includes a comprehensive test suite with 520+ tests and 51% code coverage to ensure reliability and maintainability.
+LM-Studio-Bench includes a comprehensive test suite with 900+ tests and
+strong coverage to ensure reliability and maintainability.
 
 ### Test Organization
 
@@ -824,6 +829,7 @@ graph TB
     Tests[tests/] --> Fixtures[conftest.py<br/>Test Fixtures & Utilities]
 
     Tests --> BenchmarkTests[test_benchmark.py<br/>55+ tests]
+    Tests --> HardwareTests[test_hardware_monitor.py<br/>57+ tests]
     Tests --> AppTests[test_app.py<br/>23+ tests]
     Tests --> APITests[test_api_endpoints.py<br/>32+ tests]
     Tests --> RestTests[test_rest_client.py<br/>22+ tests]
@@ -836,6 +842,7 @@ graph TB
     Tests --> RunTests[test_run.py<br/>10+ tests]
 
     BenchmarkTests --> Benchmark[cli/benchmark.py]
+    HardwareTests --> HardwareMon[tools/hardware_monitor.py]
     AppTests --> WebApp[web/app.py]
     APITests --> WebApp
     RestTests --> RestClient[core/client.py]

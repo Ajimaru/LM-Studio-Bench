@@ -4,6 +4,7 @@ Test runner for capability-driven benchmarks.
 Loads test cases, orchestrates benchmark execution, and manages outputs.
 """
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -22,6 +23,44 @@ from agents.capabilities import Capability, CapabilityDetector
 from core.paths import USER_RESULTS_DIR
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_quantization(model_path: str) -> Optional[str]:
+    """
+    Extract quantization label from a model path/filename.
+
+    Args:
+        model_path: Model file path or identifier
+
+    Returns:
+        Quantization string (e.g. "Q4_K_M") or None
+    """
+    name = Path(model_path).name
+    patterns = [
+        r"(?i)(q[2-9]_k_[smlx]+)",
+        r"(?i)(q[2-9]_[0-9]+)",
+        r"(?i)(fp16|bf16|f16|f32)",
+        r"(?i)(q[2-9][a-z_0-9]*)",
+        r"(?i)(int[48])",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, name)
+        if match:
+            return match.group(1).upper()
+    return None
+
+
+def _short_hash(data: str) -> str:
+    """
+    Return a 16-char SHA-256 hex digest of a string.
+
+    Args:
+        data: Input string
+
+    Returns:
+        16-character hex digest
+    """
+    return hashlib.sha256(data.encode()).hexdigest()[:16]
 
 
 class TestLoader:
@@ -305,7 +344,9 @@ class BenchmarkRunner:
         model_path: str,
         model_name: Optional[str] = None,
         adapter: Optional[ModelAdapter] = None,
-        capabilities: Optional[List[str]] = None
+        capabilities: Optional[List[str]] = None,
+        cache_results: bool = True,
+        classic_metrics: Optional[Dict[str, Any]] = None,
     ) -> Dict:
         """
         Run benchmark on a model.
@@ -315,6 +356,8 @@ class BenchmarkRunner:
             model_name: Optional model name (defaults to path)
             adapter: Optional pre-configured adapter
             capabilities: Optional list of capability strings
+            cache_results: Whether to persist results to SQLite immediately
+            classic_metrics: Optional classic metric values to persist
 
         Returns:
             Benchmark report dictionary
@@ -360,7 +403,8 @@ class BenchmarkRunner:
             agent = BenchmarkAgent(
                 adapter=adapter,
                 output_dir=self.output_dir,
-                capability_detector=self.capability_detector
+                capability_detector=self.capability_detector,
+                config=self.config
             )
 
             report = agent.run_benchmark(
@@ -372,7 +416,13 @@ class BenchmarkRunner:
             )
 
             report_dict = self._report_to_dict(report)
-            self._cache_results(report_dict, model_name, model_path)
+            if cache_results:
+                self._cache_results(
+                    report_dict,
+                    model_name,
+                    model_path,
+                    classic_metrics=classic_metrics,
+                )
 
             return report_dict
 
@@ -558,7 +608,8 @@ class BenchmarkRunner:
         self,
         report_dict: Dict,
         model_name: str,
-        model_path: str
+        model_path: str,
+        classic_metrics: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Cache benchmark results to SQLite database.
@@ -571,6 +622,37 @@ class BenchmarkRunner:
         try:
             results = report_dict.get("results", [])
             summary = report_dict.get("summary", {})
+            classic_metrics = classic_metrics or {}
+
+            if "error_count" not in classic_metrics:
+                classic_metrics["error_count"] = sum(
+                    1 for item in results if item.get("error")
+                )
+
+            quantization = classic_metrics.get(
+                "quantization"
+            ) or _extract_quantization(model_path)
+
+            infer_params = {
+                k: report_dict.get("config", {}).get(k)
+                for k in (
+                    "context_length", "temperature", "max_tokens",
+                    "top_k", "top_p", "min_p", "repeat_penalty",
+                )
+            }
+            inference_params_hash = _short_hash(
+                json.dumps(infer_params, sort_keys=True, default=str)
+            )
+
+            def _avg_metric(cap_results: List[Dict], key: str) -> Optional[float]:
+                values = []
+                for item in cap_results:
+                    value = item.get(key)
+                    if isinstance(value, (int, float)):
+                        values.append(float(value))
+                if not values:
+                    return None
+                return sum(values) / len(values)
 
             for result in results:
                 capability = result.get("capability")
@@ -600,6 +682,80 @@ class BenchmarkRunner:
                     reference_output=result.get("reference_output", ""),
                     error_message=error_message,
                     success=error_message is None,
+                    error_count=classic_metrics.get("error_count"),
+                    gpu_type=classic_metrics.get("gpu_type"),
+                    gpu_offload=classic_metrics.get("gpu_offload"),
+                    vram_mb=classic_metrics.get("vram_mb"),
+                    temp_celsius_min=classic_metrics.get("temp_celsius_min"),
+                    temp_celsius_max=classic_metrics.get("temp_celsius_max"),
+                    temp_celsius_avg=classic_metrics.get("temp_celsius_avg"),
+                    power_watts_min=classic_metrics.get("power_watts_min"),
+                    power_watts_max=classic_metrics.get("power_watts_max"),
+                    power_watts_avg=classic_metrics.get("power_watts_avg"),
+                    vram_gb_min=classic_metrics.get("vram_gb_min"),
+                    vram_gb_max=classic_metrics.get("vram_gb_max"),
+                    vram_gb_avg=classic_metrics.get("vram_gb_avg"),
+                    gtt_gb_min=classic_metrics.get("gtt_gb_min"),
+                    gtt_gb_max=classic_metrics.get("gtt_gb_max"),
+                    gtt_gb_avg=classic_metrics.get("gtt_gb_avg"),
+                    cpu_percent_min=classic_metrics.get("cpu_percent_min"),
+                    cpu_percent_max=classic_metrics.get("cpu_percent_max"),
+                    cpu_percent_avg=classic_metrics.get("cpu_percent_avg"),
+                    ram_gb_min=classic_metrics.get("ram_gb_min"),
+                    ram_gb_max=classic_metrics.get("ram_gb_max"),
+                    ram_gb_avg=classic_metrics.get("ram_gb_avg"),
+                    context_length=classic_metrics.get("context_length"),
+                    temperature=classic_metrics.get("temperature"),
+                    top_k_sampling=classic_metrics.get("top_k_sampling"),
+                    top_p_sampling=classic_metrics.get("top_p_sampling"),
+                    min_p_sampling=classic_metrics.get("min_p_sampling"),
+                    repeat_penalty=classic_metrics.get("repeat_penalty"),
+                    max_tokens=classic_metrics.get("max_tokens"),
+                    n_gpu_layers=classic_metrics.get("n_gpu_layers"),
+                    n_batch=classic_metrics.get("n_batch"),
+                    n_threads=classic_metrics.get("n_threads"),
+                    flash_attention=classic_metrics.get("flash_attention"),
+                    rope_freq_base=classic_metrics.get("rope_freq_base"),
+                    rope_freq_scale=classic_metrics.get("rope_freq_scale"),
+                    use_mmap=classic_metrics.get("use_mmap"),
+                    use_mlock=classic_metrics.get("use_mlock"),
+                    kv_cache_quant=classic_metrics.get("kv_cache_quant"),
+                    lmstudio_version=classic_metrics.get("lmstudio_version"),
+                    app_version=classic_metrics.get("app_version"),
+                    nvidia_driver_version=classic_metrics.get(
+                        "nvidia_driver_version"
+                    ),
+                    rocm_driver_version=classic_metrics.get(
+                        "rocm_driver_version"
+                    ),
+                    intel_driver_version=classic_metrics.get(
+                        "intel_driver_version"
+                    ),
+                    os_name=classic_metrics.get("os_name"),
+                    os_version=classic_metrics.get("os_version"),
+                    cpu_model=classic_metrics.get("cpu_model"),
+                    python_version=classic_metrics.get("python_version"),
+                    benchmark_duration_seconds=classic_metrics.get(
+                        "benchmark_duration_seconds"
+                    ),
+                    quantization=quantization,
+                    inference_params_hash=inference_params_hash,
+                    avg_ttft=result.get("ttft_ms"),
+                    prompt_tokens=result.get("prompt_tokens"),
+                    tokens_per_sec_per_gb=None,
+                    tokens_per_sec_per_billion_params=None,
+                    speed_delta_pct=None,
+                    prev_timestamp=None,
+                    prompt_hash=_short_hash(result.get("prompt") or "")
+                    if result.get("prompt") else None,
+                    params_hash=_short_hash(
+                        json.dumps(
+                            {**infer_params, "prompt": result.get("prompt")},
+                            sort_keys=True,
+                            default=str,
+                        )
+                    ),
+                    prompt=result.get("prompt"),
                 )
 
             capability_summary = summary.get("by_capability", {})
@@ -624,16 +780,39 @@ class BenchmarkRunner:
                     successful_tests=successful_tests,
                     failed_tests=failed_tests,
                     success_rate=cap_data.get("success_rate", 0),
-                    avg_latency_ms=0,
-                    avg_throughput=None,
+                    avg_latency_ms=cap_data.get("avg_latency_ms")
+                    or _avg_metric(cap_results, "latency_ms")
+                    or 0,
+                    avg_throughput=cap_data.get(
+                        "avg_throughput_tokens_per_sec"
+                    )
+                    or _avg_metric(cap_results, "throughput"),
                     avg_quality_score=cap_data.get("avg_quality_score", 0),
-                    avg_rouge=None,
-                    avg_f1=None,
-                    avg_exact_match=None,
-                    avg_accuracy=None,
+                    avg_rouge=_avg_metric(cap_results, "rouge_score"),
+                    avg_f1=_avg_metric(cap_results, "f1_score"),
+                    avg_exact_match=_avg_metric(
+                        cap_results,
+                        "exact_match_score",
+                    ),
+                    avg_accuracy=_avg_metric(cap_results, "accuracy_score"),
                 )
 
             logger.info("Benchmark results cached for %s", model_name)
 
         except (sqlite3.Error, TypeError, ValueError, KeyError) as err:
             logger.error("Error caching results for %s: %s", model_name, err)
+
+    def cache_report(
+        self,
+        report_dict: Dict[str, Any],
+        model_name: str,
+        model_path: str,
+        classic_metrics: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Public wrapper to persist a prepared capability benchmark report."""
+        self._cache_results(
+            report_dict=report_dict,
+            model_name=model_name,
+            model_path=model_path,
+            classic_metrics=classic_metrics,
+        )

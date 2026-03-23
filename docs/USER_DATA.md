@@ -211,6 +211,9 @@ Built-in readonly presets (`default_classic`,
 `quick_test`, `high_quality`, `resource_limited`) are not stored as
 files.
 
+Readonly preset names cannot be overwritten or deleted by user presets,
+including the alias `default`.
+
 ### Q: What happens to my old results?
 
 **A**: On first run, they are automatically migrated to `~/.local/share/lm-studio-bench/results/`

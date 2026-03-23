@@ -88,6 +88,8 @@ class InferenceResult:
     latency_ms: float
     tokens_generated: Optional[int] = None
     throughput: Optional[float] = None
+    ttft_ms: Optional[float] = None
+    prompt_tokens: Optional[int] = None
     raw_output: Optional[str] = None
     tool_calls: Optional[List[Dict]] = None
     error: Optional[str] = None
@@ -110,6 +112,7 @@ class EvaluationResult:
     inference: InferenceResult
     metrics: List[MetricResult]
     quality_score: float
+    reference_output: Optional[str] = None
 
 
 @dataclass
@@ -367,6 +370,8 @@ class LMStudioAdapter(ModelAdapter):
         try:
             response_text = ""
             tokens_generated: Optional[int] = None
+            ttft_ms_val: Optional[float] = None
+            prompt_tokens_val: Optional[int] = None
 
             if self.use_rest_api:
                 rest_client = self.rest_client
@@ -427,6 +432,14 @@ class LMStudioAdapter(ModelAdapter):
                             "tokens_out",
                             getattr(stats, "completion_tokens", 0),
                         )
+                        ttft_ms_raw = getattr(
+                            stats, "time_to_first_token_ms", None
+                        )
+                        if ttft_ms_raw:
+                            ttft_ms_val = float(ttft_ms_raw)
+                        tokens_in = getattr(stats, "tokens_in", None)
+                        if tokens_in:
+                            prompt_tokens_val = int(tokens_in)
                 elif hasattr(response, "stats"):
                     stats_obj = response.stats
                     tokens_generated = getattr(
@@ -480,6 +493,8 @@ class LMStudioAdapter(ModelAdapter):
                 latency_ms=latency_ms,
                 tokens_generated=tokens_generated,
                 throughput=throughput,
+                ttft_ms=ttft_ms_val,
+                prompt_tokens=prompt_tokens_val,
                 raw_output=response_text,
                 tool_calls=None,
                 error=None
@@ -532,7 +547,8 @@ class BenchmarkAgent:
         self,
         adapter: ModelAdapter,
         output_dir: Path,
-        capability_detector: Optional[CapabilityDetector] = None
+        capability_detector: Optional[CapabilityDetector] = None,
+        config: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize benchmark agent.
@@ -541,6 +557,7 @@ class BenchmarkAgent:
             adapter: Model adapter for inference
             output_dir: Directory for output files
             capability_detector: Optional capability detector
+            config: Optional configuration dict for dev_mode and disable_gtt
         """
         self.adapter = adapter
         self.output_dir = Path(output_dir)
@@ -552,6 +569,10 @@ class BenchmarkAgent:
         self.capability_detector = (
             capability_detector or CapabilityDetector()
         )
+
+        self.config = config or {}
+        self.dev_mode = self.config.get("dev_mode", False)
+        self.disable_gtt = self.config.get("disable_gtt", False)
 
         self.metrics_map = {
             Capability.GENERAL_TEXT: [
@@ -575,6 +596,16 @@ class BenchmarkAgent:
         }
         self.inference_options: Dict[str, Any] = {}
 
+    @staticmethod
+    def _serialize_reference(reference: Union[str, List[str]]) -> str:
+        """Serialize test reference for cache/report storage."""
+        if isinstance(reference, str):
+            return reference
+        try:
+            return json.dumps(reference, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return str(reference)
+
     def evaluate_test_case(
         self,
         test_case: TestCase
@@ -595,6 +626,17 @@ class BenchmarkAgent:
             **self.inference_options,
         )
 
+        if self.dev_mode:
+            preview_response = (
+                f"{inference.response[:200]}"
+                f"{'...' if len(inference.response) > 200 else ''}"
+            )
+            logger.info(
+                "🧪 DEV: [%s] Raw response: %s",
+                test_case.id,
+                preview_response,
+            )
+
         self._save_raw_output(test_case, inference)
 
         if inference.error:
@@ -608,7 +650,8 @@ class BenchmarkAgent:
                 capability=test_case.capability,
                 inference=inference,
                 metrics=[],
-                quality_score=0.0
+                quality_score=0.0,
+                reference_output=self._serialize_reference(test_case.reference),
             )
 
         metrics = self._compute_metrics(
@@ -624,7 +667,8 @@ class BenchmarkAgent:
             capability=test_case.capability,
             inference=inference,
             metrics=metrics,
-            quality_score=quality_score
+            quality_score=quality_score,
+            reference_output=self._serialize_reference(test_case.reference),
         )
 
     def _compute_metrics(
@@ -849,13 +893,31 @@ class BenchmarkAgent:
         Returns:
             Serialized result dictionary
         """
+        metric_values = {m.name: m.value for m in result.metrics}
+        rouge_value = metric_values.get("rouge-l")
+        if rouge_value is None:
+            rouge_value = metric_values.get("rouge-1")
+
         return {
             "test_id": result.test_id,
+            "test_name": result.test_id,
             "capability": result.capability.value,
             "latency_ms": result.inference.latency_ms,
             "tokens_generated": result.inference.tokens_generated,
             "throughput": result.inference.throughput,
             "quality_score": result.quality_score,
+            "rouge_score": rouge_value,
+            "f1_score": metric_values.get("f1"),
+            "exact_match_score": metric_values.get("exact_match"),
+            "accuracy_score": metric_values.get("accuracy"),
+            "function_call_accuracy": metric_values.get(
+                "function_call_accuracy"
+            ),
+            "raw_output": result.inference.raw_output,
+            "reference_output": result.reference_output,
+            "prompt": result.inference.prompt,
+            "ttft_ms": result.inference.ttft_ms,
+            "prompt_tokens": result.inference.prompt_tokens,
             "metrics": [
                 {
                     "name": m.name,

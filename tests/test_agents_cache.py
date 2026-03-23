@@ -17,6 +17,42 @@ class TestAgentCache:
         assert cache.db_path == db_file
         assert db_file.exists()
 
+    def test_initializer_creates_classic_metric_columns(self, tmp_path):
+        """agent_results contains classic benchmark metric columns."""
+        db_file = tmp_path / "cache.db"
+        AgentCache(db_path=db_file)
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(agent_results)")
+        columns = {row[1] for row in cursor.fetchall()}
+        conn.close()
+
+        expected = {
+            "error_count",
+            "gpu_type",
+            "gpu_offload",
+            "vram_mb",
+            "temp_celsius_min",
+            "power_watts_avg",
+            "context_length",
+            "top_k_sampling",
+            "max_tokens",
+            "n_gpu_layers",
+            "kv_cache_quant",
+            "lmstudio_version",
+            "app_version",
+            "nvidia_driver_version",
+            "rocm_driver_version",
+            "intel_driver_version",
+            "os_name",
+            "os_version",
+            "cpu_model",
+            "python_version",
+            "benchmark_duration_seconds",
+        }
+        assert expected.issubset(columns)
+
     def test_initializer_default_path(self, tmp_path):
         """AgentCache uses default path when none provided."""
         with patch("agents.cache.USER_RESULTS_DIR", str(tmp_path)):
