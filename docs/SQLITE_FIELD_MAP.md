@@ -37,7 +37,7 @@ Notes:
 | Test case name | `test_name` | `test_name` | `[x]` |
 | Quantization | `quantization` | `quantization` | `[x]` |
 | Inference params hash | `inference_params_hash` | `inference_params_hash` | `[x]` |
-| Tokens per second | `avg_tokens_per_sec` | `throughput_tokens_per_sec` | `[x]` |
+| Tokens per second | `avg_tokens_per_sec` | `avg_tokens_per_sec` | `[x]` |
 | Latency | `avg_gen_time` | `avg_gen_time` | `[x]` |
 | TTFT | `avg_ttft` | `avg_ttft` | `[x]` |
 | Prompt token count | `prompt_tokens` | `prompt_tokens` | `[x]` |
