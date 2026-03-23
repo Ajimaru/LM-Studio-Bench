@@ -157,13 +157,13 @@ class PresetManager:
 
     def list_presets(self) -> List[str]:
         """Return all available preset names."""
-        names = []
+        names = [self.DEFAULT_ALIAS]
         names.extend(sorted(self.PREDEFINED_PRESETS.keys()))
 
         user_names: List[str] = []
         for path in sorted(self._presets_dir.glob("*.json")):
             name = path.stem
-            if name in self.READONLY_PRESETS:
+            if name in self.READONLY_PRESETS or self.is_readonly_name(name):
                 logger.warning("Ignoring user preset with reserved name: %s", name)
                 continue
             user_names.append(name)
