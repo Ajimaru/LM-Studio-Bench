@@ -393,7 +393,7 @@ grep ERROR ~/.local/share/lm-studio-bench/logs/benchmark_*.log
 ```bash
 # Default presets (readonly)
 ./run.py --preset default_classic              # Classic benchmark (default)
-./run.py --preset default_compatability_test   # Capability-driven test
+./run.py --preset default_compatibility_test   # Capability-driven test
 
 # Other presets
 ./run.py --preset quick_test
