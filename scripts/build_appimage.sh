@@ -92,7 +92,11 @@ else
     export LD_LIBRARY_PATH="$APPIMAGE_LD_PATH"
 fi
 
-export PYTHONPATH="$PROJECT_DIR:$PROJECT_DIR/core"
+if [ -n "${PYTHONPATH:-}" ]; then
+    export PYTHONPATH="$PROJECT_DIR:${PYTHONPATH}"
+else
+    export PYTHONPATH="$PROJECT_DIR"
+fi
 
 # When started with no real arguments (--debug/-d are exempt), launch only
 # the tray app so it stays in the system tray without auto-running a
