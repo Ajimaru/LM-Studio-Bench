@@ -33,10 +33,15 @@ class PresetManager:
 
     READONLY_PRESETS = {
         "default_classic",
-        "default_compatability_test",
+        "default_compatibility_test",
         "quick_test",
         "high_quality",
         "resource_limited",
+    }
+
+    # Backwards-compatible alias for the previously misspelled preset name.
+    COMPAT_ALIASES: Dict[str, str] = {
+        "default_compatability_test": "default_compatibility_test",
     }
 
     PREDEFINED_PRESETS: Dict[str, Dict[str, Any]] = {
@@ -82,7 +87,7 @@ class PresetManager:
             "agent_capabilities": None,
             "agent_max_tests": None,
         },
-        "default_compatability_test": {
+        "default_compatibility_test": {
             "runs": 1,
             "context": 2048,
             "limit": 0,
@@ -177,7 +182,7 @@ class PresetManager:
         """Resolve public preset aliases to their canonical preset name."""
         if name == self.DEFAULT_ALIAS:
             return self.DEFAULT_PRESET_NAME
-        return name
+        return self.COMPAT_ALIASES.get(name, name)
 
     def is_readonly_name(self, name: str) -> bool:
         """Return True when a public preset name maps to a readonly preset."""

@@ -31,11 +31,11 @@ class TestListPresets:
     """Tests for PresetManager.list_presets()."""
 
     def test_always_contains_default(self, tmp_presets_dir: Path):
-        """'default_classic' and 'default_compatability_test' are always in the list."""
+        """'default_classic' and 'default_compatibility_test' are always listed."""
         pm = PresetManager(presets_dir=tmp_presets_dir)
         presets = pm.list_presets()
         assert "default_classic" in presets
-        assert "default_compatability_test" in presets
+        assert "default_compatibility_test" in presets
 
     def test_predefined_presets_present(self, tmp_presets_dir: Path):
         """All predefined readonly presets are listed."""
