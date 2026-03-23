@@ -505,10 +505,28 @@ if HAS_WEB_FLAG:
     finally:
         _stop_tray_process(TRAY_PROCESS)
 elif HAS_AGENT_FLAG:
+    agent_model = None
+    # Support both "--agent MODEL" and "--agent=MODEL" forms.
+    for cli_arg in CLI_ARGS:
+        if cli_arg.startswith("--agent="):
+            extracted = cli_arg.split("=", 1)[1]
+            if not extracted:
+                print(
+                    "❌ Invalid --agent argument: expected "
+                    "--agent MODEL or --agent=MODEL"
+                )
+                sys.exit(2)
+            agent_model = extracted
+
     args = [
-        arg for arg in CLI_ARGS if arg != "--agent" and not arg.startswith("--agent=")
+        arg
+        for arg in CLI_ARGS
+        if arg != "--agent" and not arg.startswith("--agent=")
     ]
 
+    if agent_model is not None:
+        # For the "--agent=MODEL" form, inject MODEL as positional argument.
+        args.insert(0, agent_model)
     try:
         safe_args = _sanitize_cli_args(args)
     except ValueError as error:

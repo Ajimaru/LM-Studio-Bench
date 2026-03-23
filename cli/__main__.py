@@ -1,4 +1,4 @@
-"""Make bench package executable with python -m bench."""
+"""Make cli package executable with python -m cli."""
 
 import sys
 

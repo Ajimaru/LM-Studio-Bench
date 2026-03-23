@@ -37,25 +37,42 @@ class TestLoadConfig:
 
     def test_loads_yaml_when_file_exists(self, tmp_path):
         """Config file is loaded when it exists."""
+        from cli.main import load_config
+
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
             "context_length: 2048\ngpu_offload: 0.8\n",
-            encoding="utf-8"
+            encoding="utf-8",
         )
         assert config_file.exists()
 
+        config = load_config(config_file)
+        # The loaded configuration should reflect the YAML contents.
+        assert config["context_length"] == 2048
+        assert config["gpu_offload"] == 0.8
+
     def test_returns_default_when_file_missing(self):
         """Default config is returned when file is missing."""
+        from cli.main import DEFAULT_CONFIG, load_config
+
         missing_file = Path("/nonexistent/config.yaml")
         assert not missing_file.exists()
 
+        config = load_config(missing_file)
+        # Missing file should result in default configuration.
+        assert config == DEFAULT_CONFIG
+
     def test_returns_default_on_yaml_error(self, tmp_path):
         """Default config on YAML parse error."""
+        from cli.main import DEFAULT_CONFIG, load_config
+
         bad_yaml = tmp_path / "bad.yaml"
         bad_yaml.write_text("invalid: [yaml: structure:", encoding="utf-8")
         assert bad_yaml.exists()
 
-
+        config = load_config(bad_yaml)
+        # YAML parse errors should fall back to default configuration.
+        assert config == DEFAULT_CONFIG
 class TestParseArgs:
     """Tests for parse_args function."""
 
