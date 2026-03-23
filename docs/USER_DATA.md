@@ -223,7 +223,7 @@ Only include fields you want to override from project defaults.
 **A**: `~/.config/lm-studio-bench/presets/`
 
 Built-in readonly presets (`default_classic`,
-`default_compatability_test`, `default` as a legacy alias,
+`default_compatibility_test`, `default` as a legacy alias,
 `quick_test`, `high_quality`, `resource_limited`) are not stored as
 files.
 
