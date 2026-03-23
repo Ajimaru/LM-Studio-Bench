@@ -283,7 +283,7 @@ Built-in readonly presets:
 **Default Presets (Mode Selection):**
 
 - `default_classic` - Full model benchmarking (3 runs per model)
-- `default_compatability_test` - Single model capability testing (1 run)
+- `default_compatibility_test` - Single model capability testing (1 run)
 - `default` - Alias for `default_classic` (backwards compatible)
 
 **Other Presets:**
