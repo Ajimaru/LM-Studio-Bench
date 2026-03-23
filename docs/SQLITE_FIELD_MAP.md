@@ -26,7 +26,7 @@ Notes:
 - Historical rows created before recent schema/runtime fixes may still
   contain `NULL` values in parity columns. New rows should populate them.
 
-| Metric | benchmark_results column | agent_results column | Stored in both tests |
+| Metric | benchmark_results (classic) | benchmark_results (compatibility) | Stored in both tests |
 | --- | --- | --- | --- |
 | Row id | `id` | `id` | `[x]` |
 | Model name | `model_name` | `model_name` | `[x]` |
@@ -38,23 +38,23 @@ Notes:
 | Quantization | `quantization` | `quantization` | `[x]` |
 | Inference params hash | `inference_params_hash` | `inference_params_hash` | `[x]` |
 | Tokens per second | `avg_tokens_per_sec` | `throughput_tokens_per_sec` | `[x]` |
-| Latency | `avg_gen_time` | `latency_ms`, `agent_summaries.avg_latency_ms` | `[x]` |
+| Latency | `avg_gen_time` | `avg_gen_time` | `[x]` |
 | TTFT | `avg_ttft` | `avg_ttft` | `[x]` |
 | Prompt token count | `prompt_tokens` | `prompt_tokens` | `[x]` |
 | Completion/generated tokens | `completion_tokens` | `tokens_generated` | `[x]` |
-| Primary quality score | `quality_score` | `quality_score`, `agent_summaries.avg_quality_score` | `[x]` |
-| ROUGE | `rouge_score` | `rouge_score`, `agent_summaries.avg_rouge` | `[x]` |
-| F1 | `f1_score` | `f1_score`, `agent_summaries.avg_f1` | `[x]` |
-| Exact match | `exact_match_score` | `exact_match_score`, `agent_summaries.avg_exact_match` | `[x]` |
-| Accuracy | `accuracy_score` | `accuracy_score`, `agent_summaries.avg_accuracy` | `[x]` |
+| Primary quality score | `quality_score` | `quality_score` | `[x]` |
+| ROUGE | `rouge_score` | `rouge_score` | `[x]` |
+| F1 | `f1_score` | `f1_score` | `[x]` |
+| Exact match | `exact_match_score` | `exact_match_score` | `[x]` |
+| Accuracy | `accuracy_score` | `accuracy_score` | `[x]` |
 | Function-call accuracy | `function_call_accuracy` | `function_call_accuracy` | `[x]` |
 | Success flag | `success` | `success` | `[x]` |
 | Error message | `error_message` | `error_message` | `[x]` |
 | Error counter | `error_count` | `error_count` | `[x]` |
-| Total tests per capability | `-` | `agent_summaries.total_tests` | `[ ]` |
-| Successful tests per capability | `-` | `agent_summaries.successful_tests` | `[ ]` |
-| Failed tests per capability | `-` | `agent_summaries.failed_tests` | `[ ]` |
-| Success rate per capability | `-` | `agent_summaries.success_rate` | `[ ]` |
+| Total tests per capability | `-` | aggregate `COUNT(*)` by capability | `[ ]` |
+| Successful tests per capability | `-` | aggregate `SUM(success = 1)` | `[ ]` |
+| Failed tests per capability | `-` | aggregate `SUM(success != 1)` | `[ ]` |
+| Success rate per capability | `-` | derived aggregate (`successful / total`) | `[ ]` |
 | GPU type | `gpu_type` | `gpu_type` | `[x]` |
 | GPU offload ratio | `gpu_offload` | `gpu_offload` | `[x]` |
 | VRAM (MB) | `vram_mb` | `vram_mb` | `[x]` |
@@ -112,42 +112,36 @@ WHERE quantization IS NULL
     OR success IS NULL
 ORDER BY id DESC;
 
--- Capability rows that still miss core parity fields.
+-- Compatibility rows that still miss core parity fields.
 SELECT id, model_name, capability, test_id,
          quantization, lmstudio_version, app_version,
          prompt_hash, params_hash
-FROM agent_results
-WHERE quantization IS NULL
-    OR lmstudio_version IS NULL
-    OR app_version IS NULL
-    OR prompt_hash IS NULL
-    OR params_hash IS NULL
+FROM benchmark_results
+WHERE source = 'compatibility'
+        AND (
+            quantization IS NULL
+            OR lmstudio_version IS NULL
+            OR app_version IS NULL
+            OR prompt_hash IS NULL
+            OR params_hash IS NULL
+        )
 ORDER BY id DESC;
 
--- Summary/detail consistency for capability runs.
-WITH detail AS (
-     SELECT model_name,
-              capability,
-              COUNT(*) AS detail_tests,
-              AVG(latency_ms) AS detail_avg_latency,
-              AVG(quality_score) AS detail_avg_quality
-     FROM agent_results
-     GROUP BY model_name, capability
-)
-SELECT s.model_name,
-         s.capability,
-         s.total_tests,
-         d.detail_tests,
-         ROUND(s.avg_latency_ms, 3) AS summary_latency,
-         ROUND(d.detail_avg_latency, 3) AS detail_latency,
-         ROUND(s.avg_quality_score, 6) AS summary_quality,
-         ROUND(d.detail_avg_quality, 6) AS detail_quality
-FROM agent_summaries AS s
-JOIN detail AS d
-  ON s.model_name = d.model_name
- AND s.capability = d.capability
-WHERE s.total_tests != d.detail_tests
-    OR ABS(COALESCE(s.avg_latency_ms, 0) - COALESCE(d.detail_avg_latency, 0)) > 0.001
-    OR ABS(COALESCE(s.avg_quality_score, 0) - COALESCE(d.detail_avg_quality, 0)) > 0.000001
-ORDER BY s.id DESC;
+-- Compatibility summary directly from benchmark_results.
+SELECT model_name,
+             capability,
+             COUNT(*) AS total_tests,
+             SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successful_tests,
+             SUM(CASE WHEN success = 1 THEN 0 ELSE 1 END) AS failed_tests,
+             AVG(avg_gen_time) AS avg_latency_ms,
+             AVG(avg_tokens_per_sec) AS avg_throughput,
+             AVG(quality_score) AS avg_quality_score,
+             AVG(rouge_score) AS avg_rouge,
+             AVG(f1_score) AS avg_f1,
+             AVG(exact_match_score) AS avg_exact_match,
+             AVG(accuracy_score) AS avg_accuracy
+FROM benchmark_results
+WHERE source = 'compatibility'
+GROUP BY model_name, capability
+ORDER BY MAX(id) DESC;
 ```

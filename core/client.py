@@ -520,19 +520,30 @@ class LMStudioRESTClient:
                         final_event = event
                         result_data = event.get("result", {})
                         if "output" in result_data:
+                            msg_content = ""
+                            reasoning_fallback = ""
                             for item in result_data["output"]:
-                                if item.get("type") == "message":
-                                    content = item.get("content", "")
-                                    if content and content not in full_text:
-                                        full_text += content
+                                item_type = item.get("type", "")
+                                content = item.get("content", "")
+                                if item_type == "message" and content:
+                                    msg_content += content
+                                elif item_type == "reasoning" and content:
+                                    reasoning_fallback += content
+                            final_content = msg_content or reasoning_fallback
+                            if final_content and final_content not in full_text:
+                                full_text += final_content
                         if "stats" in result_data:
                             final_stats = result_data["stats"]
                     else:
-                        chunk_text = ""
-                        if "output" in event:
-                            for item in event["output"]:
-                                if item.get("type") == "message":
-                                    chunk_text += item.get("content", "")
+                        event_type = event.get("type", "")
+                        if event_type == "message.delta":
+                            chunk_text = event.get("content", "")
+                        else:
+                            chunk_text = ""
+                            if "output" in event:
+                                for item in event["output"]:
+                                    if item.get("type") == "message":
+                                        chunk_text += item.get("content", "")
 
                         if chunk_text:
                             full_text += chunk_text

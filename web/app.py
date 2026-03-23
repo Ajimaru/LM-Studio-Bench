@@ -1278,7 +1278,7 @@ def _collect_comparison_entries(
                max_tokens, num_runs, benchmark_duration_seconds,
                error_count
         FROM benchmark_results
-        WHERE 1=1
+        WHERE source = 'classic'
     """
     classic_params: List[Any] = []
 
@@ -1330,9 +1330,9 @@ def _collect_comparison_entries(
 
     capability_query = """
         SELECT timestamp, model_name, capability,
-               throughput_tokens_per_sec, latency_ms
-        FROM agent_results
-        WHERE 1=1
+               avg_tokens_per_sec, avg_gen_time
+        FROM benchmark_results
+        WHERE source = 'compatibility'
     """
     capability_params: List[Any] = []
 
@@ -1377,7 +1377,7 @@ def _collect_comparison_entries(
                 "num_runs": 1,
                 "benchmark_duration_seconds": None,
                 "error_count": 0,
-                "source": "capability",
+                "source": "compatibility",
             }
         )
 
@@ -2742,9 +2742,9 @@ async def get_advanced_statistics(model_name: str) -> dict:
 
         model_candidates = _model_name_candidates(model_name)
         capability_query = """
-            SELECT timestamp, throughput_tokens_per_sec
-            FROM agent_results
-            WHERE 1=1
+            SELECT timestamp, avg_tokens_per_sec
+            FROM benchmark_results
+            WHERE source = 'compatibility'
         """
         capability_params: List[Any] = []
         if len(model_candidates) == 1:
@@ -4441,29 +4441,24 @@ async def get_dashboard_stats() -> dict:
                 cconn = sqlite3.connect(DATABASE_FILE)
                 ccur = cconn.cursor()
                 ccur.execute(
-                    "SELECT name FROM sqlite_master "
-                    "WHERE type='table' AND name='agent_results'"
+                    "SELECT model_name, capability, avg_tokens_per_sec, "
+                    "timestamp FROM benchmark_results "
+                    "WHERE source = 'compatibility' "
+                    "ORDER BY timestamp DESC"
                 )
-                if ccur.fetchone() is not None:
-                    ccur.execute(
-                        "SELECT model_name, capability, "
-                        "throughput_tokens_per_sec, timestamp "
-                        "FROM agent_results "
-                        "ORDER BY timestamp DESC"
+                for model_name, capability, throughput, timestamp in (
+                    ccur.fetchall()
+                ):
+                    speed = float(throughput) if throughput is not None else 0.0
+                    cap_name = str(capability) if capability else "general_text"
+                    capability_runs.append(
+                        {
+                            "model_name": str(model_name),
+                            "capability": cap_name,
+                            "speed": round(speed, 2),
+                            "timestamp": str(timestamp),
+                        }
                     )
-                    for model_name, capability, throughput, timestamp in (
-                        ccur.fetchall()
-                    ):
-                        speed = float(throughput) if throughput is not None else 0.0
-                        cap_name = str(capability) if capability else "general_text"
-                        capability_runs.append(
-                            {
-                                "model_name": str(model_name),
-                                "capability": cap_name,
-                                "speed": round(speed, 2),
-                                "timestamp": str(timestamp),
-                            }
-                        )
                 cconn.close()
         except (sqlite3.Error, TypeError, ValueError):
             capability_runs = []

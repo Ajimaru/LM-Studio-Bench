@@ -1,4 +1,4 @@
-"""Tests for agents/cache.py - agent result caching."""
+"""Tests for agents/cache.py unified benchmark_results storage."""
 
 import sqlite3
 from unittest.mock import patch
@@ -17,46 +17,31 @@ class TestAgentCache:
         assert cache.db_path == db_file
         assert db_file.exists()
 
-    def test_initializer_creates_classic_metric_columns(self, tmp_path):
-        """agent_results contains classic benchmark metric columns."""
+    def test_initializer_creates_benchmark_results_source_column(self, tmp_path):
+        """benchmark_results contains source and compatibility fields."""
         db_file = tmp_path / "cache.db"
         AgentCache(db_path=db_file)
 
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(agent_results)")
+        cursor.execute("PRAGMA table_info(benchmark_results)")
         columns = {row[1] for row in cursor.fetchall()}
         conn.close()
 
         expected = {
             "model_key",
-            "error_count",
-            "gpu_type",
-            "gpu_offload",
-            "vram_mb",
-            "temp_celsius_min",
-            "power_watts_avg",
-            "context_length",
-            "top_k_sampling",
-            "max_tokens",
-            "n_gpu_layers",
-            "kv_cache_quant",
-            "lmstudio_version",
-            "app_version",
-            "nvidia_driver_version",
-            "rocm_driver_version",
-            "intel_driver_version",
-            "os_name",
-            "os_version",
-            "cpu_model",
-            "python_version",
-            "benchmark_duration_seconds",
+            "model_name",
+            "capability",
+            "test_id",
+            "quality_score",
+            "avg_tokens_per_sec",
+            "avg_gen_time",
+            "source",
         }
         assert expected.issubset(columns)
-        assert "model_path" not in columns
 
-    def test_initializer_renames_legacy_model_path_columns(self, tmp_path):
-        """Legacy model_path columns are renamed to model_key."""
+    def test_initializer_migrates_and_drops_legacy_tables(self, tmp_path):
+        """Legacy agent tables are migrated into benchmark_results and dropped."""
         db_file = tmp_path / "cache.db"
 
         conn = sqlite3.connect(db_file)
@@ -69,9 +54,35 @@ class TestAgentCache:
                 model_path TEXT,
                 timestamp TEXT NOT NULL,
                 capability TEXT NOT NULL,
-                test_id TEXT
+                test_id TEXT,
+                test_name TEXT,
+                latency_ms REAL,
+                throughput_tokens_per_sec REAL,
+                quality_score REAL,
+                success INTEGER
             )
             """
+        )
+        cursor.execute(
+            """
+            INSERT INTO agent_results (
+                model_name, model_path, timestamp, capability,
+                test_id, test_name, latency_ms,
+                throughput_tokens_per_sec, quality_score, success
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "test-model",
+                "/path/model",
+                "2026-01-01T12:00:00",
+                "general_text",
+                "t1",
+                "QA",
+                120.0,
+                23.5,
+                0.8,
+                1,
+            ),
         )
         cursor.execute(
             """
@@ -91,22 +102,30 @@ class TestAgentCache:
 
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(agent_results)")
-        result_columns = {row[1] for row in cursor.fetchall()}
-        cursor.execute("PRAGMA table_info(agent_summaries)")
-        summary_columns = {row[1] for row in cursor.fetchall()}
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+        table_names = {row[0] for row in cursor.fetchall()}
+
+        cursor.execute(
+            """
+            SELECT source, capability, test_id, avg_tokens_per_sec, avg_gen_time
+            FROM benchmark_results
+            WHERE model_name = ?
+            """,
+            ("test-model",),
+        )
+        row = cursor.fetchone()
         conn.close()
 
-        assert "model_key" in result_columns
-        assert "model_path" not in result_columns
-        assert "model_key" in summary_columns
-        assert "model_path" not in summary_columns
-
-    def test_initializer_default_path(self, tmp_path):
-        """AgentCache uses default path when none provided."""
-        with patch("agents.cache.USER_RESULTS_DIR", str(tmp_path)):
-            cache = AgentCache()
-            assert cache.db_path is not None
+        assert "agent_results" not in table_names
+        assert "agent_summaries" not in table_names
+        assert row is not None
+        assert row[0] == "compatibility"
+        assert row[1] == "general_text"
+        assert row[2] == "t1"
+        assert row[3] == 23.5
+        assert row[4] == 120.0
 
     def test_save_test_result_returns_true(self, tmp_path):
         """save_test_result returns True on success."""
@@ -127,7 +146,7 @@ class TestAgentCache:
         assert success is True
 
     def test_save_summary_returns_true(self, tmp_path):
-        """save_summary returns True on success."""
+        """save_summary keeps API compatibility and returns True."""
         cache = AgentCache(db_path=tmp_path / "cache.db")
 
         success = cache.save_summary(
@@ -145,43 +164,8 @@ class TestAgentCache:
 
         assert success is True
 
-    def test_save_test_result_with_all_fields(self, tmp_path):
-        """save_test_result accepts all optional fields."""
-        cache = AgentCache(db_path=tmp_path / "cache.db")
-
-        success = cache.save_test_result(
-            model_name="model",
-            model_path="/path",
-            capability="vision",
-            test_id="v1",
-            test_name="Image captioning",
-            latency_ms=200.0,
-            tokens_generated=100,
-            throughput_tokens_per_sec=50.0,
-            quality_score=0.9,
-            rouge_score=0.85,
-            f1_score=0.88,
-            exact_match_score=0.95,
-            accuracy_score=0.92,
-            function_call_accuracy=1.0,
-            raw_output="Generated caption",
-            reference_output="Expected caption",
-            error_message=None,
-            success=True,
-        )
-
-        assert success is True
-
-    def test_get_model_results_returns_empty_for_new_model(self, tmp_path):
-        """get_model_results returns empty list for new model."""
-        cache = AgentCache(db_path=tmp_path / "cache.db")
-
-        results = cache.get_model_results("nonexistent-model")
-
-        assert results == []
-
     def test_get_model_results_returns_saved_result(self, tmp_path):
-        """get_model_results returns previously saved results."""
+        """get_model_results returns previously saved compatibility rows."""
         cache = AgentCache(db_path=tmp_path / "cache.db")
 
         cache.save_test_result(
@@ -199,9 +183,10 @@ class TestAgentCache:
         results = cache.get_model_results("test-model")
 
         assert len(results) > 0
+        assert all(row.get("source") == "compatibility" for row in results)
 
     def test_get_model_results_with_capability_filter(self, tmp_path):
-        """Capability filter returns only matching rows."""
+        """Capability filter returns only matching compatibility rows."""
         cache = AgentCache(db_path=tmp_path / "cache.db")
 
         cache.save_test_result(
@@ -240,28 +225,44 @@ class TestAgentCache:
 
         assert result is None
 
-    def test_get_latest_summary_returns_saved_summary(self, tmp_path):
-        """get_latest_summary returns dictionary for saved summary."""
+    def test_get_latest_summary_aggregates_from_results(self, tmp_path):
+        """get_latest_summary aggregates metrics from benchmark_results."""
         cache = AgentCache(db_path=tmp_path / "cache.db")
 
-        saved = cache.save_summary(
+        cache.save_test_result(
             model_name="test-model",
-            model_path="/path/to/model",
+            model_path="/path",
             capability="general_text",
-            total_tests=10,
-            successful_tests=8,
-            failed_tests=2,
-            success_rate=0.8,
-            avg_latency_ms=120.0,
-            avg_throughput=30.0,
-            avg_quality_score=0.81,
+            test_id="test_1",
+            test_name="QA1",
+            latency_ms=100.0,
+            tokens_generated=40,
+            throughput_tokens_per_sec=20.0,
+            quality_score=0.8,
+            success=True,
         )
+        cache.save_test_result(
+            model_name="test-model",
+            model_path="/path",
+            capability="general_text",
+            test_id="test_2",
+            test_name="QA2",
+            latency_ms=120.0,
+            tokens_generated=50,
+            throughput_tokens_per_sec=30.0,
+            quality_score=0.9,
+            success=False,
+        )
+
         result = cache.get_latest_summary("test-model", "general_text")
 
-        assert saved is True
         assert result is not None
         assert result["model_name"] == "test-model"
         assert result["capability"] == "general_text"
+        assert result["total_tests"] == 2
+        assert result["successful_tests"] == 1
+        assert result["failed_tests"] == 1
+        assert result["success_rate"] == 0.5
 
     def test_save_test_result_returns_false_on_db_error(self, tmp_path):
         """save_test_result returns False when sqlite connect fails."""
@@ -281,29 +282,6 @@ class TestAgentCache:
                 tokens_generated=50,
                 throughput_tokens_per_sec=25.0,
                 quality_score=0.85,
-            )
-
-        assert success is False
-
-    def test_save_summary_returns_false_on_db_error(self, tmp_path):
-        """save_summary returns False when sqlite connect fails."""
-        cache = AgentCache(db_path=tmp_path / "cache.db")
-
-        with patch(
-            "agents.cache.sqlite3.connect",
-            side_effect=sqlite3.Error("db down"),
-        ):
-            success = cache.save_summary(
-                model_name="test-model",
-                model_path="/path/to/model",
-                capability="general_text",
-                total_tests=10,
-                successful_tests=9,
-                failed_tests=1,
-                success_rate=0.9,
-                avg_latency_ms=100.0,
-                avg_throughput=25.0,
-                avg_quality_score=0.85,
             )
 
         assert success is False

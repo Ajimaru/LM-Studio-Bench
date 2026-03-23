@@ -17,8 +17,8 @@ locations:
 <project>/
 ├── config/
 │   └── defaults.json       # Project defaults (in Git)
-├── results/                # Optional: may exist as compatibility symlink
-└── logs/                   # Optional: legacy/manual debug folder
+├── results/                # Optional: legacy/manual compatibility location
+└── logs/                   # Optional: legacy/manual debug location
 ```
 
 ### User Directories (XDG Standard)
@@ -38,13 +38,20 @@ User-specific data is stored in standard XDG locations:
 ├── benchmark_results_<timestamp>.pdf
 ├── benchmark_results_<timestamp>.html
 ├── benchmark_cache.db      # SQLite benchmark cache
-└── model_metadata.db       # Model metadata cache
+├── model_metadata.db       # Model metadata cache
+└── metadata/
+    └── <model_id>/
+        └── metadata.json   # Optional per-model metadata fallback
 
 ~/.local/share/lm-studio-bench/logs/
 ├── benchmark_<timestamp>.log
+├── benchmark_latest.log    # Symlink to newest benchmark log
 ├── webapp_<timestamp>.log
+├── webapp_latest.log       # Symlink to newest webapp log
 ├── runapp_<timestamp>.log
-└── trayapp_<timestamp>.log
+├── runapp_latest.log       # Symlink to newest launcher log
+├── trayapp_<timestamp>.log
+└── trayapp_latest.log      # Symlink to newest tray log
 ```
 
 ---
@@ -141,7 +148,7 @@ Only include fields you want to override:
 
 ---
 
-## Data Migration
+## Directory Initialization
 
 On first run, the tool automatically:
 
@@ -149,7 +156,8 @@ On first run, the tool automatically:
 2. Places new results in `~/.local/share/lm-studio-bench/results/`
 3. Places runtime logs in `~/.local/share/lm-studio-bench/logs/`
 
-**Note**: If you have existing data in a legacy `results/` directory, you'll need to manually move it to the new location.
+**Note**: Legacy files in project-local `results/` are not automatically
+moved. If you still use that location, move them manually to the XDG path.
 
 ---
 
@@ -194,7 +202,15 @@ export XDG_DATA_HOME="$HOME/my-data"
 
 **A**: `~/.local/share/lm-studio-bench/results/`
 
-The project `results/` directory is now a symlink for backward compatibility.
+If you pass `--output-dir`, report files (JSON/CSV/HTML/PDF) are written there.
+The SQLite cache databases still live in the user results directory.
+
+### Q: Where are the SQLite databases stored?
+
+**A**:
+
+- `~/.local/share/lm-studio-bench/results/benchmark_cache.db`
+- `~/.local/share/lm-studio-bench/results/model_metadata.db`
 
 ### Q: Where do I put custom configuration?
 
@@ -216,7 +232,8 @@ including the alias `default`.
 
 ### Q: What happens to my old results?
 
-**A**: On first run, they are automatically migrated to `~/.local/share/lm-studio-bench/results/`
+**A**: They are not auto-migrated from legacy project-local folders.
+Move them manually to `~/.local/share/lm-studio-bench/results/`.
 
 ### Q: Can I use the old `config/defaults.json`?
 

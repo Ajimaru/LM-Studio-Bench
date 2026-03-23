@@ -293,6 +293,7 @@ class BenchmarkCache:
     """SQLite cache for benchmark results"""
 
     MIGRATION_COLUMNS: List[Tuple[str, str]] = [
+        ("source", "TEXT"),
         ("lmstudio_version", "TEXT"),
         ("app_version", "TEXT"),
         ("nvidia_driver_version", "TEXT"),
@@ -406,6 +407,173 @@ class BenchmarkCache:
                 continue
             if self._add_column(conn, cursor, col_name, col_type):
                 existing_columns.add(col_name)
+
+    @staticmethod
+    def _table_exists(cursor: sqlite3.Cursor, table_name: str) -> bool:
+        """Returns True if the requested SQLite table exists."""
+        cursor.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name=?",
+            (table_name,),
+        )
+        return cursor.fetchone() is not None
+
+    def _migrate_legacy_agent_tables(
+        self,
+        conn: sqlite3.Connection,
+        cursor: sqlite3.Cursor,
+    ) -> None:
+        """Migrates legacy agent tables into benchmark_results."""
+        if not self._table_exists(cursor, "agent_results"):
+            return
+
+        cursor.execute("PRAGMA table_info(agent_results)")
+        agent_columns = {row[1] for row in cursor.fetchall()}
+        model_key_expr = "model_key"
+        if "model_key" not in agent_columns and "model_path" in agent_columns:
+            model_key_expr = "model_path"
+
+        insert_from_agent_results = f"""
+            INSERT OR IGNORE INTO benchmark_results (
+                model_key, model_name, quantization, inference_params_hash,
+                gpu_type, gpu_offload, vram_mb, avg_tokens_per_sec,
+                avg_ttft, avg_gen_time, prompt_tokens, completion_tokens,
+                timestamp, params_size, architecture, max_context_length,
+                model_size_gb, has_vision, has_tools, tokens_per_sec_per_gb,
+                tokens_per_sec_per_billion_params, speed_delta_pct,
+                prev_timestamp, prompt, context_length, temperature,
+                top_k_sampling, top_p_sampling, min_p_sampling,
+                repeat_penalty, max_tokens, num_runs, runs_averaged_from,
+                warmup_runs, run_index, lmstudio_version, app_version,
+                nvidia_driver_version, rocm_driver_version,
+                intel_driver_version, prompt_hash, params_hash, os_name,
+                os_version, cpu_model, python_version,
+                benchmark_duration_seconds, error_count, n_gpu_layers,
+                n_batch, n_threads, flash_attention, rope_freq_base,
+                rope_freq_scale, use_mmap, use_mlock, kv_cache_quant,
+                temp_celsius_min, temp_celsius_max, temp_celsius_avg,
+                power_watts_min, power_watts_max, power_watts_avg,
+                vram_gb_min, vram_gb_max, vram_gb_avg,
+                gtt_gb_min, gtt_gb_max, gtt_gb_avg,
+                cpu_percent_min, cpu_percent_max, cpu_percent_avg,
+                ram_gb_min, ram_gb_max, ram_gb_avg,
+                tokens_per_sec_p50, tokens_per_sec_p95, tokens_per_sec_std,
+                ttft_p50, ttft_p95, ttft_std, capability, test_id, test_name,
+                quality_score, rouge_score, f1_score, exact_match_score,
+                accuracy_score, function_call_accuracy, success,
+                error_message, raw_output, reference_output, source
+            )
+            SELECT
+                COALESCE({model_key_expr}, ''),
+                COALESCE(model_name, ''),
+                COALESCE(quantization, ''),
+                COALESCE(inference_params_hash, ''),
+                COALESCE(gpu_type, ''),
+                COALESCE(gpu_offload, 0.0),
+                COALESCE(vram_mb, ''),
+                COALESCE(throughput_tokens_per_sec, 0.0),
+                COALESCE(avg_ttft, 0.0),
+                COALESCE(latency_ms, 0.0),
+                COALESCE(prompt_tokens, 0),
+                COALESCE(tokens_generated, 0),
+                COALESCE(timestamp, ''),
+                '',
+                '',
+                0,
+                0.0,
+                0,
+                0,
+                tokens_per_sec_per_gb,
+                tokens_per_sec_per_billion_params,
+                speed_delta_pct,
+                prev_timestamp,
+                COALESCE(prompt, ''),
+                COALESCE(context_length, 0),
+                temperature,
+                top_k_sampling,
+                top_p_sampling,
+                min_p_sampling,
+                repeat_penalty,
+                max_tokens,
+                1,
+                1,
+                0,
+                NULL,
+                lmstudio_version,
+                app_version,
+                nvidia_driver_version,
+                rocm_driver_version,
+                intel_driver_version,
+                prompt_hash,
+                params_hash,
+                os_name,
+                os_version,
+                cpu_model,
+                python_version,
+                benchmark_duration_seconds,
+                error_count,
+                n_gpu_layers,
+                n_batch,
+                n_threads,
+                flash_attention,
+                rope_freq_base,
+                rope_freq_scale,
+                use_mmap,
+                use_mlock,
+                kv_cache_quant,
+                temp_celsius_min,
+                temp_celsius_max,
+                temp_celsius_avg,
+                power_watts_min,
+                power_watts_max,
+                power_watts_avg,
+                vram_gb_min,
+                vram_gb_max,
+                vram_gb_avg,
+                gtt_gb_min,
+                gtt_gb_max,
+                gtt_gb_avg,
+                cpu_percent_min,
+                cpu_percent_max,
+                cpu_percent_avg,
+                ram_gb_min,
+                ram_gb_max,
+                ram_gb_avg,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                capability,
+                test_id,
+                test_name,
+                quality_score,
+                rouge_score,
+                f1_score,
+                exact_match_score,
+                accuracy_score,
+                function_call_accuracy,
+                CASE WHEN success IS NULL THEN 0 ELSE success END,
+                error_message,
+                raw_output,
+                reference_output,
+                'compatibility'
+            FROM agent_results
+        """
+
+        cursor.execute(insert_from_agent_results)
+        cursor.execute(
+            "UPDATE benchmark_results "
+            "SET source='classic' "
+            "WHERE source IS NULL"
+        )
+
+        if self._table_exists(cursor, "agent_summaries"):
+            cursor.execute("DROP TABLE IF EXISTS agent_summaries")
+        cursor.execute("DROP TABLE IF EXISTS agent_results")
+
+        conn.commit()
 
     def _recover_from_missing_column(
         self,
@@ -544,7 +712,8 @@ class BenchmarkCache:
                 success INTEGER,
                 error_message TEXT,
                 raw_output TEXT,
-                reference_output TEXT
+                reference_output TEXT,
+                source TEXT
             )
         """)
 
@@ -605,6 +774,35 @@ class BenchmarkCache:
             logger.info("✅ Migration successful")
 
         self._ensure_migration_columns(conn, cursor)
+        self._migrate_legacy_agent_tables(conn, cursor)
+        cursor.execute(
+            "UPDATE benchmark_results "
+            "SET source='classic' "
+            "WHERE source IS NULL"
+        )
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_benchmark_source
+            ON benchmark_results(source)
+        """)
+
+        cursor.execute("PRAGMA table_info(benchmark_results)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        compat_index_columns = {
+            "model_name",
+            "timestamp",
+            "capability",
+            "test_id",
+            "source",
+        }
+        if compat_index_columns.issubset(existing_columns):
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_benchmark_compat_unique
+                ON benchmark_results(model_name, timestamp, capability, test_id)
+                WHERE source = 'compatibility'
+                AND capability IS NOT NULL
+                AND test_id IS NOT NULL
+            """)
 
         conn.commit()
         conn.close()
@@ -977,6 +1175,7 @@ class BenchmarkCache:
                 None,
                 None,
                 None,
+                "classic",
             )
 
             logger.debug("📊 INSERT with %s values", len(values))
@@ -1010,7 +1209,8 @@ class BenchmarkCache:
                     quality_score, rouge_score, f1_score,
                     exact_match_score, accuracy_score,
                     function_call_accuracy, success,
-                    error_message, raw_output, reference_output
+                    error_message, raw_output, reference_output,
+                    source
                 ) VALUES ({placeholders})
             """
 
@@ -3197,6 +3397,11 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
     def _analyze_best_quantizations(self) -> Dict[str, Dict]:
         """Analyzes best quantization per model based on different criteria"""
+        def _num(value: Optional[float], default: float = 0.0) -> float:
+            if value is None:
+                return default
+            return float(value)
+
         best_by_model = {}
 
         for result in self.results:
@@ -3221,8 +3426,12 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
             if (
                 best_by_model[model_key]["best_efficiency"] is None
-                or result.tokens_per_sec_per_gb
-                > best_by_model[model_key]["best_efficiency"].tokens_per_sec_per_gb
+                or _num(result.tokens_per_sec_per_gb)
+                > _num(
+                    best_by_model[model_key][
+                        "best_efficiency"
+                    ].tokens_per_sec_per_gb
+                )
             ):
                 best_by_model[model_key]["best_efficiency"] = result
 
@@ -3236,13 +3445,22 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
     def sort_results(self, rank_by: str = "speed") -> List[BenchmarkResult]:
         """Sorts results by different criteria"""
+        def _num(value: Optional[float], default: float = 0.0) -> float:
+            if value is None:
+                return default
+            return float(value)
+
         if rank_by == "speed":
             return sorted(
-                self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True
+                self.results,
+                key=lambda x: _num(x.avg_tokens_per_sec),
+                reverse=True,
             )
         if rank_by == "efficiency":
             return sorted(
-                self.results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True
+                self.results,
+                key=lambda x: _num(x.tokens_per_sec_per_gb),
+                reverse=True,
             )
         if rank_by == "ttft":
             return sorted(self.results, key=lambda x: x.avg_ttft, reverse=False)
@@ -3260,7 +3478,11 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
             return sorted(self.results, key=get_vram_mb, reverse=False)
 
-        return sorted(self.results, key=lambda x: x.avg_tokens_per_sec, reverse=True)
+        return sorted(
+            self.results,
+            key=lambda x: _num(x.avg_tokens_per_sec),
+            reverse=True,
+        )
 
     def calculate_percentile_stats(self) -> Dict[str, Dict]:
         """Calculates P50, P95, P99 statistics for benchmark metrics"""
@@ -3325,6 +3547,11 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
     def generate_quantization_comparison(self) -> Dict[str, Dict]:
         """Generates comparison table Q4 vs Q5 vs Q6 vs Q8 per model"""
+        def _num(value: Optional[float], default: float = 0.0) -> float:
+            if value is None:
+                return default
+            return float(value)
+
         if not self.results:
             return {}
 
@@ -3351,7 +3578,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                     r = quants[q_level]
                     comparison[model][q_level] = {
                         "speed": round(r.avg_tokens_per_sec, 2),
-                        "efficiency": round(r.tokens_per_sec_per_gb, 2),
+                        "efficiency": round(_num(r.tokens_per_sec_per_gb), 2),
                         "vram_mb": r.vram_mb,
                         "ttft": round(r.avg_ttft * 1000, 1),
                     }
@@ -3362,20 +3589,31 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
         """Generates best-practice recommendations based on results"""
         recommendations = []
 
+        def _num(value: Optional[float], default: float = 0.0) -> float:
+            if value is None:
+                return default
+            return float(value)
+
         if not self.results:
             return recommendations
 
         gpu_model = self.gpu_monitor.gpu_model or self.gpu_monitor.gpu_type or "Unknown"
 
-        best_speed = max(self.results, key=lambda x: x.avg_tokens_per_sec)
-        best_efficiency = max(self.results, key=lambda x: x.tokens_per_sec_per_gb)
+        best_speed = max(self.results, key=lambda x: _num(x.avg_tokens_per_sec))
+        best_efficiency = max(
+            self.results,
+            key=lambda x: _num(x.tokens_per_sec_per_gb),
+        )
         best_ttft = min(
             self.results, key=lambda x: x.avg_ttft if x.avg_ttft > 0 else float("inf")
         )
 
         best_balance = max(
             self.results,
-            key=lambda x: x.avg_tokens_per_sec * 0.6 + x.tokens_per_sec_per_gb * 0.4,
+            key=lambda x: (
+                _num(x.avg_tokens_per_sec) * 0.6
+                + _num(x.tokens_per_sec_per_gb) * 0.4
+            ),
         )
 
         recommendations.append(f"🖥️  Hardware: {gpu_model} detected")
@@ -3391,7 +3629,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             f"   → {best_efficiency.model_name} ({best_efficiency.quantization})"
         )
         recommendations.append(
-            f"   → {best_efficiency.tokens_per_sec_per_gb:.2f} tokens/s/GB"
+            f"   → {_num(best_efficiency.tokens_per_sec_per_gb):.2f} tokens/s/GB"
         )
         recommendations.append(f"   → Size: {best_efficiency.model_size_gb:.2f} GB")
         recommendations.append("")
@@ -3615,6 +3853,12 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
         try:
             results = results_to_export
 
+            def _num(value, default=0.0):
+                """Return numeric fallback for nullable DB fields."""
+                if value is None:
+                    return default
+                return value
+
             a4_size = a4_page_size
             landscape = page_orientation
             inch = inch_unit
@@ -3817,7 +4061,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 )
             elif self.rank_by == "efficiency":
                 sorted_results = sorted(
-                    results, key=lambda x: x.tokens_per_sec_per_gb, reverse=True
+                    results,
+                    key=lambda x: _num(x.tokens_per_sec_per_gb),
+                    reverse=True,
                 )
             elif self.rank_by == "ttft":
                 sorted_results = sorted(
@@ -3962,10 +4208,12 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
                 if (
                     not best_by_model[result.model_name]["best_efficiency"]
-                    or result.tokens_per_sec_per_gb
-                    > best_by_model[result.model_name][
-                        "best_efficiency"
-                    ].tokens_per_sec_per_gb
+                    or _num(result.tokens_per_sec_per_gb)
+                    > _num(
+                        best_by_model[result.model_name][
+                            "best_efficiency"
+                        ].tokens_per_sec_per_gb
+                    )
                 ):
                     best_by_model[result.model_name]["best_efficiency"] = result
 
@@ -4047,7 +4295,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                         r = quants[q_level]
                         comp_data[model][q_level] = {
                             "speed": round(r.avg_tokens_per_sec, 2),
-                            "efficiency": round(r.tokens_per_sec_per_gb, 2),
+                            "efficiency": round(
+                                _num(r.tokens_per_sec_per_gb), 2
+                            ),
                             "vram_mb": r.vram_mb,
                             "ttft": round(r.avg_ttft * 1000, 1),
                         }
@@ -4617,6 +4867,12 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
         try:
             results = results_to_export
 
+            def _num(value, default=0.0):
+                """Return numeric fallback for nullable DB fields."""
+                if value is None:
+                    return default
+                return value
+
             html_file = RESULTS_DIR / f"benchmark_results_{timestamp}.html"
 
             template_path = Path(__file__).parent / "report_template.html.template"
@@ -4648,21 +4904,25 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             fig_scatter = go.Figure(
                 data=[
                     go.Scatter(
-                        x=[r.model_size_gb for r in results],
-                        y=[r.avg_tokens_per_sec for r in results],
+                        x=[_num(r.model_size_gb) for r in results],
+                        y=[_num(r.avg_tokens_per_sec) for r in results],
                         mode="markers",
                         text=[
                             (
                                 f"{r.model_name}<br>{r.quantization}<br>"
-                                f"{r.avg_tokens_per_sec:.2f} t/s"
+                                f"{_num(r.avg_tokens_per_sec):.2f} t/s"
                             )
                             for r in results
                         ],
                         marker={
                             "size": [
-                                r.avg_tokens_per_sec / 2 for r in results
+                                _num(r.avg_tokens_per_sec) / 2
+                                for r in results
                             ],
-                            "color": [r.tokens_per_sec_per_gb for r in results],
+                            "color": [
+                                _num(r.tokens_per_sec_per_gb)
+                                for r in results
+                            ],
                             "colorscale": "Viridis",
                             "showscale": True,
                             "colorbar": {
@@ -4684,13 +4944,19 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             fig_efficiency = go.Figure(
                 data=[
                     go.Scatter(
-                        x=[r.tokens_per_sec_per_gb for r in results],
-                        y=[r.tokens_per_sec_per_billion_params for r in results],
+                        x=[_num(r.tokens_per_sec_per_gb) for r in results],
+                        y=[
+                            _num(r.tokens_per_sec_per_billion_params)
+                            for r in results
+                        ],
                         mode="markers",
                         text=[f"{r.model_name} ({r.quantization})" for r in results],
                         marker={
                             "size": 8,
-                            "color": [r.avg_tokens_per_sec for r in results],
+                            "color": [
+                                _num(r.avg_tokens_per_sec)
+                                for r in results
+                            ],
                             "colorscale": "RdYlGn",
                             "showscale": True,
                             "colorbar": {

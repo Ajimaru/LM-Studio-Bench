@@ -6,17 +6,19 @@ Provides command-line interface to run benchmarks on models.
 """
 
 import argparse
+import copy
 import json
 import logging
 from pathlib import Path
 import platform
 import random
 import re
+import sqlite3
 import subprocess
 import sys
 import time
 from types import ModuleType
-from typing import Any, Optional
+from typing import Any, Optional, SupportsFloat, SupportsIndex, TypedDict
 
 from agents.runner import BenchmarkRunner
 from cli.reporting import HTMLReporter, sanitize_report_name
@@ -58,6 +60,45 @@ except ModuleNotFoundError:
 else:
     YAML = _yaml
     YamlError = _yaml_error
+
+REPORTLAB_COLORS = None
+REPORTLAB_A4 = None
+REPORTLAB_GET_SAMPLE_STYLE_SHEET = None
+REPORTLAB_CM = None
+REPORTLAB_PARAGRAPH_CLS: Optional[Any] = None
+REPORTLAB_SIMPLE_DOC_TEMPLATE_CLS: Optional[Any] = None
+REPORTLAB_SPACER_CLS: Optional[Any] = None
+REPORTLAB_TABLE_CLS: Optional[Any] = None
+REPORTLAB_TABLE_STYLE_CLS: Optional[Any] = None
+
+try:
+    from reportlab.lib import colors as _reportlab_colors
+    from reportlab.lib.pagesizes import A4 as _reportlab_a4
+    from reportlab.lib.styles import (
+        getSampleStyleSheet as _reportlab_get_sample_style_sheet,
+    )
+    from reportlab.lib.units import cm as _reportlab_cm
+    from reportlab.platypus import Paragraph as _reportlab_paragraph
+    from reportlab.platypus import SimpleDocTemplate as _reportlab_simple_doc_template
+    from reportlab.platypus import Spacer as _reportlab_spacer
+    from reportlab.platypus import Table as _reportlab_table
+    from reportlab.platypus import TableStyle as _reportlab_table_style
+except ModuleNotFoundError:
+    REPORTLAB_AVAILABLE = False
+else:
+    REPORTLAB_COLORS = _reportlab_colors
+    REPORTLAB_A4 = _reportlab_a4
+    REPORTLAB_GET_SAMPLE_STYLE_SHEET = _reportlab_get_sample_style_sheet
+    REPORTLAB_CM = _reportlab_cm
+    REPORTLAB_PARAGRAPH_CLS = _reportlab_paragraph  # pylint: disable=invalid-name
+    REPORTLAB_SIMPLE_DOC_TEMPLATE_CLS = _reportlab_simple_doc_template  # pylint: disable=invalid-name
+    REPORTLAB_SPACER_CLS = _reportlab_spacer  # pylint: disable=invalid-name
+    REPORTLAB_TABLE_CLS = _reportlab_table  # pylint: disable=invalid-name
+    REPORTLAB_TABLE_STYLE_CLS = _reportlab_table_style  # pylint: disable=invalid-name
+    REPORTLAB_AVAILABLE = True
+
+
+BENCHMARK_DB_PATH = USER_RESULTS_DIR / "benchmark_cache.db"
 
 
 def _get_app_version() -> str:
@@ -705,6 +746,7 @@ def _write_reports(
     base_name = f"{report_stem}_{timestamp}"
     output_files: dict[str, Path] = {}
     safe_output_dir.mkdir(parents=True, exist_ok=True)
+    report_data = _enrich_report_data_from_sql(report_data)
 
     def _to_number(value: object, digits: int = 3) -> object:
         if isinstance(value, (int, float)):
@@ -776,6 +818,273 @@ def _write_reports(
         pdf_bytes.extend(b"%%EOF")
         return bytes(pdf_bytes)
 
+    def _render_table_pdf(pdf_path: Path, report: dict) -> bool:
+        if not REPORTLAB_AVAILABLE:
+            return False
+        if REPORTLAB_COLORS is None:
+            return False
+        if REPORTLAB_A4 is None:
+            return False
+        if REPORTLAB_GET_SAMPLE_STYLE_SHEET is None:
+            return False
+        if REPORTLAB_CM is None:
+            return False
+        if REPORTLAB_PARAGRAPH_CLS is None:
+            return False
+        if REPORTLAB_SIMPLE_DOC_TEMPLATE_CLS is None:
+            return False
+        if REPORTLAB_SPACER_CLS is None:
+            return False
+        if REPORTLAB_TABLE_CLS is None:
+            return False
+        if REPORTLAB_TABLE_STYLE_CLS is None:
+            return False
+
+        reportlab_colors = REPORTLAB_COLORS
+        page_size = REPORTLAB_A4
+        get_styles = REPORTLAB_GET_SAMPLE_STYLE_SHEET
+        cm_unit = REPORTLAB_CM
+        paragraph_cls = REPORTLAB_PARAGRAPH_CLS
+        doc_cls = REPORTLAB_SIMPLE_DOC_TEMPLATE_CLS
+        spacer_cls = REPORTLAB_SPACER_CLS
+        table_cls = REPORTLAB_TABLE_CLS
+        table_style_cls = REPORTLAB_TABLE_STYLE_CLS
+
+        summary = report.get("summary", {}) or {}
+        rows = report.get("results", []) or []
+        by_capability = summary.get("by_capability", {}) or {}
+
+        doc = doc_cls(
+            str(pdf_path),
+            pagesize=page_size,
+            leftMargin=1.2 * cm_unit,
+            rightMargin=1.2 * cm_unit,
+            topMargin=1.2 * cm_unit,
+            bottomMargin=1.2 * cm_unit,
+            title="Capability Benchmark Report",
+        )
+        styles = get_styles()
+        elements: list[Any] = []
+
+        title = f"Capability Benchmark Report: {report.get('model_name', '-')}"
+        elements.append(paragraph_cls(title, styles["Title"]))
+        elements.append(
+            paragraph_cls(
+                f"Timestamp: {report.get('timestamp', '-')}",
+                styles["Normal"],
+            )
+        )
+        elements.append(spacer_cls(1, 0.35 * cm_unit))
+
+        summary_table_data = [
+            ["Metric", "Value"],
+            ["Total Tests", str(summary.get("total_tests", 0))],
+            ["Successful", str(summary.get("successful_tests", 0))],
+            [
+                "Success Rate",
+                f"{float(summary.get('success_rate') or 0.0) * 100:.1f}%",
+            ],
+            [
+                "Avg Latency",
+                f"{_to_number(summary.get('avg_latency_ms'), 3)} ms",
+            ],
+            [
+                "Avg Throughput",
+                (
+                    f"{_to_number(summary.get('avg_throughput_tokens_per_sec'), 3)} "
+                    "tok/s"
+                ),
+            ],
+            ["Avg Quality", str(_to_number(summary.get("avg_quality_score"), 4))],
+        ]
+
+        summary_table = table_cls(
+            summary_table_data,
+            colWidths=[6.0 * cm_unit, 10.8 * cm_unit],
+        )
+        summary_table.setStyle(
+            table_style_cls(
+                [
+                    (
+                        "BACKGROUND",
+                        (0, 0),
+                        (-1, 0),
+                        reportlab_colors.HexColor("#2f6cc4"),
+                    ),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), reportlab_colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    (
+                        "GRID",
+                        (0, 0),
+                        (-1, -1),
+                        0.5,
+                        reportlab_colors.HexColor("#d6dbe1"),
+                    ),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [
+                            reportlab_colors.white,
+                            reportlab_colors.HexColor("#f6f8fb"),
+                        ],
+                    ),
+                ]
+            )
+        )
+        elements.append(summary_table)
+        elements.append(spacer_cls(1, 0.35 * cm_unit))
+
+        if isinstance(by_capability, dict) and by_capability:
+            cap_header = [[
+                "Capability",
+                "Tests",
+                "Success",
+                "Latency (ms)",
+                "Throughput",
+                "Quality",
+            ]]
+            cap_rows = []
+            for capability, cap_data in sorted(by_capability.items()):
+                if not isinstance(cap_data, dict):
+                    continue
+                cap_rows.append(
+                    [
+                        str(capability),
+                        str(cap_data.get("test_count", 0)),
+                        f"{float(cap_data.get('success_rate') or 0.0) * 100:.1f}%",
+                        str(_to_number(cap_data.get("avg_latency_ms"), 2)),
+                        str(
+                            _to_number(
+                                cap_data.get(
+                                    "avg_throughput_tokens_per_sec"
+                                ),
+                                2,
+                            )
+                        ),
+                        str(_to_number(cap_data.get("avg_quality_score"), 3)),
+                    ]
+                )
+
+            if cap_rows:
+                elements.append(
+                    paragraph_cls("Capability Breakdown", styles["Heading2"])
+                )
+                cap_table = table_cls(
+                    cap_header + cap_rows,
+                    colWidths=[
+                        4.2 * cm_unit,
+                        1.9 * cm_unit,
+                        2.0 * cm_unit,
+                        2.5 * cm_unit,
+                        2.5 * cm_unit,
+                        2.5 * cm_unit,
+                    ],
+                )
+                cap_table.setStyle(
+                    table_style_cls(
+                        [
+                            (
+                                "BACKGROUND",
+                                (0, 0),
+                                (-1, 0),
+                                reportlab_colors.HexColor("#18a999"),
+                            ),
+                            ("TEXTCOLOR", (0, 0), (-1, 0), reportlab_colors.white),
+                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                            ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                            (
+                                "GRID",
+                                (0, 0),
+                                (-1, -1),
+                                0.5,
+                                reportlab_colors.HexColor("#d6dbe1"),
+                            ),
+                            (
+                                "ROWBACKGROUNDS",
+                                (0, 1),
+                                (-1, -1),
+                                [
+                                    reportlab_colors.white,
+                                    reportlab_colors.HexColor("#eefaf8"),
+                                ],
+                            ),
+                        ]
+                    )
+                )
+                elements.append(cap_table)
+                elements.append(spacer_cls(1, 0.3 * cm_unit))
+
+        if rows:
+            elements.append(paragraph_cls("Detailed Results", styles["Heading2"]))
+            details = [[
+                "ID",
+                "Capability",
+                "Latency",
+                "Throughput",
+                "Quality",
+                "Status",
+            ]]
+            for entry in rows[:25]:
+                details.append(
+                    [
+                        str(entry.get("test_id", "-")),
+                        str(entry.get("capability", "-")),
+                        str(_to_number(entry.get("latency_ms"), 2)),
+                        str(_to_number(entry.get("throughput"), 2)),
+                        str(_to_number(entry.get("quality_score"), 3)),
+                        "error" if entry.get("error") else "success",
+                    ]
+                )
+
+            details_table = table_cls(
+                details,
+                colWidths=[
+                    2.1 * cm_unit,
+                    4.0 * cm_unit,
+                    2.3 * cm_unit,
+                    2.5 * cm_unit,
+                    2.3 * cm_unit,
+                    2.2 * cm_unit,
+                ],
+            )
+            details_table.setStyle(
+                table_style_cls(
+                    [
+                        (
+                            "BACKGROUND",
+                            (0, 0),
+                            (-1, 0),
+                            reportlab_colors.HexColor("#3f7fbf"),
+                        ),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), reportlab_colors.white),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("ALIGN", (2, 0), (-1, -1), "CENTER"),
+                        (
+                            "GRID",
+                            (0, 0),
+                            (-1, -1),
+                            0.5,
+                            reportlab_colors.HexColor("#d6dbe1"),
+                        ),
+                        (
+                            "ROWBACKGROUNDS",
+                            (0, 1),
+                            (-1, -1),
+                            [
+                                reportlab_colors.white,
+                                reportlab_colors.HexColor("#f7f9fc"),
+                            ],
+                        ),
+                    ]
+                )
+            )
+            elements.append(details_table)
+
+        doc.build(elements)
+        return True
+
     if "json" in formats:
         json_path = safe_output_dir / f"{base_name}.json"
         enriched_data = {
@@ -836,6 +1145,31 @@ def _write_reports(
             )
             _append_csv_row(
                 ["Avg Quality", _to_number(summary.get("avg_quality_score"), 4)]
+            )
+            _append_csv_row(
+                [
+                    "Avg Throughput tok/s",
+                    _to_number(summary.get("avg_throughput_tokens_per_sec"), 3),
+                ]
+            )
+            _append_csv_row(
+                ["Avg ROUGE", _to_number(summary.get("avg_rouge"), 4)]
+            )
+            _append_csv_row(["Avg F1", _to_number(summary.get("avg_f1"), 4)])
+            _append_csv_row(
+                [
+                    "Avg Exact Match",
+                    _to_number(summary.get("avg_exact_match"), 4),
+                ]
+            )
+            _append_csv_row(
+                ["Avg Accuracy", _to_number(summary.get("avg_accuracy"), 4)]
+            )
+            _append_csv_row(
+                [
+                    "Avg Function Call Accuracy",
+                    _to_number(summary.get("avg_function_call_accuracy"), 4),
+                ]
             )
 
             if hardware.get("enabled"):
@@ -915,6 +1249,51 @@ def _write_reports(
                 )
 
             _append_csv_row([])
+            by_capability = summary.get("by_capability", {}) or {}
+            if by_capability:
+                _append_csv_row(["Capability Summary"])
+                _append_csv_row(
+                    [
+                        "capability",
+                        "test_count",
+                        "success_rate",
+                        "avg_latency_ms",
+                        "avg_throughput",
+                        "avg_quality_score",
+                        "avg_rouge",
+                        "avg_f1",
+                        "avg_exact_match",
+                        "avg_accuracy",
+                        "avg_function_call_accuracy",
+                    ]
+                )
+                for capability, cap_data in sorted(by_capability.items()):
+                    if not isinstance(cap_data, dict):
+                        continue
+                    _append_csv_row(
+                        [
+                            capability,
+                            cap_data.get("test_count", 0),
+                            _to_number(cap_data.get("success_rate"), 4),
+                            _to_number(cap_data.get("avg_latency_ms"), 3),
+                            _to_number(
+                                cap_data.get("avg_throughput_tokens_per_sec"),
+                                3,
+                            ),
+                            _to_number(cap_data.get("avg_quality_score"), 4),
+                            _to_number(cap_data.get("avg_rouge"), 4),
+                            _to_number(cap_data.get("avg_f1"), 4),
+                            _to_number(cap_data.get("avg_exact_match"), 4),
+                            _to_number(cap_data.get("avg_accuracy"), 4),
+                            _to_number(
+                                cap_data.get("avg_function_call_accuracy"),
+                                4,
+                            ),
+                        ]
+                    )
+
+                _append_csv_row([])
+
             _append_csv_row(
                 [
                     "test_id",
@@ -957,6 +1336,10 @@ def _write_reports(
     if "pdf" in formats:
         pdf_path = safe_output_dir / f"{base_name}.pdf"
         try:
+            if _render_table_pdf(pdf_path, report_data):
+                output_files["pdf"] = pdf_path
+                return output_files
+
             summary = report_data.get("summary", {}) or {}
             rows = report_data.get("results", []) or []
             hardware = report_data.get("hardware_profiling", {}) or {}
@@ -1053,6 +1436,280 @@ def _write_reports(
             )
 
     return output_files
+
+
+def _to_float_or_none(value: object) -> Optional[float]:
+    """Convert numeric-like values to float and keep missing as None."""
+    if value is None:
+        return None
+
+    if not isinstance(
+        value,
+        (str, bytes, bytearray, SupportsFloat, SupportsIndex),
+    ):
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _avg(values: list[float]) -> Optional[float]:
+    """Return average for non-empty numeric list."""
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+class _CapabilityBucket(TypedDict):
+    """Aggregated numeric metrics per capability."""
+
+    test_count: int
+    successful_tests: int
+    latency: list[float]
+    throughput: list[float]
+    quality: list[float]
+    rouge: list[float]
+    f1: list[float]
+    exact_match: list[float]
+    accuracy: list[float]
+    function_call_accuracy: list[float]
+
+
+def _enrich_report_data_from_sql(report_data: dict) -> dict:
+    """Attach SQL-backed aggregates for compatibility reports.
+
+    The capability benchmark writes one row per test case into
+    benchmark_results with source='compatibility'. This helper recomputes
+    aggregate metrics from those rows to keep JSON/CSV/HTML/PDF in sync with
+    persisted database values.
+    """
+    model_name = str(report_data.get("model_name") or "").strip()
+    if not model_name or not BENCHMARK_DB_PATH.exists():
+        return report_data
+
+    expected_tests = int(
+        (report_data.get("summary", {}) or {}).get("total_tests")
+        or len(report_data.get("results", []) or [])
+        or 1
+    )
+
+    query = """
+        SELECT
+            capability,
+            avg_gen_time,
+            avg_tokens_per_sec,
+            quality_score,
+            success,
+            rouge_score,
+            f1_score,
+            exact_match_score,
+            accuracy_score,
+            function_call_accuracy,
+            temp_celsius_min,
+            temp_celsius_max,
+            temp_celsius_avg,
+            power_watts_min,
+            power_watts_max,
+            power_watts_avg,
+            vram_gb_min,
+            vram_gb_max,
+            vram_gb_avg,
+            gtt_gb_min,
+            gtt_gb_max,
+            gtt_gb_avg,
+            cpu_percent_min,
+            cpu_percent_max,
+            cpu_percent_avg,
+            ram_gb_min,
+            ram_gb_max,
+            ram_gb_avg,
+            timestamp
+        FROM benchmark_results
+        WHERE source = 'compatibility'
+        AND model_name = ?
+        AND capability IS NOT NULL
+        AND capability != ''
+        AND test_id IS NOT NULL
+        AND test_id != ''
+        ORDER BY timestamp DESC
+        LIMIT ?
+    """
+
+    try:
+        conn = sqlite3.connect(BENCHMARK_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(query, (model_name, expected_tests)).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return report_data
+
+    if not rows:
+        return report_data
+
+    ordered_rows = list(reversed(rows))
+    enriched = copy.deepcopy(report_data)
+    summary = dict(enriched.get("summary", {}) or {})
+
+    latency_values: list[float] = []
+    throughput_values: list[float] = []
+    quality_values: list[float] = []
+    rouge_values: list[float] = []
+    f1_values: list[float] = []
+    em_values: list[float] = []
+    accuracy_values: list[float] = []
+    function_call_values: list[float] = []
+
+    by_capability: dict[str, _CapabilityBucket] = {}
+    successful_tests = 0
+
+    hardware_collectors: dict[str, list[float]] = {
+        "temp_celsius_min": [],
+        "temp_celsius_max": [],
+        "temp_celsius_avg": [],
+        "power_watts_min": [],
+        "power_watts_max": [],
+        "power_watts_avg": [],
+        "vram_gb_min": [],
+        "vram_gb_max": [],
+        "vram_gb_avg": [],
+        "gtt_gb_min": [],
+        "gtt_gb_max": [],
+        "gtt_gb_avg": [],
+        "cpu_percent_min": [],
+        "cpu_percent_max": [],
+        "cpu_percent_avg": [],
+        "ram_gb_min": [],
+        "ram_gb_max": [],
+        "ram_gb_avg": [],
+    }
+
+    for row in ordered_rows:
+        capability = str(row["capability"] or "general_text")
+        cap_bucket = by_capability.setdefault(
+            capability,
+            {
+                "test_count": 0,
+                "successful_tests": 0,
+                "latency": [],
+                "throughput": [],
+                "quality": [],
+                "rouge": [],
+                "f1": [],
+                "exact_match": [],
+                "accuracy": [],
+                "function_call_accuracy": [],
+            },
+        )
+
+        cap_bucket["test_count"] += 1
+
+        if int(row["success"] or 0) == 1:
+            successful_tests += 1
+            cap_bucket["successful_tests"] += 1
+
+        latency = _to_float_or_none(row["avg_gen_time"])
+        throughput = _to_float_or_none(row["avg_tokens_per_sec"])
+        quality = _to_float_or_none(row["quality_score"])
+        rouge = _to_float_or_none(row["rouge_score"])
+        f1 = _to_float_or_none(row["f1_score"])
+        em = _to_float_or_none(row["exact_match_score"])
+        accuracy = _to_float_or_none(row["accuracy_score"])
+        fca = _to_float_or_none(row["function_call_accuracy"])
+
+        if latency is not None:
+            latency_values.append(latency)
+            cap_bucket["latency"].append(latency)
+        if throughput is not None:
+            throughput_values.append(throughput)
+            cap_bucket["throughput"].append(throughput)
+        if quality is not None:
+            quality_values.append(quality)
+            cap_bucket["quality"].append(quality)
+        if rouge is not None:
+            rouge_values.append(rouge)
+            cap_bucket["rouge"].append(rouge)
+        if f1 is not None:
+            f1_values.append(f1)
+            cap_bucket["f1"].append(f1)
+        if em is not None:
+            em_values.append(em)
+            cap_bucket["exact_match"].append(em)
+        if accuracy is not None:
+            accuracy_values.append(accuracy)
+            cap_bucket["accuracy"].append(accuracy)
+        if fca is not None:
+            function_call_values.append(fca)
+            cap_bucket["function_call_accuracy"].append(fca)
+
+        for key, collector in hardware_collectors.items():
+            value = _to_float_or_none(row[key])
+            if value is not None:
+                collector.append(value)
+
+    total_tests = len(ordered_rows)
+    summary["total_tests"] = total_tests
+    summary["successful_tests"] = successful_tests
+    summary["failed_tests"] = max(total_tests - successful_tests, 0)
+    summary["success_rate"] = (
+        successful_tests / total_tests if total_tests > 0 else 0.0
+    )
+    summary["avg_latency_ms"] = _avg(latency_values)
+    summary["avg_throughput_tokens_per_sec"] = _avg(throughput_values)
+    summary["avg_quality_score"] = _avg(quality_values)
+    summary["avg_rouge"] = _avg(rouge_values)
+    summary["avg_f1"] = _avg(f1_values)
+    summary["avg_exact_match"] = _avg(em_values)
+    summary["avg_accuracy"] = _avg(accuracy_values)
+    summary["avg_function_call_accuracy"] = _avg(function_call_values)
+
+    by_cap_summary: dict[str, dict[str, object]] = {}
+    for capability, cap_bucket in by_capability.items():
+        count = cap_bucket["test_count"]
+        cap_success = cap_bucket["successful_tests"]
+        by_cap_summary[capability] = {
+            "test_count": count,
+            "successful_tests": cap_success,
+            "success_rate": cap_success / count if count > 0 else 0.0,
+            "avg_latency_ms": _avg(cap_bucket["latency"]),
+            "avg_throughput_tokens_per_sec": _avg(cap_bucket["throughput"]),
+            "avg_quality_score": _avg(cap_bucket["quality"]),
+            "avg_rouge": _avg(cap_bucket["rouge"]),
+            "avg_f1": _avg(cap_bucket["f1"]),
+            "avg_exact_match": _avg(cap_bucket["exact_match"]),
+            "avg_accuracy": _avg(cap_bucket["accuracy"]),
+            "avg_function_call_accuracy": _avg(
+                cap_bucket["function_call_accuracy"]
+            ),
+        }
+    summary["by_capability"] = by_cap_summary
+
+    for key, values in hardware_collectors.items():
+        if values:
+            summary[key] = _avg(values)
+
+    hardware = dict(enriched.get("hardware_profiling", {}) or {})
+    if any(values for values in hardware_collectors.values()):
+        hardware["enabled"] = True
+        for key, values in hardware_collectors.items():
+            if values:
+                if key.endswith("_min"):
+                    hardware[key] = min(values)
+                elif key.endswith("_max"):
+                    hardware[key] = max(values)
+                else:
+                    hardware[key] = _avg(values)
+
+    enriched["summary"] = summary
+    if hardware:
+        enriched["hardware_profiling"] = hardware
+    enriched["sql_validation"] = {
+        "source_table": "benchmark_results",
+        "source_filter": "compatibility",
+        "rows_used": total_tests,
+    }
+    return enriched
 
 
 def main() -> int:

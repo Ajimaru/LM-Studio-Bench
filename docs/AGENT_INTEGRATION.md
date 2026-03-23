@@ -76,7 +76,7 @@ The SQLite database stores individual test results and capability summaries, all
 The table below lists what is currently persisted in SQLite for both test
 types, so missing metrics are easy to spot.
 
-| Metric Group | Classic Benchmark (`benchmark_results`) | Capability Benchmark (`agent_results`, `agent_summaries`) |
+| Metric Group | Classic Benchmark (`benchmark_results`) | Capability Benchmark (`benchmark_results`, `source='compatibility'`) |
 | --- | --- | --- |
 | Run identity | `id`, `model_key`, `model_name`, `quantization`, `timestamp` | `id`, `model_name`, `model_key`, `capability`, `test_id`, `test_name`, `timestamp` |
 | Throughput/latency | `avg_tokens_per_sec`, `avg_ttft`, `avg_gen_time`, `tokens_per_sec_p50`, `tokens_per_sec_p95`, `tokens_per_sec_std`, `ttft_p50`, `ttft_p95`, `ttft_std` | `latency_ms`, `throughput_tokens_per_sec` (per test), `avg_latency_ms`, `avg_throughput` (summary) |

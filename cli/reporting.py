@@ -144,6 +144,8 @@ class HTMLReporter:
         html_parts = [
             self._html_header(model_name),
             self._html_summary_section(summary, capabilities, timestamp),
+            self._html_kpi_cards(summary),
+            self._html_capability_bars(summary),
             self._html_results_section(results),
             self._html_capability_breakdown(summary),
             self._html_footer()
@@ -252,6 +254,58 @@ class HTMLReporter:
             padding: 15px;
             background: #ecf0f1;
             border-radius: 5px;
+        }}
+        .kpi-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin: 16px 0 24px;
+        }}
+        .kpi-card {{
+            background: linear-gradient(135deg, #1f4a89 0%, #2f6cc4 100%);
+            color: #fff;
+            border-radius: 8px;
+            padding: 12px 14px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+        }}
+        .kpi-title {{
+            font-size: 0.8rem;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }}
+        .kpi-value {{
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-top: 4px;
+        }}
+        .cap-bars {{
+            margin: 20px 0;
+            padding: 14px;
+            border-radius: 8px;
+            background: #f9fafb;
+            border: 1px solid #e7eaee;
+        }}
+        .cap-row {{
+            margin: 12px 0;
+        }}
+        .cap-head {{
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.92rem;
+            margin-bottom: 6px;
+            color: #34495e;
+        }}
+        .bar-wrap {{
+            height: 10px;
+            border-radius: 999px;
+            background: #e5ebf2;
+            overflow: hidden;
+        }}
+        .bar-fill {{
+            height: 100%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #00a36c 0%, #2ecc71 100%);
         }}
         .timestamp {{
             color: #95a5a6;
@@ -381,6 +435,77 @@ class HTMLReporter:
         {throughput_html}
         {hardware_html}
 """
+
+    def _html_kpi_cards(self, summary: Dict) -> str:
+        """Generate compact KPI cards for key aggregate metrics."""
+        total_tests = summary.get("total_tests") or 0
+        successful = summary.get("successful_tests") or 0
+        success_rate = (summary.get("success_rate") or 0) * 100
+        avg_latency_ms = summary.get("avg_latency_ms")
+        avg_quality = summary.get("avg_quality_score")
+        avg_throughput = summary.get("avg_throughput_tokens_per_sec")
+
+        def _fmt(value: object, suffix: str = "") -> str:
+            if isinstance(value, (int, float)):
+                return f"{value:.2f}{suffix}"
+            return f"N/A{suffix}"
+
+        cards = [
+            ("Total Tests", str(total_tests)),
+            ("Successful", str(successful)),
+            ("Success Rate", f"{success_rate:.1f}%"),
+            ("Avg Latency", _fmt(avg_latency_ms, " ms")),
+            ("Avg Throughput", _fmt(avg_throughput, " tok/s")),
+            ("Avg Quality", _fmt(avg_quality)),
+        ]
+
+        card_html = []
+        for title, value in cards:
+            card_html.append(
+                "<div class='kpi-card'>"
+                f"<div class='kpi-title'>{escape(title)}</div>"
+                f"<div class='kpi-value'>{escape(value)}</div>"
+                "</div>"
+            )
+
+        return (
+            "<h3>Key Performance Indicators</h3>"
+            f"<div class='kpi-grid'>{''.join(card_html)}</div>"
+        )
+
+    def _html_capability_bars(self, summary: Dict) -> str:
+        """Generate horizontal capability success bars for fast comparison."""
+        by_capability = summary.get("by_capability") or {}
+        if not isinstance(by_capability, dict) or not by_capability:
+            return ""
+
+        rows = []
+        for capability, cap_stats in by_capability.items():
+            if not isinstance(cap_stats, dict):
+                continue
+            success_rate = float(cap_stats.get("success_rate") or 0.0)
+            success_percent = max(0.0, min(100.0, success_rate * 100.0))
+            test_count = int(cap_stats.get("test_count") or 0)
+            label = capability.replace("_", " ").title()
+            rows.append(
+                "<div class='cap-row'>"
+                "<div class='cap-head'>"
+                f"<span>{escape(label)} ({test_count} tests)</span>"
+                f"<span>{success_percent:.1f}%</span>"
+                "</div>"
+                "<div class='bar-wrap'>"
+                f"<div class='bar-fill' style='width: {success_percent:.1f}%;'></div>"
+                "</div>"
+                "</div>"
+            )
+
+        if not rows:
+            return ""
+
+        return (
+            "<h3>Capability Success Overview</h3>"
+            f"<div class='cap-bars'>{''.join(rows)}</div>"
+        )
 
     def _html_results_section(self, results: List[Dict]) -> str:
         """
