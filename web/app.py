@@ -2989,7 +2989,8 @@ async def save_preset(request: PresetSaveRequest) -> dict:
             "message": f"Preset '{request.name}' saved successfully",
         }
     except ValueError as e:
-        return {"success": False, "error": str(e)}
+        logger.error("❌ Validation error saving preset %s: %s", request.name, e)
+        return _safe_api_error()
     except (OSError, TypeError) as e:
         logger.error("❌ Error saving preset %s: %s", request.name, e)
         return _safe_api_error()
@@ -3003,7 +3004,8 @@ async def delete_preset(name: str) -> dict:
         logger.info("🗑️ Deleted user preset: %s", name)
         return {"success": True, "message": f"Preset '{name}' deleted successfully"}
     except ValueError as e:
-        return {"success": False, "error": str(e)}
+        logger.error("❌ Validation error deleting preset %s: %s", name, e)
+        return _safe_api_error()
     except FileNotFoundError:
         return {"success": False, "error": f"Preset not found: {name}"}
     except (OSError, PermissionError) as e:
