@@ -293,6 +293,39 @@ class TestLoadModel:
         assert first_payload["offload_kv_cache_to_gpu"] is True
         assert "offload_kv_cache_to_gpu" not in second_payload
 
+    def test_falls_back_to_v0_endpoint_on_404(self):
+        """404 from /api/v1/models/load falls back to /api/v0/model/load."""
+        client = LMStudioRESTClient()
+        client.client = MagicMock()
+
+        request = httpx.Request("POST", "http://localhost:1234/api/v1/models/load")
+        error_response = httpx.Response(404, request=request)
+        error = httpx.HTTPStatusError(
+            "Client error '404 Not Found'",
+            request=request,
+            response=error_response,
+        )
+
+        first_response = MagicMock()
+        first_response.raise_for_status.side_effect = error
+
+        second_response = MagicMock()
+        second_response.raise_for_status = MagicMock()
+        second_response.json.return_value = {"instance_id": "inst-v0"}
+
+        client.client.post.side_effect = [first_response, second_response]
+
+        result = client.load_model("pub/model")
+
+        assert result == "inst-v0"
+        assert client.client.post.call_count == 2
+        assert client.client.post.call_args_list[0][0][0].endswith(
+            "/api/v1/models/load"
+        )
+        assert client.client.post.call_args_list[1][0][0].endswith(
+            "/api/v0/model/load"
+        )
+
 
 class TestUnloadModel:
     """Tests for LMStudioRESTClient.unload_model()."""
@@ -306,6 +339,40 @@ class TestUnloadModel:
         client.client.post.return_value = mock_resp
         result = client.unload_model("inst-abc")
         assert result is True
+
+    def test_falls_back_to_v0_endpoint_on_404(self):
+        """404 from /api/v1/models/unload falls back to /api/v0/model/unload."""
+        client = LMStudioRESTClient()
+        client.client = MagicMock()
+
+        request = httpx.Request(
+            "POST", "http://localhost:1234/api/v1/models/unload"
+        )
+        error_response = httpx.Response(404, request=request)
+        error = httpx.HTTPStatusError(
+            "Client error '404 Not Found'",
+            request=request,
+            response=error_response,
+        )
+
+        first_response = MagicMock()
+        first_response.raise_for_status.side_effect = error
+
+        second_response = MagicMock()
+        second_response.raise_for_status = MagicMock()
+
+        client.client.post.side_effect = [first_response, second_response]
+
+        result = client.unload_model("inst-abc")
+
+        assert result is True
+        assert client.client.post.call_count == 2
+        assert client.client.post.call_args_list[0][0][0].endswith(
+            "/api/v1/models/unload"
+        )
+        assert client.client.post.call_args_list[1][0][0].endswith(
+            "/api/v0/model/unload"
+        )
 
 
 class TestDownloadModel:

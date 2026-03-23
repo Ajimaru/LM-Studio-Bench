@@ -28,7 +28,6 @@ class TestSanitizeOutputDir:
         """~ is expanded to user home directory."""
         from cli.main import _sanitize_output_dir
 
-        # This should not raise and should expand ~
         result = _sanitize_output_dir("~/test")
         assert result == Path.home() / "test"
 

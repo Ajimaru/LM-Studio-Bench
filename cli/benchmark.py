@@ -2585,7 +2585,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 if stats:
                     measurements.append(stats)
                     logger.info(
-                        "⚡ Run %d/%d: %.2f tokens/s",
+                        "🏁 Run %d/%d: %.2f tokens/s",
                         run + 1,
                         self.num_measurement_runs,
                         stats["tokens_per_second"],
@@ -2778,7 +2778,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                         )
 
                 logger.info(
-                    "✓ %s: %s tokens/s (Duration: %ss)",
+                    "✅ %s: %s tokens/s (Duration: %ss)",
                     model_key,
                     result.avg_tokens_per_sec,
                     result.benchmark_duration_seconds,
@@ -3090,7 +3090,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 gpu_offload=gpu_offload,
             )
 
-            logger.info("✓ Model loaded via REST: %s", instance_id)
+            logger.info("✅ Model loaded via REST: %s", instance_id)
             return instance_id
 
         except (httpx.HTTPError, OSError, ConnectionError) as e:
@@ -3104,7 +3104,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
         try:
             self.rest_client.unload_model(instance_id)
-            logger.info("✓ Model unloaded via REST: %s", instance_id)
+            logger.info("✅ Model unloaded via REST: %s", instance_id)
             return True
         except (httpx.HTTPError, OSError, ConnectionError) as e:
             logger.warning("⚠️ REST error unloading: %s", e)

@@ -489,7 +489,6 @@ class AgentCache:
                 """)
             conn.commit()
         except sqlite3.Error:
-            # Keep non-fatal to avoid blocking benchmark execution.
             pass
         finally:
             try:

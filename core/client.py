@@ -188,7 +188,7 @@ class LMStudioRESTClient:
             )
             models.append(model)
 
-        logger.info("Found %s models", len(models))
+        logger.info("🔍 Found %s models", len(models))
         return models
 
     def load_model(
@@ -214,6 +214,7 @@ class LMStudioRESTClient:
 
         Raises:
             httpx.HTTPError: on API errors
+            RuntimeError: If model loading fails without an HTTP response
         """
         payload: Dict[str, Any] = {"model": model_key}
 
@@ -229,34 +230,68 @@ class LMStudioRESTClient:
         if gpu_offload is not None:
             payload["offload_kv_cache_to_gpu"] = bool(gpu_offload)
 
-        logger.info("Loading model: %s", model_key)
-        try:
-            response = self.client.post(
-                f"{self.base_url}/api/v1/models/load",
-                headers=self._headers(),
-                json=payload,
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as error:
-            if not self._should_retry_without_kv_offload(error, payload):
-                raise
+        logger.info("📥 Loading model: %s", model_key)
+        load_endpoints = [
+            "/api/v1/models/load",
+            "/api/v0/model/load",
+        ]
+        response: Optional[httpx.Response] = None
+        last_error: Optional[httpx.HTTPStatusError] = None
 
-            retry_payload = dict(payload)
-            retry_payload.pop("offload_kv_cache_to_gpu", None)
-            logger.warning(
-                "Retrying model load without offload_kv_cache_to_gpu: %s",
-                model_key,
-            )
-            response = self.client.post(
-                f"{self.base_url}/api/v1/models/load",
-                headers=self._headers(),
-                json=retry_payload,
-            )
-            response.raise_for_status()
+        for index, endpoint in enumerate(load_endpoints):
+            url = f"{self.base_url}{endpoint}"
+            try:
+                response = self.client.post(
+                    url,
+                    headers=self._headers(),
+                    json=payload,
+                )
+                response.raise_for_status()
+                break
+            except httpx.HTTPStatusError as error:
+                if self._should_retry_without_kv_offload(error, payload):
+                    retry_payload = dict(payload)
+                    retry_payload.pop("offload_kv_cache_to_gpu", None)
+                    logger.warning(
+                        "⚠️ Retrying model load without "
+                        "offload_kv_cache_to_gpu: %s",
+                        model_key,
+                    )
+                    response = self.client.post(
+                        url,
+                        headers=self._headers(),
+                        json=retry_payload,
+                    )
+                    response.raise_for_status()
+                    break
+
+                response_obj = error.response
+                is_not_found = (
+                    response_obj is not None
+                    and response_obj.status_code == 404
+                )
+                has_fallback = index < len(load_endpoints) - 1
+                if is_not_found and has_fallback:
+                    fallback_endpoint = load_endpoints[index + 1]
+                    logger.warning(
+                        "⚠️ Model load endpoint %s returned 404. "
+                        "Trying fallback endpoint %s",
+                        endpoint,
+                        fallback_endpoint,
+                    )
+                    continue
+
+                last_error = error
+                break
+
+        if response is None:
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError("Model load failed without HTTP response")
 
         result = response.json()
         instance_id = result.get("instance_id", model_key)
-        logger.info("Model loaded: %s", instance_id)
+        logger.info("✅ Model loaded: %s", instance_id)
         return instance_id
 
     @staticmethod
@@ -296,18 +331,52 @@ class LMStudioRESTClient:
 
         Raises:
             httpx.HTTPError: on API errors
+            RuntimeError: If model unload fails without an HTTP response
         """
         payload = {"instance_id": instance_id}
 
-        logger.info("Unloading model: %s", instance_id)
-        response = self.client.post(
-            f"{self.base_url}/api/v1/models/unload",
-            headers=self._headers(),
-            json=payload,
-        )
-        response.raise_for_status()
+        logger.info("📤 Unloading model: %s", instance_id)
+        unload_endpoints = [
+            "/api/v1/models/unload",
+            "/api/v0/model/unload",
+        ]
+        response: Optional[httpx.Response] = None
+        last_error: Optional[httpx.HTTPStatusError] = None
 
-        logger.info("Model unloaded: %s", instance_id)
+        for index, endpoint in enumerate(unload_endpoints):
+            try:
+                response = self.client.post(
+                    f"{self.base_url}{endpoint}",
+                    headers=self._headers(),
+                    json=payload,
+                )
+                response.raise_for_status()
+                break
+            except httpx.HTTPStatusError as error:
+                response_obj = error.response
+                is_not_found = (
+                    response_obj is not None
+                    and response_obj.status_code == 404
+                )
+                has_fallback = index < len(unload_endpoints) - 1
+                if is_not_found and has_fallback:
+                    fallback_endpoint = unload_endpoints[index + 1]
+                    logger.warning(
+                        "⚠️ Model unload endpoint %s returned 404. "
+                        "Trying fallback endpoint %s",
+                        endpoint,
+                        fallback_endpoint,
+                    )
+                    continue
+                last_error = error
+                break
+
+        if response is None:
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError("Model unload failed without HTTP response")
+
+        logger.info("✅ Model unloaded: %s", instance_id)
         return True
 
     def download_model(

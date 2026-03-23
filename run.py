@@ -25,7 +25,9 @@ import shutil
 import socket
 import subprocess  # nosec B404
 import sys
+import threading
 import time
+from typing import TextIO
 
 from core.paths import USER_LOGS_DIR, format_path_for_logs
 
@@ -227,15 +229,21 @@ def _start_tray_process(
             tray_cmd.append("--debug")
 
         try:
-            with open(launcher_log, "a", encoding="utf-8") as log_handle:
-                log_handle.write(f"CMD: {' '.join(tray_cmd)}\n")
-                tray_proc = subprocess.Popen(  # nosec B603
-                    tray_cmd,
-                    cwd=project_root,
-                    stdout=log_handle,
-                    stderr=log_handle,
-                    env=env,
-                )
+            start_offset = launcher_log.stat().st_size if launcher_log.exists() else 0
+            _append_tray_launcher_log(
+                launcher_log,
+                f"CMD: {' '.join(tray_cmd)}",
+            )
+            tray_proc = subprocess.Popen(  # nosec B603
+                tray_cmd,
+                cwd=project_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=env,
+            )
+            log_thread = _start_tray_log_thread(tray_proc, launcher_log)
 
             time.sleep(0.6)
             if tray_proc.poll() is None:
@@ -243,12 +251,27 @@ def _start_tray_process(
                 print(f"📝 Run log: {format_path_for_logs(launcher_log)}")
                 return tray_proc
 
+            if log_thread is not None:
+                log_thread.join(timeout=1.0)
+
+            failure_excerpt = _read_tray_launcher_excerpt(
+                launcher_log,
+                start_offset,
+            )
+
             print(
                 "⚠️ Tray exited early "
                 f"(code {tray_proc.returncode}) "
                 f"with {format_path_for_logs(candidate)}"
             )
+            failure_summary = _summarize_tray_failure(failure_excerpt)
+            if failure_summary:
+                print(failure_summary)
         except OSError as error:
+            _append_tray_launcher_log(
+                launcher_log,
+                f"ERROR: Could not launch {candidate}: {error}",
+            )
             print(
                 "⚠️ Could not launch tray with "
                 f"{format_path_for_logs(candidate)}: {error}"
@@ -263,9 +286,75 @@ def _start_tray_process(
                 "💡 Try launching from a non-Snap terminal/session or "
                 "restart VS Code outside Snap."
             )
+        if "ModuleNotFoundError: No module named 'httpx'" in launcher_text:
+            print(
+                "⚠️ System Python fallback failed because dependency "
+                "'httpx' is missing."
+            )
     except OSError:
         pass
     return None
+
+
+def _append_tray_launcher_log(log_path: Path, message: str) -> None:
+    """Append a timestamped tray launcher log entry."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+    with open(log_path, "a", encoding="utf-8") as log_handle:
+        log_handle.write(f"{timestamp} {message.rstrip()}\n")
+
+
+def _stream_tray_output_to_log(stream: TextIO, log_path: Path) -> None:
+    """Write tray subprocess output to the launcher log with timestamps."""
+    try:
+        for output_line in stream:
+            _append_tray_launcher_log(log_path, output_line)
+    finally:
+        stream.close()
+
+
+def _start_tray_log_thread(
+    tray_proc: subprocess.Popen,
+    log_path: Path,
+) -> threading.Thread | None:
+    """Start background log streaming for tray subprocess output."""
+    stream = tray_proc.stdout
+    if stream is None:
+        return None
+
+    log_thread = threading.Thread(
+        target=_stream_tray_output_to_log,
+        args=(stream, log_path),
+        daemon=True,
+    )
+    log_thread.start()
+    return log_thread
+
+
+def _read_tray_launcher_excerpt(log_path: Path, start_offset: int) -> str:
+    """Read launcher log text appended after a given file offset."""
+    try:
+        with open(log_path, "r", encoding="utf-8") as log_handle:
+            log_handle.seek(start_offset)
+            return log_handle.read()
+    except OSError:
+        return ""
+
+
+def _summarize_tray_failure(log_text: str) -> str:
+    """Summarize known tray launcher failures for console output."""
+    if "symbol lookup error" in log_text:
+        return (
+            "💥 Bundled tray Python failed due to a GLIBC/Snap library "
+            "mismatch."
+        )
+    if "ModuleNotFoundError: No module named 'httpx'" in log_text:
+        return (
+            "📦 System Python fallback is missing required dependency "
+            "'httpx'."
+        )
+    if "Traceback" in log_text:
+        return "🐍 System Python fallback failed with a Python traceback."
+    return ""
 
 
 def _stop_tray_process(tray_proc: subprocess.Popen | None) -> None:

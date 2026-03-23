@@ -4,7 +4,9 @@ run.py executes module-level code that starts subprocesses on import.
 We patch subprocess and sys.exit before importing to avoid side effects.
 """
 import importlib
+import io
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -388,6 +390,7 @@ class TestStartTrayProcess:
         logs_dir.mkdir(exist_ok=True)
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
+        mock_proc.stdout = None
         with patch.object(run, "USER_LOGS_DIR", logs_dir), \
                 patch.object(run, "_tray_python_candidates",
                              return_value=[sys.executable]), \
@@ -413,6 +416,7 @@ class TestStartTrayProcess:
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1
         mock_proc.returncode = 1
+        mock_proc.stdout = None
         with patch.object(run, "USER_LOGS_DIR", logs_dir), \
                 patch.object(run, "_tray_python_candidates",
                              return_value=[sys.executable]), \
@@ -437,6 +441,7 @@ class TestStartTrayProcess:
         logs_dir.mkdir(exist_ok=True)
         good_proc = MagicMock()
         good_proc.poll.return_value = None
+        good_proc.stdout = None
         call_count = [0]
 
         def popen_side_effect(*args, **kwargs):
@@ -470,6 +475,7 @@ class TestStartTrayProcess:
         captured_cmd = []
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
+        mock_proc.stdout = None
 
         def capture_popen(cmd, **kwargs):
             captured_cmd.extend(cmd)
@@ -498,6 +504,7 @@ class TestStartTrayProcessSymbolLookup:
 
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1
+        mock_proc.stdout = None
 
         original_read_text = Path.read_text
 
@@ -528,6 +535,7 @@ class TestStartTrayProcessSymbolLookup:
 
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1
+        mock_proc.stdout = None
 
         original_read_text = Path.read_text
 
@@ -550,6 +558,47 @@ class TestStartTrayProcessSymbolLookup:
 
 class TestRunPyHelperFunctions:
     """Tests for small helper functions in run.py."""
+
+    def test_append_tray_launcher_log_adds_timestamp(self, tmp_path: Path):
+        """Timestamped tray launcher log entries are written to disk."""
+        run = _import_run()
+        log_path = tmp_path / "runapp_test.log"
+
+        run._append_tray_launcher_log(log_path, "CMD: python tray.py")
+
+        log_text = log_path.read_text(encoding="utf-8")
+        assert re.match(
+            r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} CMD:",
+            log_text,
+        )
+
+    def test_summarize_tray_failure_for_missing_httpx(self):
+        """Known missing dependency errors get a concise summary."""
+        run = _import_run()
+
+        summary = run._summarize_tray_failure(
+            "Traceback\nModuleNotFoundError: No module named 'httpx'"
+        )
+
+        assert "httpx" in summary
+
+    def test_stream_tray_output_to_log_adds_timestamp(self, tmp_path: Path):
+        """Tray subprocess output is persisted with timestamps."""
+        run = _import_run()
+        log_path = tmp_path / "runapp_test.log"
+
+        run._stream_tray_output_to_log(
+            io.StringIO("first line\nsecond line\n"),
+            log_path,
+        )
+
+        log_text = log_path.read_text(encoding="utf-8")
+        assert "first line" in log_text
+        assert "second line" in log_text
+        assert re.search(
+            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3} first line",
+            log_text,
+        )
 
     def test_format_path_for_logs_home(self):
         """format_path_for_logs replaces home dir with ~."""
