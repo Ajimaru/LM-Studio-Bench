@@ -264,8 +264,8 @@ Start the modern web UI with live streaming and an interactive results browser:
 # Load default classic preset (benchmarks all models, 3 runs)
 ./LM-Studio-Bench-x86_64.AppImage --preset default_classic
 
-# Load capability-driven preset (tests one model, 1 run)
-./LM-Studio-Bench-x86_64.AppImage --preset default_compatability_test --agent-model qwen2.5-7b-instruct
+# Load capability-driven preset (tests one model, 1 run; alias: default_compatability_test)
+./LM-Studio-Bench-x86_64.AppImage --preset default_compatibility_test --agent-model qwen2.5-7b-instruct
 
 # Load other presets
 ./LM-Studio-Bench-x86_64.AppImage --preset quick_test
