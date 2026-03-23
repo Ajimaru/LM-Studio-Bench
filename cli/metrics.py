@@ -2,9 +2,8 @@
 Metrics computation module for capability-driven benchmarks.
 
 Implements quality metrics for different capabilities:
-- General text: ROUGE, BERTScore
+- General text: ROUGE
 - Reasoning: Exact Match (EM), F1, accuracy
-- Vision: VQA accuracy, CIDEr
 - Tooling: Function call accuracy, parameter accuracy
 """
 
