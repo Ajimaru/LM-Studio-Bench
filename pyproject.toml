@@ -3,7 +3,8 @@
 
 [project]
 name = "lm-studio-bench"
-# Version mirrors the VERSION file; bump both together.
+# Version mirrors VERSION after stripping any leading "v"; bump both
+# together.
 version = "0.2.0"
 requires-python = ">=3.11"
 
