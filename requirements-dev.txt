@@ -2,7 +2,7 @@
 # Install with: pip install -r requirements-dev.txt
 
 # Python Code Quality Tools
-flake8>=7.0.0              # Style checker (PEP 8)
+flake8>=7.3.0              # Style checker (PEP 8)
 isort>=8.0.0               # Import sorter
 pylint>=4.0.5              # Code linter and checker
 djlint>=1.36.0             # HTML/Jinja linter
