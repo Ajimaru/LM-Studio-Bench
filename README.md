@@ -6,7 +6,7 @@ Automatic benchmarking tool for all locally installed LM Studio models. Systemat
 quantizations to measure and compare tokens-per-second performance.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://www.linux.org/)
 [![LM Studio App v0.4.3+](https://img.shields.io/badge/LM_Studio_App-v0.4.3+-green.svg)](https://lmstudio.ai/download)
 [![llmster v0.0.3+](https://img.shields.io/badge/llmster-v0.0.3+-green.svg)](https://lmstudio.ai)
@@ -100,7 +100,7 @@ quantizations to measure and compare tokens-per-second performance.
 ## System Requirements
 
 - **OS**: Linux (primary), macOS (untested), Windows (untested)
-- **Python**: 3.10 or newer
+- **Python**: 3.11 or newer
 - **GPU**: ~12GB VRAM recommended (NVIDIA/AMD/Intel)
 - **Software**: [LM Studio](https://lmstudio.ai/) or
   [LM Studio (Headless)](https://lmstudio.ai/docs/developer/core/headless_llmster/) installed locally

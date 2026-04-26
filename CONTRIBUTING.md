@@ -4,6 +4,8 @@ Thanks for contributing to LM-Studio-Bench.
 
 ## Quick Start
 
+Python 3.11 or newer is required.
+
 **1.** Fork and clone the repository.
 **2.** Create a virtual environment and install dependencies:
 
