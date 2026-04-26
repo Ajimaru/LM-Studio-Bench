@@ -1,4 +1,4 @@
-lmstudio>=0.1.0
+lmstudio>=1.5.0
 tqdm>=4.66.3
 psutil>=5.9.0
 reportlab>=4.0.0
