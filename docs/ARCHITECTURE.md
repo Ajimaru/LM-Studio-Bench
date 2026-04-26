@@ -24,10 +24,10 @@
   - [REST API vs SDK Mode](#rest-api-vs-sdk-mode)
   - [Component Details](#component-details)
     - [1. run.py (Entry Point)](#1-runpy-entry-point)
-    - [2. config\_loader.py (Configuration Manager)](#2-config_loaderpy-configuration-manager)
-    - [3. benchmark.py (Main Engine)](#3-benchmarkpy-main-engine)
-    - [4. rest\_client.py (REST API Client)](#4-rest_clientpy-rest-api-client)
-    - [5. tray.py (Linux Tray Controller)](#5-traypy-linux-tray-controller)
+    - [2. core/config.py (Configuration Manager)](#2-coreconfigpy-configuration-manager)
+    - [3. cli/benchmark.py (Main Engine)](#3-clibenchmarkpy-main-engine)
+    - [4. core/client.py (REST API Client)](#4-coreclientpy-rest-api-client)
+    - [5. core/tray.py (Linux Tray Controller)](#5-coretraypy-linux-tray-controller)
     - [6. web/app.py + dashboard.html.jinja (Dashboard Analytics)](#6-webapppy--dashboardhtmljinja-dashboard-analytics)
   - [Data Flow Summary](#data-flow-summary)
   - [Testing Architecture](#testing-architecture)
@@ -80,16 +80,16 @@ graph TB
 **Key Components:**
 
 - **run.py**: Wrapper script that decides between web dashboard and CLI benchmark mode
-- **benchmark.py**: Main benchmark engine with argparse, model discovery,
+- **cli/benchmark.py**: Main benchmark engine with argparse, model discovery,
   and execution
-- **config_loader.py**: Loads and merges configuration from JSON file with built-in defaults
+- **core/config.py**: Loads and merges configuration from JSON file with built-in defaults
 - **core/presets.py**: Manages readonly/user presets and maps presets to
   CLI args
 - **tools/hardware_monitor.py**: Shared `GPUMonitor` and `HardwareMonitor`
   implementation for classic and capability flows
-- **rest_client.py**: REST API client for LM Studio v1 endpoints (optional mode)
+- **core/client.py**: REST API client for LM Studio v1 endpoints (optional mode)
 - **web/app.py**: FastAPI web dashboard with live streaming and results browser
-- **tray.py**: Linux AppIndicator tray controller for benchmark controls
+- **core/tray.py**: Linux AppIndicator tray controller for benchmark controls
 
 ---
 
@@ -335,7 +335,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    Start([config_loader.py<br/>import]) --> BaseConfig[BASE_DEFAULT_CONFIG<br/>Hard-coded Defaults]
+    Start([core/config.py<br/>import]) --> BaseConfig[BASE_DEFAULT_CONFIG<br/>Hard-coded Defaults]
 
     BaseConfig --> LoadFunc[load_default_config]
     LoadFunc --> ReadProject[Read config/defaults.json<br/>Project Defaults]
@@ -366,7 +366,7 @@ flowchart TD
 
 | Layer | Source | Priority |
 | ----- | ------ | -------- |
-| **1. Hard-coded** | `BASE_DEFAULT_CONFIG` in config_loader.py | Lowest |
+| **1. Hard-coded** | `BASE_DEFAULT_CONFIG` in `core/config.py` | Lowest |
 | **2. User Config** | `~/.config/lm-studio-bench/defaults.json` | Medium |
 | **3. Project Config** | `config/defaults.json` | Low |
 | **3. CLI Arguments** | argparse in benchmark.py | Highest |
@@ -589,7 +589,7 @@ flowchart TD
 
 ---
 
-### 2. config_loader.py (Configuration Manager)
+### 2. core/config.py (Configuration Manager)
 
 **Responsibilities:**
 
@@ -614,7 +614,7 @@ flowchart TD
 
 ---
 
-### 3. benchmark.py (Main Engine)
+### 3. cli/benchmark.py (Main Engine)
 
 **Responsibilities:**
 
@@ -659,7 +659,7 @@ flowchart TD
 
 ---
 
-### 4. rest_client.py (REST API Client)
+### 4. core/client.py (REST API Client)
 
 **Responsibilities:**
 
@@ -722,7 +722,7 @@ response = client.chat(
 
 ---
 
-### 5. tray.py (Linux Tray Controller)
+### 5. core/tray.py (Linux Tray Controller)
 
 **Responsibilities:**
 
@@ -900,6 +900,12 @@ graph TB
 - Test results reported in PR status checks
 
 **Running Tests:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
 
 ```bash
 # Run all tests

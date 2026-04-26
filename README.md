@@ -193,6 +193,15 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+For development, tests, and linting, install the contributor environment
+instead:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
+
 #### 5. Check LM Studio CLI
 
 ```bash

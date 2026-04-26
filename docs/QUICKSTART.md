@@ -23,6 +23,15 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+If you want to run tests, linting, or contribute changes, use the development
+environment instead:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
+
 ## 🌐 Web Dashboard (Recommended)
 
 ### Start Web UI

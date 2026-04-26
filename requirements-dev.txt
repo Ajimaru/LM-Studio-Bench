@@ -12,11 +12,11 @@ black>=24.0.0              # Code formatter (for future use)
 mypy>=1.0.0                # Static type checker (for future use)
 
 # Testing
-pytest>=8.0.0              # Test framework
+pytest>=9,<10              # Test framework
 pytest-cov>=5.0.0          # Coverage plugin for pytest
 pytest-mock>=3.14.0        # Mocking support for pytest
 pytest-httpx>=0.36.2       # httpx request mocking for pytest
-httpx>=0.25.0              # HTTP client (needed for test client)
+httpx>=0.28,<0.29          # HTTP client (needed for test client)
 lmstudio>=0.1.0
 tqdm>=4.66.3
 psutil>=5.9.0

@@ -12,8 +12,12 @@ python -m venv .venv
 ```
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
+
+`requirements-dev.txt` is the correct environment for contributors and test
+runs. It includes the runtime dependencies from `requirements.txt` plus the
+extra tooling needed for `pytest`, linting, and local development.
 
 **3.** Run the benchmark or web dashboard:
 
@@ -38,7 +42,7 @@ python run.py --webapp
 
 ## Typical Contribution Areas
 
-- Benchmark runner and caching (`src/benchmark.py`)
+- Benchmark runner and caching (`cli/benchmark.py`, `agents/cache.py`)
 - Web dashboard backend (`web/app.py`)
 - Dashboard UI (`web/templates/dashboard.html.jinja`)
 - Metadata tooling (`tools/scrape_metadata.py`)
@@ -50,6 +54,7 @@ python run.py --webapp
   - Example: `Add cache cleanup for failed models`
 - Reference related issues in PR descriptions.
 - Include a short test or verification section in each PR, e.g.:
+  - `pytest`
   - `python run.py --help`
   - `python run.py --export-only`
   - manual web dashboard check
