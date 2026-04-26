@@ -1,6 +1,13 @@
 # PyProject Configuration for LM-Studio-Bench
 # See: https://peps.python.org/pep-0518/
 
+[project]
+name = "lm-studio-bench"
+# Version mirrors VERSION after stripping any leading "v"; bump both
+# together.
+version = "0.2.0"
+requires-python = ">=3.11"
+
 [tool.isort]
 # Profile compatible with Black
 profile = "black"

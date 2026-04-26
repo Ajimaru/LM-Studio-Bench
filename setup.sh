@@ -735,6 +735,14 @@ check_python_requirements() {
         return 1
     fi
 
+    if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+        local detected_version
+        detected_version="$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>/dev/null || echo unknown)"
+        log "ERROR" "Python 3.11 or newer required (detected: ${detected_version})."
+        log "INFO" "Install a newer Python (e.g. via your package manager, pyenv, or python.org)."
+        return 1
+    fi
+
     if [[ ! -f "${PROJECT_ROOT}/requirements.txt" ]]; then
         log "WARN" "requirements.txt not found."
         return 0

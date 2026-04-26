@@ -20,6 +20,7 @@ class TestGetUserConfigDir:
     def test_falls_back_to_home_config(self, tmp_path: Path, monkeypatch):
         """Falls back to ~/.config/lm-studio-bench when XDG_CONFIG_HOME unset."""
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
 
@@ -45,6 +46,7 @@ class TestGetUserConfigDir:
             self, tmp_path: Path, monkeypatch):
         """Relative traversal values fall back to default config path."""
         monkeypatch.setenv("XDG_CONFIG_HOME", "../etc")
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
 
@@ -71,6 +73,7 @@ class TestGetUserDataDir:
     def test_falls_back_to_home_local_share(self, tmp_path: Path, monkeypatch):
         """Falls back to ~/.local/share/lm-studio-bench when unset."""
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
 
@@ -97,6 +100,7 @@ class TestGetUserDataDir:
     ):
         """Relative traversal values fall back to default data path."""
         monkeypatch.setenv("XDG_DATA_HOME", "../../var")
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
 
