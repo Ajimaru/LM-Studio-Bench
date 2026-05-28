@@ -108,7 +108,7 @@ jobs:
       # send coverage report to Codecov
       - name: Upload coverage to Codecov
         if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Bench' }}
-        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2
         with:
           files: coverage.xml
           flags: unittests
