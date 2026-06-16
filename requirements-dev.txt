@@ -12,7 +12,7 @@ black>=24.0.0              # Code formatter (for future use)
 mypy>=1.0.0                # Static type checker (for future use)
 
 # Testing
-pytest>=9,<10              # Test framework
+pytest>=9.1.0,<10              # Test framework
 pytest-cov>=7.1.0          # Coverage plugin for pytest
 pytest-mock>=3.15.1        # Mocking support for pytest
 pytest-httpx>=0.36.2       # httpx request mocking for pytest
