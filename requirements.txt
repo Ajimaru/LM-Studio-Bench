@@ -11,5 +11,5 @@ distro>=1.8.0
 py-cpuinfo>=9.0.0
 scipy>=1.17.1
 pydantic>=2.13.4
-PyGObject>=3.48,<3.50
+PyGObject>=3.56.3,<3.57
 PyYAML>=6.0.3
