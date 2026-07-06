@@ -42,7 +42,7 @@ jobs:
     env:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check SNYK_TOKEN configuration
         id: snyk_token
