@@ -18,7 +18,7 @@ jobs:
     steps:
       # check out repository code
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # prepare Python environment for later checks
       - name: Set up Python 3.11
@@ -74,7 +74,7 @@ jobs:
     steps:
       # checkout the repo for tests
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # set up same Python version
       - name: Set up Python 3.11
