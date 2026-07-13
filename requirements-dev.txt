@@ -9,7 +9,7 @@ djlint>=1.40.3             # HTML/Jinja linter
 
 # Optional tools for development
 black>=26.5.1              # Code formatter (for future use)
-mypy>=2.1.0                # Static type checker (for future use)
+mypy>=2.3.0                # Static type checker (for future use)
 
 # Testing
 pytest>=9.1.1,<10              # Test framework
