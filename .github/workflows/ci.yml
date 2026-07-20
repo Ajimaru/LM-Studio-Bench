@@ -22,7 +22,7 @@ jobs:
 
       # prepare Python environment for later checks
       - name: Set up Python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -78,7 +78,7 @@ jobs:
 
       # set up same Python version
       - name: Set up Python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
