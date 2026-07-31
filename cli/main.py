@@ -619,7 +619,13 @@ def _sanitize_output_dir(output_dir_arg: str | Path) -> Path:
 
 
 def _list_installed_models() -> list[str]:
-    """Return installed LM Studio model variants from ``lms ls --json``."""
+    """Return locally installed LM Studio model variants from ``lms ls --json``.
+
+    Entries carrying a ``deviceIdentifier`` live on an LM Link peer, not on
+    this machine. Benchmarking those would measure the peer's hardware, so
+    they are skipped — mirroring ``ModelDiscovery.is_local_model`` in the
+    standard benchmark.
+    """
     try:
         result = subprocess.run(
             ["lms", "ls", "--json"],
@@ -635,6 +641,9 @@ def _list_installed_models() -> list[str]:
         model_names: list[str] = []
         seen: set[str] = set()
         for item in parsed:
+            if item.get("deviceIdentifier"):
+                continue
+
             variants = item.get("variants") or []
             if variants:
                 for variant in variants:

@@ -312,3 +312,51 @@ class TestBenchmarkAgentConfig:
         )
 
         assert agent.disable_gtt is False
+
+
+class TestListInstalledModels:
+    """Tests for _list_installed_models function."""
+
+    @staticmethod
+    def _run(payload):
+        """Invoke _list_installed_models against a stubbed ``lms ls --json``."""
+        import json
+
+        from cli.main import _list_installed_models
+
+        completed = argparse.Namespace(returncode=0, stdout=json.dumps(payload))
+        with patch("subprocess.run", return_value=completed):
+            return _list_installed_models()
+
+    def test_skips_lm_link_peer_models(self):
+        """Models on an LM Link peer are excluded from the benchmark set."""
+        models = self._run([
+            {"modelKey": "local-model", "deviceIdentifier": None},
+            {"modelKey": "peer-model", "deviceIdentifier": "abc123"},
+        ])
+        assert models == ["local-model"]
+
+    def test_skips_peer_variants(self):
+        """Variant lists of a peer entry are skipped as a whole."""
+        models = self._run([
+            {
+                "modelKey": "peer-model",
+                "variants": ["peer-model@4bit", "peer-model@bf16"],
+                "deviceIdentifier": "abc123",
+            },
+            {"modelKey": "local-model", "variants": ["local-model@q4_k_m"]},
+        ])
+        assert models == ["local-model@q4_k_m"]
+
+    def test_keeps_models_without_device_field(self):
+        """A missing deviceIdentifier counts as local."""
+        models = self._run([{"modelKey": "local-model"}])
+        assert models == ["local-model"]
+
+    def test_same_model_on_both_hosts_keeps_local_entry(self):
+        """A model present locally and on a peer is kept once, as local."""
+        models = self._run([
+            {"modelKey": "shared@q4_k_m", "deviceIdentifier": None},
+            {"modelKey": "shared@4bit", "deviceIdentifier": "abc123"},
+        ])
+        assert models == ["shared@q4_k_m"]
