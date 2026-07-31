@@ -1,6 +1,9 @@
 """Tests for cli/benchmark.py."""
 from dataclasses import asdict
+import json
+import logging
 from pathlib import Path
+import subprocess
 import sys
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -519,6 +522,53 @@ class TestBenchmarkCache:
         assert cached is not None
         assert cached.model_name == "test-model"
 
+    def _save_result_with_device(self, bm, cache, device_name):
+        """Stores a minimal result carrying a device name."""
+        result = bm.BenchmarkResult(
+            model_name="test-model",
+            quantization="Q4",
+            gpu_type="NVIDIA",
+            gpu_offload=1.0,
+            vram_mb="8192",
+            avg_tokens_per_sec=55.0,
+            avg_ttft=0.3,
+            avg_gen_time=0.8,
+            prompt_tokens=10,
+            completion_tokens=50,
+            timestamp="2024-01-01T00:00:00",
+            params_size="7B",
+            architecture="llama",
+            max_context_length=4096,
+            model_size_gb=4.0,
+            has_vision=False,
+            has_tools=False,
+            tokens_per_sec_per_gb=13.75,
+            tokens_per_sec_per_billion_params=7.86,
+            inference_params_hash="infr9999",
+            device_name=device_name,
+        )
+        cache.save_result(result, "pub/test-model", "full9999", "test prompt", 2048)
+
+    def test_latest_result_rejects_foreign_device(self, tmp_path: Path):
+        """A result from another machine is not served as a fallback."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(db_path=tmp_path / "cache.db")
+        self._save_result_with_device(bm, cache, "linuxpc")
+
+        assert cache.get_latest_result_for_model("pub/test-model", "MacBoy") is None
+        assert (
+            cache.get_latest_result_for_model("pub/test-model", "linuxpc") is not None
+        )
+
+    def test_latest_result_accepts_legacy_rows(self, tmp_path: Path):
+        """Rows predating device tracking stay usable."""
+        bm = _import_benchmark()
+        cache = bm.BenchmarkCache(db_path=tmp_path / "cache.db")
+        self._save_result_with_device(bm, cache, None)
+
+        cached = cache.get_latest_result_for_model("pub/test-model", "MacBoy")
+        assert cached is not None
+
     def test_export_to_json(self, tmp_path: Path, monkeypatch):
         """export_to_json creates a JSON file."""
         bm = _import_benchmark()
@@ -796,6 +846,191 @@ class TestModelDiscovery:
         with patch("benchmark.METADATA_DATABASE_FILE", non_existent):
             result = bm.ModelDiscovery.get_scraped_metadata("pub/model")
         assert result == {}
+
+
+MIXED_DEVICE_MODELS = [
+    {
+        "type": "llm",
+        "modelKey": "pub/local-only",
+        "deviceIdentifier": None,
+        "variants": ["pub/local-only@q4_k_m"],
+    },
+    {
+        # Remote variants are NOT device-prefixed — they look exactly like
+        # local ones, which is why provenance must come from deviceIdentifier.
+        "type": "llm",
+        "modelKey": "pub/remote-only",
+        "deviceIdentifier": "b64e3314560e876afdc27837698e87b0",
+        "path": "b64e3314560e876afdc27837698e87b0:pub/remote-only",
+        "variants": ["pub/remote-only@q4_0", "pub/remote-only@q8_0"],
+    },
+    {
+        "type": "llm",
+        "modelKey": "pub/on-both",
+        "deviceIdentifier": None,
+        "variants": ["pub/on-both@q6_k"],
+    },
+    {
+        "type": "llm",
+        "modelKey": "pub/on-both",
+        "deviceIdentifier": "b64e3314560e876afdc27837698e87b0",
+        "variants": ["pub/on-both@q6_k", "pub/on-both@q4_k_m"],
+    },
+    {"type": "embedding", "modelKey": "pub/embed", "deviceIdentifier": None},
+]
+
+LINK_STATUS_PAYLOAD = {
+    "status": "online",
+    "peers": [
+        {
+            "deviceIdentifier": "b64e3314560e876afdc27837698e87b0",
+            "deviceName": "linuxpc",
+            "status": "connected",
+        }
+    ],
+    "deviceIdentifier": "cd3e835a08a94bf49505ef793dfdae7a",
+    "deviceName": "MacBoy",
+}
+
+
+class TestLocalOnlyDiscovery:
+    """Remote LM Link models must never be benchmarked."""
+
+    def setup_method(self):
+        bm = _import_benchmark()
+        bm.ModelDiscovery._metadata_cache = {}
+        bm.ModelDiscovery._device_cache = {}
+        bm.ModelDiscovery._link_peers_cache = None
+
+    teardown_method = setup_method
+
+    def _load_devices(self, bm):
+        """Populates the device cache from the mixed fixture."""
+        mock_result = MagicMock(returncode=0, stdout=json.dumps(MIXED_DEVICE_MODELS))
+        with patch("subprocess.run", return_value=mock_result):
+            bm.ModelDiscovery.warm_metadata_cache()
+
+    def test_device_cache_records_provenance(self):
+        """deviceIdentifier lands in the device cache per variant."""
+        bm = _import_benchmark()
+        self._load_devices(bm)
+        assert bm.ModelDiscovery.get_devices("pub/local-only@q4_k_m") == {None}
+        assert bm.ModelDiscovery.get_devices("pub/remote-only@q4_0") == {
+            "b64e3314560e876afdc27837698e87b0"
+        }
+
+    def test_get_devices_falls_back_to_base_key(self):
+        """Unknown variant resolves through its base model key."""
+        bm = _import_benchmark()
+        self._load_devices(bm)
+        assert bm.ModelDiscovery.get_devices("pub/remote-only@unknown") == {
+            "b64e3314560e876afdc27837698e87b0"
+        }
+
+    def test_is_local_model_classification(self):
+        """Local, remote and dual-device models are classified correctly."""
+        bm = _import_benchmark()
+        self._load_devices(bm)
+        assert bm.ModelDiscovery.is_local_model("pub/local-only@q4_k_m") is True
+        assert bm.ModelDiscovery.is_local_model("pub/remote-only@q4_0") is False
+        # Present on both devices: LM Studio loads the local copy.
+        assert bm.ModelDiscovery.is_local_model("pub/on-both@q6_k") is True
+
+    def test_unknown_model_counts_as_local(self):
+        """Absent provenance must not exclude a model."""
+        bm = _import_benchmark()
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            assert bm.ModelDiscovery.is_local_model("pub/never-seen") is True
+
+    def test_filter_models_drops_remote_with_empty_filters(self):
+        """Remote models are dropped even when no CLI filter is active."""
+        bm = _import_benchmark()
+        self._load_devices(bm)
+        models = [
+            "pub/local-only@q4_k_m",
+            "pub/remote-only@q4_0",
+            "pub/remote-only@q8_0",
+            "pub/on-both@q6_k",
+        ]
+        result = bm.ModelDiscovery.filter_models(models, {})
+        assert result == ["pub/local-only@q4_k_m", "pub/on-both@q6_k"]
+
+    def test_filter_models_drops_remote_with_none_filters(self):
+        """filter_args=None must not bypass the local-only guard."""
+        bm = _import_benchmark()
+        self._load_devices(bm)
+        result = bm.ModelDiscovery.filter_models(
+            ["pub/local-only@q4_k_m", "pub/remote-only@q4_0"], None
+        )
+        assert result == ["pub/local-only@q4_k_m"]
+
+    def test_filter_models_combines_with_other_filters(self):
+        """Remote exclusion applies alongside regular filters."""
+        bm = _import_benchmark()
+        self._load_devices(bm)
+        models = ["pub/local-only@q4_k_m", "pub/remote-only@q4_0", "pub/on-both@q6_k"]
+        result = bm.ModelDiscovery.filter_models(
+            models, {"include_models": "on-both"}
+        )
+        assert result == ["pub/on-both@q6_k"]
+
+    def test_dual_device_model_is_not_duplicated(self):
+        """A model listed once per device is benchmarked only once."""
+        bm = _import_benchmark()
+        self._load_devices(bm)
+        result = bm.ModelDiscovery.filter_models(
+            ["pub/on-both@q6_k", "pub/on-both@q6_k", "pub/local-only@q4_k_m"], {}
+        )
+        assert result == ["pub/on-both@q6_k", "pub/local-only@q4_k_m"]
+
+    def test_empty_device_cache_keeps_all_models(self):
+        """Stubbed metadata cache leaves every model benchmarkable."""
+        bm = _import_benchmark()
+        with patch.object(bm.ModelDiscovery, "_get_metadata_cache", return_value={}):
+            result = bm.ModelDiscovery.filter_models(["a@q4", "b@q4"], {})
+        assert result == ["a@q4", "b@q4"]
+
+    def test_get_link_peers_resolves_names(self):
+        """lms link status maps identifiers to readable names."""
+        bm = _import_benchmark()
+        mock_result = MagicMock(returncode=0, stdout=json.dumps(LINK_STATUS_PAYLOAD))
+        with patch("subprocess.run", return_value=mock_result):
+            peers = bm.ModelDiscovery.get_link_peers()
+        assert peers["b64e3314560e876afdc27837698e87b0"] == "linuxpc"
+        assert peers["cd3e835a08a94bf49505ef793dfdae7a"] == "MacBoy"
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            {"return_value": MagicMock(returncode=1, stdout="")},
+            {"side_effect": FileNotFoundError("lms")},
+            {"side_effect": subprocess.TimeoutExpired("lms", 10)},
+            {"return_value": MagicMock(returncode=0, stdout="not json")},
+        ],
+    )
+    def test_get_link_peers_never_raises(self, failure):
+        """Missing or broken lms link degrades to an empty mapping."""
+        bm = _import_benchmark()
+        with patch("subprocess.run", **failure):
+            assert bm.ModelDiscovery.get_link_peers() == {}
+
+    def test_device_summary_names_remote_host(self, caplog):
+        """The skip message names the host and the counts."""
+        bm = _import_benchmark()
+        self._load_devices(bm)
+        with patch.object(
+            bm.ModelDiscovery,
+            "get_link_peers",
+            return_value={"b64e3314560e876afdc27837698e87b0": "linuxpc"},
+        ):
+            with caplog.at_level(logging.INFO):
+                bm.ModelDiscovery.filter_models(
+                    ["pub/local-only@q4_k_m", "pub/remote-only@q4_0"], {}
+                )
+        text = caplog.text
+        assert "1 local model" in text
+        assert "skipping 1 remote" in text
+        assert "linuxpc" in text
 
 
 class TestLMStudioBenchmarkStaticMethods:
