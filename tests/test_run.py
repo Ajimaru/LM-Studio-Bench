@@ -191,6 +191,47 @@ class TestBuildSubprocessEnv:
         env = run._build_subprocess_env()
         assert "LD_PRELOAD" not in env
 
+    def test_removes_snap_gtk_paths(self, monkeypatch):
+        """GTK/GLib vars pointing into /snap are dropped."""
+        run = _import_run()
+        monkeypatch.setenv(
+            "GTK_PATH",
+            "/snap/code/254/usr/lib/x86_64-linux-gnu/gtk-3.0",
+        )
+        monkeypatch.setenv("LOCPATH", "/snap/code/254/usr/lib/locale")
+        env = run._build_subprocess_env()
+        assert "GTK_PATH" not in env
+        assert "LOCPATH" not in env
+
+    def test_removes_snap_home_cache_paths(self, monkeypatch):
+        """Per-user snap caches below ~/snap are dropped as well."""
+        run = _import_run()
+        monkeypatch.setenv(
+            "GDK_PIXBUF_MODULE_FILE",
+            "/home/user/snap/code/common/.cache/gdk-pixbuf-loaders.cache",
+        )
+        env = run._build_subprocess_env()
+        assert "GDK_PIXBUF_MODULE_FILE" not in env
+
+    def test_keeps_non_snap_gtk_paths(self, monkeypatch):
+        """System GTK paths outside snap stay untouched."""
+        run = _import_run()
+        monkeypatch.setenv("GTK_PATH", "/usr/lib/x86_64-linux-gnu/gtk-3.0")
+        env = run._build_subprocess_env()
+        assert env["GTK_PATH"] == "/usr/lib/x86_64-linux-gnu/gtk-3.0"
+
+    def test_drops_only_snap_entry_bearing_vars(self, monkeypatch):
+        """A var is dropped when any of its entries is a snap path."""
+        run = _import_run()
+        monkeypatch.setenv(
+            "GI_TYPELIB_PATH",
+            "/usr/lib/girepository-1.0:/snap/code/254/usr/lib/girepository-1.0",
+        )
+        monkeypatch.setenv("GIO_MODULE_DIR", "/usr/lib/gio/modules")
+        env = run._build_subprocess_env()
+        assert "GI_TYPELIB_PATH" not in env
+        assert env["GIO_MODULE_DIR"] == "/usr/lib/gio/modules"
+
     def test_adds_project_root_to_pythonpath(self):
         """Project root is prepended to PYTHONPATH."""
         run = _import_run()

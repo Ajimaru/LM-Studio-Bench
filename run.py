@@ -107,6 +107,44 @@ def _has_agent_flag(cli_args: list[str]) -> bool:
     )
 
 
+# GTK/GLib lookup paths that a Snap-confined host (for example the VS Code
+# snap) exports into its integrated terminal. Values pointing into /snap make
+# GTK load modules built against the snap base, which drags in a mismatched
+# glibc and kills the tray with a symbol lookup error.
+SNAP_GTK_ENV_VARS = (
+    "GTK_PATH",
+    "GTK_EXE_PREFIX",
+    "GTK_IM_MODULE_FILE",
+    "GIO_MODULE_DIR",
+    "GI_TYPELIB_PATH",
+    "GSETTINGS_SCHEMA_DIR",
+    "GDK_PIXBUF_MODULE_FILE",
+    "GDK_PIXBUF_MODULEDIR",
+    "LOCPATH",
+)
+
+
+def _is_snap_path(value: str) -> bool:
+    """Check if any path entry lives inside a Snap tree."""
+    return any(
+        "/snap/" in entry
+        for entry in value.split(os.pathsep)
+        if entry
+    )
+
+
+def _drop_snap_gtk_paths(env: dict[str, str]) -> None:
+    """Remove GTK/GLib env vars that resolve into a Snap runtime.
+
+    Snap also exports per-user caches below ``~/snap/<name>/``, so both the
+    read-only ``/snap/`` tree and the home-directory variant are matched.
+    """
+    for name in SNAP_GTK_ENV_VARS:
+        value = env.get(name)
+        if value and _is_snap_path(value):
+            env.pop(name, None)
+
+
 def _build_subprocess_env() -> dict[str, str]:
     """Build a sanitized environment for child Python processes."""
     env = os.environ.copy()
@@ -116,6 +154,7 @@ def _build_subprocess_env() -> dict[str, str]:
     env.pop("DYLD_LIBRARY_PATH", None)
     env.pop("DYLD_INSERT_LIBRARIES", None)
     env.pop("DYLD_FRAMEWORK_PATH", None)
+    _drop_snap_gtk_paths(env)
     root_dir = str(project_root)
     pythonpath_entries = [root_dir]
     existing_path = env.get("PYTHONPATH", "")

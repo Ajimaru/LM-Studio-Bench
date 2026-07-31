@@ -248,10 +248,12 @@ Install system dependencies (Linux only — these provide tray support):
 
 ```bash
 # Ubuntu/Debian
-sudo apt install python3-dev libgirepository1.0-dev libcairo2-dev pkg-config
+sudo apt install python3-dev python3-venv python3-pip \
+    libgirepository1.0-dev libcairo2-dev pkg-config
 
 # Fedora/RHEL
-sudo dnf install python3-devel gobject-introspection-devel cairo-devel pkg-config
+sudo dnf install python3-devel python3-pip \
+    gobject-introspection-devel cairo-devel pkg-config
 
 # Arch
 sudo pacman -S python gobject-introspection cairo pkgconf
@@ -279,6 +281,27 @@ pip install -r requirements-dev.txt
 
 `PyGObject` and `distro` carry a `sys_platform == "linux"` marker, so pip
 skips them on macOS and the install needs no GTK toolchain.
+
+Troubleshooting:
+
+- `No module named 'pip'` inside an active `.venv`, or `python3 -m venv`
+  failing with `ensurepip is not available`: the `python3-venv` package is
+  missing for the current Python version. Install it, then recreate the
+  environment.
+- After a system Python upgrade (for example 3.12 to 3.14) the existing
+  `.venv` keeps the old interpreter's `lib/pythonX.Y` tree and stops working.
+  Recreate it instead of repairing it:
+
+  ```bash
+  deactivate  # if the broken venv is active
+  rm -rf .venv
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.txt
+  ```
+
+- `Unable to locate package libgirepository1.0-dev` on newer Debian/Ubuntu
+  releases: the package was renamed to `libgirepository-2.0-dev`.
 
 #### 5. Check LM Studio CLI
 

@@ -15,7 +15,9 @@ cd ~/LM-Studio-Bench
 source .venv/bin/activate
 ```
 
-If you skip `setup.sh`, use this manual fallback:
+If you skip `setup.sh`, use this manual fallback (on Ubuntu/Debian install
+`python3-venv` and `python3-pip` first, otherwise `python3 -m venv` produces a
+`.venv` without `pip`):
 
 ```bash
 python3 -m venv .venv
