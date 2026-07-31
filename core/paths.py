@@ -1,8 +1,12 @@
-"""User directory paths following XDG Base Directory spec."""
+"""User directory paths following platform conventions."""
 
 import os
 from pathlib import Path
+import platform
 from typing import Union
+
+APP_DIR_NAME = "LM-Studio-Bench"
+XDG_DIR_NAME = "lm-studio-bench"
 
 
 def _effective_home() -> Path:
@@ -41,6 +45,26 @@ def _resolve_xdg_home(env_var: str, fallback: Path) -> Path:
     return candidate
 
 
+def _is_macos() -> bool:
+    """Return whether paths should follow macOS directory conventions."""
+    return platform.system() == "Darwin"
+
+
+def _macos_application_support_dir() -> Path:
+    """Return the macOS Application Support directory for this app."""
+    return _effective_home() / "Library" / "Application Support" / APP_DIR_NAME
+
+
+def _macos_logs_dir() -> Path:
+    """Return the macOS Logs directory for this app."""
+    return _effective_home() / "Library" / "Logs" / APP_DIR_NAME
+
+
+def _macos_cache_dir() -> Path:
+    """Return the macOS Caches directory for this app."""
+    return _effective_home() / "Library" / "Caches" / APP_DIR_NAME
+
+
 def format_path_for_logs(path_value: Union[str, Path]) -> str:
     """Format a path for logs without exposing username.
 
@@ -60,35 +84,67 @@ def format_path_for_logs(path_value: Union[str, Path]) -> str:
 
 
 def get_user_config_dir() -> Path:
-    """Get user config directory (XDG_CONFIG_HOME).
+    """Get user config directory.
 
     Returns:
-        Path to ~/.config/lm-studio-bench/
+        Path to the platform-specific config directory.
     """
+    if _is_macos():
+        config_dir = _macos_application_support_dir()
+        config_dir.mkdir(parents=True, exist_ok=True)
+        return config_dir
+
     base_dir = _resolve_xdg_home(
         "XDG_CONFIG_HOME",
         _effective_home() / ".config",
     )
-    config_dir = base_dir / "lm-studio-bench"
+    config_dir = base_dir / XDG_DIR_NAME
 
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
 
 
 def get_user_data_dir() -> Path:
-    """Get user data directory (XDG_DATA_HOME).
+    """Get user data directory.
 
     Returns:
-        Path to ~/.local/share/lm-studio-bench/
+        Path to the platform-specific data directory.
     """
+    if _is_macos():
+        data_dir = _macos_application_support_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+
     base_dir = _resolve_xdg_home(
         "XDG_DATA_HOME",
         _effective_home() / ".local" / "share",
     )
-    data_dir = base_dir / "lm-studio-bench"
+    data_dir = base_dir / XDG_DIR_NAME
 
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
+
+
+def get_user_logs_dir() -> Path:
+    """Get user log directory."""
+    logs_dir = _macos_logs_dir() if _is_macos() else get_user_data_dir() / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    return logs_dir
+
+
+def get_user_cache_dir() -> Path:
+    """Get user cache directory."""
+    if _is_macos():
+        cache_dir = _macos_cache_dir()
+    else:
+        base_dir = _resolve_xdg_home(
+            "XDG_CACHE_HOME",
+            _effective_home() / ".cache",
+        )
+        cache_dir = base_dir / XDG_DIR_NAME
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
 
 
 USER_CONFIG_DIR = get_user_config_dir()
@@ -99,5 +155,5 @@ USER_PRESETS_DIR.mkdir(parents=True, exist_ok=True)
 USER_DATA_DIR = get_user_data_dir()
 USER_RESULTS_DIR = USER_DATA_DIR / "results"
 USER_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-USER_LOGS_DIR = USER_DATA_DIR / "logs"
-USER_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+USER_LOGS_DIR = get_user_logs_dir()
+USER_CACHE_DIR = get_user_cache_dir()

@@ -20,6 +20,8 @@ permissions:
 
 jobs:
   codacy-security-scan:
+    # CODACY_PROJECT_TOKEN only exists in the upstream repository.
+    if: ${{ github.repository == 'Ajimaru/LM-Studio-Bench' }}
     permissions:
       contents: read # for actions/checkout to fetch code
       actions: read # only required for a private repository

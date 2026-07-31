@@ -12,8 +12,10 @@ mkdir -p "${LOG_DIR}"
 touch "${LOG_FILE}"
 ln -sf "$(basename "${LOG_FILE}")" "${LOG_DIR}/setup_latest.log"
 
+# Fixed descriptor instead of `exec {LOG_FD}>>`: the varname-redirect form
+# needs bash >= 4.1, and macOS still ships bash 3.2 as /bin/bash.
 LOG_FD=3
-exec {LOG_FD}>> "${LOG_FILE}"
+exec 3>> "${LOG_FILE}"
 
 if [[ -t 1 ]]; then
     C_RESET="\033[0m"
@@ -37,6 +39,8 @@ PKG_UPDATE_CMD=""
 PKG_UPDATED="0"
 INTERACTIVE="1"
 DRY_RUN="0"
+# "linux" or "macos", set by ensure_supported_os().
+OS_FAMILY=""
 
 log() {
     local level="$1"
@@ -87,13 +91,18 @@ ask_yes_no() {
     local prompt="$1"
     local default_ans="${2:-no}"
     local answer=""
+    local auto_mode="--yes mode"
 
     if [[ "${INTERACTIVE}" == "0" ]]; then
+        if [[ "${DRY_RUN}" == "1" ]]; then
+            auto_mode="--dry-run mode"
+        fi
+
         if [[ "${default_ans}" == "yes" ]]; then
-            log "INFO" "${prompt} [y/N]: ja (auto, --yes Mode)"
+            log "INFO" "${prompt} [y/N]: yes (auto, ${auto_mode})"
             return 0
         else
-            log "INFO" "${prompt} [y/N]: nein (auto, --yes Mode)"
+            log "INFO" "${prompt} [y/N]: no (auto, ${auto_mode})"
             return 1
         fi
     fi
@@ -150,15 +159,43 @@ NOTE:
 HELP
 }
 
-ensure_linux() {
-    if [[ "$(uname -s)" != "Linux" ]]; then
-        log "ERROR" "This setup script currently only supports Linux."
-        exit 1
-    fi
-    log "OK" "Linux detected: $(uname -sr)"
+ensure_supported_os() {
+    local kernel
+    kernel="$(uname -s)"
+
+    case "${kernel}" in
+        Linux)
+            OS_FAMILY="linux"
+            log "OK" "Linux detected: $(uname -sr)"
+            ;;
+        Darwin)
+            OS_FAMILY="macos"
+            local macos_version
+            macos_version="$(sw_vers -productVersion 2>/dev/null || echo "unknown")"
+            log "OK" "macOS detected: ${macos_version} ($(uname -m))"
+            ;;
+        *)
+            log "ERROR" "Unsupported OS '${kernel}'. Supported: Linux, macOS."
+            exit 1
+            ;;
+    esac
 }
 
 detect_pkg_manager() {
+    if [[ "${OS_FAMILY}" == "macos" ]]; then
+        if command -v brew >/dev/null 2>&1; then
+            PKG_MANAGER="brew"
+            PKG_INSTALL_CMD="brew install"
+            PKG_UPDATE_CMD="brew update"
+            log "OK" "Package manager detected: brew"
+            return 0
+        fi
+
+        log "WARN" "Homebrew not found. Optional packages cannot be installed."
+        log "INFO" "Install it from https://brew.sh, then re-run this script."
+        return 1
+    fi
+
     if command -v apt-get >/dev/null 2>&1; then
         PKG_MANAGER="apt"
         PKG_INSTALL_CMD="apt-get install -y"
@@ -195,6 +232,17 @@ run_pkg_update_once() {
         return 0
     fi
 
+    if [[ "${PKG_MANAGER}" == "brew" ]]; then
+        # Homebrew runs as the invoking user and refuses to run under sudo.
+        if [[ "${DRY_RUN}" == "1" ]]; then
+            log "INFO" "[DRY-RUN] Would execute: ${PKG_UPDATE_CMD}"
+        elif ! bash -lc "${PKG_UPDATE_CMD}"; then
+            log "WARN" "Could not update Homebrew. Proceeding anyway."
+        fi
+        PKG_UPDATED="1"
+        return 0
+    fi
+
     if [[ "${PKG_MANAGER}" == "apt" || "${PKG_MANAGER}" == "pacman" || \
           "${PKG_MANAGER}" == "zypper" || "${PKG_MANAGER}" == "apk" ]]; then
         if ! run_with_privileges "${PKG_UPDATE_CMD}"; then
@@ -212,6 +260,12 @@ run_with_privileges() {
     if [[ "${DRY_RUN}" == "1" ]]; then
         log "INFO" "[DRY-RUN] Would execute: ${cmd}"
         return 0
+    fi
+
+    # Homebrew must never run as root; it manages its own prefix.
+    if [[ "${PKG_MANAGER}" == "brew" ]]; then
+        bash -lc "${cmd}"
+        return $?
     fi
 
     if [[ "${EUID}" -eq 0 ]]; then
@@ -232,6 +286,27 @@ pkg_name_for_key() {
     local key="$1"
 
     case "${PKG_MANAGER}" in
+        brew)
+            # macOS ships no NVIDIA/AMD/Intel GPU tooling and no lspci,
+            # so those keys resolve to an empty package name.
+            case "${key}" in
+                python3) echo "python@3.12" ;;
+                pip3) echo "python@3.12" ;;
+                venv) echo "python@3.12" ;;
+                git) echo "git" ;;
+                curl) echo "curl" ;;
+                pkgconf) echo "pkg-config" ;;
+                python_dev) echo "python@3.12" ;;
+                gobj_dev) echo "gobject-introspection" ;;
+                cairo_dev) echo "cairo" ;;
+                pciutils) echo "" ;;
+                lm_sensors) echo "" ;;
+                intel_gpu_tools) echo "" ;;
+                rocm-smi) echo "" ;;
+                rocminfo) echo "" ;;
+                *) echo "" ;;
+            esac
+            ;;
         apt)
             case "${key}" in
                 python3) echo "python3" ;;
@@ -358,7 +433,7 @@ install_package_key() {
         return 0
     fi
 
-    log "ERROR" "Installation von '${package_name}' fehlgeschlagen."
+    log "ERROR" "Installation of '${package_name}' failed."
     return 1
 }
 
@@ -386,6 +461,12 @@ check_binary_dependency() {
 
 check_system_libs() {
     local missing_dev="0"
+
+    if [[ "${OS_FAMILY}" == "macos" ]]; then
+        log "INFO" "Skipping GTK/PyGObject checks: the system tray is Linux-only."
+        log "INFO" "Benchmarks, CLI and the web dashboard do not need GTK."
+        return 0
+    fi
 
     if command -v pkg-config >/dev/null 2>&1; then
         if ! pkg-config --exists gobject-introspection-1.0; then
@@ -441,14 +522,19 @@ open_download_link() {
         return 0
     fi
 
-    if command -v xdg-open >/dev/null 2>&1; then
-        if xdg-open "${url}" >/dev/null 2>&1; then
+    local opener="xdg-open"
+    if [[ "${OS_FAMILY}" == "macos" ]]; then
+        opener="open"
+    fi
+
+    if command -v "${opener}" >/dev/null 2>&1; then
+        if "${opener}" "${url}" >/dev/null 2>&1; then
             log "OK" "Browser opened for ${label}: ${url}"
         else
             log "WARN" "Could not open browser. Open URL manually: ${url}"
         fi
     else
-        log "WARN" "xdg-open not found. Open URL manually: ${url}"
+        log "WARN" "${opener} not found. Open URL manually: ${url}"
     fi
 }
 
@@ -471,14 +557,24 @@ check_lmstudio_stack() {
     else
         local search_paths=(
             "${HOME}/.lmstudio/llmster"
+            "${HOME}/.lmstudio/bin"
             "${HOME}/.local/share/lmstudio/llmster"
             "/opt/lmstudio/llmster"
             "/usr/local/lmstudio/llmster"
         )
 
+        if [[ "${OS_FAMILY}" == "macos" ]]; then
+            search_paths+=(
+                "/Applications/LM Studio.app/Contents/Resources"
+                "${HOME}/Applications/LM Studio.app/Contents/Resources"
+            )
+        fi
+
         for base_path in "${search_paths[@]}"; do
             if [[ -d "${base_path}" ]]; then
-                llmster_path=$(find "${base_path}" -name "llmster" -type f -executable 2>/dev/null | head -n1)
+                # -perm -u+x is POSIX and works with both GNU and BSD find;
+                # -executable is a GNU extension missing on macOS.
+                llmster_path=$(find "${base_path}" -name "llmster" -type f -perm -u+x 2>/dev/null | head -n1)
                 if [[ -n "${llmster_path}" && -x "${llmster_path}" ]]; then
                     has_llmster="1"
                     log "OK" "Headless CLI found: $(sanitize_path "${llmster_path}")"
@@ -532,6 +628,73 @@ check_optional_tool() {
     return 1
 }
 
+check_macos_gpu() {
+    local gpu_model=""
+    local gpu_cores=""
+    local metal_family=""
+
+    if ! command -v system_profiler >/dev/null 2>&1; then
+        log "WARN" "system_profiler missing. GPU detection not possible."
+        return 1
+    fi
+
+    gpu_model="$(system_profiler SPDisplaysDataType 2>/dev/null \
+        | awk -F': ' '/Chipset Model/ {print $2; exit}')"
+    gpu_cores="$(system_profiler SPDisplaysDataType 2>/dev/null \
+        | awk -F': ' '/Total Number of Cores/ {print $2; exit}')"
+    metal_family="$(system_profiler SPDisplaysDataType 2>/dev/null \
+        | awk -F': ' '/Metal/ {print $2; exit}')"
+
+    if [[ -z "${gpu_model}" ]]; then
+        log "WARN" "No GPU reported by system_profiler."
+        return 1
+    fi
+
+    if [[ -n "${gpu_cores}" ]]; then
+        log "OK" "GPU detected: ${gpu_model} (${gpu_cores} cores)"
+    else
+        log "OK" "GPU detected: ${gpu_model}"
+    fi
+
+    if [[ -n "${metal_family}" ]]; then
+        log "INFO" "Metal support: ${metal_family}"
+    fi
+
+    if [[ "$(uname -m)" == "arm64" ]]; then
+        local unified_gb
+        unified_gb="$(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))"
+        log "INFO" "Apple Silicon unified memory: ${unified_gb} GB (shared CPU/GPU)"
+        log "INFO" "LM Studio uses Metal acceleration; no extra driver needed."
+    fi
+
+    check_macmon
+    return 0
+}
+
+check_macmon() {
+    if command -v macmon >/dev/null 2>&1; then
+        log "OK" "macmon found: sudoless GPU temperature and power available."
+        return 0
+    fi
+
+    log "WARN" "macmon not found (optional)."
+    log "INFO" "Without it, GPU temperature and power need 'sudo powermetrics'"
+    log "INFO" "and stay empty in unprivileged runs (--max-temp/--max-power)."
+
+    if [[ "${PKG_MANAGER}" == "brew" ]] && ask_yes_no "Install macmon now?"; then
+        if [[ "${DRY_RUN}" == "1" ]]; then
+            log "INFO" "[DRY-RUN] Would execute: brew install macmon"
+        elif bash -lc "brew install macmon"; then
+            log "OK" "macmon installed."
+        else
+            log "WARN" "macmon installation failed."
+        fi
+    else
+        log "INFO" "Install later with: brew install macmon"
+    fi
+    return 0
+}
+
 check_gpu_and_monitoring() {
     local has_nvidia="0"
     local has_amd="0"
@@ -539,6 +702,11 @@ check_gpu_and_monitoring() {
     local gpu_lines=""
 
     section "GPU Detection & Monitoring"
+
+    if [[ "${OS_FAMILY}" == "macos" ]]; then
+        check_macos_gpu || true
+        return 0
+    fi
 
     if ! command -v lspci >/dev/null 2>&1; then
         log "WARN" "lspci missing. GPU detection will be limited."
@@ -577,7 +745,7 @@ check_gpu_and_monitoring() {
         log "INFO" "NVIDIA GPU detected."
         check_optional_tool \
             "nvidia-smi" \
-            "NVIDIA Treiber-Tool (nvidia-smi)" \
+            "NVIDIA driver tool (nvidia-smi)" \
             "" \
             "https://www.nvidia.com/Download/index.aspx" || true
     fi
@@ -607,7 +775,12 @@ check_gpu_and_monitoring() {
 }
 
 check_amd_drivers() {
-    section "AMD GPU Treiber & ROCm"
+    if [[ "${OS_FAMILY}" == "macos" ]]; then
+        log "INFO" "Skipping AMD/ROCm driver checks: not applicable on macOS."
+        return 0
+    fi
+
+    section "AMD GPU Drivers & ROCm"
     
     local gpu_device_id=""
     local gpu_sku=""
@@ -834,6 +1007,11 @@ create_project_venv() {
                 log "INFO" "[DRY-RUN] Would delete: $(sanitize_path "${PROJECT_ROOT}")/.venv"
             else
                 rm -rf "${PROJECT_ROOT}/.venv"
+                if [[ "${VIRTUAL_ENV:-}" == "${PROJECT_ROOT}/.venv" ]]; then
+                    unset VIRTUAL_ENV
+                    hash -r
+                    log "INFO" "Cleared active project venv before recreation."
+                fi
             fi
         else
             log "INFO" "Existing .venv will continue to be used."
@@ -931,7 +1109,7 @@ main() {
         log "INFO" "Mode: Interactive"
     fi
 
-    ensure_linux
+    ensure_supported_os
     detect_pkg_manager || true
 
     section "Core Dependencies"

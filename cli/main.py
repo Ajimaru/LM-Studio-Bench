@@ -24,6 +24,7 @@ from agents.runner import BenchmarkRunner
 from cli.reporting import HTMLReporter, sanitize_report_name
 from core.logging_utils import install_level_icons
 from core.paths import USER_RESULTS_DIR
+from core.platform_info import IS_MACOS, get_os_name_version
 from tools.hardware_monitor import GPUMonitor, HardwareMonitor
 
 try:
@@ -161,7 +162,20 @@ def _get_lmstudio_version() -> Optional[str]:
 
 
 def _get_driver_versions() -> dict[str, Optional[str]]:
-    """Collect GPU driver versions across NVIDIA/AMD/Intel tools."""
+    """Collect GPU driver versions across NVIDIA/AMD/Intel tools.
+
+    macOS ships none of these vendor tools, so all three fields stay empty
+    there rather than being filled with an unrelated value. The macOS GPU is
+    identified through ``gpu_type``/``gpu_model`` and the Metal support level
+    shown on the dashboard.
+    """
+    if IS_MACOS:
+        return {
+            "nvidia_driver_version": None,
+            "rocm_driver_version": None,
+            "intel_driver_version": None,
+        }
+
     nvidia = _run_command(
         ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]
     )
@@ -187,7 +201,7 @@ def _get_os_info() -> tuple[Optional[str], Optional[str]]:
     try:
         if platform.system() == "Linux" and DISTRO is not None:
             return DISTRO.name(), DISTRO.version()
-        return platform.system(), platform.release()
+        return get_os_name_version()
     except OSError:
         return None, None
 

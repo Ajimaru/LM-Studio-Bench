@@ -10,6 +10,19 @@
 
 set -e
 
+# This script uses `readarray`, which needs bash >= 4. macOS still ships
+# bash 3.2 as /bin/bash, so re-exec under a newer bash when one is present.
+if [[ -z "${BASH_VERSINFO[0]:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    for candidate in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+        if [[ -x "${candidate}" ]]; then
+            exec "${candidate}" "$0" "$@"
+        fi
+    done
+    echo "Error: this script needs bash >= 4 (found ${BASH_VERSION:-unknown})." >&2
+    echo "On macOS install a newer bash with: brew install bash" >&2
+    exit 1
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

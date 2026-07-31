@@ -1,13 +1,15 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
+  - package-ecosystem: github-actions
     directory: "/"
+    target-branch: dev
     schedule:
-      interval: "weekly"
-    target-branch: "dev"
+      interval: weekly
+    open-pull-requests-limit: 10
 
-  - package-ecosystem: "github-actions"
+  - package-ecosystem: pip
     directory: "/"
+    target-branch: dev
     schedule:
-      interval: "weekly"
-    target-branch: "dev"
+      interval: weekly
+    open-pull-requests-limit: 5

@@ -3,4 +3,5 @@
 
 # System tray integration (Linux/X11)
 # Requires system libraries: libgirepository1.0, libcairo2, libcairo2-dev, gobject-introspection
-PyGObject>=3.48,<3.50
+# Not available on macOS: the tray is skipped there, everything else still runs.
+PyGObject>=3.48,<3.50; sys_platform == "linux"
