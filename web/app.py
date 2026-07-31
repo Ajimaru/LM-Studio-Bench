@@ -2287,18 +2287,28 @@ async def get_installed_models() -> dict:
         parsed = json.loads(result.stdout)
         model_ids: list[str] = []
         seen: set[str] = set()
+        remote_only: set[str] = set()
         for item in parsed:
+            # Models served from a remote LM Link device are not benchmarkable:
+            # hardware telemetry samples this machine. Offering them here would
+            # list models that a run then silently skips.
+            is_remote = item.get("deviceIdentifier") is not None
             variants = item.get("variants") or []
-            if variants:
-                for variant in variants:
-                    if variant and variant not in seen:
-                        model_ids.append(variant)
-                        seen.add(variant)
-                continue
-            model_key = item.get("modelKey")
-            if model_key and model_key not in seen:
-                model_ids.append(model_key)
-                seen.add(model_key)
+            keys = variants if variants else [item.get("modelKey")]
+            for key in keys:
+                if not key:
+                    continue
+                if is_remote:
+                    remote_only.add(key)
+                    continue
+                if key not in seen:
+                    model_ids.append(key)
+                    seen.add(key)
+        # A model present both locally and remotely stays listed: LM Studio
+        # resolves that ambiguity in favour of the local copy.
+        skipped = len(remote_only - seen)
+        if skipped:
+            logger.info("🔗 %d remote LM Link model(s) hidden from picker", skipped)
 
         return {"success": True, "models": model_ids}
     except json.JSONDecodeError as e:

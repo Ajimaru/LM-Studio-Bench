@@ -23,7 +23,7 @@ from statistics import mean, median, quantiles
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import httpx
 import psutil
@@ -277,6 +277,9 @@ class BenchmarkResult:
     intel_driver_version: Optional[str] = None
     context_length: Optional[int] = None
     model_key: Optional[str] = None
+    # LM Link device this result was measured on. Only local models are ever
+    # benchmarked, so this records which machine "local" was.
+    device_name: Optional[str] = None
     prompt_hash: Optional[str] = None
     params_hash: Optional[str] = None
     os_name: Optional[str] = None
@@ -302,6 +305,7 @@ class BenchmarkCache:
         ("intel_driver_version", "TEXT"),
         ("prompt_hash", "TEXT"),
         ("params_hash", "TEXT"),
+        ("device_name", "TEXT"),
         ("os_name", "TEXT"),
         ("os_version", "TEXT"),
         ("cpu_model", "TEXT"),
@@ -662,6 +666,7 @@ class BenchmarkCache:
                 intel_driver_version TEXT,
                 prompt_hash TEXT,
                 params_hash TEXT,
+                device_name TEXT,
                 os_name TEXT,
                 os_version TEXT,
                 cpu_model TEXT,
@@ -956,22 +961,40 @@ class BenchmarkCache:
             return BenchmarkResult(**result_dict)
         return None
 
-    def get_latest_result_for_model(self, model_key: str) -> Optional[BenchmarkResult]:
-        """Returns latest cached result for model regardless of params hash."""
+    def get_latest_result_for_model(
+        self, model_key: str, device_name: Optional[str] = None
+    ) -> Optional[BenchmarkResult]:
+        """Returns latest cached result for model regardless of params hash.
+
+        When ``device_name`` is given, rows measured on a *different* machine
+        are rejected. Rows predating device tracking carry NULL and are still
+        accepted, so existing caches stay usable.
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         cursor.execute("PRAGMA table_info(benchmark_results)")
         columns = {row[1]: row[0] for row in cursor.fetchall()}
 
-        cursor.execute(
-            """
-            SELECT * FROM benchmark_results
-            WHERE model_key = ?
-            ORDER BY timestamp DESC LIMIT 1
-        """,
-            (model_key,),
-        )
+        if device_name and "device_name" in columns:
+            cursor.execute(
+                """
+                SELECT * FROM benchmark_results
+                WHERE model_key = ?
+                  AND (device_name IS NULL OR device_name = ?)
+                ORDER BY timestamp DESC LIMIT 1
+            """,
+                (model_key, device_name),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT * FROM benchmark_results
+                WHERE model_key = ?
+                ORDER BY timestamp DESC LIMIT 1
+            """,
+                (model_key,),
+            )
 
         row = cursor.fetchone()
         conn.close()
@@ -1120,6 +1143,7 @@ class BenchmarkCache:
                 result.intel_driver_version,
                 result.prompt_hash,
                 params_hash,
+                result.device_name,
                 result.os_name,
                 result.os_version,
                 result.cpu_model,
@@ -1194,7 +1218,8 @@ class BenchmarkCache:
                     prompt, context_length, temperature, top_k_sampling, top_p_sampling,
                     min_p_sampling, repeat_penalty, max_tokens, num_runs, runs_averaged_from,
                     warmup_runs, run_index, lmstudio_version, app_version, nvidia_driver_version, rocm_driver_version,
-                    intel_driver_version, prompt_hash, params_hash, os_name, os_version,
+                    intel_driver_version, prompt_hash, params_hash, device_name,
+                    os_name, os_version,
                     cpu_model, python_version, benchmark_duration_seconds, error_count,
                     n_gpu_layers, n_batch, n_threads, flash_attention, rope_freq_base,
                     rope_freq_scale, use_mmap, use_mlock, kv_cache_quant,
@@ -1638,6 +1663,13 @@ class ModelDiscovery:
     """Finds all locally installed models"""
 
     _metadata_cache: Dict[str, Dict] = {}
+    # Maps model key -> set of LM Link device identifiers holding that model.
+    # ``None`` inside the set means the model is present on this machine.
+    # A model can live on several devices at once, hence a set rather than a
+    # single value.
+    _device_cache: Dict[str, Set[Optional[str]]] = {}
+    # Maps LM Link deviceIdentifier -> human readable device name.
+    _link_peers_cache: Optional[Dict[str, str]] = None
 
     @staticmethod
     def warm_metadata_cache() -> Dict[str, Dict]:
@@ -1661,6 +1693,16 @@ class ModelDiscovery:
                     for model_data in data:
                         if model_data.get("type") == "llm":
                             key = model_data.get("modelKey")
+                            device = model_data.get("deviceIdentifier")
+                            # Record provenance for the bare key and for every
+                            # variant: variants are NOT device-prefixed, so a
+                            # remote "pub/model@q4_0" is indistinguishable from
+                            # a local one without this map.
+                            for device_key in [key, *model_data.get("variants", [])]:
+                                if device_key:
+                                    ModelDiscovery._device_cache.setdefault(
+                                        device_key, set()
+                                    ).add(device)
                             ModelDiscovery._metadata_cache[key] = {
                                 "architecture": model_data.get(
                                     "architecture", "unknown"
@@ -1705,6 +1747,125 @@ class ModelDiscovery:
                 "has_vision": False,
                 "has_tools": False,
             },
+        )
+
+    @staticmethod
+    def get_devices(model_key: str) -> Set[Optional[str]]:
+        """Returns the LM Link devices a model lives on.
+
+        ``None`` inside the result means "this machine". An empty set means
+        the device is unknown, which is treated as local by callers.
+        """
+        ModelDiscovery._get_metadata_cache()
+        devices = ModelDiscovery._device_cache.get(model_key)
+        if devices is None and "@" in model_key:
+            devices = ModelDiscovery._device_cache.get(model_key.split("@")[0])
+        return devices if devices is not None else set()
+
+    @staticmethod
+    def is_local_model(model_key: str) -> bool:
+        """Whether a model is available on this machine.
+
+        Unknown provenance counts as local: without LM Link every model is
+        local, and callers that stub out the metadata cache must keep working.
+        A model present both locally and remotely counts as local — LM Studio
+        resolves that ambiguity in favour of the local copy.
+        """
+        devices = ModelDiscovery.get_devices(model_key)
+        return not devices or None in devices
+
+    @staticmethod
+    def get_link_peers() -> Dict[str, str]:
+        """Maps LM Link device identifiers to readable names.
+
+        Best effort: returns an empty mapping when LM Link is unavailable,
+        which older LM Studio CLIs are. Never raises.
+        """
+        if ModelDiscovery._link_peers_cache is not None:
+            return ModelDiscovery._link_peers_cache
+
+        peers: Dict[str, str] = {}
+        try:
+            result = subprocess.run(
+                ["lms", "link", "status", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                for peer in data.get("peers", []):
+                    identifier = peer.get("deviceIdentifier")
+                    if identifier:
+                        peers[identifier] = peer.get("deviceName") or identifier
+                local_id = data.get("deviceIdentifier")
+                if local_id:
+                    peers[local_id] = data.get("deviceName") or local_id
+        except (
+            subprocess.SubprocessError,
+            OSError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as e:
+            logger.debug("LM Link status unavailable: %s", e)
+
+        ModelDiscovery._link_peers_cache = peers
+        return peers
+
+    @staticmethod
+    def get_device_name(identifier: Optional[str]) -> str:
+        """Resolves a device identifier to a readable name."""
+        if identifier is None:
+            return "local"
+        return ModelDiscovery.get_link_peers().get(identifier) or identifier
+
+    @staticmethod
+    def get_local_device_name() -> Optional[str]:
+        """Returns this machine's LM Link device name, if known."""
+        try:
+            result = subprocess.run(
+                ["lms", "link", "status", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if result.returncode == 0:
+                return json.loads(result.stdout).get("deviceName")
+        except (
+            subprocess.SubprocessError,
+            OSError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as e:
+            logger.debug("LM Link status unavailable: %s", e)
+        return None
+
+    @staticmethod
+    def _log_device_summary(local: List[str], remote: List[str]) -> None:
+        """Reports which models were kept and which were skipped as remote."""
+        logger.info("🖥️ %d local model(s)", len(local))
+        if not remote:
+            return
+
+        by_device: Dict[str, int] = {}
+        for model_key in remote:
+            for device in ModelDiscovery.get_devices(model_key):
+                if device is not None:
+                    name = ModelDiscovery.get_device_name(device)
+                    by_device[name] = by_device.get(name, 0) + 1
+        detail = ", ".join(
+            f"{count} on '{name}'" for name, count in sorted(by_device.items())
+        )
+        logger.info(
+            "🔗 LM Link active: skipping %d remote model(s)%s",
+            len(remote),
+            f" ({detail})" if detail else "",
+        )
+        logger.info(
+            "   Benchmarks run locally only — hardware telemetry measures "
+            "this machine."
         )
 
     @staticmethod
@@ -1772,8 +1933,33 @@ class ModelDiscovery:
 
     @staticmethod
     def filter_models(models: List[str], filter_args: Dict) -> List[str]:
-        """Filters models based on CLI arguments"""
-        if not filter_args:
+        """Filters models based on CLI arguments.
+
+        Remote models served via LM Link are always dropped first, before any
+        CLI filter applies. This is unconditional: hardware telemetry is
+        sampled on this machine, so a remote model's throughput would be paired
+        with local GPU temperature, power and VRAM readings.
+        """
+        filter_args = filter_args or {}
+
+        local_models = []
+        remote_models = []
+        seen = set()
+        for model_key in models:
+            # A model available on several devices is listed once per device;
+            # benchmarking it twice would just duplicate the same local run.
+            if model_key in seen:
+                continue
+            seen.add(model_key)
+            if ModelDiscovery.is_local_model(model_key):
+                local_models.append(model_key)
+            else:
+                remote_models.append(model_key)
+
+        ModelDiscovery._log_device_summary(local_models, remote_models)
+        models = local_models
+
+        if not any(filter_args.values()):
             return models
 
         filtered = []
@@ -2160,6 +2346,10 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             "rocm_driver_version": self.get_rocm_driver_version(),
             "intel_driver_version": self.get_intel_driver_version(),
         }
+
+        # Records which machine results were measured on. Only meaningful when
+        # LM Link is set up; None otherwise.
+        self.local_device_name = ModelDiscovery.get_local_device_name()
 
         logger.info("📋 Collected version information:")
         for key, value in self.system_versions.items():
@@ -2706,6 +2896,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 )
                 result.error_count = error_count
                 result.model_key = model_key
+                result.device_name = self.local_device_name
                 result.prompt_hash = self.prompt_hash
                 result.params_hash = self.params_hash
                 result.context_length = self.context_length
@@ -3301,9 +3492,17 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             logger.error("❌ No models found")
             return "failed"
 
+        discovered = models
         models = ModelDiscovery.filter_models(models, self.filter_args)
         if not models:
-            logger.error("❌ No models remaining after filtering")
+            if not any(ModelDiscovery.is_local_model(m) for m in discovered):
+                logger.error(
+                    "❌ No local models found — all %d model(s) live on remote "
+                    "LM Link devices. Download a model locally to benchmark it.",
+                    len(discovered),
+                )
+            else:
+                logger.error("❌ No models remaining after filtering")
             return "failed"
 
         logger.info("")
@@ -3329,7 +3528,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 cached = self.cache.get_cached_result(model_key, self.params_hash)
                 is_fallback = False
                 if not cached:
-                    cached = self.cache.get_latest_result_for_model(model_key)
+                    cached = self.cache.get_latest_result_for_model(
+                        model_key, self.local_device_name
+                    )
                     is_fallback = cached is not None
                 if cached:
                     cached_models.append((model_key, cached))

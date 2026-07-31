@@ -2753,3 +2753,59 @@ class TestBenchmarkWebSocket:
             response = client.get("/api/dashboard/stats")
 
         assert response.status_code == 200
+
+
+class TestInstalledModelsEndpoint:
+    """Tests for GET /api/models/installed."""
+
+    _MIXED = [
+        {
+            "type": "llm",
+            "modelKey": "pub/local-only",
+            "deviceIdentifier": None,
+            "variants": ["pub/local-only@q4_k_m"],
+        },
+        {
+            "type": "llm",
+            "modelKey": "pub/remote-only",
+            "deviceIdentifier": "b64e3314560e876afdc27837698e87b0",
+            "variants": ["pub/remote-only@q4_0"],
+        },
+    ]
+
+    def test_hides_remote_lm_link_models(self):
+        """Remote models are not offered — a run would skip them anyway."""
+        import json as _json
+        client = _get_client()
+        mock_result = MagicMock(returncode=0, stdout=_json.dumps(self._MIXED))
+        with patch("subprocess.run", return_value=mock_result):
+            response = client.get("/api/models/installed")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["success"] is True
+        assert payload["models"] == ["pub/local-only@q4_k_m"]
+
+    def test_keeps_model_present_on_both_devices(self):
+        """A model available locally stays listed even if also remote."""
+        import json as _json
+        client = _get_client()
+        both = [
+            {
+                "type": "llm",
+                "modelKey": "pub/on-both",
+                "deviceIdentifier": None,
+                "variants": ["pub/on-both@q6_k"],
+            },
+            {
+                "type": "llm",
+                "modelKey": "pub/on-both",
+                "deviceIdentifier": "b64e3314560e876afdc27837698e87b0",
+                "variants": ["pub/on-both@q6_k"],
+            },
+        ]
+        mock_result = MagicMock(returncode=0, stdout=_json.dumps(both))
+        with patch("subprocess.run", return_value=mock_result):
+            response = client.get("/api/models/installed")
+
+        assert response.json()["models"] == ["pub/on-both@q6_k"]
