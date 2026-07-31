@@ -33,6 +33,7 @@ from core.client import LMStudioRESTClient
 from core.config import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
 from core.logging_utils import install_level_icons
 from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.platform_info import IS_MACOS, get_os_name_version
 from core.presets import PresetManager
 from tools.hardware_monitor import GPUMonitor, HardwareMonitor
 
@@ -1601,6 +1602,38 @@ class LMStudioServerManager:
         return True
 
 
+def extract_quantization_name(value: Any) -> Optional[str]:
+    """Normalize a quantization field into a plain name string.
+
+    LM Studio changed this field's shape. Older builds returned a plain
+    string (and encoded the quantization in the model key as
+    ``model@Q4_K_M``); newer builds return an object instead:
+
+    - ``lms ls --json``      -> ``{"name": "Q4_K_M", "bits": 4}``
+    - REST ``/api/v1/models`` -> ``{"name": "Q4_K_M", "bits_per_weight": 4}``
+
+    Args:
+        value: Raw quantization value from the CLI or REST payload.
+
+    Returns:
+        The quantization name (e.g. ``Q4_K_M``, ``4bit``), or None when it
+        cannot be determined.
+    """
+    if isinstance(value, str):
+        return value.strip() or None
+
+    if isinstance(value, dict):
+        name = value.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+
+        bits = value.get("bits", value.get("bits_per_weight"))
+        if isinstance(bits, (int, float)):
+            return f"{int(bits)}bit"
+
+    return None
+
+
 class ModelDiscovery:
     """Finds all locally installed models"""
 
@@ -1632,6 +1665,9 @@ class ModelDiscovery:
                                 "architecture": model_data.get(
                                     "architecture", "unknown"
                                 ),
+                                "quantization": extract_quantization_name(
+                                    model_data.get("quantization")
+                                ),
                                 "params_size": model_data.get(
                                     "paramsString", "unknown"
                                 ),
@@ -1662,6 +1698,7 @@ class ModelDiscovery:
             base_model,
             {
                 "architecture": "unknown",
+                "quantization": None,
                 "params_size": "unknown",
                 "max_context_length": 0,
                 "model_size_gb": 0.0,
@@ -1857,6 +1894,8 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def get_nvidia_driver_version() -> Optional[str]:
         """Retrieves NVIDIA Driver version"""
+        if IS_MACOS:
+            return None
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
@@ -1875,6 +1914,8 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def get_rocm_driver_version() -> Optional[str]:
         """Retrieves AMD ROCm/Driver version"""
+        if IS_MACOS:
+            return None
         try:
             rocm_paths = ["/usr/bin/rocm-smi", "/usr/local/bin/rocm-smi"]
             rocm_paths.extend(glob.glob("/opt/rocm-*/bin/rocm-smi"))
@@ -1945,6 +1986,8 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def get_intel_driver_version() -> Optional[str]:
         """Retrieves Intel GPU Driver version"""
+        if IS_MACOS:
+            return None
         try:
             result = subprocess.run(
                 ["intel_gpu_top", "--help"],
@@ -1984,9 +2027,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                     os_version = platform.release()
                     return os_name, os_version
             else:
-                os_name = os_system
-                os_version = platform.release()
-                return os_name, os_version
+                # macOS reports "macOS Tahoe"/"26.6" instead of
+                # "Darwin"/"25.6.0"; other systems keep platform values.
+                return get_os_name_version()
         except OSError:
             logger.debug("OS info not available")
         return None, None
@@ -2529,17 +2572,23 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             except (subprocess.SubprocessError, OSError) as e:
                 logger.warning("⚠️ Error unloading all models: %s", e)
 
+        metadata = ModelDiscovery.get_model_metadata(model_key)
+        model_size_gb = metadata.get("model_size_gb", 0)
+
+        # Older LM Studio encoded the quantization in the model key
+        # ("model@Q4_K_M"). Newer builds use a flat key and report the
+        # quantization as its own field, so fall back to the metadata.
         if "@" in model_key:
             model_name, quantization = model_key.split("@", 1)
         else:
             model_name = model_key
-            quantization = "unknown"
-
-        metadata = ModelDiscovery.get_model_metadata(model_key)
-        model_size_gb = metadata.get("model_size_gb", 0)
+            quantization = (
+                extract_quantization_name(metadata.get("quantization"))
+                or "unknown"
+            )
 
         smart_offload_levels = self._get_smart_offload_levels(model_key, model_size_gb)
-        logger.info("🎯 Intelligente Offload-Levels: %s", smart_offload_levels)
+        logger.info("🎯 Smart offload levels: %s", smart_offload_levels)
 
         used_offload = smart_offload_levels[0] if smart_offload_levels else 1.0
         instance_id: Optional[str] = None
@@ -3689,7 +3738,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 break
 
         if vram_info:
-            recommendations.append("🎯 VRAM-Empfehlungen:")
+            recommendations.append("🎯 VRAM recommendations:")
             recommendations.extend(vram_info[:3])
 
         return recommendations
@@ -3776,7 +3825,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
             fig.update_layout(
                 title="Performance trends over time",
-                xaxis_title="Datum",
+                xaxis_title="Date",
                 yaxis_title="Tokens/s",
                 hovermode="x unified",
                 height=600,
@@ -4305,7 +4354,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             if comp_data:
                 elements.append(
                     Paragraph(
-                        "Quantisierungs-Vergleich (Q4 vs Q5 vs Q6)", heading_style
+                        "Quantization Comparison (Q4 vs Q5 vs Q6)", heading_style
                     )
                 )
 
@@ -4710,7 +4759,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 powers_avg = [r.power_watts_avg for r in results if r.power_watts_avg]
 
                 profile_summary = [
-                    ["Metrik", "Min", "Max", "Durchschnitt"],
+                    ["Metric", "Min", "Max", "Average"],
                 ]
 
                 if temps_avg:
@@ -5756,7 +5805,7 @@ Examples:
         dest="min_p_sampling",
         type=float,
         default=None,
-        help="Override: Min-P (Minimum probability threshold, z.B. 0.05)",
+        help="Override: Min-P (Minimum probability threshold, e.g. 0.05)",
     )
     parser.add_argument(
         "--repeat-penalty",

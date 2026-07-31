@@ -569,6 +569,52 @@ class TestLMStudioServerManager:
         assert result is True
 
 
+class TestExtractQuantizationName:
+    """Tests for extract_quantization_name().
+
+    LM Studio changed this field from a plain string to an object, and the
+    CLI and REST payloads spell the bit-count key differently.
+    """
+
+    def test_parses_lms_cli_object(self):
+        """`lms ls --json` returns {"name": ..., "bits": ...}."""
+        bm = _import_benchmark()
+        value = {"name": "Q4_K_M", "bits": 4}
+        assert bm.extract_quantization_name(value) == "Q4_K_M"
+
+    def test_parses_rest_object(self):
+        """REST /api/v1/models returns {"name": ..., "bits_per_weight": ...}."""
+        bm = _import_benchmark()
+        value = {"name": "Q4_K_M", "bits_per_weight": 4}
+        assert bm.extract_quantization_name(value) == "Q4_K_M"
+
+    def test_parses_mlx_style_name(self):
+        """MLX models report names such as '4bit'."""
+        bm = _import_benchmark()
+        assert bm.extract_quantization_name({"name": "4bit", "bits": 4}) == "4bit"
+
+    def test_accepts_legacy_plain_string(self):
+        """Older LM Studio returned a plain string."""
+        bm = _import_benchmark()
+        assert bm.extract_quantization_name("Q5_K_S") == "Q5_K_S"
+
+    def test_falls_back_to_bits_when_name_missing(self):
+        """A bits-only object degrades to a '<n>bit' label."""
+        bm = _import_benchmark()
+        assert bm.extract_quantization_name({"bits": 8}) == "8bit"
+        assert bm.extract_quantization_name({"bits_per_weight": 4}) == "4bit"
+
+    def test_returns_none_for_missing_or_blank(self):
+        """Absent or empty values yield None so callers can default."""
+        bm = _import_benchmark()
+        assert bm.extract_quantization_name(None) is None
+        assert bm.extract_quantization_name("") is None
+        assert bm.extract_quantization_name("   ") is None
+        assert bm.extract_quantization_name({}) is None
+        assert bm.extract_quantization_name({"name": ""}) is None
+        assert bm.extract_quantization_name(42) is None
+
+
 class TestModelDiscovery:
     """Tests for benchmark.ModelDiscovery."""
 
@@ -576,6 +622,40 @@ class TestModelDiscovery:
         """Clear metadata cache before each test."""
         bm = _import_benchmark()
         bm.ModelDiscovery._metadata_cache = {}
+
+    def test_metadata_cache_captures_nested_quantization(self):
+        """Quantization from newer `lms ls --json` reaches the cache."""
+        import json as _json
+        bm = _import_benchmark()
+        models_data = [
+            {
+                "type": "llm",
+                "modelKey": "thinkingcap-qwen3.6-27b",
+                "architecture": "qwen35",
+                "paramsString": "27B",
+                "quantization": {"name": "Q4_K_M", "bits": 4},
+                "sizeBytes": 17741858944,
+                "maxContextLength": 262144,
+            }
+        ]
+        mock_result = MagicMock(
+            returncode=0, stdout=_json.dumps(models_data)
+        )
+        with patch("subprocess.run", return_value=mock_result):
+            metadata = bm.ModelDiscovery.get_model_metadata(
+                "thinkingcap-qwen3.6-27b"
+            )
+
+        assert metadata["quantization"] == "Q4_K_M"
+        assert metadata["architecture"] == "qwen35"
+
+    def test_metadata_defaults_include_quantization_key(self):
+        """Unknown models still expose the quantization key as None."""
+        bm = _import_benchmark()
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            metadata = bm.ModelDiscovery.get_model_metadata("nope")
+
+        assert metadata["quantization"] is None
 
     def test_get_installed_models_returns_empty_on_error(self):
         """get_installed_models returns empty list when lms fails."""
@@ -751,15 +831,28 @@ class TestLMStudioBenchmarkStaticMethods:
             result = bm.LMStudioBenchmark.get_lmstudio_version()
         assert result is None
 
-    def test_get_nvidia_driver_version_success(self):
+    def test_get_nvidia_driver_version_success(self, monkeypatch):
         """get_nvidia_driver_version returns version string."""
         bm = _import_benchmark()
+        monkeypatch.setattr(bm, "IS_MACOS", False)
         with patch(
             "subprocess.run",
             return_value=MagicMock(returncode=0, stdout="535.104.05\n"),
         ):
             result = bm.LMStudioBenchmark.get_nvidia_driver_version()
         assert result is not None and "535" in result
+
+    def test_gpu_driver_versions_are_none_on_macos(self, monkeypatch):
+        """macOS ships no NVIDIA/ROCm/Intel tooling, so no probe runs."""
+        bm = _import_benchmark()
+        monkeypatch.setattr(bm, "IS_MACOS", True)
+
+        with patch("subprocess.run") as mock_run:
+            assert bm.LMStudioBenchmark.get_nvidia_driver_version() is None
+            assert bm.LMStudioBenchmark.get_rocm_driver_version() is None
+            assert bm.LMStudioBenchmark.get_intel_driver_version() is None
+
+        mock_run.assert_not_called()
 
     def test_get_nvidia_driver_version_returns_none_on_error(self):
         """get_nvidia_driver_version returns None when nvidia-smi fails."""

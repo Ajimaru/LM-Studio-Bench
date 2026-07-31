@@ -13,6 +13,14 @@ from typing import Dict, List, Optional
 
 import psutil
 
+from core.platform_info import (
+    IS_MACOS,
+    detect_apple_gpu,
+    get_apple_unified_memory_gb,
+    read_apple_gpu_stats,
+)
+from tools.macmon import MacmonSampler, is_macmon_available
+
 try:
     import cpuinfo
 except (ImportError, ModuleNotFoundError):
@@ -46,6 +54,13 @@ class HardwareMonitor:
         self.lock = threading.Lock()
         self._amd_sysfs_path: Optional[str] = None
         self._amd_hwmon_path: Optional[str] = None
+
+        # Apple Silicon exposes temperature and power only through
+        # powermetrics (root) or macmon (sudoless). macmon is optional: when
+        # absent, those metrics simply stay unset.
+        self._macmon: Optional[MacmonSampler] = None
+        if self.gpu_type == "Apple" and is_macmon_available():
+            self._macmon = MacmonSampler()
 
         if self.gpu_type == "AMD" and self.gpu_tool == "sysfs":
             self._init_amd_sysfs_paths()
@@ -103,6 +118,10 @@ class HardwareMonitor:
         )
         self.monitoring = True
         self._reset_measurements()
+
+        if self._macmon is not None and not self._macmon.start():
+            logger.debug("macmon could not be started; temp/power stay unset")
+
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.thread.start()
 
@@ -111,6 +130,9 @@ class HardwareMonitor:
         self.monitoring = False
         if self.thread:
             self.thread.join(timeout=2)
+
+        if self._macmon is not None:
+            self._macmon.stop()
 
         with self.lock:
             temps = self.temps.copy()
@@ -214,6 +236,11 @@ class HardwareMonitor:
             if not self.gpu_tool:
                 return None
 
+            if self.gpu_type == "Apple":
+                if self._macmon is None:
+                    return None
+                return self._macmon.get_gpu_temperature()
+
             if self.gpu_type == "NVIDIA":
                 result = subprocess.run(
                     [
@@ -268,6 +295,11 @@ class HardwareMonitor:
         try:
             if not self.gpu_tool:
                 return None
+
+            if self.gpu_type == "Apple":
+                if self._macmon is None:
+                    return None
+                return self._macmon.get_gpu_power()
 
             if self.gpu_type == "NVIDIA":
                 result = subprocess.run(
@@ -331,6 +363,9 @@ class HardwareMonitor:
                 if result.returncode == 0:
                     vram_mb = float(result.stdout.strip().split("\n")[0])
                     return vram_mb / 1024.0
+
+            if self.gpu_type == "Apple":
+                return read_apple_gpu_stats()["vram_used_gb"]
 
             if self.gpu_type == "AMD":
                 if self.gpu_tool == "sysfs" and self._amd_sysfs_path:
@@ -472,8 +507,45 @@ class GPUMonitor:
             )
         return None
 
+    def _detect_apple_gpu(self) -> bool:
+        """Detect an Apple Silicon GPU on macOS.
+
+        Returns:
+            True when an Apple GPU was detected and state was set.
+        """
+        gpu_info = detect_apple_gpu()
+        if not gpu_info or gpu_info.get("vendor") != "Apple":
+            return False
+
+        self.gpu_type = "Apple"
+        # VRAM always comes from ioreg; macmon adds sudoless temperature and
+        # power on top when it is installed.
+        has_macmon = is_macmon_available()
+        self.gpu_tool = "macmon+ioreg" if has_macmon else "ioreg"
+
+        model = gpu_info["model"]
+        cores = gpu_info.get("cores")
+        self.gpu_model = f"{model} ({cores}-core GPU)" if cores else model
+
+        unified_memory_gb = get_apple_unified_memory_gb()
+        logger.info(
+            "🍎 Apple GPU detected: %s, unified memory: %s GB, Tool: %s",
+            self.gpu_model,
+            unified_memory_gb if unified_memory_gb is not None else "unknown",
+            self.gpu_tool,
+        )
+        if not has_macmon:
+            logger.info(
+                "💡 Install macmon (brew install macmon) for sudoless GPU "
+                "temperature and power metrics."
+            )
+        return True
+
     def _detect_gpu(self) -> None:
         """Detect GPU type and corresponding monitoring tool."""
+        if IS_MACOS and self._detect_apple_gpu():
+            return
+
         nvidia_paths = ["/usr/bin", "/usr/local/bin", "/usr/local/cuda/bin"]
         nvidia_tool = self._find_tool("nvidia-smi", nvidia_paths)
         if nvidia_tool:
@@ -643,6 +715,12 @@ class GPUMonitor:
             return "N/A"
 
         try:
+            if self.gpu_type == "Apple":
+                vram_used_gb = read_apple_gpu_stats()["vram_used_gb"]
+                if vram_used_gb is not None:
+                    return f"{int(vram_used_gb * 1024)}"
+                return "N/A"
+
             if self.gpu_type == "NVIDIA":
                 result = subprocess.run(
                     [

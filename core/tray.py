@@ -23,6 +23,7 @@ from urllib import request as urllib_request
 import webbrowser
 
 from core.paths import USER_LOGS_DIR
+from core.platform_info import IS_LINUX, IS_MACOS
 from core.version import fetch_latest_release
 
 _LATEST_RELEASE_LOCK = threading.Lock()
@@ -92,7 +93,13 @@ def _prepend_env_paths(var_name: str, paths: list[str]) -> None:
 
 
 def _bootstrap_gi_runtime_paths() -> None:
-    """Ensure GI typelibs and shared libs are discoverable in AppImage mode."""
+    """Ensure GI typelibs and shared libs are discoverable in AppImage mode.
+
+    AppImage is a Linux packaging format, so this is a no-op elsewhere.
+    """
+    if not IS_LINUX:
+        return
+
     project_root = Path(__file__).resolve().parent.parent
     appdir_candidate = project_root.parents[2]
 
@@ -163,6 +170,26 @@ else:
 LOGGER = logging.getLogger("tray")
 _TRAY_STATE: dict[str, Optional[threading.Thread]] = {"thread": None}
 _WEBAPP_URL_RE = re.compile(r"Dashboard available at (http://localhost:\d+)")
+
+
+def tray_unavailable_reason() -> Optional[str]:
+    """Explain why the tray cannot start, or return None when it can.
+
+    The tray is built on GTK/AppIndicator, which is packaged for Linux
+    desktops only. Callers use this to report a clear message instead of a
+    GTK import traceback.
+    """
+    if IMPORT_ERROR is None:
+        return None
+
+    if IS_MACOS:
+        return (
+            "The GTK system tray is Linux-only and is not available on "
+            "macOS. Benchmarks, the CLI and the web dashboard are "
+            "unaffected."
+        )
+
+    return f"Tray dependencies unavailable: {IMPORT_ERROR}"
 
 
 def _normalize_dashboard_url(dashboard_url: str) -> str:
@@ -1258,8 +1285,9 @@ def start_tray(dashboard_url: str, debug: bool = False) -> bool:
     log_file = _setup_logger(debug=debug)
     LOGGER.info("Tray log file: %s", log_file)
 
-    if IMPORT_ERROR is not None:
-        LOGGER.warning("Tray dependencies unavailable: %s", IMPORT_ERROR)
+    unavailable_reason = tray_unavailable_reason()
+    if unavailable_reason is not None:
+        LOGGER.warning("%s", unavailable_reason)
         return False
 
     current_thread = _TRAY_STATE["thread"]
@@ -1322,9 +1350,9 @@ def main() -> int:
     log_file = _setup_logger(debug=args.debug)
     LOGGER.info("Tray standalone start, log: %s", log_file)
 
-    if IMPORT_ERROR is not None:
-        msg = f"Cannot start tray, missing dependencies: {IMPORT_ERROR}"
-        LOGGER.error(msg)
+    unavailable_reason = tray_unavailable_reason()
+    if unavailable_reason is not None:
+        LOGGER.error("Cannot start tray: %s", unavailable_reason)
         return 1
 
     try:

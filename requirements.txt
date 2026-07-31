@@ -7,9 +7,11 @@ fastapi>=0.139.0
 uvicorn[standard]>=0.49.0
 jinja2>=3.1.6
 httpx>=0.28,<0.29
-distro>=1.8.0
+distro>=1.8.0; sys_platform == "linux"
 py-cpuinfo>=9.0.0
 scipy>=1.17.1
 pydantic>=2.13.4
-PyGObject>=3.48,<3.50
+# GTK system tray, Linux only. PyGObject needs gobject-introspection and
+# cairo development headers that macOS does not ship.
+PyGObject>=3.48,<3.50; sys_platform == "linux"
 PyYAML>=6.0.3

@@ -73,6 +73,8 @@ class TestLoadConfig:
         config = load_config(bad_yaml)
         # YAML parse errors should fall back to default configuration.
         assert config == DEFAULT_CONFIG
+
+
 class TestParseArgs:
     """Tests for parse_args function."""
 
@@ -214,7 +216,13 @@ class TestHardwareMonitoring:
 
         assert monitor is not None
         assert monitor.enabled is True
-        assert monitor.gpu_type in ("NVIDIA", "AMD", "Intel", "Unknown")
+        assert monitor.gpu_type in (
+            "NVIDIA",
+            "AMD",
+            "Intel",
+            "Apple",
+            "Unknown",
+        )
 
 
 class TestBenchmarkAgentConfig:

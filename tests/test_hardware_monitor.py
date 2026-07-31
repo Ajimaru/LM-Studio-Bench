@@ -6,7 +6,167 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import tools.hardware_monitor as hw
 from tools.hardware_monitor import GPUMonitor, HardwareMonitor
+
+APPLE_GPU_INFO = {
+    "model": "Apple M4 Max",
+    "cores": 40,
+    "metal_family": "metal4",
+    "vendor": "Apple",
+}
+
+
+class TestAppleGpuDetection:
+    """Tests for Apple Silicon GPU support on macOS."""
+
+    def test_detect_gpu_finds_apple_silicon(self, monkeypatch):
+        """GPUMonitor reports Apple GPU type, model and ioreg tool."""
+        monkeypatch.setattr(hw, "IS_MACOS", True)
+        monkeypatch.setattr(
+            hw, "detect_apple_gpu", lambda: dict(APPLE_GPU_INFO)
+        )
+        monkeypatch.setattr(hw, "get_apple_unified_memory_gb", lambda: 64.0)
+        monkeypatch.setattr(hw, "is_macmon_available", lambda: False)
+
+        monitor = GPUMonitor()
+
+        assert monitor.gpu_type == "Apple"
+        assert monitor.gpu_tool == "ioreg"
+        assert monitor.gpu_model == "Apple M4 Max (40-core GPU)"
+
+    def test_detect_gpu_reports_macmon_when_installed(self, monkeypatch):
+        """gpu_tool advertises macmon when sudoless sampling is available."""
+        monkeypatch.setattr(hw, "IS_MACOS", True)
+        monkeypatch.setattr(
+            hw, "detect_apple_gpu", lambda: dict(APPLE_GPU_INFO)
+        )
+        monkeypatch.setattr(hw, "get_apple_unified_memory_gb", lambda: 64.0)
+        monkeypatch.setattr(hw, "is_macmon_available", lambda: True)
+
+        monitor = GPUMonitor()
+
+        assert monitor.gpu_tool == "macmon+ioreg"
+
+    def test_detect_gpu_skips_apple_branch_on_linux(self, monkeypatch):
+        """Linux never probes the Apple detection path."""
+        mock_detect = MagicMock()
+        monkeypatch.setattr(hw, "IS_MACOS", False)
+        monkeypatch.setattr(hw, "detect_apple_gpu", mock_detect)
+
+        with patch("shutil.which", return_value=None), \
+                patch("glob.glob", return_value=[]):
+            GPUMonitor()
+
+        mock_detect.assert_not_called()
+
+    def test_detect_gpu_falls_through_for_non_apple_vendor(self, monkeypatch):
+        """A non-Apple vendor on macOS falls through to the vendor tools."""
+        monkeypatch.setattr(hw, "IS_MACOS", True)
+        monkeypatch.setattr(
+            hw, "detect_apple_gpu", lambda: {**APPLE_GPU_INFO, "vendor": "amd"}
+        )
+
+        with patch("shutil.which", return_value=None), \
+                patch("glob.glob", return_value=[]):
+            monitor = GPUMonitor()
+
+        assert monitor.gpu_type == "Unknown"
+
+    def test_get_vram_usage_reports_megabytes(self):
+        """GPUMonitor.get_vram_usage converts unified memory GB to MB."""
+        monitor = GPUMonitor.__new__(GPUMonitor)
+        monitor.gpu_type = "Apple"
+        monitor.gpu_tool = "ioreg"
+        monitor.gpu_model = "Apple M4 Max"
+
+        with patch.object(
+            hw,
+            "read_apple_gpu_stats",
+            return_value={"utilization_percent": 16.0, "vram_used_gb": 2.2},
+        ):
+            assert monitor.get_vram_usage() == "2252"
+
+    def test_get_vram_usage_returns_na_without_stats(self):
+        """Unreadable ioreg statistics yield N/A rather than an exception."""
+        monitor = GPUMonitor.__new__(GPUMonitor)
+        monitor.gpu_type = "Apple"
+        monitor.gpu_tool = "ioreg"
+        monitor.gpu_model = "Apple M4 Max"
+
+        with patch(
+            "tools.hardware_monitor.read_apple_gpu_stats",
+            return_value={"utilization_percent": None, "vram_used_gb": None},
+        ):
+            assert monitor.get_vram_usage() == "N/A"
+
+    def test_hardware_monitor_reads_vram_in_gb(self):
+        """HardwareMonitor._get_vram_usage returns unified memory in GB."""
+        monitor = HardwareMonitor(
+            gpu_type="Apple", gpu_tool="ioreg", enabled=False
+        )
+        with patch.object(
+            hw,
+            "read_apple_gpu_stats",
+            return_value={"utilization_percent": 16.0, "vram_used_gb": 2.2},
+        ):
+            assert monitor._get_vram_usage() == 2.2
+
+    def test_temperature_and_power_unset_without_macmon(self, monkeypatch):
+        """Without macmon, temp and power would need root powermetrics."""
+        monkeypatch.setattr(hw, "is_macmon_available", lambda: False)
+        monitor = HardwareMonitor(
+            gpu_type="Apple", gpu_tool="ioreg", enabled=False
+        )
+        assert monitor._macmon is None
+        assert monitor._get_temperature() is None
+        assert monitor._get_power_draw() is None
+        assert monitor._get_gtt_usage() is None
+
+    def test_temperature_and_power_come_from_macmon(self, monkeypatch):
+        """With macmon installed, temp and power are sampled sudolessly."""
+        monkeypatch.setattr(hw, "is_macmon_available", lambda: True)
+
+        sampler = MagicMock()
+        sampler.get_gpu_temperature.return_value = 47.14
+        sampler.get_gpu_power.return_value = 12.5
+        monkeypatch.setattr(hw, "MacmonSampler", lambda *a, **k: sampler)
+
+        monitor = HardwareMonitor(
+            gpu_type="Apple", gpu_tool="macmon+ioreg", enabled=False
+        )
+
+        assert monitor._get_temperature() == 47.14
+        assert monitor._get_power_draw() == 12.5
+
+    def test_macmon_not_used_for_non_apple_gpus(self, monkeypatch):
+        """NVIDIA and AMD keep their own vendor tools."""
+        monkeypatch.setattr(hw, "is_macmon_available", lambda: True)
+        monitor = HardwareMonitor(
+            gpu_type="NVIDIA", gpu_tool="nvidia-smi", enabled=False
+        )
+        assert monitor._macmon is None
+
+    def test_macmon_lifecycle_follows_monitor(self, monkeypatch):
+        """The sampler starts with monitoring and stops with it."""
+        monkeypatch.setattr(hw, "is_macmon_available", lambda: True)
+
+        sampler = MagicMock()
+        sampler.start.return_value = True
+        sampler.get_gpu_temperature.return_value = 47.0
+        sampler.get_gpu_power.return_value = 12.5
+        monkeypatch.setattr(hw, "MacmonSampler", lambda *a, **k: sampler)
+
+        monitor = HardwareMonitor(
+            gpu_type="Apple", gpu_tool="macmon+ioreg", enabled=True
+        )
+        monitor.start()
+        sampler.start.assert_called_once()
+
+        stats = monitor.stop()
+        sampler.stop.assert_called_once()
+        assert stats["temp_celsius_max"] == 47.0
+        assert stats["power_watts_max"] == 12.5
 
 
 class TestHardwareMonitor:
