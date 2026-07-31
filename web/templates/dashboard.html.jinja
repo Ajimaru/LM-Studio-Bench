@@ -876,6 +876,28 @@
             font-weight: 700;
         }
 
+        /* Action button inside the nav bar, not a view tab. */
+        #check-updates-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+        }
+
+        /* Running version, shown inside the update button. */
+        #app-version-badge {
+            background: rgba(0,0,0,0.25);
+            border-radius: 0.35rem;
+            padding: 0.1rem 0.4rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+        }
+
+        /* Signals that a newer release exists. */
+        #app-version-badge.update-available {
+            background: #f59e0b;
+            color: #1f2937;
+        }
+
         .view-container {
             display: block;
         }
@@ -1120,15 +1142,35 @@
                          border-radius: 0.5rem;
                          cursor: pointer;
                          font-weight: 600">🧪 A/B Testing</button>
+          <button id="check-updates-btn"
+                  onclick="checkForUpdates()"
+                  title="Check for available updates"
+                  style="background: rgba(255,255,255,0.2);
+                         border: none;
+                         color: white;
+                         padding: 0.5rem 1rem;
+                         border-radius: 0.5rem;
+                         cursor: pointer;
+                         font-weight: 600;
+                         display: flex;
+                         align-items: center;
+                         gap: 0.4rem;
+                         transition: all 0.2s ease">
+            <span id="check-updates-label">🆕 Check Updates</span>
+            <span id="app-version-badge" title="Running version">{{ app_version | default("unknown") }}</span>
+          </button>
         </nav>
         <select id="theme-selector"
                 onchange="switchTheme(this.value)"
-                style="padding: 0.5rem;
+                title="Theme"
+                style="width: 8.5rem;
+                       padding: 0.5rem;
                        border: 1px solid rgba(255,255,255,0.3);
                        border-radius: 0.5rem;
                        background: rgba(255,255,255,0.1);
                        color: white;
                        font-weight: 600;
+                       text-overflow: ellipsis;
                        cursor: pointer">
           <option value="light">☀️ Light</option>
           <option value="dark">🌙 Dark</option>
@@ -1158,17 +1200,6 @@
           <option value="theme-contrast-dark">♿ High Contrast Dark</option>
           <option value="theme-contrast-light">♿ High Contrast Light</option>
         </select>
-        <button id="check-updates-btn"
-                onclick="checkForUpdates()"
-                title="Check for available updates"
-                style="background: rgba(255,255,255,0.2);
-                       border: 1px solid rgba(255,255,255,0.3);
-                       color: white;
-                       padding: 0.5rem 1rem;
-                       border-radius: 0.5rem;
-                       cursor: pointer;
-                       font-weight: 600;
-                       transition: all 0.2s ease">🆕 Check Updates</button>
       </div>
     </header>
 
@@ -6103,22 +6134,30 @@
         });
 
         // ===== Update Check Handler =====
+
+        // Mark the version badge once a newer release is known.
+        function markUpdateAvailable(latestVersion) {
+            const badge = document.getElementById('app-version-badge');
+            if (!badge) return;
+            badge.classList.add('update-available');
+            badge.title = `Update available: ${latestVersion}`;
+        }
+
         async function checkForUpdates() {
             const btn = document.getElementById('check-updates-btn');
-            if (!btn) return;
+            const label = document.getElementById('check-updates-label');
+            if (!btn || !label) return;
 
             // Disable button temporarily
             btn.disabled = true;
             btn.style.opacity = '0.5';
-            const originalText = btn.textContent;
-            btn.textContent = '⏳ Checking...';
+            const originalText = label.textContent;
+            label.textContent = '⏳ Checking...';
 
             try {
                 const response = await fetch('/api/system/latest-release');
                 if (!response.ok) {
                     showToast('❌ Failed to check for updates', 'error');
-                    btn.textContent = originalText;
-                    btn.disabled = false;
                     return;
                 }
 
@@ -6129,13 +6168,12 @@
                         '❌ ' + (data.message || 'Unable to check for updates'),
                         'error'
                     );
-                    btn.textContent = originalText;
-                    btn.disabled = false;
                     return;
                 }
 
                 // Update available
                 if (data.is_update_available) {
+                    markUpdateAvailable(data.latest_version);
                     showUpdateDialog(
                         data.current_version,
                         data.latest_version,
@@ -6151,7 +6189,7 @@
                 console.error('Update check error:', error);
                 showToast('❌ Error checking for updates', 'error');
             } finally {
-                btn.textContent = originalText;
+                label.textContent = originalText;
                 btn.disabled = false;
                 btn.style.opacity = '1';
             }

@@ -1515,11 +1515,25 @@ def calculate_effect_size(
 # ============================================================================
 
 
+def _current_app_version() -> str:
+    """Read the running app version for display, never raising."""
+    if get_current_version is None:
+        return "unknown"
+    try:
+        return get_current_version()
+    except ValueError as exc:
+        logger.warning("⚠️ Could not read app version: %s", exc)
+        return "unknown"
+
+
 @app.get("/")
 async def root() -> HTMLResponse:
     """Hauptseite - Dashboard"""
     template = template_env.get_template("dashboard.html.jinja")
-    html = template.render(config=CONFIG_DEFAULTS)
+    html = template.render(
+        config=CONFIG_DEFAULTS,
+        app_version=_current_app_version(),
+    )
     return HTMLResponse(content=html)
 
 
