@@ -33,7 +33,11 @@ from core.client import LMStudioRESTClient
 from core.config import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
 from core.logging_utils import install_level_icons
 from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
-from core.platform_info import IS_MACOS, get_os_name_version
+from core.platform_info import (
+    IS_MACOS,
+    get_os_name_version,
+    has_shared_gpu_memory,
+)
 from core.presets import PresetManager
 from tools.hardware_monitor import GPUMonitor, HardwareMonitor
 
@@ -5677,6 +5681,27 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             logger.error("❌ Error creating HTML: %s", e)
 
 
+def _log_stability_notice() -> None:
+    """Point at the LM Studio settings that keep an unattended run stable.
+
+    A benchmark loads models without anyone watching, so it relies on LM
+    Studio declining loads the machine cannot support. Where processor and
+    graphics share one memory pool an oversized model does not fail cleanly —
+    it drives the system into swapping — so the reminder is sharper there.
+    """
+    logger.info(
+        "🛡️ Stability: keep 'Bypass Memory Load Warnings' at "
+        "'Requires holding Alt/Option' so oversized models are declined "
+        "instead of forced through."
+    )
+    if has_shared_gpu_memory():
+        logger.info(
+            "   This system shares one memory pool between processor and "
+            "graphics — check 'Model Loading Guardrails' too, and leave "
+            "headroom for the OS and other applications."
+        )
+
+
 def main():
     """Main function with CLI arguments"""
 
@@ -6322,6 +6347,7 @@ Examples:
         "⏱️ Estimated total time (worst-case, uncached): ~%s minutes",
         int(args.runs * 45 * (args.limit or 9) / 9),
     )
+    _log_stability_notice()
     logger.info("")
 
     inference_overrides = {

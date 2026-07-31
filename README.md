@@ -8,8 +8,8 @@ quantizations to measure and compare tokens-per-second performance.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-orange.svg)](https://www.linux.org/)
-[![LM Studio App v0.4.3+](https://img.shields.io/badge/LM_Studio_App-v0.4.3+-green.svg)](https://lmstudio.ai/download)
-[![llmster v0.0.3+](https://img.shields.io/badge/llmster-v0.0.3+-green.svg)](https://lmstudio.ai)
+[![LM Studio App v0.4.20+](https://img.shields.io/badge/LM_Studio_App-v0.4.20+-green.svg)](https://lmstudio.ai/download)
+[![llmster v0.0.20-1+](https://img.shields.io/badge/llmster-v0.0.20-1+-green.svg)](https://lmstudio.ai)
 [![Release](https://img.shields.io/github/v/release/Ajimaru/LM-Studio-Bench)](https://github.com/Ajimaru/LM-Studio-Bench/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Ajimaru/LM-Studio-Bench/total.svg)](https://github.com/Ajimaru/LM-Studio-Bench/releases)
 
@@ -134,6 +134,43 @@ VRAM and GTT together.
 
 - **Software**: [LM Studio](https://lmstudio.ai/) or
   [LM Studio (Headless)](https://lmstudio.ai/docs/developer/core/headless_llmster/) installed locally
+
+### LM Studio settings for stable benchmark runs
+
+A benchmark loads one model after another unattended, so it depends on LM
+Studio refusing loads that the machine cannot support. Two settings under
+**Settings → Hardware** govern that behaviour and are worth checking before a
+long run.
+
+**Bypass Memory Load Warnings** should stay at *Requires holding Alt/Option*.
+Setting it to *No restriction* lets models load even when resources are
+insufficient. A benchmark has no one present to weigh that decision, so an
+oversized model is loaded regardless and the run can stall or take the whole
+machine down with it. With the restriction in place LM Studio declines the
+load, the tool records the failure and continues with the next model.
+
+**Model Loading Guardrails** decides how much memory a model may claim.
+The default is a reasonable starting point, but pay closer attention on
+systems where processor and graphics share a single memory pool — integrated
+graphics and unified-memory designs both work this way. There, a model that is
+too large does not simply fail to allocate graphics memory — it pushes the
+entire system into swapping, which can leave the machine unresponsive rather
+than producing a clean error. Choosing a stricter level, or a custom limit
+below the shared total, keeps a run inside safe bounds. A machine with a
+dedicated graphics card is less exposed: an oversized model is refused by the
+card without dragging the rest of the system down with it.
+
+Two things are easy to get wrong when picking a custom limit:
+
+- The limit is compared against the model file, while the actual requirement
+  also includes the context and runtime overhead — usually a few hundred
+  megabytes more. A model somewhat below the limit can still be declined.
+- The pool is shared with everything else that is running. Leave room for the
+  operating system and any open applications, not just for the model.
+
+Models the guardrails decline appear in the log as a failed warmup. That is
+the protection working as intended, not a defect: the run continues and
+reports on the models that did load.
 
 ## Installation
 
@@ -807,6 +844,43 @@ The script will automatically try lower GPU offload levels. With ~12GB VRAM:
 - ✅ 7B models with Q4_K_M
 - ⚠️ 13B models with Q3_K_M (possible)
 - ❌ 32B+ models (not recommended)
+
+If a load is refused with a message about insufficient system resources, LM
+Studio's guardrails stopped it on purpose. The run continues with the next
+model. See
+[LM Studio settings for stable benchmark runs](#lm-studio-settings-for-stable-benchmark-runs)
+for how to tune the threshold.
+
+</details>
+
+### Benchmark stalls or the machine becomes unresponsive
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
+
+This points to a model that was allowed to load without enough memory behind
+it. It is most likely on systems where processor and graphics share one memory
+pool: instead of failing outright, the system starts swapping and everything
+slows to a crawl.
+
+Signs to look for:
+
+- A warmup that takes minutes instead of seconds
+- Throughput far below what the same model reaches elsewhere
+- Heavy, sustained swap usage during the run
+
+What helps:
+
+- Set **Bypass Memory Load Warnings** to *Requires holding Alt/Option* so
+  oversized models are declined rather than forced through
+- Tighten **Model Loading Guardrails**, or set a custom limit that leaves
+  headroom for the operating system and other applications
+- Exclude an individual model with `--exclude-models` when everything else
+  runs fine
+- Lower `--context` — the context is part of the memory requirement, so a
+  smaller one can bring a borderline model back into range
 
 </details>
 

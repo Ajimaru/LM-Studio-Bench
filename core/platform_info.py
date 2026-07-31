@@ -245,6 +245,47 @@ def get_apple_unified_memory_gb() -> Optional[float]:
         return None
 
 
+def has_shared_gpu_memory() -> bool:
+    """Whether graphics memory is taken from the same pool as system memory.
+
+    This is a property of the hardware, not of the operating system: Apple
+    Silicon, AMD APUs and Intel integrated graphics all draw graphics memory
+    from system RAM. It matters because an oversized model there does not
+    simply fail to allocate graphics memory — it drives the whole machine into
+    swapping.
+
+    Detection is deliberately conservative: an unrecognised system is reported
+    as not shared, so no misleading advice is given.
+    """
+    if IS_MACOS:
+        # Apple Silicon is unified; Intel Macs with discrete graphics are not,
+        # but they are out of scope and reporting shared memory for them only
+        # yields a harmless extra hint.
+        return True
+
+    if IS_LINUX:
+        # An integrated GPU reports little or no dedicated VRAM and covers the
+        # rest through GTT, which is system RAM.
+        try:
+            import glob  # pylint: disable=import-outside-toplevel
+            import os  # pylint: disable=import-outside-toplevel
+
+            for info in glob.glob("/sys/class/drm/card*/device/mem_info_vram_total"):
+                gtt = os.path.join(os.path.dirname(info), "mem_info_gtt_total")
+                if not os.path.exists(gtt):
+                    continue
+                with open(info, "r", encoding="utf-8") as handle:
+                    vram_bytes = int(handle.read().strip())
+                # Discrete cards report several GB of dedicated VRAM; APUs
+                # carve out a small stolen-memory window instead.
+                if vram_bytes < 2 * 1024**3:
+                    return True
+        except (OSError, ValueError) as error:
+            logger.debug("Could not probe shared GPU memory: %s", error)
+
+    return False
+
+
 def get_metal_driver_version() -> Optional[str]:
     """Return the Metal support level as the macOS GPU "driver version".
 
