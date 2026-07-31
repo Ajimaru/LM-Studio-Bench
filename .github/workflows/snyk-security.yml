@@ -34,6 +34,9 @@ permissions:
 
 jobs:
   snyk:
+    # SNYK_TOKEN only exists in the upstream repository, so this job is
+    # skipped in forks instead of failing on every push.
+    if: ${{ github.repository == 'Ajimaru/LM-Studio-Bench' }}
     permissions:
       contents: read
       security-events: write

@@ -27,6 +27,9 @@ concurrency:
 jobs:
   # Build job
   build:
+    # Publishes the upstream documentation site. Forks need their own
+    # GitHub Pages setup, so this is skipped rather than failing on push.
+    if: ${{ github.repository == 'Ajimaru/LM-Studio-Bench' }}
     runs-on: ubuntu-latest
     env:
       MDBOOK_VERSION: 0.4.36
