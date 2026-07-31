@@ -91,13 +91,18 @@ ask_yes_no() {
     local prompt="$1"
     local default_ans="${2:-no}"
     local answer=""
+    local auto_mode="--yes mode"
 
     if [[ "${INTERACTIVE}" == "0" ]]; then
+        if [[ "${DRY_RUN}" == "1" ]]; then
+            auto_mode="--dry-run mode"
+        fi
+
         if [[ "${default_ans}" == "yes" ]]; then
-            log "INFO" "${prompt} [y/N]: yes (auto, --yes mode)"
+            log "INFO" "${prompt} [y/N]: yes (auto, ${auto_mode})"
             return 0
         else
-            log "INFO" "${prompt} [y/N]: no (auto, --yes mode)"
+            log "INFO" "${prompt} [y/N]: no (auto, ${auto_mode})"
             return 1
         fi
     fi
@@ -1002,6 +1007,11 @@ create_project_venv() {
                 log "INFO" "[DRY-RUN] Would delete: $(sanitize_path "${PROJECT_ROOT}")/.venv"
             else
                 rm -rf "${PROJECT_ROOT}/.venv"
+                if [[ "${VIRTUAL_ENV:-}" == "${PROJECT_ROOT}/.venv" ]]; then
+                    unset VIRTUAL_ENV
+                    hash -r
+                    log "INFO" "Cleared active project venv before recreation."
+                fi
             fi
         else
             log "INFO" "Existing .venv will continue to be used."
