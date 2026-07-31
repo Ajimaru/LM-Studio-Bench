@@ -7,7 +7,7 @@ quantizations to measure and compare tokens-per-second performance.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Platform](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://www.linux.org/)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-orange.svg)](https://www.linux.org/)
 [![LM Studio App v0.4.3+](https://img.shields.io/badge/LM_Studio_App-v0.4.3+-green.svg)](https://lmstudio.ai/download)
 [![llmster v0.0.3+](https://img.shields.io/badge/llmster-v0.0.3+-green.svg)](https://lmstudio.ai)
 [![Release](https://img.shields.io/github/v/release/Ajimaru/LM-Studio-Bench)](https://github.com/Ajimaru/LM-Studio-Bench/releases/latest)
@@ -99,9 +99,36 @@ quantizations to measure and compare tokens-per-second performance.
 
 ## System Requirements
 
-- **OS**: Linux (primary), macOS (untested), Windows (untested)
+- **OS**: Linux (primary), macOS 11+ (supported), Windows (untested)
 - **Python**: 3.10 or newer
-- **GPU**: ~12GB VRAM recommended (NVIDIA/AMD/Intel)
+- **GPU**: ~12GB VRAM recommended (NVIDIA/AMD/Intel), or an Apple Silicon
+  Mac with ~16GB+ unified memory
+
+### macOS notes
+
+macOS is supported for benchmarking, the CLI and the web dashboard. Two
+platform differences are worth knowing:
+
+- **No system tray.** The tray is built on GTK/AppIndicator, which is
+  Linux-only. On macOS it is skipped with a one-line notice; everything else
+  runs normally. `PyGObject` is therefore not installed on macOS.
+- **GPU temperature and power need `macmon`** (optional). macOS exposes
+  these only through `sudo powermetrics`; [macmon](https://github.com/vladkens/macmon)
+  reads the same counters without root, so unattended runs can record them:
+
+  ```bash
+  brew install macmon
+  ```
+
+  Without macmon, `temp_celsius_*` and `power_watts_*` stay empty and the
+  `--max-temp` / `--max-power` guardrails have nothing to compare against.
+  Everything else still works. GPU model, core count, Metal support level
+  and unified-memory usage come from `system_profiler` and `ioreg` and need
+  no extra tooling.
+
+Apple Silicon reports one unified memory pool, so VRAM and system RAM are the
+same memory. The dashboard shows it as a single total rather than adding
+VRAM and GTT together.
 - **Software**: [LM Studio](https://lmstudio.ai/) or
   [LM Studio (Headless)](https://lmstudio.ai/docs/developer/core/headless_llmster/) installed locally
 
@@ -152,13 +179,18 @@ cd LM-Studio-Bench
 ./setup.sh
 ```
 
-The setup script checks and prepares:
+The setup script runs on both Linux and macOS and checks:
 
-- Linux system dependencies (package-manager aware)
-- GPU tooling (`nvidia-smi`, `rocm-smi`, `intel_gpu_top` when available)
+- System dependencies (package-manager aware: apt/dnf/pacman/zypper/apk on
+  Linux, Homebrew on macOS)
+- GPU tooling — Linux: `nvidia-smi`, `rocm-smi`, `intel_gpu_top` when
+  available; macOS: `system_profiler` (GPU model, cores, Metal, unified
+  memory)
 - LM Studio / llmster availability
 - Python virtual environment (`.venv`)
 - Python dependencies from `requirements.txt`
+
+On macOS the GTK/PyGObject checks are skipped, since the tray is Linux-only.
 
 #### 3. Activate the virtual environment
 
@@ -172,7 +204,7 @@ source .venv/bin/activate
 
 #### 4. Manual fallback (if you skip `setup.sh`)
 
-Install system dependencies (Linux, tray support):
+Install system dependencies (Linux only — these provide tray support):
 
 ```bash
 # Ubuntu/Debian
@@ -185,13 +217,19 @@ sudo dnf install python3-devel gobject-introspection-devel cairo-devel pkg-confi
 sudo pacman -S python gobject-introspection cairo pkgconf
 ```
 
-Install Python dependencies:
+On macOS no system libraries are required. Python 3.10+ is enough; install
+it with `brew install python@3.12` if the system Python is too old.
+
+Install Python dependencies (same on Linux and macOS):
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+`PyGObject` and `distro` carry a `sys_platform == "linux"` marker, so pip
+skips them on macOS and the install needs no GTK toolchain.
 
 #### 5. Check LM Studio CLI
 

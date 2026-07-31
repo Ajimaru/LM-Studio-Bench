@@ -18,6 +18,7 @@ Examples:
 """
 
 from datetime import datetime
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -30,6 +31,7 @@ import time
 from typing import TextIO
 
 from core.paths import USER_LOGS_DIR, format_path_for_logs
+from core.platform_info import IS_LINUX, IS_MACOS
 
 project_root = Path(__file__).parent
 os.chdir(project_root)
@@ -110,12 +112,20 @@ def _build_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     env.pop("LD_LIBRARY_PATH", None)
     env.pop("LD_PRELOAD", None)
+    # macOS equivalents of LD_LIBRARY_PATH/LD_PRELOAD.
+    env.pop("DYLD_LIBRARY_PATH", None)
+    env.pop("DYLD_INSERT_LIBRARIES", None)
+    env.pop("DYLD_FRAMEWORK_PATH", None)
     root_dir = str(project_root)
     pythonpath_entries = [root_dir]
     existing_path = env.get("PYTHONPATH", "")
     if existing_path:
         pythonpath_entries.append(existing_path)
     env["PYTHONPATH"] = ":".join(pythonpath_entries)
+
+    # AppImage/GI bootstrapping is Linux-only packaging.
+    if not IS_LINUX:
+        return env
 
     appdir_candidate = project_root.parents[2]
     app_lib_dir = appdir_candidate / "usr" / "lib"
@@ -202,11 +212,45 @@ def _expand_short_flag_clusters(cli_args: list[str]) -> list[str]:
     return normalized
 
 
+def _tray_skip_reason() -> str | None:
+    """Return why the GTK tray cannot start here, or None if it can.
+
+    The tray relies on PyGObject/GTK, which is packaged for Linux desktops
+    only. On other platforms the tray is skipped rather than launched and
+    left to fail, so the dashboard and CLI output stays clean.
+
+    On Linux the tray is always attempted: ``_start_tray_process`` tries
+    several interpreters, and a system Python may provide ``gi`` even when
+    the project virtualenv does not.
+    """
+    if IS_LINUX:
+        return None
+
+    if importlib.util.find_spec("gi") is not None:
+        return None
+
+    if IS_MACOS:
+        return (
+            "ℹ️ System tray skipped: the GTK tray is Linux-only. "
+            "Benchmarks and the web dashboard are unaffected."
+        )
+    return (
+        "ℹ️ System tray skipped: PyGObject (gi) is not available on this "
+        "platform."
+    )
+
+
 def _start_tray_process(
     tray_dashboard_url: str,
     tray_debug_enabled: bool,
 ) -> subprocess.Popen | None:
     """Start tray app as background subprocess."""
+    skip_reason = _tray_skip_reason()
+    if skip_reason is not None:
+        # Flush so the notice keeps its place when stdout is a pipe or log.
+        print(skip_reason, flush=True)
+        return None
+
     tray_script = project_root / "core" / "tray.py"
     if not tray_script.exists():
         print(f"⚠️ Tray script not found: {format_path_for_logs(tray_script)}")

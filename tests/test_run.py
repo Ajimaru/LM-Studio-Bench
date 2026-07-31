@@ -18,6 +18,24 @@ import pytest
 _RUN_MODULE = None
 
 
+@pytest.fixture(autouse=True)
+def _pin_linux_platform(monkeypatch):
+    """Pin platform flags to Linux for this module.
+
+    run.py's AppImage bootstrapping and GTK tray launch are Linux-only, and
+    the tests below assert that Linux behaviour. macOS-specific gating is
+    covered separately in TestPlatformGating.
+    """
+    import core.platform_info as platform_info
+
+    monkeypatch.setattr(platform_info, "IS_LINUX", True)
+    monkeypatch.setattr(platform_info, "IS_MACOS", False)
+
+    if _RUN_MODULE is not None:
+        monkeypatch.setattr(_RUN_MODULE, "IS_LINUX", True)
+        monkeypatch.setattr(_RUN_MODULE, "IS_MACOS", False)
+
+
 def _import_run():
     """Import run.py safely by patching subprocess and sys.exit."""
     global _RUN_MODULE
@@ -228,6 +246,77 @@ class TestBuildSubprocessEnv:
         value = env.get("GI_TYPELIB_PATH", "")
         assert str(gi_arch_dir) in value
         assert value.endswith("/already/present")
+
+
+class TestPlatformGating:
+    """Tests for macOS/non-Linux platform gating in run.py."""
+
+    def test_macos_skips_appimage_gi_bootstrap(self, tmp_path, monkeypatch):
+        """AppImage GI_TYPELIB_PATH setup is Linux-only."""
+        run = _import_run()
+
+        project_root = tmp_path / "a" / "b" / "project"
+        project_root.mkdir(parents=True)
+        appdir = project_root.parents[2]
+        (appdir / "usr" / "lib" / "girepository-1.0").mkdir(parents=True)
+
+        monkeypatch.setattr(run, "project_root", project_root)
+        monkeypatch.setattr(run, "IS_LINUX", False)
+        monkeypatch.setattr(run, "IS_MACOS", True)
+        monkeypatch.delenv("GI_TYPELIB_PATH", raising=False)
+
+        env = run._build_subprocess_env()
+        assert "GI_TYPELIB_PATH" not in env
+
+    def test_macos_strips_dyld_variables(self, monkeypatch):
+        """DYLD_* injection variables are removed from the child env."""
+        run = _import_run()
+        monkeypatch.setenv("DYLD_LIBRARY_PATH", "/evil/lib")
+        monkeypatch.setenv("DYLD_INSERT_LIBRARIES", "/evil/hook.dylib")
+        monkeypatch.setenv("DYLD_FRAMEWORK_PATH", "/evil/frameworks")
+
+        env = run._build_subprocess_env()
+
+        assert "DYLD_LIBRARY_PATH" not in env
+        assert "DYLD_INSERT_LIBRARIES" not in env
+        assert "DYLD_FRAMEWORK_PATH" not in env
+
+    def test_tray_skipped_on_macos_without_gi(self, monkeypatch):
+        """macOS without PyGObject reports a skip reason instead of launching."""
+        run = _import_run()
+        monkeypatch.setattr(run, "IS_LINUX", False)
+        monkeypatch.setattr(run, "IS_MACOS", True)
+
+        with patch.object(run.importlib.util, "find_spec", return_value=None):
+            reason = run._tray_skip_reason()
+
+        assert reason is not None
+        assert "Linux-only" in reason
+
+    def test_tray_always_attempted_on_linux(self, monkeypatch):
+        """Linux keeps trying interpreters even when gi is not importable."""
+        run = _import_run()
+        monkeypatch.setattr(run, "IS_LINUX", True)
+        monkeypatch.setattr(run, "IS_MACOS", False)
+
+        with patch.object(run.importlib.util, "find_spec", return_value=None):
+            assert run._tray_skip_reason() is None
+
+    def test_start_tray_process_returns_none_when_skipped(
+        self, tmp_path, monkeypatch
+    ):
+        """_start_tray_process short-circuits without spawning a process."""
+        run = _import_run()
+        monkeypatch.setattr(run, "project_root", tmp_path)
+        monkeypatch.setattr(run, "IS_LINUX", False)
+        monkeypatch.setattr(run, "IS_MACOS", True)
+
+        with patch.object(run.importlib.util, "find_spec", return_value=None), \
+                patch("subprocess.Popen") as mock_popen:
+            result = run._start_tray_process("http://localhost:8080", False)
+
+        assert result is None
+        mock_popen.assert_not_called()
 
 
 class TestSanitizeCliArgs:

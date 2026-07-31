@@ -2601,14 +2601,14 @@
                             padding: 1.5rem;
                             border-radius: 0.75rem;
                             box-shadow: 0 1px 3px rgba(0,0,0,0.1)">
-                  <h3 style="color: var(--text); margin-bottom: 1rem;">📋 Detaillierte Verlauf</h3>
+                  <h3 style="color: var(--text); margin-bottom: 1rem;">📋 Detailed History</h3>
                   <div style="overflow-x: auto;">
                     <table id="comparison-history-table"
                            style="width: 100%;
                                   border-collapse: collapse">
                       <thead style="background: var(--primary); color: white;">
                         <tr>
-                          <th style="padding: 0.75rem; text-align: left;">Datum</th>
+                          <th style="padding: 0.75rem; text-align: left;">Date</th>
                           <th style="padding: 0.75rem; text-align: right;">Speed (tok/s)</th>
                           <th style="padding: 0.75rem; text-align: right;">TTFT (ms)</th>
                           <th style="padding: 0.75rem; text-align: right;">Gen-Time (ms)</th>
@@ -2776,7 +2776,7 @@
                 <label style="color: var(--text); font-weight: 500;">Experiment Name:</label>
                 <input type="text"
                        id="ab-experiment-name"
-                       placeholder="z.B. Temperature Test"
+                       placeholder="e.g. Temperature Test"
                        style="padding: 0.65rem;
                               border: 1px solid var(--border);
                               border-radius: 0.5rem;
@@ -2795,12 +2795,11 @@
                   <option value="">Select model...</option>
                 </select>
               </div>
-              <div class="form-group"
-                   style="display:flex;
-                          align-items:center;
-                          gap:0.5rem">
-                <input type="checkbox" id="ab-active-run-toggle" />
-                <label for="ab-active-run-toggle" style="margin:0;">Execute actively (start 2 benchmarks)</label>
+              <div class="form-group">
+                <div class="checkbox-item">
+                  <input type="checkbox" id="ab-active-run-toggle" />
+                  <label for="ab-active-run-toggle">Execute actively (start 2 benchmarks)</label>
+                </div>
               </div>
 
               <div style="border-top: 1px solid var(--border);
@@ -3307,7 +3306,7 @@
                             border-radius: 0.75rem;
                             border: 1px solid var(--border);
                             margin-bottom: 2rem">
-                  <h3 style="color: var(--primary); margin-bottom: 1rem;">📊 Speed Trend Vergleich</h3>
+                  <h3 style="color: var(--primary); margin-bottom: 1rem;">📊 Speed Trend Comparison</h3>
                   <div id="ab-speed-chart" style="width: 100%; height: 300px;"></div>
                 </div>
 
@@ -3458,7 +3457,7 @@
 
       <!-- Back to Top Button -->
       <button class="back-to-top"
-              title="Nach oben scrollen"
+              title="Scroll to top"
               onclick="scrollToTop()">↑</button>
 
       <!-- Toast Container -->
@@ -3577,7 +3576,7 @@
                 document.body.classList.add(themeName);
             }
             
-            // Speichern in LocalStorage
+            // Save to LocalStorage
             localStorage.setItem('theme', themeName);
         }
 
@@ -3691,17 +3690,17 @@
 
         // Set up theme on load
         // Initialize results on load
-        // WebSocket & Timers starten
+        // Start WebSocket & timers
         window.addEventListener('DOMContentLoaded', () => {
             applyConfigDefaults();
             updateBenchmarkModeUI();
             // Stelle Theme aus localStorage wieder her
             restoreTheme();
             
-            // Lade Dashboard-Stats wenn Home-View aktiv
+            // Load dashboard stats when the home view is active
             loadDashboardStats();
             
-            // Lade Results
+            // Load results
             loadResults();
             
             // Aktualisiere Export-Links
@@ -4135,7 +4134,7 @@
 
             const layout = {
                 title: {
-                    text: 'Top 10 Modelle nach Geschwindigkeit',
+                    text: 'Top 10 Models by Speed',
                     font: { size: 14 }
                 },
                 margin: { l: 170, r: 15, t: 40, b: 40 },
@@ -4189,7 +4188,7 @@
 
             const layout = {
                 title: {
-                    text: 'Quantization-Verteilung',
+                    text: 'Quantization Distribution',
                     font: { size: 14 }
                 },
                 margin: { l: 10, r: 10, t: 40, b: 10 },
@@ -4313,7 +4312,7 @@
         function setupWebSocket() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws/benchmark`;
-            console.log('🔌 Versuche WebSocket Verbindung zu:', wsUrl);
+            console.log('🔌 Attempting WebSocket connection to:', wsUrl);
             
             websocket = new WebSocket(wsUrl);
 
@@ -4342,7 +4341,7 @@
                     }
                     // Update export links with new results
                     updateExportLinks();
-                    // Lade Results neu
+                    // Reload results
                     setTimeout(() => {
                         loadResults();
                         updateCacheStats();
@@ -4355,9 +4354,9 @@
             websocket.onerror = (error) => {
                 console.error('❌ WebSocket Error:', error);
                 addAlert('⚠️ WebSocket Error (trying to reconnect...)', 'warning');
-                // Versuche Reconnect nach 3 Sekunden
+                // Retry the connection after 3 seconds
                 setTimeout(() => {
-                    console.log('🔄 Versuche WebSocket Reconnect...');
+                    console.log('🔄 Attempting WebSocket reconnect...');
                     setupWebSocket();
                 }, 3000);
             };
@@ -4374,7 +4373,7 @@
             };
         }
 
-        // ===== Terminal Ausgabe =====
+        // ===== Terminal output =====
         function appendTerminalLine(line) {
             const terminals = [];
             const termMain = document.getElementById('terminal');
@@ -4514,7 +4513,7 @@
                     parseInt(document.getElementById('paramAgentMaxTests').value) ||
                     null,
                 
-                // Neue Filter-Parameter
+                // New filter parameters
                 min_context: parseInt(document.getElementById('paramMinContext').value) || null,
                 max_size: parseFloat(document.getElementById('paramMaxSize').value) || null,
                 quants: document.getElementById('paramQuants').value || null,
@@ -4638,7 +4637,7 @@
 
         async function loadResults() {
             try {
-                console.log('📥 Lade Results von /api/results + /api/results/raw...');
+                console.log('📥 Loading results from /api/results + /api/results/raw...');
                 const [summaryResp, rawResp] = await Promise.all([
                     fetch('/api/results'),
                     fetch('/api/results/raw?limit=200'),
@@ -4912,7 +4911,7 @@
                 return;
             }
 
-            // Sortieren mit defensiven Defaults
+            // Sort with defensive defaults
             const sorted = [...resultsData].sort((a, b) => {
                 let aVal, bVal;
                 switch(sortColumn) {
@@ -5398,7 +5397,7 @@
                     comparisonStats = data.stats;
                     populateQuantizationFilters(comparisonHistory);
                     await loadAdvancedStatistics(modelName);
-                    // Rendering direkt hier statt applyComparisonFilters aufzurufen
+                    // Render inline instead of calling applyComparisonFilters
                     renderComparisonData();
                 } else {
                     document.getElementById('comparison-charts-container').style.display = 'none';
@@ -5452,7 +5451,7 @@
                 await loadModelHistory(selectedModel);
                 return; // loadModelHistory ruft renderComparisonData auf
             }
-            // Sonst nur Rendering mit aktuellen Filtern
+            // Otherwise just re-render with the current filters
             renderComparisonData();
         }
 
@@ -5793,7 +5792,7 @@
                 case 'start':
                 default:
                     console.log('🚀 Setting button to START state');
-                    btn.innerHTML = '🚀 Experiment starten';
+                    btn.innerHTML = '🚀 Start Experiment';
                     btn.style.background = 'var(--primary)';
                     btn.disabled = false;
                     break;
@@ -5965,7 +5964,7 @@
 
         function renderABResults(data) {
             console.log('📈 renderABResults called with data:', data);
-            // Zeige Results Container
+            // Show the results container
             document.getElementById('ab-results-container').style.display = 'block';
             document.getElementById('ab-placeholder').style.display = 'none';
 
@@ -6054,7 +6053,7 @@
             };
 
             const layout = {
-                title: 'Speed Trend Vergleich (Baseline vs. Test)',
+                title: 'Speed Trend Comparison (Baseline vs. Test)',
                 xaxis: { title: 'Zeitstempel' },
                 yaxis: { title: 'tokens/sec' },
                 hovermode: 'x unified',

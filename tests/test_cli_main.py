@@ -214,7 +214,13 @@ class TestHardwareMonitoring:
 
         assert monitor is not None
         assert monitor.enabled is True
-        assert monitor.gpu_type in ("NVIDIA", "AMD", "Intel", "Unknown")
+        assert monitor.gpu_type in (
+            "NVIDIA",
+            "AMD",
+            "Intel",
+            "Apple",
+            "Unknown",
+        )
 
 
 class TestBenchmarkAgentConfig:

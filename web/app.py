@@ -42,7 +42,6 @@ import webbrowser
 import zipfile
 
 import cpuinfo
-import distro
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -51,9 +50,21 @@ from jinja2 import Environment, FileSystemLoader
 import psutil
 from pydantic import BaseModel
 
+# Linux-only distribution helper; absent on macOS and Windows.
+try:
+    import distro
+except (ImportError, ModuleNotFoundError):
+    distro = None
+
 from core.config import DEFAULT_CONFIG
 from core.logging_utils import install_level_icons
 from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.platform_info import (
+    detect_apple_gpu,
+    get_apple_chip_name,
+    get_apple_unified_memory_gb,
+    get_macos_name_version,
+)
 from core.presets import PresetManager
 
 try:
@@ -1075,7 +1086,7 @@ class InferenceParamSet(BaseModel):
 
 
 class CreateExperimentRequest(BaseModel):
-    """Request zum Erstellen eines A/B Experiments"""
+    """Request payload for creating an A/B experiment"""
 
     name: str
     model_name: str
@@ -1116,7 +1127,7 @@ class PresetCompareRequest(BaseModel):
 
 
 def calculate_hash(params: Dict[str, Any]) -> str:
-    """Erstelle SHA256-Hash aus Parameter-Dictionary"""
+    """Create a SHA256 hash from a parameter dictionary"""
     params_str = json.dumps(params, sort_keys=True, default=str)
     return hashlib.sha256(params_str.encode()).hexdigest()[:16]
 
@@ -1530,7 +1541,7 @@ async def get_status() -> dict:
 
 @app.get("/api/lmstudio/health")
 async def get_lmstudio_health() -> dict:
-    """LM Studio Healthcheck - Live Status ohne Cache"""
+    """LM Studio healthcheck - live status without cache"""
     lmstudio_ports = LMSTUDIO_PORTS
 
     for lm_port in lmstudio_ports:
@@ -2886,7 +2897,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
 
 @app.get("/api/output")
 async def get_output() -> dict:
-    """Gibt aktuellen Output"""
+    """Return the current output"""
     return {"output": manager.current_output, "status": manager.status}
 
 
@@ -4563,8 +4574,18 @@ async def get_dashboard_stats() -> dict:
             "ram_gb": round(psutil.virtual_memory().total / (1024**3), 2),
         }
 
+        if system_info["os"] == "Darwin":
+            macos_name, macos_version = get_macos_name_version()
+            system_info["os"] = macos_name
+            system_info["os_version"] = macos_version
+            apple_chip = get_apple_chip_name()
+            if apple_chip:
+                system_info["cpu"] = apple_chip
+
         if system_info["os"] == "Linux":
             try:
+                if distro is None:
+                    raise ImportError("distro package not installed")
 
                 distro_name = distro.name()
                 distro_version = distro.version()
@@ -4610,6 +4631,7 @@ async def get_dashboard_stats() -> dict:
             gpu_model = "Unknown"
             vram_total_gb = None
             gtt_total_gb = None
+            metal_family = None
 
             if results:
                 gpu_model = results[0].gpu_type
@@ -4626,6 +4648,23 @@ async def get_dashboard_stats() -> dict:
                     gpu_type = "Intel"
                 else:
                     gpu_type = gpu_model
+
+            # Apple Silicon shares one unified memory pool, so total "VRAM"
+            # is system RAM. Detect it first: macOS ships none of the
+            # nvidia-smi/rocm-smi/lspci tooling probed below.
+            apple_gpu = detect_apple_gpu()
+            if apple_gpu and apple_gpu.get("vendor") == "Apple":
+                gpu_type = "Apple"
+                cores = apple_gpu.get("cores")
+                gpu_model = (
+                    f"{apple_gpu['model']} ({cores}-core GPU)"
+                    if cores
+                    else apple_gpu["model"]
+                )
+                metal_family = apple_gpu.get("metal_family")
+                vram_total_gb = (
+                    get_apple_unified_memory_gb() or system_info["ram_gb"]
+                )
 
             try:
                 output = subprocess.check_output(
@@ -4815,17 +4854,34 @@ async def get_dashboard_stats() -> dict:
                 except (TimeoutExpired, FileNotFoundError):
                     pass
 
-            gpu_info = {
-                "type": gpu_type,
-                "model": gpu_model,
-                "vram_gb": vram_total_gb,
-                "gtt_gb": gtt_total_gb if gtt_total_gb else system_info["ram_gb"],
-                "total_gb": (
-                    (vram_total_gb + gtt_total_gb)
-                    if (vram_total_gb and gtt_total_gb)
-                    else (vram_total_gb or system_info["ram_gb"])
-                ),
-            }
+            if gpu_type == "Apple":
+                # Unified memory: VRAM and system RAM are one pool, so the
+                # totals must not be added together.
+                gpu_info = {
+                    "type": gpu_type,
+                    "model": gpu_model,
+                    "vram_gb": vram_total_gb,
+                    "gtt_gb": None,
+                    "total_gb": vram_total_gb,
+                    "unified_memory": True,
+                    "metal": metal_family,
+                }
+            else:
+                gpu_info = {
+                    "type": gpu_type,
+                    "model": gpu_model,
+                    "vram_gb": vram_total_gb,
+                    "gtt_gb": (
+                        gtt_total_gb if gtt_total_gb else system_info["ram_gb"]
+                    ),
+                    "total_gb": (
+                        (vram_total_gb + gtt_total_gb)
+                        if (vram_total_gb and gtt_total_gb)
+                        else (vram_total_gb or system_info["ram_gb"])
+                    ),
+                    "unified_memory": False,
+                    "metal": None,
+                }
 
         except (subprocess.SubprocessError, OSError, ValueError):
             gpu_info = {
@@ -4833,6 +4889,8 @@ async def get_dashboard_stats() -> dict:
                 "vram_gb": None,
                 "gtt_gb": system_info["ram_gb"],
                 "total_gb": system_info["ram_gb"],
+                "unified_memory": False,
+                "metal": None,
             }
 
         classic_models = {r.model_name for r in results}
