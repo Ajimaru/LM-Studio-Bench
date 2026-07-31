@@ -66,6 +66,7 @@ from core.platform_info import (
     get_macos_name_version,
 )
 from core.presets import PresetManager
+from core.prompts import list_prompt_files, resolve_prompt_file
 
 try:
     from core.version import (
@@ -522,10 +523,24 @@ class BenchmarkManager:
 
     def _validate_cli_arg_value(self, flag: str, value: str) -> str:
         """Validate and sanitize benchmark CLI argument values."""
-        if any(char in value for char in ("\x00", "\n", "\r")):
+        # Prompts are the one place where line breaks are meaningful: a code
+        # snippet loses its shape without them. Arguments are passed as an
+        # argv list, never through a shell, so a newline cannot inject a
+        # second command. NUL still terminates C strings and stays banned.
+        forbidden = ("\x00",) if flag == "--prompt" else ("\x00", "\n", "\r")
+        if any(char in value for char in forbidden):
             raise ValueError(f"Invalid control characters in {flag}")
         if len(value) > 2000:
-            raise ValueError(f"Value too long for {flag}")
+            raise ValueError(
+                f"Value too long for {flag}"
+                + (" - use --prompt-file for long prompts" if flag == "--prompt" else "")
+            )
+
+        if flag == "--prompt-file":
+            # Confines the name to the known prompt directories; the value can
+            # come straight from an HTTP request.
+            resolve_prompt_file(value)
+            return value
 
         int_flags = {
             "--runs",
@@ -565,6 +580,7 @@ class BenchmarkManager:
             "--context",
             "--limit",
             "--prompt",
+            "--prompt-file",
             "--min-context",
             "--max-size",
             "--quants",
@@ -1019,6 +1035,7 @@ class BenchmarkParams(BaseModel):
     context: Optional[int] = None
     limit: Optional[int] = None
     prompt: Optional[str] = None
+    prompt_file: Optional[str] = None
     benchmark_mode: str = "classic"
 
     min_context: Optional[int] = None
@@ -1767,7 +1784,9 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
         benchmark_args.extend(["--context", str(params.context)])
     if params.limit:
         benchmark_args.extend(["--limit", str(params.limit)])
-    if params.prompt:
+    if params.prompt_file:
+        benchmark_args.extend(["--prompt-file", params.prompt_file])
+    elif params.prompt:
         benchmark_args.extend(["--prompt", params.prompt])
     if params.min_context:
         benchmark_args.extend(["--min-context", str(params.min_context)])
@@ -3074,6 +3093,16 @@ async def compare_presets(request: PresetCompareRequest) -> dict:
             request.preset_b,
             e,
         )
+        return _safe_api_error()
+
+
+@app.get("/api/prompts")
+async def get_prompt_files() -> dict:
+    """List prompt files available for --prompt-file."""
+    try:
+        return {"success": True, "prompts": list_prompt_files()}
+    except OSError as e:
+        logger.error("❌ Error listing prompt files: %s", e)
         return _safe_api_error()
 
 

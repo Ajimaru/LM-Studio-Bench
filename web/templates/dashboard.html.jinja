@@ -1872,6 +1872,16 @@
                 <input type="text" id="paramPrompt" placeholder="Empty = default">
               </div>
 
+              <div class="form-group">
+                <label>
+                  <span class="tooltip-icon"
+                        data-tooltip="Prompt file from prompts/. Long prompts belong here; overrides Custom Prompt.">?</span> Prompt File
+                </label>
+                <select id="paramPromptFile">
+                  <option value="">None (use Custom Prompt)</option>
+                </select>
+              </div>
+
             </div>
 
             <!-- Right Column: Filter & Options -->
@@ -4448,6 +4458,7 @@
                 'paramMinContext',
                 'paramMaxSize',
                 'paramPrompt',
+                'paramPromptFile',
                 'paramInclude',
                 'paramExclude',
                 'paramQuants',
@@ -4532,6 +4543,8 @@
                 context: parseInt(document.getElementById('paramContext').value) || null,
                 limit: parseInt(document.getElementById('paramLimit').value) || null,
                 prompt: document.getElementById('paramPrompt').value || null,
+                prompt_file:
+                    document.getElementById('paramPromptFile')?.value || null,
                 benchmark_mode: benchmarkMode,
                 agent_model: document.getElementById('paramAgentModel').value || null,
                 agent_capabilities:
@@ -6268,6 +6281,34 @@
         /**
          * Load preset list from API and populate dropdown
          */
+        /**
+         * Fill the prompt-file dropdown from the server.
+         * Keeps the current selection when the list is refreshed.
+         */
+        async function loadPromptFiles() {
+            const select = document.getElementById('paramPromptFile');
+            if (!select) return;
+            const previous = select.value;
+
+            try {
+                const response = await fetch('/api/prompts');
+                const data = await response.json();
+                if (!data.success) return;
+
+                select.innerHTML =
+                    '<option value="">None (use Custom Prompt)</option>';
+                for (const name of data.prompts) {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = name;
+                    select.appendChild(option);
+                }
+                select.value = previous;
+            } catch (error) {
+                console.error('Error loading prompt files:', error);
+            }
+        }
+
         async function loadPresetList() {
             try {
                 const response = await fetch('/api/presets');
@@ -6380,6 +6421,9 @@
                 document.getElementById('paramMaxSize').value = config.max_size;
             if (config.prompt !== undefined)
                 document.getElementById('paramPrompt').value = config.prompt;
+            if (document.getElementById('paramPromptFile'))
+                document.getElementById('paramPromptFile').value =
+                    config.prompt_file || '';
             if (document.getElementById('paramBenchmarkMode'))
                 document.getElementById('paramBenchmarkMode').value = presetMode;
             if (config.agent_model !== undefined && document.getElementById('paramAgentModel'))
@@ -6505,6 +6549,7 @@
                 runs: getValue('paramRuns'),
                 context: getValue('paramContext'),
                 prompt: getValue('paramPrompt'),
+                prompt_file: getValue('paramPromptFile'),
                 benchmark_mode: getValue('paramBenchmarkMode'),
                 preset_mode: getValue('paramBenchmarkMode'),
                 limit: getValue('paramLimit'),
@@ -6984,6 +7029,7 @@
         // Load preset list on page load
         document.addEventListener('DOMContentLoaded', () => {
             loadPresetList();
+            loadPromptFiles();
             
             // Update delete button state when dropdown changes
             const dropdown = document.getElementById('presetDropdown');

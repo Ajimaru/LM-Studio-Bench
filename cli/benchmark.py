@@ -39,6 +39,7 @@ from core.platform_info import (
     has_shared_gpu_memory,
 )
 from core.presets import PresetManager
+from core.prompts import load_prompt_file
 from tools.hardware_monitor import GPUMonitor, HardwareMonitor
 
 try:
@@ -5864,6 +5865,17 @@ Examples:
     )
 
     parser.add_argument(
+        "--prompt-file",
+        type=str,
+        default=None,
+        help=(
+            "Name of a prompt file in prompts/ (project) or the user prompt "
+            "directory, e.g. 'coding_assistant.md'. Takes precedence over "
+            "--prompt and is the way to benchmark with long prompts."
+        ),
+    )
+
+    parser.add_argument(
         "--limit",
         "-l",
         type=int,
@@ -6334,6 +6346,11 @@ Examples:
         parser.error("--runs must be >= 1")
     if args.context < 256:
         parser.error("--context must be >= 256")
+    if args.prompt_file:
+        try:
+            args.prompt = load_prompt_file(args.prompt_file)
+        except (ValueError, FileNotFoundError) as exc:
+            parser.error(str(exc))
     if len(args.prompt.strip()) == 0:
         parser.error("--prompt must not be empty")
     if args.limit is not None and args.limit < 1:
@@ -6352,7 +6369,15 @@ Examples:
     }
 
     logger.info("🚀 === LM Studio Model Benchmark ===")
-    logger.info("💬 Prompt: '%s'", args.prompt)
+    if args.prompt_file:
+        logger.info(
+            "💬 Prompt from %s (%s chars): '%s…'",
+            args.prompt_file,
+            len(args.prompt),
+            args.prompt[:80].replace("\n", " "),
+        )
+    else:
+        logger.info("💬 Prompt: '%s'", args.prompt)
     logger.info("📏 Context Length: %s Tokens", args.context)
     logger.info(
         "🔢 Measurements per Model: %s (+ %s Warmup)", args.runs, NUM_WARMUP_RUNS

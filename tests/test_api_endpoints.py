@@ -957,10 +957,14 @@ class TestBenchmarkManagerValidation:
             manager._validate_cli_arg_value("--temperature", "hot")
 
     def test_validate_control_char_raises(self):
-        """_validate_cli_arg_value raises ValueError for control chars."""
+        """_validate_cli_arg_value raises ValueError for control chars.
+
+        ``--prompt`` is exempt from the newline rule so code snippets keep
+        their shape; see TestPromptFileWiring for that boundary.
+        """
         manager, _ = _get_benchmark_manager()
         with pytest.raises(ValueError):
-            manager._validate_cli_arg_value("--prompt", "test\nprompt")
+            manager._validate_cli_arg_value("--arch", "test\nqwen3")
 
     def test_validate_null_byte_raises(self):
         """_validate_cli_arg_value raises ValueError for null bytes."""
@@ -2809,3 +2813,65 @@ class TestInstalledModelsEndpoint:
             response = client.get("/api/models/installed")
 
         assert response.json()["models"] == ["pub/on-both@q6_k"]
+
+
+class TestPromptFileWiring:
+    """Prompt files must survive the whole web path: list, validate, start."""
+
+    def test_prompts_endpoint_lists_shipped_prompt(self):
+        """GET /api/prompts exposes the file the preset refers to."""
+        client = _get_client()
+        response = client.get("/api/prompts")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["success"] is True
+        assert "coding_assistant.md" in payload["prompts"]
+
+    def test_coding_assistant_preset_carries_prompt_file(self):
+        """The preset the user picks in the UI names a prompt file."""
+        client = _get_client()
+        payload = client.get("/api/presets/coding_assistant").json()
+        assert payload["success"] is True
+        assert payload["config"]["prompt_file"] == "coding_assistant.md"
+
+    def test_sanitize_accepts_known_prompt_file(self):
+        """A prompt file inside the prompt dir passes the sanitizer."""
+        manager, _ = _get_benchmark_manager()
+        result = manager._sanitize_benchmark_args(
+            ["--prompt-file", "coding_assistant.md"]
+        )
+        assert result == ["--prompt-file", "coding_assistant.md"]
+
+    def test_sanitize_rejects_prompt_file_traversal(self):
+        """A path escaping the prompt dir is refused before spawning."""
+        manager, _ = _get_benchmark_manager()
+        with pytest.raises(ValueError):
+            manager._sanitize_benchmark_args(
+                ["--prompt-file", "../core/version.py"]
+            )
+
+    def test_sanitize_rejects_absolute_prompt_file(self):
+        """Absolute paths never reach the subprocess."""
+        manager, _ = _get_benchmark_manager()
+        with pytest.raises(ValueError):
+            manager._sanitize_benchmark_args(["--prompt-file", "/etc/passwd"])
+
+    def test_multiline_prompt_is_allowed(self):
+        """Code prompts keep their newlines; only NUL stays forbidden."""
+        manager, _ = _get_benchmark_manager()
+        value = manager._validate_cli_arg_value(
+            "--prompt", "def f():\n    return 1"
+        )
+        assert value == "def f():\n    return 1"
+
+    def test_newlines_still_rejected_for_other_flags(self):
+        """The relaxation is scoped to --prompt."""
+        manager, _ = _get_benchmark_manager()
+        with pytest.raises(ValueError, match="control characters"):
+            manager._validate_cli_arg_value("--arch", "qwen3\nrm -rf /")
+
+    def test_nul_byte_still_rejected_in_prompt(self):
+        """NUL truncates C strings and must never pass."""
+        manager, _ = _get_benchmark_manager()
+        with pytest.raises(ValueError, match="control characters"):
+            manager._validate_cli_arg_value("--prompt", "abc\x00def")

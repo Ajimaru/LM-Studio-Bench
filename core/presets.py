@@ -156,6 +156,7 @@ class PresetManager:
         "coding_assistant": {
             "runs": 3,
             "context": 16384,
+            "prompt_file": "coding_assistant.md",
             "max_tokens": 512,
             "enable_profiling": True,
             "retest": True,
@@ -266,6 +267,7 @@ class PresetManager:
             "max_temp": 0.0,
             "max_power": 0.0,
             "prompt": default_cfg.get("prompt"),
+            "prompt_file": None,
             "temperature": inference.get("temperature"),
             "top_k_sampling": inference.get("top_k_sampling"),
             "top_p_sampling": inference.get("top_p_sampling"),
@@ -384,6 +386,7 @@ class PresetManager:
         add_value("--context", preset.get("context"))
         add_positive_value("--limit", preset.get("limit"))
         add_value("--prompt", preset.get("prompt"))
+        add_value("--prompt-file", preset.get("prompt_file"))
         add_positive_value("--min-context", preset.get("min_context"))
         max_size = preset.get("max_size")
         if isinstance(max_size, (int, float)) and max_size > 0:
