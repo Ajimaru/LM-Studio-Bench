@@ -1,12 +1,15 @@
 {
-  "prompt": "Is the sky blue?",
-  "context_length": 2048,
+  "prompt": "Read the following function and explain what it does, which edge cases it fails to handle, and how you would fix them:\n\ndef merge_ranges(ranges):\n    merged = []\n    for start, end in sorted(ranges):\n        if merged and start <= merged[-1][1]:\n            merged[-1][1] = max(merged[-1][1], end)\n        else:\n            merged.append([start, end])\n    return merged\n",
+  "context_length": 8192,
   "num_runs": 3,
   "retest": false,
   "enable_profiling": false,
   "lmstudio": {
     "host": "localhost",
-    "ports": [1234, 1235],
+    "ports": [
+      1234,
+      1235
+    ],
     "api_token": null,
     "use_rest_api": true
   },
@@ -16,7 +19,7 @@
     "top_p_sampling": 0.9,
     "min_p_sampling": 0.05,
     "repeat_penalty": 1.2,
-    "max_tokens": 256
+    "max_tokens": 512
   },
   "load": {
     "n_gpu_layers": -1,

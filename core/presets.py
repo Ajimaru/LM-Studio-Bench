@@ -37,6 +37,8 @@ class PresetManager:
         "quick_test",
         "high_quality",
         "resource_limited",
+        "coding_assistant",
+        "legacy_2048",
     }
 
     # Backwards-compatible alias for the previously misspelled preset name.
@@ -47,7 +49,7 @@ class PresetManager:
     PREDEFINED_PRESETS: Dict[str, Dict[str, Any]] = {
         "default_classic": {
             "runs": 3,
-            "context": 2048,
+            "context": 8192,
             "limit": 0,
             "dev_mode": False,
             "min_context": 0,
@@ -65,13 +67,13 @@ class PresetManager:
             "disable_gtt": False,
             "max_temp": 0.0,
             "max_power": 0.0,
-            "prompt": "Explain machine learning in 3 sentences",
+            "prompt": DEFAULT_CONFIG.get("prompt", ""),
             "temperature": 0.1,
             "top_k_sampling": 40,
             "top_p_sampling": 0.9,
             "min_p_sampling": 0.05,
             "repeat_penalty": 1.2,
-            "max_tokens": 256,
+            "max_tokens": 512,
             "n_gpu_layers": -1,
             "n_batch": 512,
             "n_threads": -1,
@@ -89,7 +91,7 @@ class PresetManager:
         },
         "default_compatibility_test": {
             "runs": 1,
-            "context": 2048,
+            "context": 8192,
             "limit": 0,
             "dev_mode": False,
             "min_context": 0,
@@ -107,13 +109,13 @@ class PresetManager:
             "disable_gtt": False,
             "max_temp": 0.0,
             "max_power": 0.0,
-            "prompt": "Explain machine learning in 3 sentences",
+            "prompt": DEFAULT_CONFIG.get("prompt", ""),
             "temperature": 0.1,
             "top_k_sampling": 40,
             "top_p_sampling": 0.9,
             "min_p_sampling": 0.05,
             "repeat_penalty": 1.2,
-            "max_tokens": 256,
+            "max_tokens": 512,
             "n_gpu_layers": -1,
             "n_batch": 512,
             "n_threads": -1,
@@ -148,6 +150,24 @@ class PresetManager:
             "n_batch": 256,
             "flash_attention": True,
             "use_mmap": True,
+        },
+        # Mirrors an IDE assistant workload: long file context in the prompt,
+        # a multi-paragraph answer, hardware profiling to catch KV-cache spill.
+        "coding_assistant": {
+            "runs": 3,
+            "context": 16384,
+            "max_tokens": 512,
+            "enable_profiling": True,
+            "retest": True,
+            "rank_by": "speed",
+        },
+        # Preserves the pre-8192 defaults so older cached results stay
+        # comparable after the default context length was raised.
+        "legacy_2048": {
+            "runs": 3,
+            "context": 2048,
+            "max_tokens": 256,
+            "prompt": "Explain machine learning in 3 sentences",
         },
     }
 
@@ -227,7 +247,7 @@ class PresetManager:
         load_cfg = default_cfg.get("load", {}) or {}
         return {
             "runs": int(default_cfg.get("num_runs", 3)),
-            "context": int(default_cfg.get("context_length", 2048)),
+            "context": int(default_cfg.get("context_length", 8192)),
             "limit": 0,
             "dev_mode": False,
             "min_context": 0,

@@ -2903,7 +2903,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 result.device_name = self.local_device_name
                 result.prompt_hash = self.prompt_hash
                 result.params_hash = self.params_hash
-                result.context_length = self.context_length
+                result.context_length = self._effective_context_length(model_key)
                 result.os_name = self.system_info.get("os_name")
                 result.os_version = self.system_info.get("os_version")
                 result.cpu_model = self.system_info.get("cpu_model")
@@ -2993,7 +2993,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                             model_key=model_key,
                             prompt_hash=self.prompt_hash,
                             params_hash=self.params_hash,
-                            context_length=self.context_length,
+                            context_length=result.context_length,
                             os_name=result.os_name,
                             os_version=result.os_version,
                             cpu_model=result.cpu_model,
@@ -3018,7 +3018,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                             model_key,
                             self.params_hash,
                             self.prompt,
-                            self.context_length,
+                            result.context_length,
                         )
 
                 logger.info(
@@ -3049,6 +3049,28 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             error_count += 1
             return None
 
+    def _effective_context_length(self, model_key: str) -> int:
+        """Requested context length, capped at what the model supports.
+
+        Loading a model with more context than it was trained for fails, so a
+        run configured for long context would simply skip every short-context
+        model. Capping keeps them measurable; the cap is logged and the capped
+        value is what gets recorded with the result.
+        """
+        model_max = ModelDiscovery.get_model_metadata(model_key).get(
+            "max_context_length", 0
+        )
+        if not model_max or self.context_length <= model_max:
+            return self.context_length
+
+        logger.warning(
+            "⚠️ %s supports %s tokens; capping context from %s.",
+            model_key,
+            model_max,
+            self.context_length,
+        )
+        return model_max
+
     def _load_model(self, model_key: str, gpu_offload: float) -> bool:
         """Loads a model into memory"""
         try:
@@ -3059,7 +3081,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 "--gpu",
                 str(gpu_offload),
                 "--context-length",
-                str(CONTEXT_LENGTH),
+                str(self._effective_context_length(model_key)),
             ]
 
             result = subprocess.run(
@@ -3111,8 +3133,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             ):
                 server_error_type = server_error_cls
 
+            effective_context = self._effective_context_length(model_key)
             load_config_params: Dict[str, Any] = {
-                "context_length": self.context_length,
+                "context_length": effective_context,
             }
 
             flash_attn = self.load_params.get("flash_attention")
@@ -3138,7 +3161,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 " n_threads=%s, flash_attention=%s, rope_freq_base=%s,"
                 " rope_freq_scale=%s, use_mmap=%s, use_mlock=%s,"
                 " kv_cache_quant=%s",
-                self.context_length,
+                effective_context,
                 self.load_params.get("n_gpu_layers"),
                 self.load_params.get("n_batch"),
                 self.load_params.get("n_threads"),
@@ -3328,7 +3351,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
             instance_id = self.rest_client.load_model(
                 model_key=model_key,
-                context_length=self.context_length,
+                context_length=self._effective_context_length(model_key),
                 n_parallel=n_parallel,
                 unified_kv_cache=unified_kv,
                 gpu_offload=gpu_offload,

@@ -3355,3 +3355,64 @@ class TestBenchmarkMainBranches:
                 patch("psutil.Process") as mock_proc:
             mock_proc.return_value.parent.return_value = None
             bm.main()
+
+
+class TestEffectiveContextLength:
+    """Tests for LMStudioBenchmark._effective_context_length."""
+
+    @staticmethod
+    def _make_benchmark(bm, tmp_path: Path, context_length: int):
+        """Build a benchmark instance without touching the system."""
+        failed_run = MagicMock(returncode=1, stdout="", stderr="")
+        with patch("subprocess.run", return_value=failed_run), \
+                patch("shutil.which", return_value=None), \
+                patch.object(bm, "RESULTS_DIR", tmp_path), \
+                patch.object(bm.LMStudioBenchmark, "get_lmstudio_version",
+                             return_value=None), \
+                patch.object(bm.LMStudioBenchmark, "get_nvidia_driver_version",
+                             return_value=None), \
+                patch.object(bm.LMStudioBenchmark, "get_rocm_driver_version",
+                             return_value=None), \
+                patch.object(bm.LMStudioBenchmark, "get_intel_driver_version",
+                             return_value=None), \
+                patch.object(bm.LMStudioBenchmark, "get_os_info",
+                             return_value=("Linux", "6.0")), \
+                patch.object(bm.LMStudioBenchmark, "get_cpu_model",
+                             return_value="Test CPU"), \
+                patch.object(bm.LMStudioBenchmark, "get_python_version",
+                             return_value="3.12.0"):
+            return bm.LMStudioBenchmark(
+                num_runs=1, context_length=context_length
+            )
+
+    def test_caps_at_model_maximum(self, tmp_path: Path):
+        """A model with a smaller window is loaded at its own maximum."""
+        bm = _import_benchmark()
+        instance = self._make_benchmark(bm, tmp_path, 16384)
+        with patch.object(bm.ModelDiscovery, "get_model_metadata",
+                          return_value={"max_context_length": 4096}):
+            assert instance._effective_context_length("small@q4_k_m") == 4096
+
+    def test_keeps_requested_length_when_supported(self, tmp_path: Path):
+        """No capping when the model supports the requested context."""
+        bm = _import_benchmark()
+        instance = self._make_benchmark(bm, tmp_path, 16384)
+        with patch.object(bm.ModelDiscovery, "get_model_metadata",
+                          return_value={"max_context_length": 262144}):
+            assert instance._effective_context_length("big@q4_k_m") == 16384
+
+    def test_unknown_maximum_keeps_requested_length(self, tmp_path: Path):
+        """Missing metadata must not silently shrink the context."""
+        bm = _import_benchmark()
+        instance = self._make_benchmark(bm, tmp_path, 16384)
+        with patch.object(bm.ModelDiscovery, "get_model_metadata",
+                          return_value={"max_context_length": 0}):
+            assert instance._effective_context_length("unknown") == 16384
+
+    def test_exact_match_is_not_capped(self, tmp_path: Path):
+        """Requesting exactly the model maximum stays unchanged."""
+        bm = _import_benchmark()
+        instance = self._make_benchmark(bm, tmp_path, 8192)
+        with patch.object(bm.ModelDiscovery, "get_model_metadata",
+                          return_value={"max_context_length": 8192}):
+            assert instance._effective_context_length("exact") == 8192
