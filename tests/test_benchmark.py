@@ -2369,9 +2369,13 @@ class TestLMStudioBenchmarkServerManager:
     def test_start_server_runs_subprocess(self):
         """LMStudioServerManager.start_server() runs lms server subprocess."""
         bm = _import_benchmark()
-        mock_result = MagicMock(returncode=0)
-        with patch("subprocess.run", return_value=mock_result):
-            bm.LMStudioServerManager.start_server()
+        with patch("subprocess.Popen") as mock_popen, \
+                patch.object(bm.LMStudioServerManager, "is_server_running",
+                             return_value=True), \
+                patch("time.sleep"):
+            result = bm.LMStudioServerManager.start_server()
+        assert result is True
+        assert mock_popen.call_args[0][0] == ["lms", "server", "start"]
 
     def test_ensure_server_running_already_running(self):
         """ensure_server_running returns True when server already up."""
@@ -2458,12 +2462,16 @@ class TestBenchmarkModelSuccessPath:
         return bm_mod, bench, tmp_path
 
     def test_benchmark_model_no_models_list(self, bench_with_tmp):
-        """benchmark_model skips gracefully when not in models list."""
-        _bm_mod, bench, _tmp_path = bench_with_tmp
-        bench.models = []
-        bench.discover_models = MagicMock(return_value=[])
-        result = bench.run_all_benchmarks()
-        assert result is not None
+        """run_all_benchmarks fails gracefully when no models are installed."""
+        bm_mod, bench, _tmp_path = bench_with_tmp
+        with patch.object(bm_mod.LMStudioServerManager, "ensure_server_running",
+                          return_value=True), \
+                patch.object(bm_mod.ModelDiscovery, "warm_metadata_cache",
+                             return_value={}), \
+                patch.object(bm_mod.ModelDiscovery, "get_installed_models",
+                             return_value=[]):
+            result = bench.run_all_benchmarks()
+        assert result == "failed"
 
     def test_benchmark_model_runs_and_returns_result(self, bench_with_tmp):
         """benchmark_model returns BenchmarkResult on success."""
