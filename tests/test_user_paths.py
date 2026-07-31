@@ -12,6 +12,7 @@ class TestGetUserConfigDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_config_dir()
         assert result == tmp_path / "lm-studio-bench"
@@ -25,6 +26,7 @@ class TestGetUserConfigDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_config_dir()
         assert result == tmp_path / ".config" / "lm-studio-bench"
@@ -37,8 +39,10 @@ class TestGetUserConfigDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_config_dir()
+        assert result == target / "lm-studio-bench"
         assert result.exists()
         assert result.is_dir()
 
@@ -51,6 +55,7 @@ class TestGetUserConfigDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_config_dir()
         assert result == tmp_path / ".config" / "lm-studio-bench"
@@ -79,6 +84,7 @@ class TestGetUserDataDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_data_dir()
         assert result == tmp_path / "lm-studio-bench"
@@ -92,6 +98,7 @@ class TestGetUserDataDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_data_dir()
         assert result == tmp_path / ".local" / "share" / "lm-studio-bench"
@@ -104,8 +111,10 @@ class TestGetUserDataDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_data_dir()
+        assert result == target / "lm-studio-bench"
         assert result.exists()
         assert result.is_dir()
 
@@ -119,6 +128,7 @@ class TestGetUserDataDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_data_dir()
         assert result == tmp_path / ".local" / "share" / "lm-studio-bench"
