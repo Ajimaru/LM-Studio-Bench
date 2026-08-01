@@ -156,7 +156,9 @@ class TestRougeMetric:
         result = metric.compute("", "The cat sat")
 
         if result.value != 0.0:
-            raise AssertionError(f"Expected 0.0 for empty prediction, got {result.value}")
+            raise AssertionError(
+                f"Expected 0.0 for empty prediction, got {result.value}"
+            )
 
 
 class TestAccuracyMetric:

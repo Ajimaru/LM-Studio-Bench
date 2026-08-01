@@ -127,7 +127,10 @@ class TestTrayAppCallApi:
         tray, _, _ = _import_tray()
         with patch("core.tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        with patch("core.tray.urllib_request.urlopen", side_effect=tray.urllib_error.URLError("conn")):
+        with patch(
+            "core.tray.urllib_request.urlopen",
+            side_effect=tray.urllib_error.URLError("conn"),
+        ):
             result = app._call_api("/api/status")
         assert result is None
 
@@ -136,7 +139,10 @@ class TestTrayAppCallApi:
         tray, _, _ = _import_tray()
         with patch("core.tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
-        with patch("core.tray.urllib_request.urlopen", side_effect=TimeoutError("timeout")):
+        with patch(
+            "core.tray.urllib_request.urlopen",
+            side_effect=TimeoutError("timeout"),
+        ):
             result = app._call_api("/api/status")
         assert result is None
 

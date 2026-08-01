@@ -127,7 +127,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # "🚀 Starting benchmark for 23 models..." - classic run, gives the total.
-PROGRESS_TOTAL = re.compile(r"Starting benchmark for\s+(?P<total>\d+)\s+(?:new\s+)?models")
+PROGRESS_TOTAL = re.compile(
+    r"Starting benchmark for\s+(?P<total>\d+)\s+(?:new\s+)?models"
+)
 
 # "🎯 Starting benchmark for qwen3-8b (4/28)" - capability run, gives both.
 PROGRESS_POSITION = re.compile(
@@ -565,10 +567,12 @@ class BenchmarkManager:
         if any(char in value for char in forbidden):
             raise ValueError(f"Invalid control characters in {flag}")
         if len(value) > 2000:
-            raise ValueError(
-                f"Value too long for {flag}"
-                + (" - use --prompt-file for long prompts" if flag == "--prompt" else "")
+            hint = (
+                " - use --prompt-file for long prompts"
+                if flag == "--prompt"
+                else ""
             )
+            raise ValueError(f"Value too long for {flag}{hint}")
 
         if flag == "--prompt-file":
             # Confines the name to the known prompt directories; the value can

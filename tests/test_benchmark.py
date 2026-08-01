@@ -614,7 +614,9 @@ class TestLMStudioServerManager:
     def test_ensure_server_running_when_already_running(self):
         """ensure_server_running returns True when server is already up."""
         bm = _import_benchmark()
-        with patch.object(bm.LMStudioServerManager, "is_server_running", return_value=True):
+        with patch.object(
+            bm.LMStudioServerManager, "is_server_running", return_value=True
+        ):
             result = bm.LMStudioServerManager.ensure_server_running()
         assert result is True
 
@@ -1314,7 +1316,10 @@ class TestLMStudioBenchmarkFiltersAndSorting:
         r2 = _make_result(bm, speed=60.0)
         bench.results = [r1, r2]
         sorted_results = bench.sort_results("efficiency")
-        assert sorted_results[0].tokens_per_sec_per_gb >= sorted_results[-1].tokens_per_sec_per_gb
+        assert (
+            sorted_results[0].tokens_per_sec_per_gb
+            >= sorted_results[-1].tokens_per_sec_per_gb
+        )
 
     def test_sort_results_by_ttft(self, tmp_path: Path):
         """sort_results('ttft') ranks ascending by TTFT."""
@@ -1350,7 +1355,10 @@ class TestLMStudioBenchmarkFiltersAndSorting:
             _make_result(bm, speed=80.0),
         ]
         sorted_results = bench.sort_results("unknown_key")
-        assert sorted_results[0].avg_tokens_per_sec >= sorted_results[-1].avg_tokens_per_sec
+        assert (
+            sorted_results[0].avg_tokens_per_sec
+            >= sorted_results[-1].avg_tokens_per_sec
+        )
 
     def test_analyze_best_quantizations_empty_results(self, tmp_path: Path):
         """_analyze_best_quantizations returns empty dict with no results."""

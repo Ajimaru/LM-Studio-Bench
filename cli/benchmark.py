@@ -1241,10 +1241,12 @@ class BenchmarkCache:
                     timestamp, params_size, architecture, max_context_length,
                     model_size_gb, has_vision, has_tools, tokens_per_sec_per_gb,
                     tokens_per_sec_per_billion_params, speed_delta_pct, prev_timestamp,
-                    prompt, context_length, temperature, top_k_sampling, top_p_sampling,
-                    min_p_sampling, repeat_penalty, max_tokens, num_runs, runs_averaged_from,
-                    warmup_runs, run_index, lmstudio_version, app_version, nvidia_driver_version, rocm_driver_version,
-                    intel_driver_version, prompt_hash, params_hash, device_name,
+                    prompt, context_length, temperature, top_k_sampling,
+                    top_p_sampling, min_p_sampling, repeat_penalty, max_tokens,
+                    num_runs, runs_averaged_from, warmup_runs, run_index,
+                    lmstudio_version, app_version, nvidia_driver_version,
+                    rocm_driver_version, intel_driver_version, prompt_hash,
+                    params_hash, device_name,
                     os_name, os_version,
                     cpu_model, python_version, benchmark_duration_seconds, error_count,
                     n_gpu_layers, n_batch, n_threads, flash_attention, rope_freq_base,
@@ -5869,14 +5871,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python benchmark.py                                   # Standard: all models, 3 measurements
-  python benchmark.py --list-presets                    # Show available presets and exit
-  python benchmark.py -p quick_test                     # Load preset before parsing other args
-  python benchmark.py --runs 1                          # Fast: all models, 1 measurement
-  python benchmark.py --limit 3 --runs 1                # Test 3 models with 1 measurement
-  python benchmark.py --limit 1 --runs 1                # Test 1 model with 1 measurement
-  python benchmark.py --runs 2 --context 4096           # 2 measurements, 4096 token context
-  python benchmark.py --limit 5 --runs 2 --context 4096 # Test 5 models, more options
+  python benchmark.py                                   # All models, 3 runs
+  python benchmark.py --list-presets                    # List presets, exit
+  python benchmark.py -p quick_test                     # Preset before other args
+  python benchmark.py --runs 1                          # All models, 1 run
+  python benchmark.py --limit 3 --runs 1                # 3 models, 1 run
+  python benchmark.py --limit 1 --runs 1                # 1 model, 1 run
+  python benchmark.py --runs 2 --context 4096           # 2 runs, 4096 token ctx
+  python benchmark.py --limit 5 --runs 2 --context 4096 # 5 models, combined
         """,
     )
 

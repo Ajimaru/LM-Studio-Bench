@@ -102,7 +102,9 @@ class TestBenchmarkControlEndpoints:
         """Start benchmark endpoint returns a result dict."""
         app_mod = sys.modules["app"]
         client = _get_client()
-        with patch.object(app_mod.manager, "start_benchmark", new=AsyncMock(return_value=True)):
+        with patch.object(
+            app_mod.manager, "start_benchmark", new=AsyncMock(return_value=True)
+        ):
             response = client.post(
                 "/api/benchmark/start",
                 json={"runs": 1, "context": 512, "enable_profiling": False},
@@ -115,7 +117,9 @@ class TestBenchmarkControlEndpoints:
         """Start benchmark with all optional parameters."""
         app_mod = sys.modules["app"]
         client = _get_client()
-        with patch.object(app_mod.manager, "start_benchmark", new=AsyncMock(return_value=True)):
+        with patch.object(
+            app_mod.manager, "start_benchmark", new=AsyncMock(return_value=True)
+        ):
             response = client.post(
                 "/api/benchmark/start",
                 json={
@@ -162,7 +166,9 @@ class TestBenchmarkControlEndpoints:
         """Start benchmark with flash_attention disabled."""
         app_mod = sys.modules["app"]
         client = _get_client()
-        with patch.object(app_mod.manager, "start_benchmark", new=AsyncMock(return_value=False)):
+        with patch.object(
+            app_mod.manager, "start_benchmark", new=AsyncMock(return_value=False)
+        ):
             response = client.post(
                 "/api/benchmark/start",
                 json={"flash_attention": False, "use_mmap": False, "use_mlock": True},
@@ -1782,7 +1788,9 @@ class TestRunExperimentWithMocks:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             real_dir = Path(tmpdir)
-            with patch.object(app_mod.manager, "start_benchmark", side_effect=mock_start), \
+            with patch.object(
+                        app_mod.manager, "start_benchmark", side_effect=mock_start
+                    ), \
                     patch.object(app_mod.manager, "is_running", return_value=False), \
                     patch("sqlite3.connect", return_value=mock_conn), \
                     patch.object(app_mod, "USER_RESULTS_DIR", real_dir):
@@ -1861,8 +1869,14 @@ class TestDashboardStatsDetailed:
     def test_dashboard_stats_no_lmstudio(self):
         """Dashboard stats handles missing lmstudio gracefully."""
         client = _get_client()
-        with patch("subprocess.run", side_effect=FileNotFoundError("lms not found")), \
-                patch("subprocess.check_output", side_effect=FileNotFoundError("no nvidia")):
+        with patch(
+                    "subprocess.run",
+                    side_effect=FileNotFoundError("lms not found"),
+                ), \
+                patch(
+                    "subprocess.check_output",
+                    side_effect=FileNotFoundError("no nvidia"),
+                ):
             response = client.get("/api/dashboard/stats")
         assert response.status_code == 200
 

@@ -13,6 +13,7 @@ requires-python = ">=3.11"
 # contradicted with their own defaults. The pre-commit hook runs the same
 # rules defined here, so editor and hook cannot disagree.
 [tool.ruff]
+# Enforced via E501, not just a hint for formatters.
 line-length = 88
 exclude = [
     ".git",
@@ -44,9 +45,6 @@ select = ["E", "W", "F", "I"]
 ignore = [
     # Whitespace before ':' - conflicts with black's slice formatting.
     "E203",
-    # Line too long: .flake8 ignores it as well, so the 88 above only steers
-    # formatters, it does not fail a check.
-    "E501",
 ]
 
 [tool.ruff.lint.isort]
