@@ -379,14 +379,27 @@ class TestGPUMonitor:
         result = monitor._find_tool("nonexistent_tool_xyz", ["/nowhere"])
         assert result is None
 
-    def test_find_tool_returns_path_from_which(self):
-        """_find_tool returns tool name when found via which."""
+    def test_find_tool_returns_absolute_path_from_which(self):
+        """_find_tool returns the resolved path, not the bare name."""
         with patch("shutil.which", return_value=None), \
                 patch("subprocess.run", return_value=MagicMock(returncode=1)):
             monitor = GPUMonitor()
         with patch("shutil.which", return_value="/usr/bin/mytool"):
             result = monitor._find_tool("mytool", [])
-        assert result == "mytool"
+        assert result == "/usr/bin/mytool"
+
+    def test_find_tool_falls_back_to_search_paths(self):
+        """A tool outside PATH is still found in a known directory."""
+        with patch("shutil.which", return_value=None), \
+                patch("subprocess.run", return_value=MagicMock(returncode=1)):
+            monitor = GPUMonitor()
+
+        def which(name, path=None):
+            return "/opt/rocm/bin/rocm-smi" if path else None
+
+        with patch("shutil.which", side_effect=which):
+            result = monitor._find_tool("rocm-smi", ["/opt/rocm/bin"])
+        assert result == "/opt/rocm/bin/rocm-smi"
 
     def test_detect_nvidia_gpu(self):
         """GPUMonitor detects NVIDIA GPU when nvidia-smi is available."""
@@ -397,7 +410,7 @@ class TestGPUMonitor:
                 patch("subprocess.run", return_value=mock_run):
             monitor = GPUMonitor()
         assert monitor.gpu_type == "NVIDIA"
-        assert monitor.gpu_tool == "nvidia-smi"
+        assert monitor.gpu_tool == "/usr/bin/nvidia-smi"
 
     def test_detect_amd_gpu_via_rocm_smi(self):
         """GPUMonitor detects AMD GPU when rocm-smi is available."""
@@ -911,3 +924,62 @@ class TestPerGpuTracking:
             monitor = HardwareMonitor("AMD", "rocm-smi", enabled=False)
         sampler.assert_not_called()
         assert monitor.device_count == 0
+
+
+class TestRunTool:
+    """Tests for the shared _run_tool helper."""
+
+    def test_returns_stdout_on_success(self):
+        """A zero exit code hands the output to the caller."""
+        completed = MagicMock(returncode=0, stdout="62.0\n")
+        with patch("subprocess.run", return_value=completed):
+            assert hw._run_tool(["rocm-smi", "--showtemp"], timeout=3) == "62.0\n"
+
+    def test_nonzero_exit_yields_none(self):
+        """A failed query is "no reading", not an empty reading."""
+        completed = MagicMock(returncode=1, stdout="partial")
+        with patch("subprocess.run", return_value=completed):
+            assert hw._run_tool(["rocm-smi", "--showtemp"], timeout=3) is None
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            OSError("no such tool"),
+            hw.subprocess.TimeoutExpired("rocm-smi", 3),
+        ],
+    )
+    def test_process_errors_yield_none(self, error):
+        """Missing tools and timeouts are handled inside the helper."""
+        with patch("subprocess.run", side_effect=error):
+            assert hw._run_tool(["rocm-smi", "--showtemp"], timeout=3) is None
+
+    def test_passes_timeout_through(self):
+        """Callers keep control over how long a query may block."""
+        completed = MagicMock(returncode=0, stdout="")
+        with patch("subprocess.run", return_value=completed) as mock_run:
+            hw._run_tool(["lspci"], timeout=5)
+        assert mock_run.call_args.kwargs["timeout"] == 5
+        assert mock_run.call_args.kwargs["check"] is False
+
+
+class TestResolveTool:
+    """Tests for the shared _resolve_tool helper."""
+
+    def test_prefers_path_lookup(self):
+        """A tool on PATH is returned with its absolute path."""
+        with patch("shutil.which", return_value="/usr/bin/lspci"):
+            assert hw._resolve_tool("lspci") == "/usr/bin/lspci"
+
+    def test_falls_back_to_search_paths(self):
+        """sbin directories are tried when PATH does not list the tool."""
+
+        def which(name, path=None):
+            return "/usr/sbin/lspci" if path == "/usr/sbin" else None
+
+        with patch("shutil.which", side_effect=which):
+            assert hw._resolve_tool("lspci", ("/usr/sbin",)) == "/usr/sbin/lspci"
+
+    def test_missing_tool_yields_none(self):
+        """Nothing found means None, never a bare name."""
+        with patch("shutil.which", return_value=None):
+            assert hw._resolve_tool("lspci", ("/usr/sbin",)) is None
