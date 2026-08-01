@@ -1408,10 +1408,13 @@ def perform_ttest(
         ZeroDivisionError,
         OverflowError,
     ) as ttest_error:
+        # The message goes to the log, not to the caller: this dict is
+        # embedded in the A/B comparison responses, so anything put here
+        # reaches an HTTP client.
         logger.error("Error in t-test: %s", ttest_error)
         return {
             "test_name": "t-test",
-            "error": str(ttest_error),
+            "error": GENERIC_API_ERROR,
             "significant": False,
         }
 
@@ -3287,7 +3290,18 @@ async def compare_presets(request: PresetCompareRequest) -> dict:
             "differences": differences,
         }
     except FileNotFoundError as e:
-        return {"success": False, "error": f"Preset not found: {str(e)}"}
+        # str(e) would carry the absolute path of the preset directory; the
+        # names the caller sent are enough to tell what went wrong.
+        logger.warning(
+            "Preset not found while comparing %s vs %s: %s",
+            request.preset_a,
+            request.preset_b,
+            e,
+        )
+        return {
+            "success": False,
+            "error": f"Preset not found: {request.preset_a} or {request.preset_b}",
+        }
     except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error(
             "❌ Error comparing presets %s vs %s: %s",

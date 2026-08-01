@@ -2209,6 +2209,19 @@ class TestPresetCompareAndExport:
         )
         assert response.status_code == 200
 
+    def test_compare_presets_missing_hides_filesystem_path(self):
+        """The error names the presets, not where they would live on disk."""
+        client = _get_client()
+        response = client.post(
+            "/api/presets/compare",
+            json={"preset_a": "nonexistent_preset_xyz", "preset_b": "default"},
+        )
+        data = response.json()
+        if data.get("success") is False:
+            assert "nonexistent_preset_xyz" in data["error"]
+            assert ".json" not in data["error"]
+            assert "/" not in data["error"]
+
     def test_export_presets_returns_zip(self):
         """GET /api/presets/export returns a ZIP file or success response."""
         client = _get_client()
@@ -2366,6 +2379,23 @@ class TestStatisticalHelperFunctions:
         app_mod = self._app()
         result = app_mod.perform_ttest([50.0], [60.0])
         assert isinstance(result, dict)
+
+    def test_perform_ttest_error_hides_exception_text(self):
+        """A failing t-test reports a generic error, not the exception.
+
+        The dict is embedded in the A/B comparison responses, so its
+        contents reach an HTTP client.
+        """
+        app_mod = self._app()
+        with patch(
+            "statistics.variance",
+            side_effect=ValueError("variance failed in /home/user/secret"),
+        ):
+            result = app_mod.perform_ttest([50.0, 51.0], [60.0, 61.0])
+
+        assert result["error"] == app_mod.GENERIC_API_ERROR
+        assert "secret" not in str(result)
+        assert result["significant"] is False
 
 
 class TestExperimentCreateEndpoint:
