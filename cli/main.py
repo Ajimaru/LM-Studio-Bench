@@ -11,10 +11,11 @@ import json
 import logging
 from pathlib import Path
 import platform
-import random
 import re
+import secrets
+import shutil
 import sqlite3
-import subprocess
+import subprocess  # nosec B404 - argv lists only, never a shell
 import sys
 import time
 from types import ModuleType
@@ -116,7 +117,7 @@ def _get_app_version() -> str:
 def _run_command(cmd: list[str], timeout: int = 5) -> Optional[str]:
     """Run a subprocess command and return stdout when successful."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 - argv from this module, no shell
             cmd,
             capture_output=True,
             text=True,
@@ -626,9 +627,15 @@ def _list_installed_models() -> list[str]:
     they are skipped — mirroring ``ModelDiscovery.is_local_model`` in the
     standard benchmark.
     """
+    # Resolve the CLI once instead of leaving the lookup to PATH: a missing
+    # lms is then a clean "no models" instead of an OSError from the call.
+    lms_binary = shutil.which("lms")
+    if not lms_binary:
+        return []
+
     try:
-        result = subprocess.run(
-            ["lms", "ls", "--json"],
+        result = subprocess.run(  # nosec B603 - fixed argv, no shell
+            [lms_binary, "ls", "--json"],
             capture_output=True,
             text=True,
             timeout=20,
@@ -1805,7 +1812,9 @@ def main() -> int:
                 logger.error("No installed models found for random benchmark")
                 return 1
             sample_size = min(args.random_models, len(installed_models))
-            model_targets = random.sample(installed_models, sample_size)
+            model_targets = secrets.SystemRandom().sample(
+                installed_models, sample_size
+            )
             logger.info(
                 "⚙️ Model limit set: testing random %d of %d model(s)",
                 sample_size,
@@ -1968,7 +1977,7 @@ def main() -> int:
                         and summary.get("power_watts_max")
                         and summary["power_watts_max"] > max_power
                     ),
-                } | {k: v for k, v in profiling_stats.items()}
+                } | dict(profiling_stats)
 
             classic_metrics = _build_classic_metrics(
                 config=config,

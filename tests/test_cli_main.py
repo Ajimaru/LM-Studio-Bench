@@ -325,8 +325,29 @@ class TestListInstalledModels:
         from cli.main import _list_installed_models
 
         completed = argparse.Namespace(returncode=0, stdout=json.dumps(payload))
-        with patch("subprocess.run", return_value=completed):
+        with patch("shutil.which", return_value="/usr/local/bin/lms"), \
+                patch("subprocess.run", return_value=completed):
             return _list_installed_models()
+
+    def test_missing_lms_binary_yields_no_models(self):
+        """Without the CLI on PATH there is nothing to list."""
+        from cli.main import _list_installed_models
+
+        with patch("shutil.which", return_value=None):
+            assert _list_installed_models() == []
+
+    def test_resolved_path_is_used_for_the_call(self):
+        """The absolute path replaces the bare "lms" in the argv list."""
+        import json
+
+        from cli.main import _list_installed_models
+
+        completed = argparse.Namespace(returncode=0, stdout=json.dumps([]))
+        with patch("shutil.which", return_value="/opt/lms/bin/lms"), \
+                patch("subprocess.run", return_value=completed) as mock_run:
+            _list_installed_models()
+
+        assert mock_run.call_args[0][0][0] == "/opt/lms/bin/lms"
 
     def test_skips_lm_link_peer_models(self):
         """Models on an LM Link peer are excluded from the benchmark set."""
