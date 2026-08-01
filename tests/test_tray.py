@@ -787,3 +787,84 @@ class TestTrayVersionStatus:
         app._show_info_dialog = MagicMock()
         app._on_check_updates_clicked(MagicMock())
         app._show_info_dialog.assert_called()
+
+
+class TestParseContributor:
+    """Tests for TrayApp._parse_contributor().
+
+    The previous implementation split the line on spaces and unpacked two
+    values, so any entry carrying a role - the natural way to credit someone
+    - raised ValueError and broke the Contributors tab.
+    """
+
+    def test_entry_with_handle_and_role(self):
+        """Name, handle and role are separated."""
+        tray, _, _ = _import_tray()
+        parsed = tray.TrayApp._parse_contributor(
+            "- kjake (@kjake) - macOS support (Apple Silicon and Intel)"
+        )
+        assert parsed == (
+            "kjake", "kjake", "macOS support (Apple Silicon and Intel)"
+        )
+
+    def test_entry_with_handle_only(self):
+        """A bare handle entry yields no role."""
+        tray, _, _ = _import_tray()
+        assert tray.TrayApp._parse_contributor("- Some One (@some-one)") == (
+            "Some One", "some-one", None
+        )
+
+    def test_multiword_name_with_role(self):
+        """Names with spaces survive; the old split() call did not."""
+        tray, _, _ = _import_tray()
+        parsed = tray.TrayApp._parse_contributor(
+            "- Ada Lovelace (@ada) - analytical engine"
+        )
+        assert parsed == ("Ada Lovelace", "ada", "analytical engine")
+
+    def test_entry_without_handle(self):
+        """A plain name is still a contributor."""
+        tray, _, _ = _import_tray()
+        assert tray.TrayApp._parse_contributor("- Plain Name") == (
+            "Plain Name", None, None
+        )
+
+    def test_name_and_role_without_handle(self):
+        """The role is split off even without a GitHub handle."""
+        tray, _, _ = _import_tray()
+        assert tray.TrayApp._parse_contributor("- Someone - did a thing") == (
+            "Someone", None, "did a thing"
+        )
+
+    @pytest.mark.parametrize("line", [
+        "## Contributors",
+        "",
+        "This file lists the contributors to this project.",
+        "-",
+    ])
+    def test_non_entries_are_ignored(self, line):
+        """Headings and prose are not contributors."""
+        tray, _, _ = _import_tray()
+        assert tray.TrayApp._parse_contributor(line) is None
+
+    def test_shipped_authors_file_parses(self):
+        """Every entry in AUTHORS must render, not raise."""
+        tray, _, _ = _import_tray()
+        authors = (PROJECT_ROOT / "AUTHORS").read_text(encoding="utf-8")
+        entries = [
+            tray.TrayApp._parse_contributor(line.strip())
+            for line in authors.splitlines()
+            if line.strip().startswith("- ")
+        ]
+        assert all(entry is not None for entry in entries)
+        assert ("kjake", "kjake", "macOS support (Apple Silicon and Intel)") in entries
+
+
+class TestEscapeMarkup:
+    """Tests for TrayApp._escape_markup()."""
+
+    def test_escapes_pango_specials(self):
+        """An unescaped ampersand renders the whole label empty."""
+        tray, _, _ = _import_tray()
+        tray.GLIB = None
+        assert tray.TrayApp._escape_markup("A & B <c>") == "A &amp; B &lt;c&gt;"

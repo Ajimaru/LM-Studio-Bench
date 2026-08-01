@@ -1006,6 +1006,60 @@ class TrayApp:
         box.show_all()
         return box
 
+    @staticmethod
+    def _escape_markup(text: str) -> str:
+        """Escape text for Pango markup.
+
+        GLib is optional at import time, so this falls back to escaping the
+        three characters Pango cares about. A contributor name is attacker-
+        controlled only in the sense that it comes from a file in the repo,
+        but unescaped ``&`` alone is enough to make the label render empty.
+        """
+        if GLIB is not None:
+            return GLIB.markup_escape_text(text)
+        return (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+
+    @staticmethod
+    def _parse_contributor(line: str) -> Optional[tuple]:
+        """Parse one AUTHORS entry into name, GitHub handle and role.
+
+        Accepts ``- Name (@handle) - role``, ``- Name (@handle)`` and a bare
+        ``- Name``. Splitting on spaces would break on any entry that carries
+        a role, which is the natural way to write these lines.
+
+        Args:
+            line: A single line from the AUTHORS file.
+
+        Returns:
+            Tuple of (name, handle or None, role or None), or None when the
+            line is not a contributor entry.
+        """
+        if not line.startswith("- "):
+            return None
+
+        entry = line[2:].strip()
+        if not entry:
+            return None
+
+        match = re.match(
+            r"^(?P<name>.+?)\s*\(@(?P<handle>[A-Za-z0-9-]+)\)"
+            r"(?:\s*[-–]\s*(?P<role>.+))?$",
+            entry,
+        )
+        if match:
+            return (
+                match.group("name").strip(),
+                match.group("handle"),
+                (match.group("role") or "").strip() or None,
+            )
+
+        name, _, role = entry.partition(" - ")
+        return name.strip(), None, role.strip() or None
+
     def _create_contributors_tab(self) -> Any:
         """Create the Contributors tab with list of contributors."""
         box = GTK.Box(orientation=GTK.Orientation.VERTICAL, spacing=12)
@@ -1051,25 +1105,28 @@ class TrayApp:
                     continue
                 if "Ajimaru" in line and "@Ajimaru" in line:
                     continue
-                if line.startswith("- "):
-                    contrib = line[2:].strip()
-                    if "(@" in contrib:
-                        name, handle_part = contrib.split(" ")
-                        handle = handle_part.replace("(@", "").replace(")", "").strip()
-                        contrib_label = GTK.Label()
-                        contrib_label.set_markup(
-                            f'{name} (<a href="'
-                            f'https://github.com/{handle}">'
-                            f"@{handle}</a>)"
-                        )
-                        contrib_label.set_line_wrap(True)
-                        contrib_label.set_justify(GTK.Justification.CENTER)
-                        box.pack_start(contrib_label, False, False, 5)
-                    else:
-                        contrib_label = GTK.Label(label=contrib)
-                        contrib_label.set_line_wrap(True)
-                        contrib_label.set_justify(GTK.Justification.CENTER)
-                        box.pack_start(contrib_label, False, False, 5)
+                parsed = self._parse_contributor(line)
+                if not parsed:
+                    continue
+
+                name, handle, role = parsed
+                markup = self._escape_markup(name)
+                if handle:
+                    markup = (
+                        f'{markup} (<a href="https://github.com/{handle}">'
+                        f"@{handle}</a>)"
+                    )
+                if role:
+                    markup += (
+                        f'\n<span foreground="#888888">'
+                        f"{self._escape_markup(role)}</span>"
+                    )
+
+                contrib_label = GTK.Label()
+                contrib_label.set_markup(markup)
+                contrib_label.set_line_wrap(True)
+                contrib_label.set_justify(GTK.Justification.CENTER)
+                box.pack_start(contrib_label, False, False, 5)
 
         box.show_all()
         return box
