@@ -1047,6 +1047,29 @@ class TestBenchmarkManagerBuildSafeCommand:
         with pytest.raises(ValueError, match="Shell-unsafe"):
             BenchmarkManager._build_safe_command(["--runs", "3; rm -rf /"])
 
+    def test_prompt_text_may_contain_code(self):
+        """Prompt payload keeps operators like "<=", "|" and "$"."""
+        _, BenchmarkManager = _get_benchmark_manager()
+        prompt = "Explain: if a <= b | c and $x: return `y`"
+        result = BenchmarkManager._build_safe_command(["--prompt", prompt])
+        assert result[-2:] == ["--prompt", prompt]
+
+    def test_flag_after_prompt_is_still_checked(self):
+        """The exemption covers one value, not the rest of the command."""
+        _, BenchmarkManager = _get_benchmark_manager()
+        with pytest.raises(ValueError, match="Shell-unsafe"):
+            BenchmarkManager._build_safe_command(
+                ["--prompt", "a < b", "--runs", "3; rm -rf /"]
+            )
+
+    def test_prompt_file_value_is_still_checked(self):
+        """Only --prompt is exempt; file names stay restricted."""
+        _, BenchmarkManager = _get_benchmark_manager()
+        with pytest.raises(ValueError, match="Shell-unsafe"):
+            BenchmarkManager._build_safe_command(
+                ["--prompt-file", "../$(id).md"]
+            )
+
 
 class TestBenchmarkManagerSetIdle:
     """Tests for BenchmarkManager.set_idle_status."""

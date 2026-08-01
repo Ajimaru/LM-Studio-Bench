@@ -783,6 +783,12 @@ class BenchmarkManager:
         Verifies that the Python interpreter and benchmark script are absolute
         paths, and that no shell metacharacters remain in any argument.
 
+        The value behind ``--prompt`` is exempt: it is free text that routinely
+        contains ``<``, ``$`` or ``|`` - a code snippet cannot be phrased
+        without them. It is passed as one argv element with ``shell=False``,
+        so no shell ever sees it, and _validate_cli_arg_value has already
+        rejected NUL bytes and over-long values.
+
         Args:
             sanitized_args: Pre-sanitized benchmark CLI arguments.
 
@@ -801,7 +807,12 @@ class BenchmarkManager:
             script = str(BENCHMARK_SCRIPT.resolve())
             base_cmd = [interpreter, script]
 
+        previous = ""
         for component in base_cmd + sanitized_args:
+            is_prompt_text = previous == "--prompt"
+            previous = component
+            if is_prompt_text:
+                continue
             if shell_unsafe_pattern.search(component):
                 raise ValueError(
                     f"Shell-unsafe characters detected in argument: "
