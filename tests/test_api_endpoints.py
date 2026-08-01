@@ -2875,3 +2875,92 @@ class TestPromptFileWiring:
         manager, _ = _get_benchmark_manager()
         with pytest.raises(ValueError, match="control characters"):
             manager._validate_cli_arg_value("--prompt", "abc\x00def")
+
+
+class TestPerGpuMetrics:
+    """Multi-GPU metrics must reach the dashboard, and only then.
+
+    On a single-GPU machine the payload must not carry the per-device keys
+    at all, otherwise the dashboard renders charts with no data in them.
+    """
+
+    def test_parses_stored_metrics(self):
+        """The JSON column is decoded into a list of device aggregates."""
+        from web.app import _parse_gpu_metrics
+
+        raw = (
+            '[{"index":0,"name":"GPU A","samples":3,"vram_gb_max":5.9},'
+            '{"index":1,"name":"GPU B","samples":3,"vram_gb_max":0.3}]'
+        )
+        parsed = _parse_gpu_metrics(raw)
+        assert [entry["index"] for entry in parsed] == [0, 1]
+        assert parsed[0]["vram_gb_max"] == 5.9
+
+    @pytest.mark.parametrize("raw", [None, "", "not json", "{}", "[1, 2]"])
+    def test_unusable_values_yield_empty_list(self, raw):
+        """Anything unreadable is treated as "no per-device data"."""
+        from web.app import _parse_gpu_metrics
+
+        assert _parse_gpu_metrics(raw) == []
+
+    def test_single_gpu_result_has_no_per_gpu_key(self):
+        """Results without stored metrics stay free of the key."""
+        client = _get_client()
+        payload = client.get("/api/results").json()
+        assert payload["success"] is True
+        for entry in payload["results"]:
+            if "per_gpu" in entry:
+                assert entry["per_gpu"], "per_gpu present but empty"
+                assert entry.get("gpu_count", 0) >= 1
+
+
+class TestPerGpuLogParsing:
+    """The live charts are fed by parsing benchmark log lines."""
+
+    @staticmethod
+    def _manager():
+        """Fresh manager instance with empty history."""
+        from web.app import BenchmarkManager
+
+        return BenchmarkManager()
+
+    def test_parses_multi_gpu_line(self):
+        """Every device in the line becomes its own series."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "INFO - 🎛️ [0] AMD Radeon RX 7600M XT: 6.00GB VRAM, 0.74GB GTT, "
+            "62°C, 105W | [1] AMD Radeon Graphics: 0.27GB VRAM, 0.10GB GTT, "
+            "45°C, 25W"
+        )
+
+        history = manager.per_gpu_history
+        assert sorted(history) == [0, 1]
+        assert history[0]["name"] == "AMD Radeon RX 7600M XT"
+        assert history[0]["vram"][-1]["value"] == 6.0
+        assert history[0]["gtt"][-1]["value"] == 0.74
+        assert history[0]["temperatures"][-1]["value"] == 62.0
+        assert history[1]["power"][-1]["value"] == 25.0
+
+    def test_appends_across_samples(self):
+        """Repeated lines extend the series instead of replacing it."""
+        manager = self._manager()
+        line = (
+            "🎛️ [0] GPU A: 1.00GB VRAM, 0.10GB GTT, 40°C, 10W | "
+            "[1] GPU B: 2.00GB VRAM, 0.20GB GTT, 50°C, 20W"
+        )
+        manager.parse_hardware_metrics(line)
+        manager.parse_hardware_metrics(line)
+        assert len(manager.per_gpu_history[0]["vram"]) == 2
+
+    def test_single_gpu_lines_leave_history_empty(self):
+        """The regular per-metric lines must not create device series."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("💾 GPU VRAM: 5.92GB")
+        manager.parse_hardware_metrics("🌡️ GPU Temp: 62.0°C")
+        assert manager.per_gpu_history == {}
+
+    def test_unrelated_line_is_ignored(self):
+        """Output that merely mentions GB does not match."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("Model size: 6.00GB on disk")
+        assert manager.per_gpu_history == {}

@@ -821,3 +821,93 @@ class TestGPUMonitorAdvanced:
             result = monitor.get_vram_usage()
         assert isinstance(result, str)
         assert result != ""
+
+
+class TestPerGpuTracking:
+    """HardwareMonitor collects per-device metrics only on multi-GPU hosts."""
+
+    @staticmethod
+    def _monitor(sample_sets):
+        """Build a monitor whose device sampling returns canned samples."""
+        from tools.hardware_monitor import HardwareMonitor
+
+        with patch("tools.hardware_monitor.sample_devices",
+                   return_value=sample_sets), \
+                patch("tools.hardware_monitor.device_names", return_value={}):
+            monitor = HardwareMonitor("AMD", "rocm-smi", enabled=True)
+        return monitor
+
+    def test_single_gpu_disables_per_device_tracking(self):
+        """One device means the aggregate readers already say everything."""
+        from tools.gpu_devices import GpuSample
+
+        monitor = self._monitor([GpuSample(index=0, temp_celsius=50.0)])
+        assert monitor.device_count == 1
+        assert monitor.per_gpu_metrics() == []
+        assert monitor.per_gpu_metrics_json() is None
+
+    def test_multi_gpu_enables_tracking(self):
+        """Two devices switch per-device recording on."""
+        from tools.gpu_devices import GpuSample
+
+        samples = [
+            GpuSample(index=0, temp_celsius=60.0, vram_gb=5.9),
+            GpuSample(index=1, temp_celsius=45.0, vram_gb=0.3),
+        ]
+        monitor = self._monitor(samples)
+        assert monitor.device_count == 2
+
+        with patch("tools.hardware_monitor.sample_devices",
+                   return_value=samples):
+            monitor._sample_gpu_devices()
+
+        metrics = monitor.per_gpu_metrics()
+        assert [entry["index"] for entry in metrics] == [0, 1]
+        assert metrics[0]["vram_gb_max"] == 5.9
+        assert metrics[1]["temp_celsius_max"] == 45.0
+
+    def test_stop_reports_gpu_count_and_devices(self):
+        """stop() carries the per-device view next to the aggregates."""
+        from tools.gpu_devices import GpuSample
+
+        samples = [
+            GpuSample(index=0, temp_celsius=60.0),
+            GpuSample(index=1, temp_celsius=45.0),
+        ]
+        monitor = self._monitor(samples)
+        with patch("tools.hardware_monitor.sample_devices",
+                   return_value=samples):
+            monitor._sample_gpu_devices()
+
+        stats = monitor.stop()
+        assert stats["gpu_count"] == 2
+        assert len(stats["per_gpu"]) == 2
+        # Aggregate keys must survive unchanged for existing consumers.
+        assert "temp_celsius_max" in stats
+        assert "vram_gb_avg" in stats
+
+    def test_reset_clears_device_history(self):
+        """A new run must not inherit the previous run's device series."""
+        from tools.gpu_devices import GpuSample
+
+        samples = [
+            GpuSample(index=0, temp_celsius=60.0),
+            GpuSample(index=1, temp_celsius=45.0),
+        ]
+        monitor = self._monitor(samples)
+        with patch("tools.hardware_monitor.sample_devices",
+                   return_value=samples):
+            monitor._sample_gpu_devices()
+        assert monitor.per_gpu_metrics()
+
+        monitor._reset_measurements()
+        assert monitor.per_gpu_metrics() == []
+
+    def test_disabled_monitor_skips_detection(self):
+        """Without profiling there is no reason to query the GPUs."""
+        from tools.hardware_monitor import HardwareMonitor
+
+        with patch("tools.hardware_monitor.sample_devices") as sampler:
+            monitor = HardwareMonitor("AMD", "rocm-smi", enabled=False)
+        sampler.assert_not_called()
+        assert monitor.device_count == 0

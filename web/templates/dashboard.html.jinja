@@ -5132,18 +5132,115 @@
         }
 
         // ===== Hardware Monitoring Charts =====
+        /**
+         * Update the min/avg/max boxes under a chart.
+         * The per-GPU charts draw one line per device, but these boxes stay
+         * on the aggregate series so their meaning does not change with the
+         * number of GPUs installed.
+         */
+        function updateChartStats(prefix, data, unit, digits) {
+            const values = data.map(d => d.value).filter(v => Number.isFinite(v));
+            if (values.length === 0) return;
+
+            const stats = {
+                min: Math.min(...values),
+                max: Math.max(...values),
+                avg: values.reduce((a, b) => a + b, 0) / values.length
+            };
+            Object.entries(stats).forEach(([key, value]) => {
+                const element = document.getElementById(`${prefix}-${key}`);
+                if (element) element.textContent = `${value.toFixed(digits)}${unit}`;
+            });
+        }
+
+        // Distinct colours per GPU, used only when several are present.
+        const GPU_TRACE_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ec4899'];
+
+        /**
+         * Build one Plotly trace per GPU for a given metric.
+         * Returns null when there is nothing to plot, so callers can fall
+         * back to the single-GPU chart instead of drawing an empty figure.
+         */
+        function buildPerGpuTraces(perGpu, metricKey, unit) {
+            if (!Array.isArray(perGpu) || perGpu.length < 2) return null;
+
+            const traces = [];
+            perGpu.forEach((device, position) => {
+                const series = device[metricKey];
+                if (!Array.isArray(series) || series.length === 0) return;
+                traces.push({
+                    x: series.map(d => new Date(d.timestamp).toLocaleTimeString('de-DE')),
+                    y: series.map(d => d.value),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `[${device.index}] ${device.name || 'GPU'} (${unit})`,
+                    line: {
+                        color: GPU_TRACE_COLORS[position % GPU_TRACE_COLORS.length],
+                        width: 2
+                    }
+                });
+            });
+            return traces.length > 0 ? traces : null;
+        }
+
+        function perGpuLayout() {
+            return {
+                title: false,
+                hovermode: 'x unified',
+                showlegend: true,
+                legend: {orientation: 'h', y: -0.2, font: {size: 10}},
+                margin: {l: 50, r: 20, t: 20, b: 60},
+                plot_bgcolor: 'rgba(0,0,0,0.02)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                font: {color: document.body.classList.contains('dark-mode') ? '#f3f4f6' : '#1f2937'},
+                xaxis: {showgrid: false, showticklabels: false},
+                yaxis: {showgrid: false}
+            };
+        }
+
+        /**
+         * Draw a chart with one line per GPU.
+         * Returns false when per-device data is unavailable.
+         */
+        function renderPerGpuChart(divId, perGpu, metricKey, unit) {
+            const traces = buildPerGpuTraces(perGpu, metricKey, unit);
+            if (!traces) return false;
+            Plotly.newPlot(divId, traces, perGpuLayout(), {responsive: true, displayModeBar: false});
+            return true;
+        }
+
         function updateHardwareCharts(hardwareData) {
+            // With a single GPU the payload carries no per_gpu key at all,
+            // so the original single-line charts stay untouched.
+            const perGpu = hardwareData.per_gpu;
+
             if (hardwareData.temperatures && hardwareData.temperatures.length > 0) {
-                updateTemperatureChart(hardwareData.temperatures);
+                if (!renderPerGpuChart('chart-temperature', perGpu, 'temperatures', '°C')) {
+                    updateTemperatureChart(hardwareData.temperatures);
+                } else {
+                    updateChartStats('temp', hardwareData.temperatures, '°C', 1);
+                }
             }
             if (hardwareData.power && hardwareData.power.length > 0) {
-                updatePowerChart(hardwareData.power);
+                if (!renderPerGpuChart('chart-power', perGpu, 'power', 'W')) {
+                    updatePowerChart(hardwareData.power);
+                } else {
+                    updateChartStats('power', hardwareData.power, 'W', 1);
+                }
             }
             if (hardwareData.vram && hardwareData.vram.length > 0) {
-                updateVramChart(hardwareData.vram);
+                if (!renderPerGpuChart('chart-vram', perGpu, 'vram', 'GB')) {
+                    updateVramChart(hardwareData.vram);
+                } else {
+                    updateChartStats('vram', hardwareData.vram, 'GB', 2);
+                }
             }
             if (hardwareData.gtt && hardwareData.gtt.length > 0) {
-                updateGttChart(hardwareData.gtt);
+                if (!renderPerGpuChart('chart-gtt', perGpu, 'gtt', 'GB')) {
+                    updateGttChart(hardwareData.gtt);
+                } else {
+                    updateChartStats('gtt', hardwareData.gtt, 'GB', 2);
+                }
             }
             if (hardwareData.cpu && hardwareData.cpu.length > 0) {
                 updateCpuChart(hardwareData.cpu);

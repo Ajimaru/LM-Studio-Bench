@@ -9,7 +9,7 @@ from statistics import mean
 import subprocess
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import psutil
 
@@ -18,6 +18,12 @@ from core.platform_info import (
     detect_apple_gpu,
     get_apple_unified_memory_gb,
     read_apple_gpu_stats,
+)
+from tools.gpu_devices import (
+    GpuAggregate,
+    device_names,
+    sample_devices,
+    serialize_aggregates,
 )
 from tools.macmon import MacmonSampler, is_macmon_available
 
@@ -28,6 +34,9 @@ except (ImportError, ModuleNotFoundError):
 
 
 logger = logging.getLogger(__name__)
+
+
+PER_GPU_MIN_DEVICES = 2
 
 
 class HardwareMonitor:
@@ -55,6 +64,16 @@ class HardwareMonitor:
         self._amd_sysfs_path: Optional[str] = None
         self._amd_hwmon_path: Optional[str] = None
 
+        # Per-device tracking is only set up when the vendor tool actually
+        # reports more than one GPU. On a single-GPU machine the aggregate
+        # readers already tell the whole story, and an empty per-device list
+        # keeps reports and dashboards free of placeholder charts.
+        self.gpu_devices: Dict[int, GpuAggregate] = {}
+        self.device_count: int = 0
+        self._device_names: Dict[int, str] = {}
+        if self.enabled:
+            self._init_gpu_devices()
+
         # Apple Silicon exposes temperature and power only through
         # powermetrics (root) or macmon (sudoless). macmon is optional: when
         # absent, those metrics simply stay unset.
@@ -64,6 +83,93 @@ class HardwareMonitor:
 
         if self.gpu_type == "AMD" and self.gpu_tool == "sysfs":
             self._init_amd_sysfs_paths()
+
+    def _init_gpu_devices(self) -> None:
+        """Detect whether per-device sampling applies to this machine."""
+        try:
+            devices = sample_devices(self.gpu_type, self.gpu_tool)
+        except Exception as error:  # pragma: no cover - defensive
+            logger.debug("Per-GPU detection failed: %s", error)
+            return
+
+        self.device_count = len(devices)
+        if self.device_count < PER_GPU_MIN_DEVICES:
+            return
+
+        self._device_names = device_names(self.gpu_type, self.gpu_tool)
+        logger.info(
+            "🎛️ %s GPUs detected, recording per-device metrics",
+            self.device_count,
+        )
+
+    def _sample_gpu_devices(self) -> None:
+        """Fold one per-device reading into the aggregates."""
+        if self.device_count < PER_GPU_MIN_DEVICES:
+            return
+
+        samples = sample_devices(self.gpu_type, self.gpu_tool)
+        if not samples:
+            return
+
+        with self.lock:
+            for sample in samples:
+                if sample.name is None:
+                    sample.name = self._device_names.get(sample.index)
+                aggregate = self.gpu_devices.setdefault(
+                    sample.index,
+                    GpuAggregate(index=sample.index, name=sample.name),
+                )
+                aggregate.add(sample)
+
+    def _log_per_gpu_reading(self) -> None:
+        """Log the latest reading of every device on a multi-GPU machine."""
+        if self.device_count < PER_GPU_MIN_DEVICES:
+            return
+
+        with self.lock:
+            parts = []
+            for index in sorted(self.gpu_devices):
+                aggregate = self.gpu_devices[index]
+                latest = {
+                    metric: readings[-1]
+                    for metric, readings in aggregate.values.items()
+                    if readings
+                }
+                if not latest:
+                    continue
+                label = aggregate.name or f"GPU{index}"
+                parts.append(
+                    f"[{index}] {label}: "
+                    f"{latest.get('vram_gb', 0):.2f}GB VRAM, "
+                    f"{latest.get('gtt_gb', 0):.2f}GB GTT, "
+                    f"{latest.get('temp_celsius', 0):.0f}°C, "
+                    f"{latest.get('power_watts', 0):.0f}W"
+                )
+
+        if parts:
+            logger.info("🎛️ %s", " | ".join(parts))
+
+    def per_gpu_metrics(self) -> List[Dict[str, Any]]:
+        """Per-device min/max/avg, empty on single-GPU systems."""
+        with self.lock:
+            aggregates = [
+                self.gpu_devices[index]
+                for index in sorted(self.gpu_devices)
+            ]
+        return [
+            aggregate.as_dict()
+            for aggregate in aggregates
+            if aggregate.samples > 0
+        ]
+
+    def per_gpu_metrics_json(self) -> Optional[str]:
+        """Per-device metrics serialized for a TEXT column."""
+        with self.lock:
+            aggregates = [
+                self.gpu_devices[index]
+                for index in sorted(self.gpu_devices)
+            ]
+        return serialize_aggregates(aggregates)
 
     def _reset_measurements(self) -> None:
         """Clear all collected measurements before a new profiling run."""
@@ -75,6 +181,7 @@ class HardwareMonitor:
             self.cpus.clear()
             self.rams.clear()
             self.ram_readings.clear()
+            self.gpu_devices.clear()
         self._amd_sysfs_path = None
         self._amd_hwmon_path = None
 
@@ -125,7 +232,7 @@ class HardwareMonitor:
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.thread.start()
 
-    def stop(self) -> Dict[str, Optional[float]]:
+    def stop(self) -> Dict[str, Any]:
         """Stop monitoring and return collected statistics."""
         self.monitoring = False
         if self.thread:
@@ -161,6 +268,12 @@ class HardwareMonitor:
             "ram_gb_min": min(rams) if rams else None,
             "ram_gb_max": max(rams) if rams else None,
             "ram_gb_avg": mean(rams) if rams else None,
+            # Aggregates above stay as they were - they describe the primary
+            # GPU, which is what every existing report and cached row means.
+            # The per-device view is additional, and empty on single-GPU
+            # machines so nothing downstream has to render a blank chart.
+            "gpu_count": self.device_count,
+            "per_gpu": self.per_gpu_metrics(),
         }
 
     def _monitor_loop(self) -> None:
@@ -174,6 +287,7 @@ class HardwareMonitor:
                 gtt = self._get_gtt_usage()
                 cpu = self._get_cpu_usage()
                 ram = self._get_ram_usage()
+                self._sample_gpu_devices()
 
                 with self.lock:
                     if temp is not None:
@@ -223,6 +337,8 @@ class HardwareMonitor:
                     if ram is not None:
                         self.rams.append(ram)
                         logger.info("💾 RAM: %sGB", ram)
+
+                self._log_per_gpu_reading()
 
                 time.sleep(1)
             except (subprocess.SubprocessError, OSError, ValueError) as error:

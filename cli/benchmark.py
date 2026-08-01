@@ -247,6 +247,11 @@ class BenchmarkResult:
     ram_gb_min: Optional[float] = None
     ram_gb_max: Optional[float] = None
     ram_gb_avg: Optional[float] = None
+    # Per-device GPU metrics as JSON, set only when more than one GPU is
+    # present. The flat fields above keep describing the primary GPU, so old
+    # rows and new rows stay comparable.
+    gpu_metrics_json: Optional[str] = None
+    gpu_count: Optional[int] = None
     gtt_enabled: Optional[bool] = None
     gtt_total_gb: Optional[float] = None
     gtt_used_gb: Optional[float] = None
@@ -344,6 +349,8 @@ class BenchmarkCache:
         ("ram_gb_min", "REAL"),
         ("ram_gb_max", "REAL"),
         ("ram_gb_avg", "REAL"),
+        ("gpu_metrics_json", "TEXT"),
+        ("gpu_count", "INTEGER"),
         ("tokens_per_sec_p50", "REAL"),
         ("tokens_per_sec_p95", "REAL"),
         ("tokens_per_sec_std", "REAL"),
@@ -940,6 +947,12 @@ class BenchmarkCache:
                 result_dict["gtt_gb_min"] = row[columns["gtt_gb_min"]]
                 result_dict["gtt_gb_max"] = row[columns["gtt_gb_max"]]
                 result_dict["gtt_gb_avg"] = row[columns["gtt_gb_avg"]]
+            if "gpu_metrics_json" in columns:
+                result_dict["gpu_metrics_json"] = row[
+                    columns["gpu_metrics_json"]
+                ]
+            if "gpu_count" in columns:
+                result_dict["gpu_count"] = row[columns["gpu_count"]]
             if "cpu_percent_min" in columns:
                 result_dict["cpu_percent_min"] = row[columns["cpu_percent_min"]]
                 result_dict["cpu_percent_max"] = row[columns["cpu_percent_max"]]
@@ -1066,6 +1079,12 @@ class BenchmarkCache:
                 result_dict["gtt_gb_min"] = row[columns["gtt_gb_min"]]
                 result_dict["gtt_gb_max"] = row[columns["gtt_gb_max"]]
                 result_dict["gtt_gb_avg"] = row[columns["gtt_gb_avg"]]
+            if "gpu_metrics_json" in columns:
+                result_dict["gpu_metrics_json"] = row[
+                    columns["gpu_metrics_json"]
+                ]
+            if "gpu_count" in columns:
+                result_dict["gpu_count"] = row[columns["gpu_count"]]
             if "cpu_percent_min" in columns:
                 result_dict["cpu_percent_min"] = row[columns["cpu_percent_min"]]
                 result_dict["cpu_percent_max"] = row[columns["cpu_percent_max"]]
@@ -1186,6 +1205,8 @@ class BenchmarkCache:
                 result.ram_gb_min,
                 result.ram_gb_max,
                 result.ram_gb_avg,
+                result.gpu_metrics_json,
+                result.gpu_count,
                 result.tokens_per_sec_p50,
                 result.tokens_per_sec_p95,
                 result.tokens_per_sec_std,
@@ -1234,6 +1255,7 @@ class BenchmarkCache:
                     gtt_gb_min, gtt_gb_max, gtt_gb_avg,
                     cpu_percent_min, cpu_percent_max, cpu_percent_avg,
                     ram_gb_min, ram_gb_max, ram_gb_avg,
+                    gpu_metrics_json, gpu_count,
                     tokens_per_sec_p50, tokens_per_sec_p95, tokens_per_sec_std,
                     ttft_p50, ttft_p95, ttft_std,
                     capability, test_id, test_name,
@@ -1303,6 +1325,10 @@ class BenchmarkCache:
                 optional_cols.extend(["ram_gb_min", "ram_gb_max", "ram_gb_avg"])
             if "gtt_enabled" in columns:
                 optional_cols.extend(["gtt_enabled", "gtt_total_gb", "gtt_used_gb"])
+            if "gpu_metrics_json" in columns:
+                optional_cols.append("gpu_metrics_json")
+            if "gpu_count" in columns:
+                optional_cols.append("gpu_count")
             if "tokens_per_sec_p50" in columns:
                 optional_cols.extend(
                     [
@@ -1436,6 +1462,14 @@ class BenchmarkCache:
                     result_dict["gtt_total_gb"] = row[idx + 1]
                     result_dict["gtt_used_gb"] = row[idx + 2]
                     idx += 3
+
+                if "gpu_metrics_json" in columns:
+                    result_dict["gpu_metrics_json"] = row[idx]
+                    idx += 1
+
+                if "gpu_count" in columns:
+                    result_dict["gpu_count"] = row[idx]
+                    idx += 1
 
                 if "tokens_per_sec_p50" in columns:
                     result_dict["tokens_per_sec_p50"] = row[idx]
@@ -2872,6 +2906,13 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                     result.ram_gb_min = profiling_stats.get("ram_gb_min")
                     result.ram_gb_max = profiling_stats.get("ram_gb_max")
                     result.ram_gb_avg = profiling_stats.get("ram_gb_avg")
+                    # Stays None on single-GPU machines, so consumers can use
+                    # its presence to decide whether a per-device view exists
+                    # at all instead of rendering empty panels.
+                    result.gpu_count = profiling_stats.get("gpu_count") or None
+                    result.gpu_metrics_json = (
+                        self.hardware_monitor.per_gpu_metrics_json()
+                    )
 
                     if (
                         self.max_temp
@@ -2982,6 +3023,8 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                             ram_gb_min=result.ram_gb_min,
                             ram_gb_max=result.ram_gb_max,
                             ram_gb_avg=result.ram_gb_avg,
+                            gpu_metrics_json=result.gpu_metrics_json,
+                            gpu_count=result.gpu_count,
                             top_k_sampling=result.top_k_sampling,
                             top_p_sampling=result.top_p_sampling,
                             min_p_sampling=result.min_p_sampling,

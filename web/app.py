@@ -126,6 +126,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# "[0] AMD Radeon RX 7600M XT: 6.00GB VRAM, 0.74GB GTT, 62C, 105W"
+PER_GPU_LINE = re.compile(
+    r"\[(?P<index>\d+)\]\s*(?P<name>[^:]+?):\s*"
+    r"(?P<vram>[\d.]+)GB VRAM,\s*"
+    r"(?P<gtt>[\d.]+)GB GTT,\s*"
+    r"(?P<temp>[\d.]+)[^\d,]*C,\s*"
+    r"(?P<power>[\d.]+)\s*W"
+)
+
 
 GENERIC_API_ERROR = "Internal server error"
 
@@ -406,6 +415,10 @@ class _BenchmarkManagerState:
             "ram": [],
         }
     )
+    # Per-device series, populated only when the benchmark reports more than
+    # one GPU. Kept apart from hardware_history because it is keyed by device
+    # index and stays empty on single-GPU machines.
+    per_gpu_history: Dict[int, Dict[str, Any]] = field(default_factory=dict)
     last_hardware_send_time: float = 0.0
 
 
@@ -793,6 +806,9 @@ class BenchmarkManager:
             else:
                 sanitized_args = self._sanitize_benchmark_args(cli_args)
             self._state.output_queue = asyncio.Queue()
+            # A previous run's device series would otherwise be prepended to
+            # the new charts.
+            self._state.per_gpu_history.clear()
             if self._state.output_task and not self._state.output_task.done():
                 self._state.output_task.cancel()
 
@@ -925,6 +941,8 @@ class BenchmarkManager:
                 {"timestamp": datetime.now().isoformat(), "value": cpu_value}
             )
 
+        self._parse_per_gpu_metrics(output_line)
+
         ram_pattern = r"(?<![V])RAM\s*:\s*(\d+(?:\.\d+)?)GB"
         ram_match = re.search(ram_pattern, output_line, re.IGNORECASE)
         if ram_match:
@@ -932,6 +950,54 @@ class BenchmarkManager:
             self.hardware_history["ram"].append(
                 {"timestamp": datetime.now().isoformat(), "value": ram_value}
             )
+
+    def _parse_per_gpu_metrics(self, output_line: str) -> None:
+        """Parse the multi-GPU log line into per-device series.
+
+        The benchmark emits one line per sampling tick, for example::
+
+            [0] Radeon RX 7600M XT: 6.00GB VRAM, 0.74GB GTT, 62C, 105W | [1] ...
+
+        Single-GPU runs never emit it, so per_gpu_history stays empty and
+        consumers can treat its emptiness as "nothing extra to show".
+        """
+        if "GB VRAM" not in output_line:
+            return
+
+        timestamp = datetime.now().isoformat()
+        for match in PER_GPU_LINE.finditer(output_line):
+            try:
+                index = int(match.group("index"))
+            except (TypeError, ValueError):
+                continue
+
+            device = self.per_gpu_history.setdefault(
+                index,
+                {
+                    "index": index,
+                    "name": match.group("name").strip(),
+                    "vram": [],
+                    "gtt": [],
+                    "temperatures": [],
+                    "power": [],
+                },
+            )
+
+            for key, group in (
+                ("vram", "vram"),
+                ("gtt", "gtt"),
+                ("temperatures", "temp"),
+                ("power", "power"),
+            ):
+                raw = match.group(group)
+                if raw is None:
+                    continue
+                try:
+                    device[key].append(
+                        {"timestamp": timestamp, "value": float(raw)}
+                    )
+                except ValueError:
+                    continue
 
     async def read_output(self) -> str:
         """Reads ALL available lines from process without blocking"""
@@ -1965,6 +2031,28 @@ async def get_latest_release() -> dict:
     }
 
 
+def _parse_gpu_metrics(raw: Optional[str]) -> List[Dict[str, Any]]:
+    """Decode the per-device GPU metrics stored with a result.
+
+    Args:
+        raw: JSON string from the gpu_metrics_json column, or None.
+
+    Returns:
+        List of per-device aggregates; empty when absent or unreadable, which
+        is the normal case on single-GPU machines.
+    """
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.debug("Ignoring unreadable gpu_metrics_json")
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [entry for entry in parsed if isinstance(entry, dict)]
+
+
 @app.get("/api/results")
 async def get_results() -> dict:
     """Returns all cached benchmark results"""
@@ -2015,6 +2103,19 @@ async def get_results() -> dict:
                 result_dict["power_watts_avg"] = result.power_watts_avg
             if hasattr(result, "gtt_enabled"):
                 result_dict["gtt_enabled"] = result.gtt_enabled
+
+            # Per-device metrics exist only on multi-GPU machines. Sending
+            # the key regardless would make the dashboard render empty panels
+            # for everyone else, so it is omitted when there is nothing to
+            # show.
+            per_gpu = _parse_gpu_metrics(
+                getattr(result, "gpu_metrics_json", None)
+            )
+            if per_gpu:
+                result_dict["gpu_count"] = (
+                    getattr(result, "gpu_count", None) or len(per_gpu)
+                )
+                result_dict["per_gpu"] = per_gpu
 
             results_data.append(result_dict)
 
@@ -5277,6 +5378,25 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "cpu": hw["cpu"][-max_history:],
                                 "ram": hw["ram"][-max_history:],
                             }
+
+                            # Only present with more than one GPU: the
+                            # dashboard switches to one trace per device when
+                            # it arrives and stays single-line otherwise.
+                            per_gpu = manager.per_gpu_history
+                            if len(per_gpu) > 1:
+                                hardware_data["per_gpu"] = [
+                                    {
+                                        "index": device["index"],
+                                        "name": device["name"],
+                                        "temperatures": device["temperatures"][
+                                            -max_history:
+                                        ],
+                                        "power": device["power"][-max_history:],
+                                        "vram": device["vram"][-max_history:],
+                                        "gtt": device["gtt"][-max_history:],
+                                    }
+                                    for _, device in sorted(per_gpu.items())
+                                ]
 
                             await websocket.send_json(
                                 {"type": "hardware", "data": hardware_data}
