@@ -18,8 +18,8 @@ import threading
 import time
 from typing import Any, Optional, cast
 from urllib import error as urllib_error
-from urllib.parse import urlparse
 from urllib import request as urllib_request
+from urllib.parse import urlparse
 import webbrowser
 
 from core.paths import USER_LOGS_DIR

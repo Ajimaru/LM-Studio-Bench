@@ -55,8 +55,8 @@ except (ImportError, ModuleNotFoundError):
 try:
     from reportlab.lib import colors
     from reportlab.lib import pagesizes as rl_pagesizes
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib import units as rl_units
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.platypus import (
         PageBreak,
         Paragraph,
