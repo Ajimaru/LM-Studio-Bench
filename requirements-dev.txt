@@ -2,13 +2,15 @@
 # Install with: pip install -r requirements-dev.txt
 
 # Python Code Quality Tools
-flake8>=7.3.0              # Style checker (PEP 8)
-isort>=8.0.1               # Import sorter
-pylint>=4.0.5              # Code linter and checker
+# ruff replaces flake8 (style/pyflakes) and isort (import order): one tool,
+# one config section in pyproject.toml, and the same rules editors apply.
+ruff>=0.14.0               # Linter + import sorter (see [tool.ruff])
+pylint>=4.0.5              # Deeper static analysis, beyond ruff's scope
 djlint>=1.40.3             # HTML/Jinja linter
 
 # Optional tools for development
-black>=26.5.1              # Code formatter (for future use)
+# Formatting is not enforced anywhere; `ruff format` is available from the
+# ruff pin above if that ever changes, so a separate formatter is not pinned.
 mypy>=2.3.0                # Static type checker (for future use)
 
 # Testing
