@@ -60,8 +60,13 @@ readarray -t PYTHON_FILES < <(
 readarray -t BASH_FILES < <(
     printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.(sh|bash)$' || true
 )
+# Prompt templates under prompts/ and tests/prompts/ are model payload, not
+# documentation. Linting them for headings and line length would demand
+# changes to the text that is sent to the model. Kept in sync with
+# .markdownlintignore for editors and manual runs.
 readarray -t MARKDOWN_FILES < <(
-    printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.md$' || true
+    printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.md$' \
+        | grep -vE '^(prompts|tests/prompts)/' || true
 )
 readarray -t HTML_JINJA_FILES < <(
     printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.(html|jinja|jinja2)$' || true

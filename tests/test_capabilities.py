@@ -347,7 +347,9 @@ class TestCapabilityDetector:
         """General-text aliases map to Capability.GENERAL_TEXT."""
         detector = CapabilityDetector()
 
-        for cap_name in ["general_text", "chat", "coding", "math"]:
+        # "coding" is deliberately absent: it now maps to Capability.CODE,
+        # which runs executable tests instead of text similarity.
+        for cap_name in ["general_text", "chat", "creative", "math"]:
             mapped = detector._map_metadata_capability(cap_name)
             assert mapped == Capability.GENERAL_TEXT, (
                 f"Expected GENERAL_TEXT for {cap_name}"
@@ -539,3 +541,40 @@ def test_get_capability_tests_unknown_defaults_to_general():
     """Unknown capabilities fall back to a general test list."""
     tests = get_capability_tests(cast(Capability, "unknown"))
     assert tests == ["general"], "Expected ['general'] fallback for unknown capability"
+
+
+class TestCodeCapability:
+    """The code capability must be selectable and mapped consistently."""
+
+    def test_code_is_a_capability(self):
+        """Capability.CODE exists with the expected value."""
+        from agents.capabilities import Capability
+        assert Capability.CODE.value == "code"
+
+    def test_cli_flag_selects_code(self):
+        """--capabilities code resolves to the code capability."""
+        from agents.capabilities import Capability, CapabilityDetector
+        result = CapabilityDetector().detect(
+            model_name="any-model", capabilities_str="code"
+        )
+        assert result.capabilities == {Capability.CODE}
+
+    def test_metadata_coding_maps_to_code(self):
+        """Metadata saying 'coding' means code, not general text.
+
+        Previously it fell through to general_text, so a coding model was
+        never asked to write code.
+        """
+        from agents.capabilities import Capability, CapabilityDetector
+        detector = CapabilityDetector()
+        assert detector._map_metadata_capability("coding") is Capability.CODE
+        assert detector._map_metadata_capability("code_generation") is (
+            Capability.CODE
+        )
+
+    def test_code_has_test_types(self):
+        """get_capability_tests knows the code capability."""
+        from agents.capabilities import Capability, get_capability_tests
+        tests = get_capability_tests(Capability.CODE)
+        assert "function_implementation" in tests
+        assert tests != ["general"]

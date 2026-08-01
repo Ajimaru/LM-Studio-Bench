@@ -397,7 +397,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help=(
             "Comma-separated capabilities: "
-            "general_text,reasoning,vision,tooling"
+            "general_text,reasoning,vision,tooling,code"
         )
     )
 

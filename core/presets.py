@@ -73,7 +73,7 @@ class PresetManager:
             "top_p_sampling": 0.9,
             "min_p_sampling": 0.05,
             "repeat_penalty": 1.2,
-            "max_tokens": 512,
+            "max_tokens": 2000,
             "n_gpu_layers": -1,
             "n_batch": 512,
             "n_threads": -1,
@@ -115,7 +115,7 @@ class PresetManager:
             "top_p_sampling": 0.9,
             "min_p_sampling": 0.05,
             "repeat_penalty": 1.2,
-            "max_tokens": 512,
+            "max_tokens": 2000,
             "n_gpu_layers": -1,
             "n_batch": 512,
             "n_threads": -1,
@@ -157,6 +157,9 @@ class PresetManager:
             "runs": 3,
             "context": 16384,
             "prompt_file": "coding_assistant.md",
+            # Throughput is measured in tokens per second, so a long
+            # generation only multiplies the run time without sharpening the
+            # number. Quality runs use the 2000-token default instead.
             "max_tokens": 512,
             "enable_profiling": True,
             "retest": True,

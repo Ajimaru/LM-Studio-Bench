@@ -1,0 +1,5 @@
+# Prompt templates are payload, not documentation: their content is sent to
+# the model verbatim. Adding a top-level heading or reflowing lines to satisfy
+# documentation rules would change what the model is asked.
+prompts/
+tests/prompts/

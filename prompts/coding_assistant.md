@@ -1,5 +1,3 @@
-# Preset resolution in the `PresetManager`
-
 You are a coding assistant working inside an editor. Below are two files
 from the user's repository.
 

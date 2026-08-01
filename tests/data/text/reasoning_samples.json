@@ -1,23 +1,58 @@
 [
     {
         "id": "reasoning_001",
-        "prompt": "If all A are B, and all B are C, then are all A also C?",
-        "reference": "Yes",
-        "reasoning": "This is a valid syllogism. By transitivity, if A implies B and B implies C, then A implies C.",
-        "category": "logical"
+        "prompt": "A bat and a ball cost 1.10 euros in total. The bat costs 1.00 euro more than the ball. How much does the ball cost in euros? Give the number only.",
+        "reference": "0.05",
+        "reasoning": "ball + (ball + 1.00) = 1.10 => 2*ball = 0.10 => ball = 0.05. The intuitive answer 0.10 is wrong.",
+        "category": "trap"
     },
     {
         "id": "reasoning_002",
-        "prompt": "A train travels 120 miles in 2 hours. What is its average speed in miles per hour?",
-        "reference": "60",
-        "reasoning": "Speed = Distance / Time = 120 / 2 = 60 mph",
-        "category": "math"
+        "prompt": "If 5 machines take 5 minutes to make 5 widgets, how many minutes do 100 machines take to make 100 widgets?",
+        "reference": "5",
+        "reasoning": "Each machine makes one widget in 5 minutes, so 100 machines make 100 widgets in 5 minutes.",
+        "category": "trap"
     },
     {
         "id": "reasoning_003",
-        "prompt": "If 3x + 5 = 20, what is x?",
-        "reference": "5",
-        "reasoning": "3x + 5 = 20; 3x = 15; x = 5",
-        "category": "math"
+        "prompt": "A shop sells notebooks for 4 euros each. Buying 5 or more gives 25 percent off the whole order. Anna buys 6 notebooks, then returns 2 and is refunded at the price she actually paid per notebook. How many euros did Anna spend in the end? Give the number only.",
+        "reference": "12",
+        "reasoning": "6 * 4 = 24, minus 25% = 18, so 3 euros per notebook. Refund 2 * 3 = 6. 18 - 6 = 12.",
+        "category": "multi_step"
+    },
+    {
+        "id": "reasoning_004",
+        "prompt": "All bloops are razzies. Some razzies are lazzies. Does it follow that some bloops are lazzies? Answer yes or no.",
+        "reference": "No",
+        "reasoning": "Invalid syllogism: the lazzie-razzies may be entirely outside the bloop subset.",
+        "category": "logic"
+    },
+    {
+        "id": "reasoning_005",
+        "prompt": "Four runners finish a race. Ben finishes before Ada. Cara finishes after Ada. Dan finishes before Ben. Ada did not finish last. Who finished first? Answer with the name only.",
+        "reference": "Dan",
+        "reasoning": "Dan < Ben < Ada < Cara, so Dan is first and Cara last, which is consistent with Ada not being last.",
+        "category": "ordering"
+    },
+    {
+        "id": "reasoning_006",
+        "prompt": "A train leaves at 14:45 and the journey takes 2 hours and 40 minutes. There is a 25 minute delay on departure. At what time does it arrive? Use 24-hour HH:MM format.",
+        "reference": "17:50",
+        "reasoning": "14:45 + 0:25 = 15:10; 15:10 + 2:40 = 17:50.",
+        "category": "time"
+    },
+    {
+        "id": "reasoning_007",
+        "prompt": "In a group of 30 people, 18 speak Spanish, 15 speak French and 7 speak both. How many speak neither? Give the number only.",
+        "reference": "4",
+        "reasoning": "Inclusion-exclusion: 18 + 15 - 7 = 26 speak at least one, so 30 - 26 = 4 speak neither.",
+        "category": "sets"
+    },
+    {
+        "id": "reasoning_008",
+        "prompt": "A server processes 480 requests in 4 minutes. After an upgrade it is 25 percent faster. How many requests does it process in 3 minutes after the upgrade? Give the number only.",
+        "reference": "450",
+        "reasoning": "480/4 = 120 per minute; +25% = 150 per minute; 150 * 3 = 450.",
+        "category": "multi_step"
     }
 ]

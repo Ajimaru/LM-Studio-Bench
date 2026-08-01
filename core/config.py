@@ -47,7 +47,7 @@ BASE_DEFAULT_CONFIG: Dict[str, Any] = {
         "top_p_sampling": 0.9,
         "min_p_sampling": 0.05,
         "repeat_penalty": 1.2,
-        "max_tokens": 512,
+        "max_tokens": 2000,
     },
     "load": {
         "n_gpu_layers": -1,

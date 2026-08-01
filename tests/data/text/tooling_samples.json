@@ -1,23 +1,64 @@
 [
     {
         "id": "tool_001",
-        "task": "What is the weather in New York?",
+        "task": "I am flying to Chicago tomorrow and I am wondering whether to pack a coat. Can you check?",
         "expected_function": "get_weather",
-        "expected_parameters": {"location": "New York"},
-        "category": "function_calling"
+        "expected_parameters": {"location": "Chicago"},
+        "category": "implicit_request"
     },
     {
         "id": "tool_002",
-        "task": "Calculate 15 times 7",
+        "task": "Our invoice total is 240 euros and the customer gets 15 percent off. Work out the discount amount.",
         "expected_function": "calculate",
-        "expected_parameters": {"expression": "15 * 7"},
-        "category": "function_calling"
+        "expected_parameters": {"expression": "240 * 0.15"},
+        "alternatives": [
+            {"function": "calculate", "parameters": {"expression": "0.15 * 240"}},
+            {"function": "calculate", "parameters": {"expression": "240 * 15 / 100"}},
+            {"function": "calculate", "parameters": {"expression": "240*0.15"}}
+        ],
+        "category": "derived_parameter"
     },
     {
         "id": "tool_003",
-        "task": "Search for information about machine learning",
+        "task": "A colleague mentioned a library called 'polars' for dataframes. I have never heard of it and need to find out what it is.",
         "expected_function": "search_web",
-        "expected_parameters": {"query": "machine learning"},
-        "category": "function_calling"
+        "expected_parameters": {"query": "polars"},
+        "alternatives": [
+            {"function": "search_web", "parameters": {"query": "polars library"}},
+            {"function": "search_web", "parameters": {"query": "polars dataframe library"}},
+            {"function": "search_web", "parameters": {"query": "polars python library"}}
+        ],
+        "category": "tool_selection"
+    },
+    {
+        "id": "tool_004",
+        "task": "It is 22 degrees Celsius here in Berlin. What is that in Fahrenheit?",
+        "expected_function": "calculate",
+        "expected_parameters": {"expression": "22 * 9 / 5 + 32"},
+        "alternatives": [
+            {"function": "calculate", "parameters": {"expression": "22 * 1.8 + 32"}},
+            {"function": "calculate", "parameters": {"expression": "(22 * 9 / 5) + 32"}},
+            {"function": "calculate", "parameters": {"expression": "22*9/5+32"}}
+        ],
+        "category": "distractor",
+        "note": "Mentions a city and temperature to lure the model towards get_weather."
+    },
+    {
+        "id": "tool_005",
+        "task": "Before my run this evening I want to know the conditions in San Francisco.",
+        "expected_function": "get_weather",
+        "expected_parameters": {"location": "San Francisco"},
+        "category": "implicit_request"
+    },
+    {
+        "id": "tool_006",
+        "task": "Find recent reporting on the EU AI Act enforcement timeline.",
+        "expected_function": "search_web",
+        "expected_parameters": {"query": "EU AI Act enforcement timeline"},
+        "alternatives": [
+            {"function": "search_web", "parameters": {"query": "EU AI Act enforcement timeline news"}},
+            {"function": "search_web", "parameters": {"query": "EU AI Act enforcement timeline recent reporting"}}
+        ],
+        "category": "query_extraction"
     }
 ]

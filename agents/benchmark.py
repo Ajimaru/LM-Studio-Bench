@@ -18,6 +18,7 @@ import httpx
 from agents.capabilities import Capability, CapabilityDetector
 from cli.metrics import (
     AccuracyMetric,
+    CodeExecutionMetric,
     ExactMatchMetric,
     F1Metric,
     FunctionCallMetric,
@@ -106,6 +107,8 @@ class EvaluationResult:
         inference: Inference result
         metrics: Computed metrics
         quality_score: Aggregated quality score
+        truncated: Response hit the max_tokens ceiling, so a low score may
+            reflect a cut-off answer rather than a wrong one
     """
     test_id: str
     capability: Capability
@@ -113,6 +116,7 @@ class EvaluationResult:
     metrics: List[MetricResult]
     quality_score: float
     reference_output: Optional[str] = None
+    truncated: bool = False
 
 
 @dataclass
@@ -346,6 +350,73 @@ class LMStudioAdapter(ModelAdapter):
 
         return prediction_config_factory(**filtered_prediction_config)
 
+    def _infer_with_tools(
+        self,
+        rest_client: Any,
+        messages: List[Dict[str, str]],
+        tools: List[Dict[str, Any]],
+        model_id: Optional[str],
+        prompt: str,
+        test_id: str,
+        temperature: float,
+        max_tokens: Optional[int],
+        start_time: float,
+        timestamp_start: float,
+    ) -> InferenceResult:
+        """Run inference through the native tool-calling endpoint.
+
+        The response is normalized into the same ``{"function", "parameters"}``
+        shape the prompt-based tooling tests produce, so one metric scores
+        both and the numbers stay comparable. A model that answers in prose
+        instead of calling a tool yields its text, which then simply fails to
+        parse — the correct outcome for a tool-calling test.
+
+        Returns:
+            InferenceResult with ``tool_calls`` populated.
+        """
+        result = rest_client.chat_with_tools(
+            messages=messages,
+            tools=tools,
+            model=model_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        tool_calls = result.get("tool_calls") or []
+        if tool_calls:
+            first_call = tool_calls[0]
+            response_text = json.dumps(
+                {
+                    "function": first_call.get("name"),
+                    "parameters": first_call.get("arguments"),
+                }
+            )
+        else:
+            response_text = result.get("content") or ""
+
+        usage = result.get("usage") or {}
+        end_time = time.time()
+        latency_ms = (end_time - start_time) * 1000
+        tokens_generated = usage.get("completion_tokens")
+        throughput = None
+        if tokens_generated and latency_ms > 0:
+            throughput = (tokens_generated / latency_ms) * 1000
+
+        return InferenceResult(
+            test_id=test_id,
+            prompt=prompt,
+            response=response_text,
+            timestamp_start=timestamp_start,
+            timestamp_end=end_time,
+            latency_ms=latency_ms,
+            tokens_generated=tokens_generated,
+            throughput=throughput,
+            prompt_tokens=usage.get("prompt_tokens"),
+            raw_output=response_text,
+            tool_calls=tool_calls,
+            error=None,
+        )
+
     def infer(
         self,
         prompt: str,
@@ -412,6 +483,21 @@ class LMStudioAdapter(ModelAdapter):
                             ),
                         }
                     ]
+
+                tools = kwargs.get("tools")
+                if tools:
+                    return self._infer_with_tools(
+                        rest_client=rest_client,
+                        messages=messages,
+                        tools=tools,
+                        model_id=model_id,
+                        prompt=prompt,
+                        test_id=test_id,
+                        temperature=kwargs.get("temperature", 0.1),
+                        max_tokens=kwargs.get("max_tokens"),
+                        start_time=start_time,
+                        timestamp_start=timestamp_start,
+                    )
 
                 response = rest_client.chat_stream(**chat_args)
 
@@ -573,6 +659,11 @@ class BenchmarkAgent:
         self.config = config or {}
         self.dev_mode = self.config.get("dev_mode", False)
         self.disable_gtt = self.config.get("disable_gtt", False)
+        # Per-capability metric weights from bench.yaml. Without them every
+        # metric counts equally, which silently overrides the configuration.
+        self.metric_weights: Dict[str, Dict[str, float]] = (
+            self.config.get("metric_weights") or {}
+        )
 
         self.metrics_map = {
             Capability.GENERAL_TEXT: [
@@ -592,6 +683,11 @@ class BenchmarkAgent:
             Capability.TOOLING: [
                 FunctionCallMetric(),
                 AccuracyMetric(extract_answer=False)
+            ],
+            Capability.CODE: [
+                CodeExecutionMetric(
+                    timeout=self.config.get("code_timeout_seconds")
+                )
             ]
         }
         self.inference_options: Dict[str, Any] = {}
@@ -619,11 +715,16 @@ class BenchmarkAgent:
         Returns:
             EvaluationResult with metrics
         """
+        inference_kwargs = dict(self.inference_options)
+        tools = (test_case.metadata or {}).get("tools")
+        if tools:
+            inference_kwargs["tools"] = tools
+
         inference = self.adapter.infer(
             prompt=test_case.prompt,
             image_path=test_case.image_path,
             test_id=test_case.id,
-            **self.inference_options,
+            **inference_kwargs,
         )
 
         if self.dev_mode:
@@ -660,7 +761,18 @@ class BenchmarkAgent:
             test_case.reference
         )
 
-        quality_score = aggregate_metrics(metrics)
+        quality_score = aggregate_metrics(
+            metrics,
+            self.metric_weights.get(test_case.capability.value) or None,
+        )
+        truncated = self._is_truncated(inference)
+        if truncated:
+            logger.warning(
+                "✂️ %s: response hit the max_tokens limit (%s tokens); "
+                "its score reflects a cut-off answer",
+                test_case.id,
+                inference.tokens_generated,
+            )
 
         return EvaluationResult(
             test_id=test_case.id,
@@ -669,7 +781,21 @@ class BenchmarkAgent:
             metrics=metrics,
             quality_score=quality_score,
             reference_output=self._serialize_reference(test_case.reference),
+            truncated=truncated,
         )
+
+    def _is_truncated(self, inference: InferenceResult) -> bool:
+        """Whether generation stopped at the token ceiling.
+
+        LM Studio does not report a finish reason through this path, so the
+        token count against the configured limit is the available signal. It
+        matters because a truncated answer scores like a wrong one while
+        meaning something entirely different.
+        """
+        max_tokens = self.inference_options.get("max_tokens")
+        if not max_tokens or not inference.tokens_generated:
+            return False
+        return int(inference.tokens_generated) >= int(max_tokens)
 
     def _compute_metrics(
         self,
@@ -865,7 +991,8 @@ class BenchmarkAgent:
                 "avg_quality_score": cap_quality,
                 "success_rate": sum(
                     1 for r in cap_results if not r.inference.error
-                ) / cap_count if cap_count > 0 else 0
+                ) / cap_count if cap_count > 0 else 0,
+                "truncated_count": sum(1 for r in cap_results if r.truncated),
             }
 
         return {
@@ -877,6 +1004,7 @@ class BenchmarkAgent:
             "avg_latency_ms": avg_latency,
             "avg_quality_score": avg_quality,
             "avg_throughput_tokens_per_sec": avg_throughput,
+            "truncated_tests": sum(1 for r in results if r.truncated),
             "by_capability": capability_summaries
         }
 
@@ -913,6 +1041,8 @@ class BenchmarkAgent:
             "function_call_accuracy": metric_values.get(
                 "function_call_accuracy"
             ),
+            "code_execution_score": metric_values.get("code_execution"),
+            "truncated": result.truncated,
             "raw_output": result.inference.raw_output,
             "reference_output": result.reference_output,
             "prompt": result.inference.prompt,

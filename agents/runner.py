@@ -148,6 +148,8 @@ class TestLoader:
             test_cases.extend(self._create_vision_tests())
         elif capability == Capability.TOOLING:
             test_cases.extend(self._create_tooling_tests())
+        elif capability == Capability.CODE:
+            test_cases.extend(self._create_code_tests())
 
         if max_tests is not None:
             test_cases = test_cases[:max_tests]
@@ -288,23 +290,77 @@ class TestLoader:
             logger.warning("Tooling template not found, using default")
             template = "{task}"
 
+        # Native tool definitions, when available, let the model answer with a
+        # real tool_calls array instead of JSON typed into the reply. Both
+        # paths are scored the same way, so results stay comparable.
+        tool_definitions = self.load_test_data("tool_definitions.json")
+
         test_cases = []
         for item in data:
             prompt = template.replace("{task}", item["task"])
 
-            reference = json.dumps({
+            # Several phrasings can be equally correct ("240 * 0.15" vs
+            # "0.15 * 240"), and the metric scores against the best matching
+            # reference, so accepted variants are listed explicitly rather
+            # than punished as wrong.
+            accepted = [{
                 "function": item["expected_function"],
-                "parameters": item["expected_parameters"]
-            })
+                "parameters": item["expected_parameters"],
+            }]
+            accepted.extend(item.get("alternatives") or [])
+            reference = [json.dumps(variant) for variant in accepted]
+
+            metadata = {"category": item.get("category", "function_calling")}
+            if tool_definitions:
+                metadata["tools"] = tool_definitions
+                metadata["task"] = item["task"]
 
             test_case = TestCase(
                 id=item["id"],
                 capability=Capability.TOOLING,
                 prompt=prompt,
                 reference=reference,
-                metadata={"category": item.get("category", "function_calling")}
+                metadata=metadata,
             )
             test_cases.append(test_case)
+
+        return test_cases
+
+    def _create_code_tests(self) -> List[TestCase]:
+        """
+        Create code generation test cases.
+
+        The reference is not text but a list of assertions that are executed
+        against whatever the model produced, so wording and style do not
+        influence the score.
+
+        Returns:
+            List of code test cases
+        """
+        data = self.load_test_data("code_samples.json")
+        if not data:
+            return []
+
+        template = self.load_prompt_template("code_implementation.md")
+        if not template:
+            logger.warning("Code template not found, using default")
+            template = (
+                "Write Python code for the following task. Reply with one "
+                "code block and nothing else.\n\nTask: {task}"
+            )
+
+        test_cases = []
+        for item in data:
+            prompt = template.replace("{task}", item["task"])
+            test_cases.append(
+                TestCase(
+                    id=item["id"],
+                    capability=Capability.CODE,
+                    prompt=prompt,
+                    reference=item["checks"],
+                    metadata={"category": item.get("category", "code")},
+                )
+            )
 
         return test_cases
 

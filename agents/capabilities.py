@@ -2,7 +2,7 @@
 Capability detection module for LM Studio Bench.
 
 Detects model capabilities from metadata or user-specified flags.
-Supports: general_text, reasoning, vision, tooling.
+Supports: general_text, reasoning, vision, tooling, code.
 """
 
 from dataclasses import dataclass
@@ -24,6 +24,7 @@ class Capability(str, Enum):
     REASONING = "reasoning"
     VISION = "vision"
     TOOLING = "tooling"
+    CODE = "code"
 
 
 @dataclass
@@ -74,9 +75,15 @@ class CapabilityDetector:
         }:
             return Capability.TOOLING
         if cap in {
+            "code",
+            "coding",
+            "code_generation",
+            "code-generation",
+        }:
+            return Capability.CODE
+        if cap in {
             "general_text",
             "chat",
-            "coding",
             "creative",
             "math",
         }:
@@ -425,6 +432,12 @@ def get_capability_tests(capability: Capability) -> List[str]:
             "api_interaction",
             "tool_selection",
             "parameter_extraction"
+        ],
+        Capability.CODE: [
+            "function_implementation",
+            "bug_fixing",
+            "algorithm",
+            "edge_case_handling"
         ]
     }
     return test_map.get(capability, ["general"])

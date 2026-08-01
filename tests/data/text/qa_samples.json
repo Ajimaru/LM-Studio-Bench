@@ -1,20 +1,38 @@
 [
     {
         "id": "qa_001",
-        "prompt": "What is the capital of France?",
-        "reference": "Paris",
-        "category": "geography"
+        "prompt": "In two sentences, explain the difference between a process and a thread in an operating system.",
+        "reference": "A process is an independent program with its own isolated memory space, while a thread runs inside a process and shares that memory with the other threads of the same process. Threads are therefore cheaper to create and switch between, but a fault in one thread can corrupt the shared state of the whole process.",
+        "category": "systems"
     },
     {
         "id": "qa_002",
-        "prompt": "Who wrote Romeo and Juliet?",
-        "reference": "William Shakespeare",
-        "category": "literature"
+        "prompt": "In two sentences, explain what a database index is and what it costs.",
+        "reference": "An index is an additional data structure that lets the database find rows matching a condition without scanning the whole table, which makes reads much faster. The cost is extra storage and slower writes, because every insert, update and delete has to maintain the index as well.",
+        "category": "databases"
     },
     {
         "id": "qa_003",
-        "prompt": "What is the largest planet in our solar system?",
-        "reference": "Jupiter",
-        "category": "astronomy"
+        "prompt": "Summarize in one sentence what HTTP status code 429 means and how a client should react.",
+        "reference": "Status 429 means the client sent too many requests and was rate limited, so it should wait, ideally for the duration given in the Retry-After header, and then retry with backoff.",
+        "category": "web"
+    },
+    {
+        "id": "qa_004",
+        "prompt": "In two sentences, explain what a race condition is and name one way to prevent it.",
+        "reference": "A race condition occurs when two or more concurrent operations access shared state and the result depends on their timing, so the program behaves correctly only sometimes. It can be prevented by serializing access to the shared state, for example with a mutex, or by avoiding shared mutable state altogether.",
+        "category": "concurrency"
+    },
+    {
+        "id": "qa_005",
+        "prompt": "Summarize the following text in one sentence.\n\nText: Machine learning is a subset of artificial intelligence that enables computers to learn from data without being explicitly programmed. It uses algorithms to identify patterns and make predictions or decisions based on those patterns. The field has applications in areas such as image recognition, natural language processing, and autonomous vehicles.",
+        "reference": "Machine learning is a branch of artificial intelligence in which algorithms learn patterns from data to make predictions instead of being explicitly programmed, and it is applied in areas such as image recognition, natural language processing and autonomous vehicles.",
+        "category": "summarization"
+    },
+    {
+        "id": "qa_006",
+        "prompt": "In two sentences, explain why floating point arithmetic can make 0.1 + 0.2 differ from 0.3.",
+        "reference": "Binary floating point cannot represent decimal fractions such as 0.1 and 0.2 exactly, so each value is stored as the nearest representable approximation. Adding those approximations produces a result that differs slightly from the stored approximation of 0.3, which is why an equality check fails.",
+        "category": "numerics"
     }
 ]
