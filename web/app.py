@@ -126,6 +126,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# "🚀 Starting benchmark for 23 models..." - classic run, gives the total.
+PROGRESS_TOTAL = re.compile(r"Starting benchmark for\s+(?P<total>\d+)\s+(?:new\s+)?models")
+
+# "🎯 Starting benchmark for qwen3-8b (4/28)" - capability run, gives both.
+PROGRESS_POSITION = re.compile(
+    r"Starting benchmark for\s+(?P<model>\S+)\s+\((?P<index>\d+)/(?P<total>\d+)\)"
+)
+
+# "🎯 Starting benchmark for granite-4.0-h-tiny" - classic run, model only.
+PROGRESS_CURRENT = re.compile(r"🎯 Starting benchmark for\s+(?P<model>\S+)\s*$")
+
+# "✅ granite-4.0-h-tiny: 98.85 tokens/s (Duration: 11.09s)" and the
+# capability variant "✅ granite-4.0-h-tiny completed (Duration: 13.97s)".
+PROGRESS_DONE = re.compile(
+    r"✅\s+(?P<model>\S+?)(?::\s+[\d.]+\s+tokens/s|\s+completed)\s+\(Duration:"
+)
+
 # "[0] AMD Radeon RX 7600M XT: 6.00GB VRAM, 0.74GB GTT, 62C, 105W"
 PER_GPU_LINE = re.compile(
     r"\[(?P<index>\d+)\]\s*(?P<name>[^:]+?):\s*"
@@ -419,6 +436,10 @@ class _BenchmarkManagerState:
     # one GPU. Kept apart from hardware_history because it is keyed by device
     # index and stays empty on single-GPU machines.
     per_gpu_history: Dict[int, Dict[str, Any]] = field(default_factory=dict)
+    # How far the running benchmark has come, derived from its log output:
+    # completed, total, current_model and the timestamp of the first line
+    # that revealed a total. Empty while nothing runs.
+    progress: Dict[str, Any] = field(default_factory=dict)
     last_hardware_send_time: float = 0.0
 
 
@@ -809,6 +830,7 @@ class BenchmarkManager:
             # A previous run's device series would otherwise be prepended to
             # the new charts.
             self._state.per_gpu_history.clear()
+            self._state.progress.clear()
             if self._state.output_task and not self._state.output_task.done():
                 self._state.output_task.cancel()
 
@@ -942,6 +964,7 @@ class BenchmarkManager:
             )
 
         self._parse_per_gpu_metrics(output_line)
+        self._parse_progress(output_line)
 
         ram_pattern = r"(?<![V])RAM\s*:\s*(\d+(?:\.\d+)?)GB"
         ram_match = re.search(ram_pattern, output_line, re.IGNORECASE)
@@ -950,6 +973,70 @@ class BenchmarkManager:
             self.hardware_history["ram"].append(
                 {"timestamp": datetime.now().isoformat(), "value": ram_value}
             )
+
+    def _parse_progress(self, output_line: str) -> None:
+        """Track how many models the running benchmark has finished.
+
+        Both benchmark modes announce their totals differently: the classic
+        run prints the model count once up front, the capability run puts a
+        "(4/28)" into every model header. Either is enough to drive a
+        progress bar, so both are parsed here.
+        """
+        progress = self.progress
+
+        position = PROGRESS_POSITION.search(output_line)
+        if position:
+            progress["total"] = int(position.group("total"))
+            progress["completed"] = int(position.group("index")) - 1
+            progress["current_model"] = position.group("model")
+            progress.setdefault("started_at", time.time())
+            return
+
+        total = PROGRESS_TOTAL.search(output_line)
+        if total:
+            progress["total"] = int(total.group("total"))
+            progress.setdefault("completed", 0)
+            progress.setdefault("started_at", time.time())
+            return
+
+        current = PROGRESS_CURRENT.search(output_line)
+        if current:
+            progress["current_model"] = current.group("model")
+            progress.setdefault("started_at", time.time())
+            return
+
+        if PROGRESS_DONE.search(output_line):
+            progress["completed"] = int(progress.get("completed", 0)) + 1
+            progress.setdefault("started_at", time.time())
+
+    def progress_snapshot(self) -> Dict[str, Any]:
+        """Progress plus a time estimate, empty when the total is unknown.
+
+        The estimate is the mean duration of the models finished so far,
+        applied to the ones left. Model sizes differ widely, so it is a rough
+        figure that settles as the run proceeds - which is still better than
+        no indication of how long this will take.
+        """
+        progress = self.progress
+        total = int(progress.get("total") or 0)
+        if total <= 0:
+            return {}
+
+        completed = max(0, min(int(progress.get("completed") or 0), total))
+        snapshot: Dict[str, Any] = {
+            "completed": completed,
+            "total": total,
+            "current_model": progress.get("current_model"),
+            "eta_seconds": None,
+        }
+
+        started_at = progress.get("started_at")
+        if started_at and completed > 0 and completed < total:
+            elapsed = time.time() - float(started_at)
+            snapshot["eta_seconds"] = round(
+                elapsed / completed * (total - completed)
+            )
+        return snapshot
 
     def _parse_per_gpu_metrics(self, output_line: str) -> None:
         """Parse the multi-GPU log line into per-device series.
@@ -1633,6 +1720,9 @@ async def get_status() -> dict:
             else None
         ),
         "connected_clients": len(manager.connected_clients),
+        # Empty dict while idle, so a client that connects mid-run can render
+        # the progress card without waiting for the next websocket tick.
+        "progress": manager.progress_snapshot(),
     }
 
 
@@ -5401,6 +5491,15 @@ async def websocket_benchmark(websocket: WebSocket):
                             await websocket.send_json(
                                 {"type": "hardware", "data": hardware_data}
                             )
+
+                            # Sent alongside the charts: same 2-second beat,
+                            # and it stays silent until the benchmark has
+                            # revealed how many models it will run.
+                            progress = manager.progress_snapshot()
+                            if progress:
+                                await websocket.send_json(
+                                    {"type": "progress", "data": progress}
+                                )
                             manager.update_last_hardware_send_time(current_time)
                         except (OSError, RuntimeError, ValueError) as e:
                             logger.error(

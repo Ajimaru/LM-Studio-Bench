@@ -2964,3 +2964,122 @@ class TestPerGpuLogParsing:
         manager = self._manager()
         manager.parse_hardware_metrics("Model size: 6.00GB on disk")
         assert manager.per_gpu_history == {}
+
+
+class TestBenchmarkProgress:
+    """Progress is derived from the benchmark's own log output.
+
+    Both modes announce themselves differently - the classic run prints the
+    model count once, the capability run carries "(4/28)" in every header -
+    so both paths are covered here.
+    """
+
+    @staticmethod
+    def _manager():
+        """Fresh manager with empty progress state."""
+        from web.app import BenchmarkManager
+
+        return BenchmarkManager()
+
+    def test_classic_run_counts_finished_models(self):
+        """Total comes from the header, completed from the result lines."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "INFO - 🚀 Starting benchmark for 23 models..."
+        )
+        manager.parse_hardware_metrics(
+            "✅ granite-4.0-h-tiny: 98.85 tokens/s (Duration: 11.09s)"
+        )
+        manager.parse_hardware_metrics(
+            "✅ qwen3-8b: 44.70 tokens/s (Duration: 25.00s)"
+        )
+
+        snapshot = manager.progress_snapshot()
+        assert snapshot["total"] == 23
+        assert snapshot["completed"] == 2
+
+    def test_capability_run_reads_position(self):
+        """"(4/28)" gives both numbers at once."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "🎯 Starting benchmark for qwen3-8b (4/28)"
+        )
+
+        snapshot = manager.progress_snapshot()
+        assert snapshot["total"] == 28
+        assert snapshot["completed"] == 3
+        assert snapshot["current_model"] == "qwen3-8b"
+
+    def test_capability_completion_line_counts(self):
+        """The capability run words its completion line differently."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "🎯 Starting benchmark for qwen3-8b (4/28)"
+        )
+        manager.parse_hardware_metrics(
+            "✅ qwen3-8b completed (Duration: 13.97s)"
+        )
+        assert manager.progress_snapshot()["completed"] == 4
+
+    def test_current_model_without_position(self):
+        """The classic run names the model on its own line."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "🚀 Starting benchmark for 5 models..."
+        )
+        manager.parse_hardware_metrics(
+            "🎯 Starting benchmark for granite-4.0-h-tiny"
+        )
+        assert manager.progress_snapshot()["current_model"] == (
+            "granite-4.0-h-tiny"
+        )
+
+    def test_no_total_means_no_progress(self):
+        """Without a total there is nothing to show, so the card stays away."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("✅ some-model: 10.0 tokens/s (Duration: 1s)")
+        assert manager.progress_snapshot() == {}
+
+    def test_eta_is_extrapolated_from_finished_models(self):
+        """Remaining time uses the mean duration of what is already done."""
+        import time
+
+        manager = self._manager()
+        manager.parse_hardware_metrics("🚀 Starting benchmark for 10 models...")
+        manager.progress["started_at"] = time.time() - 60
+        manager.progress["completed"] = 2
+
+        eta = manager.progress_snapshot()["eta_seconds"]
+        # 30 s per model, 8 left - allow a second of slack for slow runners.
+        assert 235 <= eta <= 245
+
+    def test_no_eta_before_the_first_model_finishes(self):
+        """Extrapolating from zero would divide by zero."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("🚀 Starting benchmark for 10 models...")
+        assert manager.progress_snapshot()["eta_seconds"] is None
+
+    def test_completed_never_exceeds_total(self):
+        """A miscounted line must not push the bar past 100 %."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("🚀 Starting benchmark for 2 models...")
+        for _ in range(5):
+            manager.parse_hardware_metrics(
+                "✅ m: 1.0 tokens/s (Duration: 1s)"
+            )
+        snapshot = manager.progress_snapshot()
+        assert snapshot["completed"] == 2
+        assert snapshot["total"] == 2
+
+    def test_status_endpoint_exposes_progress(self):
+        """A client opening the dashboard mid-run gets the state at once."""
+        client = _get_client()
+        payload = client.get("/api/status").json()
+        assert "progress" in payload
+
+    def test_hardware_lines_do_not_affect_progress(self):
+        """The metric lines share the parser but carry no progress."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("🌡️ GPU Temp: 62.0°C")
+        manager.parse_hardware_metrics("💾 GPU VRAM: 5.92GB")
+        assert manager.progress_snapshot() == {}

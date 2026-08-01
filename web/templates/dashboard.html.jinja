@@ -2232,6 +2232,35 @@
           </div>
         </div>
 
+        <!-- Benchmark progress: hidden until a run reports its model count -->
+        <div class="section" id="benchmark-progress" style="display: none">
+          <h3>⏱️ Benchmark Progress</h3>
+          <div class="chart-stats" style="margin-bottom: 0.75rem;">
+            <div class="chart-stat">
+              <div class="chart-stat-label">Models</div>
+              <div class="chart-stat-value" id="progress-models">--</div>
+            </div>
+            <div class="chart-stat">
+              <div class="chart-stat-label">Remaining</div>
+              <div class="chart-stat-value" id="progress-eta">--</div>
+            </div>
+            <div class="chart-stat">
+              <div class="chart-stat-label">Current</div>
+              <div class="chart-stat-value" id="progress-current">--</div>
+            </div>
+          </div>
+          <div style="background: rgba(0,0,0,0.12);
+                      border-radius: 0.5rem;
+                      height: 0.75rem;
+                      overflow: hidden">
+            <div id="progress-bar"
+                 style="height: 100%;
+                        width: 0%;
+                        background: var(--primary, #6366f1);
+                        transition: width 0.4s ease"></div>
+          </div>
+        </div>
+
         <!-- Hardware Monitoring Charts -->
         <div class="section">
           <h3>💻 Hardware Monitoring (Live)</h3>
@@ -4303,6 +4332,11 @@
                 if (data.start_time) {
                     startTime = new Date(data.start_time);
                 }
+
+                // Covers the client that opens the dashboard mid-run: the
+                // websocket only pushes progress every two seconds, and only
+                // while a benchmark is actually producing output.
+                updateBenchmarkProgress(data.progress);
             } catch (error) {
                 console.error('Status-Update Error:', error);
             }
@@ -4387,6 +4421,8 @@
                     }, 1000);
                 } else if (data.type === 'hardware') {
                     updateHardwareCharts(data.data);
+                } else if (data.type === 'progress') {
+                    updateBenchmarkProgress(data.data);
                 }
             };
 
@@ -5207,6 +5243,48 @@
             if (!traces) return false;
             Plotly.newPlot(divId, traces, perGpuLayout(), {responsive: true, displayModeBar: false});
             return true;
+        }
+
+        /**
+         * Format a duration for the "remaining" box.
+         * Seconds below a minute stay seconds; anything longer reads as
+         * "12m 30s", because "750s" tells nobody how long to wait.
+         */
+        function formatDuration(seconds) {
+            if (seconds === null || seconds === undefined) return '--';
+            const total = Math.max(0, Math.round(seconds));
+            if (total < 60) return `${total}s`;
+            const minutes = Math.floor(total / 60);
+            if (minutes < 60) return `${minutes}m ${total % 60}s`;
+            return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+        }
+
+        /**
+         * Show how far the benchmark has come.
+         * The card stays hidden until the run reports a model count, so an
+         * idle dashboard shows no empty progress bar.
+         */
+        function updateBenchmarkProgress(progress) {
+            const card = document.getElementById('benchmark-progress');
+            if (!card) return;
+
+            if (!progress || !progress.total) {
+                card.style.display = 'none';
+                return;
+            }
+
+            card.style.display = '';
+            const completed = progress.completed || 0;
+            const total = progress.total;
+            const percent = Math.min(100, Math.round((completed / total) * 100));
+
+            document.getElementById('progress-models').textContent =
+                `${completed} / ${total}`;
+            document.getElementById('progress-eta').textContent =
+                formatDuration(progress.eta_seconds);
+            document.getElementById('progress-current').textContent =
+                progress.current_model || '--';
+            document.getElementById('progress-bar').style.width = `${percent}%`;
         }
 
         function updateHardwareCharts(hardwareData) {
