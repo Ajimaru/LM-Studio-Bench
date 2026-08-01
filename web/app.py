@@ -3392,7 +3392,13 @@ async def import_presets(request: Request) -> dict:
                     preset_mgr.save_preset(preset_name, preset_config)
                     imported_count += 1
                 except ValueError as ve:
-                    skipped.append(f"{preset_name} ({ve})")
+                    # save_preset raises with one of the fixed validator
+                    # strings, but taking the text off the exception turns
+                    # it into exception data on its way to the response.
+                    # Ask the validator instead: same message, no traceback.
+                    reason = preset_mgr.rejection_reason(preset_name)
+                    logger.warning("Skipped preset %s: %s", preset_name, ve)
+                    skipped.append(f"{preset_name} ({reason or 'invalid preset'})")
 
         logger.info("📥 Imported %s presets, skipped %s", imported_count, len(skipped))
 

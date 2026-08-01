@@ -303,13 +303,22 @@ class PresetManager:
             return False, "Preset name contains invalid path separators"
         return True, ""
 
+    def rejection_reason(self, name: str) -> str:
+        """Why writing this preset name would be refused.
+
+        Returns an empty string when the name is acceptable. Callers that
+        need the reason for a user-facing message should ask here instead of
+        reading it off the raised exception.
+        """
+        if self.is_readonly_name(name):
+            return "Readonly preset names cannot be used"
+        _, reason = self.validate_preset_name(name)
+        return reason
+
     def save_preset(self, name: str, config: Dict[str, Any]) -> None:
         """Save a user preset as JSON in the presets directory."""
-        if self.is_readonly_name(name):
-            raise ValueError("Readonly preset names cannot be used")
-
-        valid, reason = self.validate_preset_name(name)
-        if not valid:
+        reason = self.rejection_reason(name)
+        if reason:
             raise ValueError(reason)
 
         payload = {key: value for key, value in config.items() if value is not None}
@@ -320,11 +329,8 @@ class PresetManager:
 
     def delete_preset(self, name: str) -> None:
         """Delete a user preset file."""
-        if self.is_readonly_name(name):
-            raise ValueError("Readonly preset names cannot be used")
-
-        valid, reason = self.validate_preset_name(name)
-        if not valid:
+        reason = self.rejection_reason(name)
+        if reason:
             raise ValueError(reason)
 
         preset_path = self._preset_path(name)

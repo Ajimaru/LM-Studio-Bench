@@ -919,6 +919,24 @@ class TestPresetImportEndpoint:
         assert data["success"] is True
         assert any("default" in s for s in data.get("skipped", []))
 
+    def test_import_skip_reason_comes_from_the_validator(self):
+        """The reason is still spelled out, just not read off the exception."""
+        import base64
+        import io
+        import zipfile
+        client = _get_client()
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("default.json", '{"runs": 3}')
+        zip_b64 = base64.b64encode(buf.getvalue()).decode()
+        response = client.post(
+            "/api/presets/import",
+            json={"data": zip_b64},
+        )
+        skipped = response.json().get("skipped", [])
+        assert skipped
+        assert "Readonly preset names cannot be used" in skipped[0]
+
 
 def _get_benchmark_manager():
     """Return the BenchmarkManager instance from the app module."""
