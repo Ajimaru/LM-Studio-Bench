@@ -52,7 +52,7 @@ MISSING_TOOLS=()
 MISSING_SYSTEM_TOOLS=()
 
 # Python tools (pip)
-for tool in flake8 isort pylint djlint markdownlint; do
+for tool in ruff pylint djlint markdownlint; do
     if ! command -v "$tool" &> /dev/null; then
         MISSING_TOOLS+=("$tool")
     fi

@@ -895,7 +895,7 @@ graph TB
 **Continuous Integration:**
 
 - GitHub Actions runs full test suite on every PR
-- Code quality checks (flake8, pylint)
+- Code quality checks (ruff, pylint)
 - Security scans (Bandit, CodeQL, Snyk)
 - Test results reported in PR status checks
 
