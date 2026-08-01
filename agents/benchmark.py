@@ -664,6 +664,12 @@ class BenchmarkAgent:
         self.metric_weights: Dict[str, Dict[str, float]] = (
             self.config.get("metric_weights") or {}
         )
+        # Per-capability generation budgets from bench.yaml. Reasoning needs
+        # room for a chain of steps, a tool call does not; one global value
+        # would either truncate the former or waste minutes on the latter.
+        self.max_tokens_per_capability: Dict[str, int] = (
+            self.config.get("max_tokens_per_capability") or {}
+        )
 
         self.metrics_map = {
             Capability.GENERAL_TEXT: [
@@ -716,6 +722,9 @@ class BenchmarkAgent:
             EvaluationResult with metrics
         """
         inference_kwargs = dict(self.inference_options)
+        inference_kwargs["max_tokens"] = self._max_tokens_for(
+            test_case.capability
+        )
         tools = (test_case.metadata or {}).get("tools")
         if tools:
             inference_kwargs["tools"] = tools
@@ -765,7 +774,7 @@ class BenchmarkAgent:
             metrics,
             self.metric_weights.get(test_case.capability.value) or None,
         )
-        truncated = self._is_truncated(inference)
+        truncated = self._is_truncated(inference, test_case.capability)
         if truncated:
             logger.warning(
                 "✂️ %s: response hit the max_tokens limit (%s tokens); "
@@ -784,7 +793,25 @@ class BenchmarkAgent:
             truncated=truncated,
         )
 
-    def _is_truncated(self, inference: InferenceResult) -> bool:
+    def _max_tokens_for(self, capability: Capability) -> Optional[int]:
+        """Generation budget for a capability, falling back to the global one.
+
+        Args:
+            capability: Capability of the test case being run.
+
+        Returns:
+            Token budget, or None when neither is configured.
+        """
+        budget = self.max_tokens_per_capability.get(capability.value)
+        if budget:
+            return int(budget)
+        return self.inference_options.get("max_tokens")
+
+    def _is_truncated(
+        self,
+        inference: InferenceResult,
+        capability: Capability,
+    ) -> bool:
         """Whether generation stopped at the token ceiling.
 
         LM Studio does not report a finish reason through this path, so the
@@ -792,7 +819,7 @@ class BenchmarkAgent:
         matters because a truncated answer scores like a wrong one while
         meaning something entirely different.
         """
-        max_tokens = self.inference_options.get("max_tokens")
+        max_tokens = self._max_tokens_for(capability)
         if not max_tokens or not inference.tokens_generated:
             return False
         return int(inference.tokens_generated) >= int(max_tokens)

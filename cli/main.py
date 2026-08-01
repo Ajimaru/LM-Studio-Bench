@@ -703,7 +703,10 @@ def override_config(config: dict, args: argparse.Namespace) -> dict:
         config["repeat_penalty"] = args.repeat_penalty
 
     if args.max_tokens is not None:
+        # An explicit budget applies to every capability: the caller asked for
+        # this number, not for the per-capability defaults from bench.yaml.
         config["max_tokens"] = args.max_tokens
+        config["max_tokens_per_capability"] = {}
 
     if args.n_gpu_layers is not None:
         config["n_gpu_layers"] = args.n_gpu_layers

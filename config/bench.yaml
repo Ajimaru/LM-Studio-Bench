@@ -1,10 +1,19 @@
 context_length: 8192
 gpu_offload: 1.0
 temperature: 0.1
-# Reasoning models spend hundreds of tokens thinking before they answer.
-# At 256 the answer was cut off and scored as wrong; see truncated_tests in
-# the reports.
+# Fallback budget for capabilities without an entry in max_tokens_per_capability.
 max_tokens: 2000
+
+# Generation budget per capability. A single global value is either too small
+# for reasoning (the answer gets cut off and scores as wrong) or wasteful for
+# tooling, where a function call needs a few dozen tokens and the rest is
+# spent waiting. Tight budgets also surface models that ramble instead of
+# answering: they hit the cap and are flagged as truncated.
+max_tokens_per_capability:
+  tooling: 300
+  general_text: 600
+  code: 1200
+  reasoning: 2000
 max_tests_per_capability: 10
 
 # Wall-clock limit per generated-code execution (code capability).
