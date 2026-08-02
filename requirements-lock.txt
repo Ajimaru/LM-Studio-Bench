@@ -17,7 +17,7 @@ anyio==4.14.2
     #   watchfiles
 ast-serialize==0.6.0
     # via mypy
-astroid==4.0.4
+astroid==4.1.2
     # via pylint
 boolean-py==5.0
     # via license-expression
@@ -187,7 +187,7 @@ pydantic==2.13.4
     #   -r requirements-dev.txt
     #   -r requirements.txt
     #   fastapi
-pydantic-core==2.46.4
+pydantic-core==2.47.0
     # via pydantic
 pygments==2.20.0
     # via
