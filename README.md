@@ -9,7 +9,7 @@ quantizations to measure and compare tokens-per-second performance.
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-orange.svg)](https://www.linux.org/)
 [![LM Studio App v0.4.20+](https://img.shields.io/badge/LM_Studio_App-v0.4.20+-green.svg)](https://lmstudio.ai/download)
-[![llmster v0.0.20-1+](https://img.shields.io/badge/llmster-v0.0.20-1+-green.svg)](https://lmstudio.ai)
+[![llmster v0.0.20+](https://img.shields.io/badge/llmster-v0.0.20+-green.svg)](https://lmstudio.ai)
 [![Release](https://img.shields.io/github/v/release/Ajimaru/LM-Studio-Bench)](https://github.com/Ajimaru/LM-Studio-Bench/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Ajimaru/LM-Studio-Bench/total.svg)](https://github.com/Ajimaru/LM-Studio-Bench/releases)
 
