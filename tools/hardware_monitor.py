@@ -729,7 +729,25 @@ class GPUMonitor:
         self.gpu_model = "Unknown"
 
     def _detect_amd_gpu_model(self) -> str:
-        """Detect AMD GPU model name with fallback chain."""
+        """Name the AMD GPU the metrics are read from.
+
+        Order matters. The aggregate readers report ``GPU[0]`` of rocm-smi,
+        so that device decides the name. Two lower-ranked sources exist for
+        machines where rocm-smi cannot answer, and both are wrong on a
+        system with a discrete card next to an integrated one:
+
+        * ``lspci`` lists whatever it finds first, which need not be the
+          measured device - an OcuLink GPU may not show up at all.
+        * The CPU brand string ("Ryzen AI 9 HX 370 w/ Radeon 890M") always
+          describes the *integrated* GPU. Asking it first labelled every
+          result on this machine "AMD Radeon 890M" while the numbers came
+          from an RX 7600M XT.
+        """
+        # Same parser the per-device sampling uses, keyed by device index.
+        names = device_names(self.gpu_type or "AMD", self.gpu_tool)
+        if names:
+            return names[min(names)]
+
         amd_device_mapping = {
             "150e": "Radeon Graphics",
             "7340": "Radeon RX 5700 XT",
@@ -744,18 +762,6 @@ class GPUMonitor:
             "gfx1103": "Radeon 890M",
         }
 
-        try:
-            if cpuinfo is not None:
-                cpu = cpuinfo.get_cpu_info()
-                brand = cpu.get("brand_raw", "")
-                if "Radeon" in brand:
-                    radeon_part = brand.split("Radeon")[1].strip()
-                    model = radeon_part.split()[0]
-                    if model:
-                        return f"AMD Radeon {model}"
-        except OSError:
-            pass
-
         device_id = None
         lspci = _resolve_tool("lspci", LSPCI_SEARCH_PATHS)
         output = _run_tool([lspci, "-d", "1002:"], timeout=5) if lspci else None
@@ -769,17 +775,17 @@ class GPUMonitor:
                             return f"AMD {amd_device_mapping[device_id]}"
                         break
 
-        if self.gpu_tool:
-            output = _run_tool([self.gpu_tool, "--showproductname"], timeout=5)
-            if output is not None:
-                for line in output.split("\n"):
-                    if "GPU[0]" in line:
-                        parts = line.split(":")
-                        if len(parts) > 1:
-                            gfx_code = parts[1].strip()
-                            if gfx_code in amd_device_mapping:
-                                return f"AMD {amd_device_mapping[gfx_code]}"
-                            return f"AMD {gfx_code}"
+        # Last resort: the CPU brand names the integrated GPU. Only correct
+        # when there is no discrete card, which is why it runs last.
+        try:
+            if cpuinfo is not None:
+                brand = cpuinfo.get_cpu_info().get("brand_raw", "")
+                if "Radeon" in brand:
+                    model = brand.split("Radeon")[1].strip().split()[0]
+                    if model:
+                        return f"AMD Radeon {model}"
+        except OSError:
+            pass
 
         if device_id:
             return f"AMD GPU (1002:{device_id})"
