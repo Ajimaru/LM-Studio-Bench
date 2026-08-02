@@ -5168,6 +5168,22 @@
             document.getElementById('startModal').classList.toggle('hidden');
         }
 
+        /**
+         * Reveal the settings panel and bring it into view.
+         *
+         * Loading a preset only fills the form inside this panel. While it
+         * stays collapsed the user sees a success toast and nothing else,
+         * with no hint that the actual "Start Benchmark" button lives here.
+         */
+        function openStartModal() {
+            const modal = document.getElementById('startModal');
+            if (!modal) {
+                return;
+            }
+            modal.classList.remove('hidden');
+            modal.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
         function addAlert(message, type = 'info') {
             const alerts = document.getElementById('alerts');
             const alert = document.createElement('div');
@@ -6594,8 +6610,16 @@
                 
                 // Apply config to form fields
                 applyConfigToForm(data.config);
-                
-                showToast(`✅ Loaded preset: ${presetName}`, 'success');
+
+                // The preset only fills the form - the run still has to be
+                // started from inside the settings panel, so show it right
+                // away instead of leaving the user to find it.
+                openStartModal();
+
+                showToast(
+                    `✅ Loaded preset: ${presetName} - review and start below`,
+                    'success'
+                );
                 
             } catch (error) {
                 console.error('Error loading preset:', error);
