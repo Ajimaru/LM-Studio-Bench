@@ -100,8 +100,14 @@ class GpuAggregate:
 
 
 def _run(command: List[str]) -> Optional[str]:
-    """Run a vendor CLI and return stdout, or None when it fails."""
+    """Run a vendor CLI and return stdout, or None when it fails.
+
+    The audited call site of this module: ``command`` is always built here
+    from a vendor tool path plus literal flags, is passed as an argv list
+    with no shell, and never carries user input.
+    """
     try:
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
         completed = subprocess.run(  # nosec B603 - fixed argv, no shell
             command,
             capture_output=True,

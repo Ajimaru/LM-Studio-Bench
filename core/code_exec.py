@@ -28,6 +28,11 @@ import sys
 import tempfile
 from typing import NamedTuple, Optional
 
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows has no resource module
+    resource = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
@@ -88,9 +93,7 @@ def _limit_resources() -> None:  # pragma: no cover - runs in the child process
 
     Best effort: platforms without ``resource`` simply rely on the timeout.
     """
-    try:
-        import resource
-    except ImportError:
+    if resource is None:
         return
 
     limits = [

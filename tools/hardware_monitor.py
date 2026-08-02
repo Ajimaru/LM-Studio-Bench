@@ -318,10 +318,6 @@ class HardwareMonitor:
             "ram_gb_min": min(rams) if rams else None,
             "ram_gb_max": max(rams) if rams else None,
             "ram_gb_avg": mean(rams) if rams else None,
-            # Aggregates above stay as they were - they describe the primary
-            # GPU, which is what every existing report and cached row means.
-            # The per-device view is additional, and empty on single-GPU
-            # machines so nothing downstream has to render a blank chart.
             "gpu_count": self.device_count,
             "per_gpu": self.per_gpu_metrics(),
         }
