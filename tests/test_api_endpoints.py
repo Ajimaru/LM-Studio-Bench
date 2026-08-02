@@ -12,11 +12,33 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 import pytest
 
+from core.presets import PresetManager
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "web"))
 
 if "lmstudio" not in sys.modules:
     sys.modules["lmstudio"] = MagicMock()
+
+
+@pytest.fixture(autouse=True)
+def isolated_presets(tmp_path, monkeypatch):
+    """Point the app's preset storage at a throwaway directory.
+
+    The preset endpoints go through the module-level PresetManager in
+    web/app.py, which writes to USER_PRESETS_DIR - the real
+    ~/.config/lm-studio-bench/presets of whoever runs the suite. Saving and
+    deleting presets in a test then edits the developer's own configuration,
+    and the leftovers ("testpreset99", "mypreset") reappear after every run.
+    """
+    app_mod = sys.modules.get("app") or importlib.import_module("app")
+
+    presets_dir = tmp_path / "presets"
+    presets_dir.mkdir()
+    monkeypatch.setattr(
+        app_mod, "preset_mgr", PresetManager(presets_dir=presets_dir)
+    )
+    return presets_dir
 
 
 def _get_client() -> TestClient:
