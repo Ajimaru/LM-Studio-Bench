@@ -77,7 +77,9 @@ jobs:
         if: steps.snyk_token.outputs.configured == 'true'
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-lock.txt ]; then
+            pip install -r requirements-lock.txt
+          fi
 
       - name: Set up Snyk CLI to check for security issues
         if: steps.snyk_token.outputs.configured == 'true'
@@ -91,7 +93,9 @@ jobs:
       - name: Snyk Open Source test
         if: steps.snyk_token.outputs.configured == 'true'
         continue-on-error: true
-        run: snyk test --all-projects || true
+        run: >-
+          snyk test --file=requirements-lock.txt --package-manager=pip
+          --command=python3 || true
 
       - name: Upload result to GitHub Code Scanning
         if: |
