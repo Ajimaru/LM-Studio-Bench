@@ -3168,3 +3168,46 @@ class TestBenchmarkProgress:
         manager.parse_hardware_metrics("🌡️ GPU Temp: 62.0°C")
         manager.parse_hardware_metrics("💾 GPU VRAM: 5.92GB")
         assert manager.progress_snapshot() == {}
+
+
+class TestProfilingFlagExposure:
+    """The dashboard needs to tell "no readings yet" from "never measures".
+
+    Without --enable-profiling the benchmark starts no monitor thread, so no
+    GPU line is ever logged and the live charts stay empty for the whole run.
+    """
+
+    @staticmethod
+    def _manager():
+        from web.app import BenchmarkManager
+
+        return BenchmarkManager()
+
+    def test_defaults_to_off_while_idle(self):
+        """Nothing runs, nothing measures."""
+        assert self._manager().profiling_enabled is False
+
+    @pytest.mark.anyio
+    async def test_start_records_the_flag(self):
+        """The flag is read from the sanitized args, not from the request."""
+        manager = self._manager()
+        with patch("subprocess.Popen") as popen, \
+                patch("asyncio.create_task"):
+            popen.return_value = MagicMock(pid=1, poll=MagicMock(return_value=None))
+            await manager.start_benchmark(["--runs", "1", "--enable-profiling"])
+        assert manager.profiling_enabled is True
+
+    @pytest.mark.anyio
+    async def test_start_without_the_flag_records_off(self):
+        """A run started without profiling is remembered as such."""
+        manager = self._manager()
+        with patch("subprocess.Popen") as popen, \
+                patch("asyncio.create_task"):
+            popen.return_value = MagicMock(pid=1, poll=MagicMock(return_value=None))
+            await manager.start_benchmark(["--runs", "1"])
+        assert manager.profiling_enabled is False
+
+    def test_status_endpoint_exposes_the_flag(self):
+        """A client opening the dashboard mid-run learns it immediately."""
+        payload = _get_client().get("/api/status").json()
+        assert "profiling_enabled" in payload

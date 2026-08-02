@@ -2264,6 +2264,18 @@
         <!-- Hardware Monitoring Charts -->
         <div class="section">
           <h3>💻 Hardware Monitoring (Live)</h3>
+          <div id="hardware-profiling-notice"
+               style="display: none;
+                      padding: 12px 16px;
+                      margin-bottom: 15px;
+                      border-left: 4px solid #f0ad4e;
+                      background: rgba(240, 173, 78, 0.1);
+                      border-radius: 4px">
+            <strong>Hardware Profiling is off for this run.</strong>
+            No GPU readings are recorded, so the charts below stay empty.
+            Enable <em>Hardware Profiling</em> before starting a benchmark
+            (<code>--enable-profiling</code> on the command line).
+          </div>
           <div class="hardware-charts-container">
             <div class="chart-card">
               <h4>🌡️ GPU Temperature</h4>
@@ -4337,6 +4349,7 @@
                 // websocket only pushes progress every two seconds, and only
                 // while a benchmark is actually producing output.
                 updateBenchmarkProgress(data.progress);
+                updateProfilingNotice(data.profiling_enabled, data.running);
             } catch (error) {
                 console.error('Status-Update Error:', error);
             }
@@ -5287,7 +5300,23 @@
             document.getElementById('progress-bar').style.width = `${percent}%`;
         }
 
+        // Empty hardware charts have two very different causes: the run has
+        // not produced a reading yet, or it never will because profiling is
+        // off. Only the second one deserves an explanation.
+        function updateProfilingNotice(profilingEnabled, running) {
+            const notice = document.getElementById('hardware-profiling-notice');
+            if (!notice) {
+                return;
+            }
+            const show = running === true && profilingEnabled === false;
+            notice.style.display = show ? 'block' : 'none';
+        }
+
         function updateHardwareCharts(hardwareData) {
+            if (hardwareData.profiling_enabled !== undefined) {
+                updateProfilingNotice(hardwareData.profiling_enabled, true);
+            }
+
             // With a single GPU the payload carries no per_gpu key at all,
             // so the original single-line charts stay untouched.
             const perGpu = hardwareData.per_gpu;

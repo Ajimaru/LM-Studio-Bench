@@ -442,6 +442,11 @@ class _BenchmarkManagerState:
     # completed, total, current_model and the timestamp of the first line
     # that revealed a total. Empty while nothing runs.
     progress: Dict[str, Any] = field(default_factory=dict)
+    # Whether the running benchmark samples hardware at all. Without
+    # --enable-profiling no GPU readings are ever logged, so the live charts
+    # stay empty by design and the dashboard says so instead of showing
+    # blank axes.
+    profiling_enabled: bool = False
     last_hardware_send_time: float = 0.0
 
 
@@ -846,6 +851,7 @@ class BenchmarkManager:
             # the new charts.
             self._state.per_gpu_history.clear()
             self._state.progress.clear()
+            self._state.profiling_enabled = "--enable-profiling" in sanitized_args
             if self._state.output_task and not self._state.output_task.done():
                 self._state.output_task.cancel()
 
@@ -1741,6 +1747,9 @@ async def get_status() -> dict:
         # Empty dict while idle, so a client that connects mid-run can render
         # the progress card without waiting for the next websocket tick.
         "progress": manager.progress_snapshot(),
+        # Lets the hardware section explain empty charts instead of showing
+        # blank axes when the run was started without profiling.
+        "profiling_enabled": manager.profiling_enabled,
     }
 
 
@@ -5522,6 +5531,12 @@ async def websocket_benchmark(websocket: WebSocket):
                                     }
                                     for _, device in sorted(per_gpu.items())
                                 ]
+
+                            # Tells the client whether empty charts mean "no
+                            # readings yet" or "this run never measures".
+                            hardware_data["profiling_enabled"] = (
+                                manager.profiling_enabled
+                            )
 
                             await websocket.send_json(
                                 {"type": "hardware", "data": hardware_data}
