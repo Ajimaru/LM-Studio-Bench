@@ -1,7 +1,7 @@
 # Development Requirements for LM-Studio-Bench
 # Install with: pip install -r requirements-dev.txt
-# Refresh requirements-lock.txt with:
-#   pip-compile --allow-unsafe --strip-extras -o requirements-lock.txt requirements-dev.txt requirements.txt
+# Refresh requirements-lock.txt with Python 3.11 and pip<26:
+#   pip-compile --strip-extras -o requirements-lock.txt requirements-dev.txt requirements.txt
 
 # Python Code Quality Tools
 # ruff replaces flake8 (style/pyflakes) and isort (import order): one tool,
@@ -14,7 +14,7 @@ djlint>=1.40.3             # HTML/Jinja linter
 # Formatting is not enforced anywhere; `ruff format` is available from the
 # ruff pin above if that ever changes, so a separate formatter is not pinned.
 mypy>=2.3.0                # Static type checker (for future use)
-pip>=25,<26                # pip-tools 7.6 is not compatible with pip 26 internals
+pip-audit>=2.9,<3          # Vulnerability audit CLI used by CI
 pip-tools>=7.6,<8          # Generate requirements-lock.txt with pip-compile
 
 # Testing

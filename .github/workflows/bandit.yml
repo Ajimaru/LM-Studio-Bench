@@ -40,7 +40,7 @@ jobs:
           # Github token of the repository (automatically created by Github)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed to get PR information.
           # Limit scanning to first-party runtime code.
-          path: src,web,run.py
+          path: cli,core,agents,tools,web,run.py
           # Report only issues of a given severity level or higher. Can be LOW, MEDIUM or HIGH. Default is UNDEFINED (everything)
           # level: # optional, default is UNDEFINED
           # Report only issues of a given confidence level or higher. Can be LOW, MEDIUM or HIGH. Default is UNDEFINED (everything)

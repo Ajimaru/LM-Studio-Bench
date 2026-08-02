@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version: '3.11'
 
       - name: Install system dependencies
         run: |
@@ -40,8 +40,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-lock.txt
 
-      - uses: pypa/gh-action-pip-audit@v1.1.0
-        with:
-          inputs: requirements-lock.txt
-          vulnerability-service: osv
-          summary: true
+      - name: Run pip-audit
+        run: pip-audit -r requirements-lock.txt --vulnerability-service osv --no-deps

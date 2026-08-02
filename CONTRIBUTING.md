@@ -23,10 +23,12 @@ extra tooling needed for `pytest`, linting, and local development.
 
 `requirements-lock.txt` is generated with `pip-tools` and pins the combined
 runtime/development dependency set for CI audit and dependency review. Refresh
-it after changing `requirements*.txt`:
+it with Python 3.11 after changing `requirements*.txt`. Use `pip<26` for the
+generator environment because `pip-tools 7.6` is not compatible with `pip 26`
+internals:
 
 ```bash
-pip-compile --allow-unsafe --strip-extras \
+pip-compile --strip-extras \
   -o requirements-lock.txt requirements-dev.txt requirements.txt
 ```
 
