@@ -1767,6 +1767,7 @@ class ModelDiscovery:
                 subprocess.SubprocessError,
                 OSError,
                 json.JSONDecodeError,
+                TypeError,
                 ValueError,
             ) as e:
                 logger.warning("⚠️ Error loading metadata cache: %s", e)
