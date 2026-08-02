@@ -4,6 +4,8 @@ Thanks for contributing to LM-Studio-Bench.
 
 ## Quick Start
 
+Python 3.11 or newer is required.
+
 **1.** Fork and clone the repository.
 **2.** Create a virtual environment and install dependencies:
 
@@ -12,7 +14,22 @@ python -m venv .venv
 ```
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+```
+
+`requirements-dev.txt` is the correct environment for contributors and test
+runs. It includes the runtime dependencies from `requirements.txt` plus the
+extra tooling needed for `pytest`, linting, and local development.
+
+`requirements-lock.txt` is generated with `pip-tools` and pins the combined
+runtime/development dependency set for CI audit and dependency review. Refresh
+it with Python 3.11 after changing `requirements*.txt`. Use `pip<26` for the
+generator environment because `pip-tools 7.6` is not compatible with `pip 26`
+internals:
+
+```bash
+pip-compile --strip-extras \
+  -o requirements-lock.txt requirements-dev.txt requirements.txt
 ```
 
 **3.** Run the benchmark or web dashboard:
@@ -38,7 +55,7 @@ python run.py --webapp
 
 ## Typical Contribution Areas
 
-- Benchmark runner and caching (`src/benchmark.py`)
+- Benchmark runner and caching (`cli/benchmark.py`, `agents/cache.py`)
 - Web dashboard backend (`web/app.py`)
 - Dashboard UI (`web/templates/dashboard.html.jinja`)
 - Metadata tooling (`tools/scrape_metadata.py`)
@@ -50,6 +67,7 @@ python run.py --webapp
   - Example: `Add cache cleanup for failed models`
 - Reference related issues in PR descriptions.
 - Include a short test or verification section in each PR, e.g.:
+  - `pytest`
   - `python run.py --help`
   - `python run.py --export-only`
   - manual web dashboard check

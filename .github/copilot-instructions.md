@@ -14,7 +14,7 @@ locally installed LLM models and their quantizations. The goal is to measure and
 
 ### General
 
-- Compatible with Python 3.10+
+- Compatible with Python 3.11+
 - Use logging instead of print() for important events
 
 ### Project-Specific

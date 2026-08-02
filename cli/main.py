@@ -11,10 +11,11 @@ import json
 import logging
 from pathlib import Path
 import platform
-import random
 import re
+import secrets
+import shutil
 import sqlite3
-import subprocess
+import subprocess  # nosec B404 - argv lists only, never a shell
 import sys
 import time
 from types import ModuleType
@@ -24,6 +25,7 @@ from agents.runner import BenchmarkRunner
 from cli.reporting import HTMLReporter, sanitize_report_name
 from core.logging_utils import install_level_icons
 from core.paths import USER_RESULTS_DIR
+from core.platform_info import IS_MACOS, get_os_name_version
 from tools.hardware_monitor import GPUMonitor, HardwareMonitor
 
 try:
@@ -115,7 +117,7 @@ def _get_app_version() -> str:
 def _run_command(cmd: list[str], timeout: int = 5) -> Optional[str]:
     """Run a subprocess command and return stdout when successful."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 - argv from this module, no shell
             cmd,
             capture_output=True,
             text=True,
@@ -161,7 +163,20 @@ def _get_lmstudio_version() -> Optional[str]:
 
 
 def _get_driver_versions() -> dict[str, Optional[str]]:
-    """Collect GPU driver versions across NVIDIA/AMD/Intel tools."""
+    """Collect GPU driver versions across NVIDIA/AMD/Intel tools.
+
+    macOS ships none of these vendor tools, so all three fields stay empty
+    there rather than being filled with an unrelated value. The macOS GPU is
+    identified through ``gpu_type``/``gpu_model`` and the Metal support level
+    shown on the dashboard.
+    """
+    if IS_MACOS:
+        return {
+            "nvidia_driver_version": None,
+            "rocm_driver_version": None,
+            "intel_driver_version": None,
+        }
+
     nvidia = _run_command(
         ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]
     )
@@ -187,7 +202,7 @@ def _get_os_info() -> tuple[Optional[str], Optional[str]]:
     try:
         if platform.system() == "Linux" and DISTRO is not None:
             return DISTRO.name(), DISTRO.version()
-        return platform.system(), platform.release()
+        return get_os_name_version()
     except OSError:
         return None, None
 
@@ -383,7 +398,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help=(
             "Comma-separated capabilities: "
-            "general_text,reasoning,vision,tooling"
+            "general_text,reasoning,vision,tooling,code"
         )
     )
 
@@ -605,10 +620,22 @@ def _sanitize_output_dir(output_dir_arg: str | Path) -> Path:
 
 
 def _list_installed_models() -> list[str]:
-    """Return installed LM Studio model variants from ``lms ls --json``."""
+    """Return locally installed LM Studio model variants from ``lms ls --json``.
+
+    Entries carrying a ``deviceIdentifier`` live on an LM Link peer, not on
+    this machine. Benchmarking those would measure the peer's hardware, so
+    they are skipped — mirroring ``ModelDiscovery.is_local_model`` in the
+    standard benchmark.
+    """
+    # Resolve the CLI once instead of leaving the lookup to PATH: a missing
+    # lms is then a clean "no models" instead of an OSError from the call.
+    lms_binary = shutil.which("lms")
+    if not lms_binary:
+        return []
+
     try:
-        result = subprocess.run(
-            ["lms", "ls", "--json"],
+        result = subprocess.run(  # nosec B603 - fixed argv, no shell
+            [lms_binary, "ls", "--json"],
             capture_output=True,
             text=True,
             timeout=20,
@@ -621,6 +648,9 @@ def _list_installed_models() -> list[str]:
         model_names: list[str] = []
         seen: set[str] = set()
         for item in parsed:
+            if item.get("deviceIdentifier"):
+                continue
+
             variants = item.get("variants") or []
             if variants:
                 for variant in variants:
@@ -680,7 +710,10 @@ def override_config(config: dict, args: argparse.Namespace) -> dict:
         config["repeat_penalty"] = args.repeat_penalty
 
     if args.max_tokens is not None:
+        # An explicit budget applies to every capability: the caller asked for
+        # this number, not for the per-capability defaults from bench.yaml.
         config["max_tokens"] = args.max_tokens
+        config["max_tokens_per_capability"] = {}
 
     if args.n_gpu_layers is not None:
         config["n_gpu_layers"] = args.n_gpu_layers
@@ -1779,7 +1812,9 @@ def main() -> int:
                 logger.error("No installed models found for random benchmark")
                 return 1
             sample_size = min(args.random_models, len(installed_models))
-            model_targets = random.sample(installed_models, sample_size)
+            model_targets = secrets.SystemRandom().sample(
+                installed_models, sample_size
+            )
             logger.info(
                 "⚙️ Model limit set: testing random %d of %d model(s)",
                 sample_size,
@@ -1942,7 +1977,7 @@ def main() -> int:
                         and summary.get("power_watts_max")
                         and summary["power_watts_max"] > max_power
                     ),
-                } | {k: v for k, v in profiling_stats.items()}
+                } | dict(profiling_stats)
 
             classic_metrics = _build_classic_metrics(
                 config=config,

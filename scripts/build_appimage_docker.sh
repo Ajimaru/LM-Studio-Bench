@@ -64,6 +64,9 @@ prepare_build_context() {
     cp -a "$ROOT_DIR/tools" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/requirements.txt" "$BUILD_CONTEXT_DIR/"
     cp -a "$ROOT_DIR/VERSION" "$BUILD_CONTEXT_DIR/"
+    # Read at runtime by the tray's Contributors tab.
+    cp -a "$ROOT_DIR/AUTHORS" "$BUILD_CONTEXT_DIR/"
+    cp -a "$ROOT_DIR/LICENSE" "$BUILD_CONTEXT_DIR/"
 
     find "$BUILD_CONTEXT_DIR" -type d -name "__pycache__" -prune -exec rm -rf {} +
 }

@@ -73,6 +73,8 @@ class TestLoadConfig:
         config = load_config(bad_yaml)
         # YAML parse errors should fall back to default configuration.
         assert config == DEFAULT_CONFIG
+
+
 class TestParseArgs:
     """Tests for parse_args function."""
 
@@ -214,7 +216,13 @@ class TestHardwareMonitoring:
 
         assert monitor is not None
         assert monitor.enabled is True
-        assert monitor.gpu_type in ("NVIDIA", "AMD", "Intel", "Unknown")
+        assert monitor.gpu_type in (
+            "NVIDIA",
+            "AMD",
+            "Intel",
+            "Apple",
+            "Unknown",
+        )
 
 
 class TestBenchmarkAgentConfig:
@@ -304,3 +312,165 @@ class TestBenchmarkAgentConfig:
         )
 
         assert agent.disable_gtt is False
+
+
+class TestListInstalledModels:
+    """Tests for _list_installed_models function."""
+
+    @staticmethod
+    def _run(payload):
+        """Invoke _list_installed_models against a stubbed ``lms ls --json``."""
+        import json
+
+        from cli.main import _list_installed_models
+
+        completed = argparse.Namespace(returncode=0, stdout=json.dumps(payload))
+        with patch("shutil.which", return_value="/usr/local/bin/lms"), \
+                patch("subprocess.run", return_value=completed):
+            return _list_installed_models()
+
+    def test_missing_lms_binary_yields_no_models(self):
+        """Without the CLI on PATH there is nothing to list."""
+        from cli.main import _list_installed_models
+
+        with patch("shutil.which", return_value=None):
+            assert _list_installed_models() == []
+
+    def test_resolved_path_is_used_for_the_call(self):
+        """The absolute path replaces the bare "lms" in the argv list."""
+        import json
+
+        from cli.main import _list_installed_models
+
+        completed = argparse.Namespace(returncode=0, stdout=json.dumps([]))
+        with patch("shutil.which", return_value="/opt/lms/bin/lms"), \
+                patch("subprocess.run", return_value=completed) as mock_run:
+            _list_installed_models()
+
+        assert mock_run.call_args[0][0][0] == "/opt/lms/bin/lms"
+
+    def test_skips_lm_link_peer_models(self):
+        """Models on an LM Link peer are excluded from the benchmark set."""
+        models = self._run([
+            {"modelKey": "local-model", "deviceIdentifier": None},
+            {"modelKey": "peer-model", "deviceIdentifier": "abc123"},
+        ])
+        assert models == ["local-model"]
+
+    def test_skips_peer_variants(self):
+        """Variant lists of a peer entry are skipped as a whole."""
+        models = self._run([
+            {
+                "modelKey": "peer-model",
+                "variants": ["peer-model@4bit", "peer-model@bf16"],
+                "deviceIdentifier": "abc123",
+            },
+            {"modelKey": "local-model", "variants": ["local-model@q4_k_m"]},
+        ])
+        assert models == ["local-model@q4_k_m"]
+
+    def test_keeps_models_without_device_field(self):
+        """A missing deviceIdentifier counts as local."""
+        models = self._run([{"modelKey": "local-model"}])
+        assert models == ["local-model"]
+
+    def test_same_model_on_both_hosts_keeps_local_entry(self):
+        """A model present locally and on a peer is kept once, as local."""
+        models = self._run([
+            {"modelKey": "shared@q4_k_m", "deviceIdentifier": None},
+            {"modelKey": "shared@4bit", "deviceIdentifier": "abc123"},
+        ])
+        assert models == ["shared@q4_k_m"]
+
+
+class TestPerCapabilityTokenBudget:
+    """Generation budgets differ per capability.
+
+    A single global budget is either too small for reasoning chains or wastes
+    minutes generating into the void for a 30-token tool call.
+    """
+
+    @staticmethod
+    def _agent(tmp_path, config):
+        """Build a BenchmarkAgent with a stub adapter."""
+        from unittest.mock import MagicMock
+
+        from agents.benchmark import BenchmarkAgent
+
+        return BenchmarkAgent(
+            adapter=MagicMock(), output_dir=tmp_path, config=config
+        )
+
+    def test_budget_is_taken_per_capability(self, tmp_path):
+        """Each capability gets its configured budget."""
+        from agents.capabilities import Capability
+
+        agent = self._agent(tmp_path, {
+            "max_tokens_per_capability": {
+                "tooling": 300, "reasoning": 2000, "code": 1200,
+            },
+        })
+        assert agent._max_tokens_for(Capability.TOOLING) == 300
+        assert agent._max_tokens_for(Capability.REASONING) == 2000
+        assert agent._max_tokens_for(Capability.CODE) == 1200
+
+    def test_falls_back_to_global_budget(self, tmp_path):
+        """A capability without an entry uses the global value."""
+        from agents.capabilities import Capability
+
+        agent = self._agent(tmp_path, {
+            "max_tokens_per_capability": {"tooling": 300},
+        })
+        agent.inference_options = {"max_tokens": 900}
+        assert agent._max_tokens_for(Capability.VISION) == 900
+
+    def test_no_budget_configured(self, tmp_path):
+        """Without any configuration the model decides when to stop."""
+        from agents.capabilities import Capability
+
+        agent = self._agent(tmp_path, {})
+        assert agent._max_tokens_for(Capability.CODE) is None
+
+    def test_truncation_uses_the_capability_budget(self, tmp_path):
+        """A tooling answer at 300 tokens is truncated, a code answer is not.
+
+        With a single global budget the same 300-token answer would look fine
+        in both cases, hiding a model that rambled through its tool call.
+        """
+        from agents.benchmark import InferenceResult
+        from agents.capabilities import Capability
+
+        agent = self._agent(tmp_path, {
+            "max_tokens_per_capability": {"tooling": 300, "code": 1200},
+        })
+        inference = InferenceResult(
+            test_id="t", prompt="p", response="r",
+            timestamp_start=0.0, timestamp_end=1.0, latency_ms=1000.0,
+            tokens_generated=300,
+        )
+        assert agent._is_truncated(inference, Capability.TOOLING) is True
+        assert agent._is_truncated(inference, Capability.CODE) is False
+
+    def test_explicit_cli_budget_overrides_capabilities(self):
+        """--max-tokens applies to every capability."""
+        import argparse
+
+        from cli.main import override_config
+
+        args = argparse.Namespace(max_tokens=64)
+        for name in [
+            "context_length", "gpu_offload", "temperature", "top_k", "top_p",
+            "min_p", "repeat_penalty", "n_gpu_layers", "n_batch", "n_threads",
+            "flash_attention", "no_flash_attention", "rope_freq_base",
+            "rope_freq_scale", "use_mmap", "no_mmap", "use_mlock",
+            "kv_cache_quant", "max_temp", "max_power", "enable_profiling",
+            "disable_gtt", "dev_mode", "max_tests",
+        ]:
+            if not hasattr(args, name):
+                setattr(args, name, None)
+
+        config = override_config(
+            {"max_tokens_per_capability": {"tooling": 300}}, args
+        )
+        assert config["max_tokens"] == 64
+        assert config["max_tokens_per_capability"] == {}

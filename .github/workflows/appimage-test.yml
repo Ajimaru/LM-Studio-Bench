@@ -1,7 +1,6 @@
 name: AppImage Compatibility Test
 
 on:
-  workflow_dispatch:
   workflow_run:
     workflows: ["Release"]
     types:
@@ -33,7 +32,7 @@ jobs:
 
     steps:
       - name: Download AppImage artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: appimage
           path: dist/

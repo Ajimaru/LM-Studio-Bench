@@ -1,8 +1,23 @@
-context_length: 2048
+context_length: 8192
 gpu_offload: 1.0
 temperature: 0.1
-max_tokens: 256
+# Fallback budget for capabilities without an entry in max_tokens_per_capability.
+max_tokens: 2000
+
+# Generation budget per capability. A single global value is either too small
+# for reasoning (the answer gets cut off and scores as wrong) or wasteful for
+# tooling, where a function call needs a few dozen tokens and the rest is
+# spent waiting. Tight budgets also surface models that ramble instead of
+# answering: they hit the cap and are flagged as truncated.
+max_tokens_per_capability:
+  tooling: 300
+  general_text: 600
+  code: 1200
+  reasoning: 2000
 max_tests_per_capability: 10
+
+# Wall-clock limit per generated-code execution (code capability).
+code_timeout_seconds: 10
 use_rest_api: true
 
 data_dir: tests/data
@@ -15,16 +30,23 @@ metric_weights:
     rouge-1: 0.3
     rouge-l: 0.4
     f1: 0.3
+  # accuracy carries reasoning: it extracts the final answer, so a model may
+  # show its work without being punished. exact_match demanded that the whole
+  # response equal the reference, which no explaining model can satisfy, and
+  # token-F1 against a one-word reference rewarded terseness over correctness.
   reasoning:
-    exact_match: 0.5
-    f1: 0.3
-    accuracy: 0.2
+    accuracy: 0.8
+    exact_match: 0.1
+    f1: 0.1
   vision:
     accuracy: 0.6
     rouge-l: 0.4
   tooling:
     function_call_accuracy: 0.7
     accuracy: 0.3
+  # Code is pass/fail by execution; nothing else contributes.
+  code:
+    code_execution: 1.0
 
 composite_score_weights:
   quality: 0.6

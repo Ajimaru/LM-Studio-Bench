@@ -14,9 +14,24 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).parent.parent
 PROJECT_CONFIG_PATH = PROJECT_ROOT / "config" / "defaults.json"
 
+# A short prompt at a tiny context measures neither prompt processing nor the
+# KV-cache pressure of real workloads, which is where models differ most.
+BASE_DEFAULT_PROMPT = (
+    "Read the following function and explain what it does, which edge cases "
+    "it fails to handle, and how you would fix them:\n\n"
+    "def merge_ranges(ranges):\n"
+    "    merged = []\n"
+    "    for start, end in sorted(ranges):\n"
+    "        if merged and start <= merged[-1][1]:\n"
+    "            merged[-1][1] = max(merged[-1][1], end)\n"
+    "        else:\n"
+    "            merged.append([start, end])\n"
+    "    return merged\n"
+)
+
 BASE_DEFAULT_CONFIG: Dict[str, Any] = {
-    "prompt": "Is the sky blue?",
-    "context_length": 2048,
+    "prompt": BASE_DEFAULT_PROMPT,
+    "context_length": 8192,
     "num_runs": 3,
     "retest": False,
     "enable_profiling": False,
@@ -32,7 +47,7 @@ BASE_DEFAULT_CONFIG: Dict[str, Any] = {
         "top_p_sampling": 0.9,
         "min_p_sampling": 0.05,
         "repeat_penalty": 1.2,
-        "max_tokens": 256,
+        "max_tokens": 2000,
     },
     "load": {
         "n_gpu_layers": -1,

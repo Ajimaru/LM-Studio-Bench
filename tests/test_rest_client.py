@@ -912,3 +912,92 @@ class TestListModels:
         with patch.object(client.client, "post", return_value=mock_resp):
             result = client.load_model(model_key="test/model@q4")
         assert result == "inst-abc"
+
+
+class TestChatWithTools:
+    """Native tool calling through the OpenAI-compatible endpoint."""
+
+    @staticmethod
+    def _client_with_response(payload):
+        """Build a client whose POST returns the given JSON payload."""
+        client = LMStudioRESTClient(base_url="http://localhost:1234")
+        response = MagicMock()
+        response.json.return_value = payload
+        response.raise_for_status.return_value = None
+        client.client = cast(httpx.Client, MagicMock(post=MagicMock(
+            return_value=response
+        )))
+        return client
+
+    def test_parses_tool_call_with_json_arguments(self):
+        """Arguments arrive as a JSON string and are decoded."""
+        client = self._client_with_response({
+            "choices": [{
+                "finish_reason": "tool_calls",
+                "message": {
+                    "content": None,
+                    "tool_calls": [{
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"location":"New York"}',
+                        },
+                    }],
+                },
+            }],
+            "usage": {"completion_tokens": 12},
+        })
+
+        result = client.chat_with_tools(
+            messages=[{"role": "user", "content": "weather?"}],
+            tools=[{"type": "function", "function": {"name": "get_weather"}}],
+            model="test-model",
+        )
+
+        assert result["tool_calls"] == [
+            {"name": "get_weather", "arguments": {"location": "New York"}}
+        ]
+        assert result["finish_reason"] == "tool_calls"
+        assert result["usage"]["completion_tokens"] == 12
+
+    def test_keeps_malformed_arguments_as_string(self):
+        """Broken argument JSON is a finding, not a reason to drop the call."""
+        client = self._client_with_response({
+            "choices": [{
+                "message": {
+                    "tool_calls": [{
+                        "function": {"name": "calculate", "arguments": "{not json"},
+                    }],
+                },
+            }],
+        })
+        result = client.chat_with_tools(messages=[], tools=[])
+        assert result["tool_calls"][0]["arguments"] == "{not json"
+
+    def test_plain_text_answer_yields_no_tool_calls(self):
+        """A model answering in prose reports zero tool calls."""
+        client = self._client_with_response({
+            "choices": [{
+                "finish_reason": "stop",
+                "message": {"content": "I would call get_weather."},
+            }],
+        })
+        result = client.chat_with_tools(messages=[], tools=[])
+        assert result["tool_calls"] == []
+        assert result["content"] == "I would call get_weather."
+
+    def test_sends_tools_in_payload(self):
+        """Tools and model reach the request body."""
+        client = self._client_with_response({"choices": [{"message": {}}]})
+        tools = [{"type": "function", "function": {"name": "f"}}]
+        client.chat_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            tools=tools,
+            model="m",
+            max_tokens=64,
+        )
+        _, kwargs = client.client.post.call_args
+        assert kwargs["json"]["tools"] == tools
+        assert kwargs["json"]["model"] == "m"
+        assert kwargs["json"]["max_tokens"] == 64
+        assert kwargs["json"]["stream"] is False

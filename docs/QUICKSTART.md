@@ -15,12 +15,23 @@ cd ~/LM-Studio-Bench
 source .venv/bin/activate
 ```
 
-If you skip `setup.sh`, use this manual fallback:
+If you skip `setup.sh`, use this manual fallback (on Ubuntu/Debian install
+`python3-venv` and `python3-pip` first, otherwise `python3 -m venv` produces a
+`.venv` without `pip`):
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+If you want to run tests, linting, or contribute changes, use the development
+environment instead:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
 ```
 
 ## 🌐 Web Dashboard (Recommended)
@@ -42,6 +53,7 @@ pip install -r requirements.txt
 `~/.local/share/lm-studio-bench/logs/webapp_*.log` and
 `~/.local/share/lm-studio-bench/logs/benchmark_*.log`
 ✅ Linux tray control with dynamic status icon and quick actions
+(skipped on macOS, see below)
 
 **Dashboard Features:**
 
@@ -72,6 +84,29 @@ with the web app.
   - Pause/Stop enabled only in running/paused states
 - **Auto refresh**: status and controls refresh every 3 seconds
 - **Quit behavior**: tray `Quit` triggers graceful full shutdown
+
+### macOS
+
+The tray is GTK/AppIndicator based and is therefore Linux-only. On macOS
+`run.py` prints a one-line notice and continues; benchmarks, the CLI and the
+web dashboard all work normally. Use the dashboard in the browser for the
+Start/Pause/Stop controls the tray provides on Linux.
+
+GPU detection uses `system_profiler` and `ioreg`, so on Apple Silicon you get
+the chip name, GPU core count, Metal support level and unified-memory usage.
+
+For GPU temperature and power draw, install the optional
+[macmon](https://github.com/vladkens/macmon):
+
+```bash
+brew install macmon
+```
+
+macOS normally exposes those counters only via `sudo powermetrics`; macmon
+reads them without root, so `--enable-profiling` can record them in an
+unattended run and the `--max-temp` / `--max-power` limits become usable.
+When macmon is absent those two metrics stay empty and everything else runs
+unchanged.
 
 ### Network Access
 

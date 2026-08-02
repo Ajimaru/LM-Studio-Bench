@@ -72,7 +72,7 @@ Configuration is loaded with the following priority:
 ```json
 {
   "num_runs": 3,
-  "context_length": 2048,
+  "context_length": 8192,
   "lmstudio": {
     "use_rest_api": false
   }
@@ -95,7 +95,7 @@ Configuration is loaded with the following priority:
 ```json
 {
   "num_runs": 5,              // User override
-  "context_length": 2048,     // Project default
+  "context_length": 8192,     // Project default
   "lmstudio": {
     "use_rest_api": true      // User override
   }

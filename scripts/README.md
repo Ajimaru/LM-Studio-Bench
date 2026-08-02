@@ -87,7 +87,7 @@ Fixable issues are corrected automatically and re-staged.
 
 **Checks performed:**
 
-- **Python**: `isort` (import sorting with auto-fix), `flake8` (linting), `pylint` (code quality, optional)
+- **Python**: `ruff` (linting and import sorting with auto-fix), `pylint` (code quality, optional)
 - **Shell**: `shellcheck` (bash/shell linting)
 - **Markdown**: `markdownlint` (markdown linting)
 - **HTML/Jinja**: `djlint` (template linting with auto-fix formatting)
@@ -102,7 +102,7 @@ Fixable issues are corrected automatically and re-staged.
 
 # This will:
 # - Create/activate Python virtual environment
-# - Install Python dev tools (flake8, isort, pylint, djlint)
+# - Install Python dev tools (ruff, pylint, djlint)
 # - Install Node.js tools (markdownlint-cli2)
 # - Ask to install system tools (shellcheck)
 # - Install git hooks
@@ -151,7 +151,7 @@ git commit -m "Your commit message"
 
 **If checks fail:**
 
-1. The hook auto-fixes `isort` and `djlint` issues and re-stages changes
+1. The hook auto-fixes `ruff` and `djlint` issues and re-stages changes
 2. Fix remaining reported issues manually
 3. Commit again: `git commit -m "Your message"`
 
@@ -173,37 +173,24 @@ SKIP_PYLINT=1 git commit -m "Your message"
 
 ### Python Tools
 
-#### isort - Import Sorting
+#### ruff - Linting and Import Sorting
 
-Sort and organize Python imports automatically.
-
-```bash
-# Check imports without modifying files
-isort --check-only --diff core/ cli/ agents/ web/ tools/
-
-# Apply changes
-isort core/ cli/ agents/ web/ tools/
-
-# Check specific file
-isort --check-only cli/benchmark.py
-isort cli/benchmark.py  # Apply changes
-```
-
-**Configuration:** `pyproject.toml` → `[tool.isort]`
-
-#### flake8 - Python Linter
-
-Check Python code for style and errors (PEP 8, errors, complexity).
+Check Python code for style and errors (PEP 8, pyflakes) and sort imports.
+Replaces the former flake8 + isort pair, so editors and hooks apply the same
+rules from a single config.
 
 ```bash
 # Check all Python files
-flake8 core/ cli/ agents/ web/ tools/
+ruff check core/ cli/ agents/ web/ tools/
+
+# Apply every fix ruff can make (import order above all)
+ruff check --fix core/ cli/ agents/ web/ tools/
 
 # Check specific file
-flake8 cli/benchmark.py
+ruff check cli/benchmark.py
 ```
 
-**Configuration:** `.flake8`
+**Configuration:** `pyproject.toml` → `[tool.ruff]`
 
 **Common errors:**
 
@@ -328,12 +315,12 @@ djlint --reformat web/templates/dashboard.html.jinja
 
 | File | Purpose |
 | --- | --- |
-| `.flake8` | Flake8 style configuration |
 | `.pylintrc` | Pylint configuration |
 | `.markdownlintrc.json` | Markdown lint rules |
 | `.shellcheckrc` | Shellcheck configuration |
-| `pyproject.toml` | isort and djlint configuration |
+| `pyproject.toml` | ruff and djlint configuration |
 | `requirements-dev.txt` | Python development dependencies |
+| `requirements-lock.txt` | Pinned audit/review dependencies |
 
 ## Setup & Installation Scripts
 
@@ -352,8 +339,7 @@ djlint --reformat web/templates/dashboard.html.jinja
 
 ```bash
 # Run all checks manually
-isort --check-only core/ cli/ agents/ web/ tools/
-flake8 core/ cli/ agents/ web/ tools/
+ruff check core/ cli/ agents/ web/ tools/
 pylint core/ cli/ agents/ web/      # Code quality (optional)
 shellcheck scripts/*.sh
 markdownlint docs/**/*.md
@@ -379,18 +365,18 @@ SKIP_PYLINT=1 ./scripts/scan-all.sh
 Automatically fix issues that can be auto-corrected:
 
 ```bash
-# Interactive auto-fix (fixes isort and djlint issues)
+# Interactive auto-fix (fixes ruff and djlint issues)
 ./scripts/scan-all.sh --fix
 ```
 
 **What gets auto-fixed:**
 
-- ✅ isort - import order (automatic)
+- ✅ ruff - import order and other fixable findings (automatic)
 - ✅ djlint - HTML/Jinja formatting (automatic)
 
 **What needs manual fixes:**
 
-- ⚠️ flake8 - style issues
+- ⚠️ ruff - findings without an automatic fix
 - ⚠️ pylint - code quality
 - ⚠️ markdownlint - markdown style
 - ⚠️ shellcheck - shell scripts
@@ -398,13 +384,13 @@ Automatically fix issues that can be auto-corrected:
 ### Fix all files
 
 ```bash
-# Fix import order
-isort core/ cli/ agents/ web/ tools/
+# Fix import order and other fixable findings
+ruff check --fix core/ cli/ agents/ web/ tools/
 
 # Auto-format templates
 djlint --reformat web/templates/
 
-# Fix flake8/shellcheck/markdownlint issues manually
+# Fix remaining ruff/shellcheck/markdownlint issues manually
 ```
 
 ### Disable specific checks inline
@@ -412,8 +398,8 @@ djlint --reformat web/templates/
 **Python:**
 
 ```python
-import os, sys  # noqa: E401 (flake8)
-result = function()  # noqa: E501 (flake8)
+import os, sys  # noqa: E401 (ruff)
+result = function()  # noqa: E501 (ruff)
 
 # pylint: disable=line-too-long  (entire section)
 def very_long_function_name_that_exceeds_line_length():

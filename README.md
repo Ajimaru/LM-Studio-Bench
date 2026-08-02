@@ -1,15 +1,15 @@
 # LM Studio Model Benchmark
 
-![alt text](assets/logo.svg)
+![LM Studio Bench logo](assets/logo.svg)
 
 Automatic benchmarking tool for all locally installed LM Studio models. Systematically tests different models and
 quantizations to measure and compare tokens-per-second performance.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![Platform](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://www.linux.org/)
-[![LM Studio App v0.4.3+](https://img.shields.io/badge/LM_Studio_App-v0.4.3+-green.svg)](https://lmstudio.ai/download)
-[![llmster v0.0.3+](https://img.shields.io/badge/llmster-v0.0.3+-green.svg)](https://lmstudio.ai)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-orange.svg)](https://www.linux.org/)
+[![LM Studio App v0.4.20+](https://img.shields.io/badge/LM_Studio_App-v0.4.20+-green.svg)](https://lmstudio.ai/download)
+[![llmster v0.0.20-1+](https://img.shields.io/badge/llmster-v0.0.20-1+-green.svg)](https://lmstudio.ai)
 [![Release](https://img.shields.io/github/v/release/Ajimaru/LM-Studio-Bench)](https://github.com/Ajimaru/LM-Studio-Bench/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Ajimaru/LM-Studio-Bench/total.svg)](https://github.com/Ajimaru/LM-Studio-Bench/releases)
 
@@ -73,8 +73,10 @@ quantizations to measure and compare tokens-per-second performance.
   - NVIDIA: GPU model via `nvidia-smi --query-gpu=name`
   - AMD: GPU series via `lspci` device-ID mapping, `rocm-smi`, or gfx code
   - iGPU extraction from CPU string (e.g. "Radeon 890M")
-- 📊 **Live Hardware Monitoring**: 6 interactive charts (GPU temp, power, VRAM, GTT, CPU, system RAM) with
-  stats
+- 🧪 **Capability Benchmarks**: Optional agent mode for general text,
+  reasoning, vision, tooling and code execution quality checks
+- 📊 **Live Hardware Monitoring**: interactive charts for GPU temp, power,
+  VRAM, GTT, CPU and system RAM with stats
   - 💾 **VRAM Monitoring**: Measures VRAM usage during benchmarks
   - 🧠 **GTT Support (AMD)**: Uses shared system RAM in addition to VRAM (e.g. 2GB VRAM + 46GB GTT =
     48GB)
@@ -99,11 +101,78 @@ quantizations to measure and compare tokens-per-second performance.
 
 ## System Requirements
 
-- **OS**: Linux (primary), macOS (untested), Windows (untested)
-- **Python**: 3.10 or newer
-- **GPU**: ~12GB VRAM recommended (NVIDIA/AMD/Intel)
+- **OS**: Linux (primary), macOS 11+ (Apple Silicon supported; Intel Macs not tested), Windows (untested)
+- **Python**: 3.11 or newer
+- **GPU**: ~12GB VRAM recommended (NVIDIA/AMD/Intel), or an Apple Silicon
+  Mac with ~16GB+ unified memory
+
+### macOS notes
+
+macOS is supported for benchmarking, the CLI and the web dashboard on Apple
+Silicon. Intel Macs are allowed to run the same code path where possible, but
+they are not tested and GPU detection or acceleration metrics may be incomplete.
+Two platform differences are worth knowing:
+
+- **No system tray.** The tray is built on GTK/AppIndicator, which is
+  Linux-only. On macOS it is skipped with a one-line notice; everything else
+  runs normally. `PyGObject` is therefore not installed on macOS.
+- **GPU temperature and power need `macmon`** (optional). macOS exposes
+  these only through `sudo powermetrics`; [macmon](https://github.com/vladkens/macmon)
+  reads the same counters without root, so unattended runs can record them:
+
+  ```bash
+  brew install macmon
+  ```
+
+  Without macmon, `temp_celsius_*` and `power_watts_*` stay empty and the
+  `--max-temp` / `--max-power` guardrails have nothing to compare against.
+  Everything else still works. GPU model, core count, Metal support level
+  and unified-memory usage come from `system_profiler` and `ioreg` and need
+  no extra tooling.
+
+Apple Silicon reports one unified memory pool, so VRAM and system RAM are the
+same memory. The dashboard shows it as a single total rather than adding
+VRAM and GTT together.
+
 - **Software**: [LM Studio](https://lmstudio.ai/) or
   [LM Studio (Headless)](https://lmstudio.ai/docs/developer/core/headless_llmster/) installed locally
+
+### LM Studio settings for stable benchmark runs
+
+A benchmark loads one model after another unattended, so it depends on LM
+Studio refusing loads that the machine cannot support. Two settings under
+**Settings → Hardware** govern that behaviour and are worth checking before a
+long run.
+
+**Bypass Memory Load Warnings** should stay at *Requires holding Alt/Option*.
+Setting it to *No restriction* lets models load even when resources are
+insufficient. A benchmark has no one present to weigh that decision, so an
+oversized model is loaded regardless and the run can stall or take the whole
+machine down with it. With the restriction in place LM Studio declines the
+load, the tool records the failure and continues with the next model.
+
+**Model Loading Guardrails** decides how much memory a model may claim.
+The default is a reasonable starting point, but pay closer attention on
+systems where processor and graphics share a single memory pool — integrated
+graphics and unified-memory designs both work this way. There, a model that is
+too large does not simply fail to allocate graphics memory — it pushes the
+entire system into swapping, which can leave the machine unresponsive rather
+than producing a clean error. Choosing a stricter level, or a custom limit
+below the shared total, keeps a run inside safe bounds. A machine with a
+dedicated graphics card is less exposed: an oversized model is refused by the
+card without dragging the rest of the system down with it.
+
+Two things are easy to get wrong when picking a custom limit:
+
+- The limit is compared against the model file, while the actual requirement
+  also includes the context and runtime overhead — usually a few hundred
+  megabytes more. A model somewhat below the limit can still be declined.
+- The pool is shared with everything else that is running. Leave room for the
+  operating system and any open applications, not just for the model.
+
+Models the guardrails decline appear in the log as a failed warmup. That is
+the protection working as intended, not a defect: the run continues and
+reports on the models that did load.
 
 ## Installation
 
@@ -152,13 +221,18 @@ cd LM-Studio-Bench
 ./setup.sh
 ```
 
-The setup script checks and prepares:
+The setup script runs on both Linux and macOS and checks:
 
-- Linux system dependencies (package-manager aware)
-- GPU tooling (`nvidia-smi`, `rocm-smi`, `intel_gpu_top` when available)
+- System dependencies (package-manager aware: apt/dnf/pacman/zypper/apk on
+  Linux, Homebrew on macOS)
+- GPU tooling — Linux: `nvidia-smi`, `rocm-smi`, `intel_gpu_top` when
+  available; macOS: `system_profiler` (GPU model, cores, Metal, unified
+  memory)
 - LM Studio / llmster availability
 - Python virtual environment (`.venv`)
 - Python dependencies from `requirements.txt`
+
+On macOS the GTK/PyGObject checks are skipped, since the tray is Linux-only.
 
 #### 3. Activate the virtual environment
 
@@ -172,26 +246,64 @@ source .venv/bin/activate
 
 #### 4. Manual fallback (if you skip `setup.sh`)
 
-Install system dependencies (Linux, tray support):
+Install system dependencies (Linux only — these provide tray support):
 
 ```bash
 # Ubuntu/Debian
-sudo apt install python3-dev libgirepository1.0-dev libcairo2-dev pkg-config
+sudo apt install python3-dev python3-venv python3-pip \
+    libgirepository1.0-dev libcairo2-dev pkg-config
 
 # Fedora/RHEL
-sudo dnf install python3-devel gobject-introspection-devel cairo-devel pkg-config
+sudo dnf install python3-devel python3-pip \
+    gobject-introspection-devel cairo-devel pkg-config
 
 # Arch
 sudo pacman -S python gobject-introspection cairo pkgconf
 ```
 
-Install Python dependencies:
+On macOS no system libraries are required. Python 3.10+ is enough; install
+it with `brew install python@3.12` if the system Python is too old.
+
+Install Python dependencies (same on Linux and macOS):
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+For development, tests, and linting, install the contributor environment
+instead:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
+
+`PyGObject` and `distro` carry a `sys_platform == "linux"` marker, so pip
+skips them on macOS and the install needs no GTK toolchain.
+
+Troubleshooting:
+
+- `No module named 'pip'` inside an active `.venv`, or `python3 -m venv`
+  failing with `ensurepip is not available`: the `python3-venv` package is
+  missing for the current Python version. Install it, then recreate the
+  environment.
+- After a system Python upgrade (for example 3.12 to 3.14) the existing
+  `.venv` keeps the old interpreter's `lib/pythonX.Y` tree and stops working.
+  Recreate it instead of repairing it:
+
+  ```bash
+  deactivate  # if the broken venv is active
+  rm -rf .venv
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.txt
+  ```
+
+- `Unable to locate package libgirepository1.0-dev` on newer Debian/Ubuntu
+  releases: the package was renamed to `libgirepository-2.0-dev`.
 
 #### 5. Check LM Studio CLI
 
@@ -264,8 +376,9 @@ Start the modern web UI with live streaming and an interactive results browser:
 # Load default classic preset (benchmarks all models, 3 runs)
 ./LM-Studio-Bench-x86_64.AppImage --preset default_classic
 
-# Load capability-driven preset (tests one model, 1 run; alias: default_compatability_test)
-./LM-Studio-Bench-x86_64.AppImage --preset default_compatibility_test --agent-model qwen2.5-7b-instruct
+# Run the capability-driven agent for one model
+./LM-Studio-Bench-x86_64.AppImage --agent qwen2.5-7b-instruct \
+  --capabilities general_text,reasoning
 
 # Load other presets
 ./LM-Studio-Bench-x86_64.AppImage --preset quick_test
@@ -429,10 +542,11 @@ See [REST API Features](docs/REST_API_FEATURES.md) for full documentation.
 <details>
 <summary>click to expand</summary>
 
-- **Prompt**: "Is the sky blue?"
-- **Context length**: 2048 tokens
+- **Prompt**: code-review style prompt from `config/defaults.json`
+- **Context length**: 8192 tokens
 - **Warmup**: 1 run
 - **Measurements**: 3 runs
+- **Max tokens**: 2000
 - **GPU offload**: automatic (1.0 → 0.7 → 0.5 → 0.3)
 
 </details>
@@ -455,7 +569,7 @@ For standardized and reproducible benchmarks the following sampling parameters a
 | **Top-P Sampling**  | 0.9   | Nucleus sampling with 90% cumulative probability           |
 | **Min-P Sampling**  | 0.05  | Minimum probability threshold                              |
 | **Repeat Penalty**  | 1.2   | Reduces repetitions (default 1.1)                          |
-| **Max Tokens**      | 256   | Bounded output length for faster tests                     |
+| **Max Tokens**      | 2000  | Bounded output length for coding-assistant style prompts   |
 
 </details>
 
@@ -463,9 +577,11 @@ For standardized and reproducible benchmarks the following sampling parameters a
 
 ## Customization
 
-For persistent changes edit the configuration file [config/defaults.json](config/defaults.json). This file
-controls the default `prompt`, `context_length`, `num_runs`, and other inference parameters used by the
-benchmark.
+For persistent personal changes, prefer
+`~/.config/lm-studio-bench/defaults.json`. Project defaults live in
+[config/defaults.json](config/defaults.json) and are version-controlled.
+Both files control `prompt`, `context_length`, `num_runs`, and other
+inference parameters used by the benchmark.
 
 For ad-hoc runs you can override defaults on the command line. Example:
 
@@ -473,7 +589,7 @@ For ad-hoc runs you can override defaults on the command line. Example:
 ./run.py -P "Your custom test prompt" --context 4096 --runs 5
 ```
 
-(See [config/defaults.json](config/defaults.json) for persistent configuration.)
+(See [docs/USER_DATA.md](docs/USER_DATA.md) for configuration locations.)
 
 ## Output
 
@@ -484,10 +600,11 @@ For ad-hoc runs you can override defaults on the command line. Example:
 <details>
 <summary>click to expand</summary>
 
-The tool uses separate log files for different components:
+The tool uses separate log files for different components under
+`~/.local/share/lm-studio-bench/logs/`:
 
 ```text
-logs/
+~/.local/share/lm-studio-bench/logs/
 ├── webapp_20260105_112201.log       # Web dashboard logs (only when --webapp is used)
 └── benchmark_20260105_113045.log    # Benchmark run logs
 ```
@@ -508,7 +625,9 @@ logs/
 <details>
 <summary>click to expand</summary>
 
-Benchmark reports are stored in the `results/` directory:
+Benchmark reports are stored in
+`~/.local/share/lm-studio-bench/results/` unless an output directory is
+provided:
 
 - `benchmark_results_YYYYMMDD_HHMMSS.json` - structured data (for automation)
 - `benchmark_results_YYYYMMDD_HHMMSS.csv` - tabular data (Excel/Sheets compatible)
@@ -616,6 +735,10 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 | **tokens_per_sec_per_billion_params** | Efficiency: tokens/s per billion parameters |
 | **temp_celsius_min/max/avg** | GPU temperature during the benchmark (°C) - only with `--enable-profiling` |
 | **power_watts_min/max/avg** | GPU power draw during the benchmark (W) - only with `--enable-profiling` |
+| **vram_gb_min/max/avg** | GPU memory usage during profiling |
+| **gtt_gb_min/max/avg** | AMD GTT/shared graphics memory during profiling |
+| **cpu_percent_min/max/avg** | System CPU usage during profiling |
+| **ram_gb_min/max/avg** | System RAM usage during profiling |
 
 </details>
 
@@ -757,6 +880,43 @@ The script will automatically try lower GPU offload levels. With ~12GB VRAM:
 - ✅ 7B models with Q4_K_M
 - ⚠️ 13B models with Q3_K_M (possible)
 - ❌ 32B+ models (not recommended)
+
+If a load is refused with a message about insufficient system resources, LM
+Studio's guardrails stopped it on purpose. The run continues with the next
+model. See
+[LM Studio settings for stable benchmark runs](#lm-studio-settings-for-stable-benchmark-runs)
+for how to tune the threshold.
+
+</details>
+
+### Benchmark stalls or the machine becomes unresponsive
+
+<!-- markdownlint-disable MD033 -->
+
+<details>
+<summary>click to expand</summary>
+
+This points to a model that was allowed to load without enough memory behind
+it. It is most likely on systems where processor and graphics share one memory
+pool: instead of failing outright, the system starts swapping and everything
+slows to a crawl.
+
+Signs to look for:
+
+- A warmup that takes minutes instead of seconds
+- Throughput far below what the same model reaches elsewhere
+- Heavy, sustained swap usage during the run
+
+What helps:
+
+- Set **Bypass Memory Load Warnings** to *Requires holding Alt/Option* so
+  oversized models are declined rather than forced through
+- Tighten **Model Loading Guardrails**, or set a custom limit that leaves
+  headroom for the operating system and other applications
+- Exclude an individual model with `--exclude-models` when everything else
+  runs fine
+- Lower `--context` — the context is part of the memory requirement, so a
+  smaller one can bring a borderline model back into range
 
 </details>
 

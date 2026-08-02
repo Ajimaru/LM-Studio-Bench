@@ -6,12 +6,26 @@ from pathlib import Path
 import re
 import shutil
 from statistics import mean
-import subprocess
+import subprocess  # nosec B404 - vendor CLIs are the only source for this data
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import psutil
+
+from core.platform_info import (
+    IS_MACOS,
+    detect_apple_gpu,
+    get_apple_unified_memory_gb,
+    read_apple_gpu_stats,
+)
+from tools.gpu_devices import (
+    GpuAggregate,
+    device_names,
+    sample_devices,
+    serialize_aggregates,
+)
+from tools.macmon import MacmonSampler, is_macmon_available
 
 try:
     import cpuinfo
@@ -20,6 +34,59 @@ except (ImportError, ModuleNotFoundError):
 
 
 logger = logging.getLogger(__name__)
+
+
+PER_GPU_MIN_DEVICES = 2
+
+# lspci lives in sbin on distributions that keep it off a user's PATH.
+LSPCI_SEARCH_PATHS = ("/usr/sbin", "/sbin", "/usr/bin", "/bin")
+
+
+def _resolve_tool(
+    tool_name: str,
+    search_paths: tuple[str, ...] = (),
+) -> Optional[str]:
+    """Return the absolute path of a CLI, or None when it is not installed.
+
+    Args:
+        tool_name: Executable to look for.
+        search_paths: Directories to try when PATH does not contain it.
+    """
+    found = shutil.which(tool_name)
+    if found:
+        return found
+
+    for path in search_paths:
+        found = shutil.which(tool_name, path=path)
+        if found:
+            return found
+
+    return None
+
+
+def _run_tool(command: List[str], timeout: int) -> Optional[str]:
+    """Run a hardware query CLI and return its stdout.
+
+    Every vendor call in this module goes through here, so the subprocess
+    keyword arguments are defined once and a security audit has a single
+    place to look. Returns None when the tool is missing, times out or
+    exits non-zero - all of which mean "no reading available" to callers.
+    """
+    try:
+        result = subprocess.run(  # nosec B603 - fixed argv, no shell
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (subprocess.SubprocessError, OSError) as error:
+        logger.debug("Hardware query failed (%s): %s", command[0], error)
+        return None
+
+    if result.returncode != 0:
+        return None
+    return result.stdout
 
 
 class HardwareMonitor:
@@ -47,8 +114,112 @@ class HardwareMonitor:
         self._amd_sysfs_path: Optional[str] = None
         self._amd_hwmon_path: Optional[str] = None
 
+        # Per-device tracking is only set up when the vendor tool actually
+        # reports more than one GPU. On a single-GPU machine the aggregate
+        # readers already tell the whole story, and an empty per-device list
+        # keeps reports and dashboards free of placeholder charts.
+        self.gpu_devices: Dict[int, GpuAggregate] = {}
+        self.device_count: int = 0
+        self._device_names: Dict[int, str] = {}
+        if self.enabled:
+            self._init_gpu_devices()
+
+        # Apple Silicon exposes temperature and power only through
+        # powermetrics (root) or macmon (sudoless). macmon is optional: when
+        # absent, those metrics simply stay unset.
+        self._macmon: Optional[MacmonSampler] = None
+        if self.gpu_type == "Apple" and is_macmon_available():
+            self._macmon = MacmonSampler()
+
         if self.gpu_type == "AMD" and self.gpu_tool == "sysfs":
             self._init_amd_sysfs_paths()
+
+    def _init_gpu_devices(self) -> None:
+        """Detect whether per-device sampling applies to this machine."""
+        try:
+            devices = sample_devices(self.gpu_type, self.gpu_tool)
+        except (OSError, ValueError) as error:  # pragma: no cover - defensive
+            logger.debug("Per-GPU detection failed: %s", error)
+            return
+
+        self.device_count = len(devices)
+        if self.device_count < PER_GPU_MIN_DEVICES:
+            return
+
+        self._device_names = device_names(self.gpu_type, self.gpu_tool)
+        logger.info(
+            "🎛️ %s GPUs detected, recording per-device metrics",
+            self.device_count,
+        )
+
+    def _sample_gpu_devices(self) -> None:
+        """Fold one per-device reading into the aggregates."""
+        if self.device_count < PER_GPU_MIN_DEVICES:
+            return
+
+        samples = sample_devices(self.gpu_type, self.gpu_tool)
+        if not samples:
+            return
+
+        with self.lock:
+            for sample in samples:
+                if sample.name is None:
+                    sample.name = self._device_names.get(sample.index)
+                aggregate = self.gpu_devices.setdefault(
+                    sample.index,
+                    GpuAggregate(index=sample.index, name=sample.name),
+                )
+                aggregate.add(sample)
+
+    def _log_per_gpu_reading(self) -> None:
+        """Log the latest reading of every device on a multi-GPU machine."""
+        if self.device_count < PER_GPU_MIN_DEVICES:
+            return
+
+        with self.lock:
+            parts = []
+            for index in sorted(self.gpu_devices):
+                aggregate = self.gpu_devices[index]
+                latest = {
+                    metric: readings[-1]
+                    for metric, readings in aggregate.values.items()
+                    if readings
+                }
+                if not latest:
+                    continue
+                label = aggregate.name or f"GPU{index}"
+                parts.append(
+                    f"[{index}] {label}: "
+                    f"{latest.get('vram_gb', 0):.2f}GB VRAM, "
+                    f"{latest.get('gtt_gb', 0):.2f}GB GTT, "
+                    f"{latest.get('temp_celsius', 0):.0f}°C, "
+                    f"{latest.get('power_watts', 0):.0f}W"
+                )
+
+        if parts:
+            logger.info("🎛️ %s", " | ".join(parts))
+
+    def per_gpu_metrics(self) -> List[Dict[str, Any]]:
+        """Per-device min/max/avg, empty on single-GPU systems."""
+        with self.lock:
+            aggregates = [
+                self.gpu_devices[index]
+                for index in sorted(self.gpu_devices)
+            ]
+        return [
+            aggregate.as_dict()
+            for aggregate in aggregates
+            if aggregate.samples > 0
+        ]
+
+    def per_gpu_metrics_json(self) -> Optional[str]:
+        """Per-device metrics serialized for a TEXT column."""
+        with self.lock:
+            aggregates = [
+                self.gpu_devices[index]
+                for index in sorted(self.gpu_devices)
+            ]
+        return serialize_aggregates(aggregates)
 
     def _reset_measurements(self) -> None:
         """Clear all collected measurements before a new profiling run."""
@@ -60,6 +231,7 @@ class HardwareMonitor:
             self.cpus.clear()
             self.rams.clear()
             self.ram_readings.clear()
+            self.gpu_devices.clear()
         self._amd_sysfs_path = None
         self._amd_hwmon_path = None
 
@@ -103,14 +275,21 @@ class HardwareMonitor:
         )
         self.monitoring = True
         self._reset_measurements()
+
+        if self._macmon is not None and not self._macmon.start():
+            logger.debug("macmon could not be started; temp/power stay unset")
+
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.thread.start()
 
-    def stop(self) -> Dict[str, Optional[float]]:
+    def stop(self) -> Dict[str, Any]:
         """Stop monitoring and return collected statistics."""
         self.monitoring = False
         if self.thread:
             self.thread.join(timeout=2)
+
+        if self._macmon is not None:
+            self._macmon.stop()
 
         with self.lock:
             temps = self.temps.copy()
@@ -139,6 +318,8 @@ class HardwareMonitor:
             "ram_gb_min": min(rams) if rams else None,
             "ram_gb_max": max(rams) if rams else None,
             "ram_gb_avg": mean(rams) if rams else None,
+            "gpu_count": self.device_count,
+            "per_gpu": self.per_gpu_metrics(),
         }
 
     def _monitor_loop(self) -> None:
@@ -152,6 +333,7 @@ class HardwareMonitor:
                 gtt = self._get_gtt_usage()
                 cpu = self._get_cpu_usage()
                 ram = self._get_ram_usage()
+                self._sample_gpu_devices()
 
                 with self.lock:
                     if temp is not None:
@@ -202,6 +384,8 @@ class HardwareMonitor:
                         self.rams.append(ram)
                         logger.info("💾 RAM: %sGB", ram)
 
+                self._log_per_gpu_reading()
+
                 time.sleep(1)
             except (subprocess.SubprocessError, OSError, ValueError) as error:
                 logger.debug("Monitoring error: %s", error)
@@ -214,20 +398,22 @@ class HardwareMonitor:
             if not self.gpu_tool:
                 return None
 
+            if self.gpu_type == "Apple":
+                if self._macmon is None:
+                    return None
+                return self._macmon.get_gpu_temperature()
+
             if self.gpu_type == "NVIDIA":
-                result = subprocess.run(
+                output = _run_tool(
                     [
                         self.gpu_tool,
                         "--query-gpu=temperature.gpu",
                         "--format=csv,noheader,nounits",
                     ],
-                    capture_output=True,
-                    text=True,
                     timeout=3,
-                    check=False,
                 )
-                if result.returncode == 0:
-                    temp_str = result.stdout.strip().split("\n")[0]
+                if output is not None:
+                    temp_str = output.strip().split("\n")[0]
                     return float(temp_str)
 
             if self.gpu_type == "AMD":
@@ -237,15 +423,9 @@ class HardwareMonitor:
                         temp_millic = int(temp_file.read_text().strip())
                         return float(temp_millic) / 1000.0
 
-                result = subprocess.run(
-                    [self.gpu_tool, "--showtemp"],
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    for line in result.stdout.split("\n"):
+                output = _run_tool([self.gpu_tool, "--showtemp"], timeout=3)
+                if output is not None:
+                    for line in output.split("\n"):
                         if "GPU[" in line and ("(C):" in line or "c" in line.lower()):
                             try:
                                 match = re.search(r"[\d.]+\s*$", line.strip())
@@ -269,32 +449,28 @@ class HardwareMonitor:
             if not self.gpu_tool:
                 return None
 
+            if self.gpu_type == "Apple":
+                if self._macmon is None:
+                    return None
+                return self._macmon.get_gpu_power()
+
             if self.gpu_type == "NVIDIA":
-                result = subprocess.run(
+                output = _run_tool(
                     [
                         self.gpu_tool,
                         "--query-gpu=power.draw",
                         "--format=csv,noheader,nounits",
                     ],
-                    capture_output=True,
-                    text=True,
                     timeout=3,
-                    check=False,
                 )
-                if result.returncode == 0:
-                    power_str = result.stdout.strip().split("\n")[0]
+                if output is not None:
+                    power_str = output.strip().split("\n")[0]
                     return float(power_str)
 
             if self.gpu_type == "AMD":
-                result = subprocess.run(
-                    [self.gpu_tool, "--showpower"],
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    for line in result.stdout.split("\n"):
+                output = _run_tool([self.gpu_tool, "--showpower"], timeout=3)
+                if output is not None:
+                    for line in output.split("\n"):
                         if "GPU[" in line and ("(W):" in line or "W" in line):
                             try:
                                 match = re.search(r"[\d.]+\s*$", line.strip())
@@ -317,20 +493,20 @@ class HardwareMonitor:
                 return None
 
             if self.gpu_type == "NVIDIA":
-                result = subprocess.run(
+                output = _run_tool(
                     [
                         self.gpu_tool,
                         "--query-gpu=memory.used",
                         "--format=csv,noheader,nounits",
                     ],
-                    capture_output=True,
-                    text=True,
                     timeout=3,
-                    check=False,
                 )
-                if result.returncode == 0:
-                    vram_mb = float(result.stdout.strip().split("\n")[0])
+                if output is not None:
+                    vram_mb = float(output.strip().split("\n")[0])
                     return vram_mb / 1024.0
+
+            if self.gpu_type == "Apple":
+                return read_apple_gpu_stats()["vram_used_gb"]
 
             if self.gpu_type == "AMD":
                 if self.gpu_tool == "sysfs" and self._amd_sysfs_path:
@@ -339,15 +515,11 @@ class HardwareMonitor:
                         vram_bytes = int(vram_file.read_text().strip())
                         return float(vram_bytes) / (1024**3)
 
-                result = subprocess.run(
-                    [self.gpu_tool, "--showmeminfo", "vram"],
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                    check=False,
+                output = _run_tool(
+                    [self.gpu_tool, "--showmeminfo", "vram"], timeout=3
                 )
-                if result.returncode == 0:
-                    for line in result.stdout.split("\n"):
+                if output is not None:
+                    for line in output.split("\n"):
                         if "GPU[" in line and "Used Memory" in line:
                             match = re.search(r"(\d+)\s*$", line.strip())
                             if match:
@@ -370,15 +542,9 @@ class HardwareMonitor:
                     gtt_bytes = int(gtt_file.read_text().strip())
                     return float(gtt_bytes) / (1024**3)
 
-            result = subprocess.run(
-                [self.gpu_tool, "--showmeminfo", "gtt"],
-                capture_output=True,
-                text=True,
-                timeout=3,
-                check=False,
-            )
-            if result.returncode == 0:
-                for line in result.stdout.split("\n"):
+            output = _run_tool([self.gpu_tool, "--showmeminfo", "gtt"], timeout=3)
+            if output is not None:
+                for line in output.split("\n"):
                     if "GPU[" in line and "Used Memory" in line:
                         match = re.search(r"(\d+)\s*$", line.strip())
                         if match:
@@ -429,30 +595,18 @@ class GPUMonitor:
         }
 
     def _find_tool(self, tool_name: str, search_paths: List[str]) -> Optional[str]:
-        """Search for a tool in PATH and well-known fallback paths."""
-        if shutil.which(tool_name):
-            return tool_name
+        """Search for a tool in PATH and well-known fallback paths.
 
-        for path in search_paths:
-            found = shutil.which(tool_name, path=path)
-            if found:
-                return found
-
-        return None
+        Returns the absolute path, so every later call names the executable
+        it resolved instead of leaving the lookup to PATH.
+        """
+        return _resolve_tool(tool_name, tuple(search_paths))
 
     def _find_amd_sysfs_path(self) -> Optional[str]:
         """Find AMD GPU sysfs path for direct monitoring."""
-        try:
-            result = subprocess.run(
-                ["lspci", "-d", "1002:", "-n"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            has_amd_lspci = result.returncode == 0 and bool(result.stdout.strip())
-        except OSError:
-            has_amd_lspci = False
+        lspci = _resolve_tool("lspci", LSPCI_SEARCH_PATHS)
+        output = _run_tool([lspci, "-d", "1002:", "-n"], timeout=5) if lspci else None
+        has_amd_lspci = bool(output and output.strip())
 
         for cardpath in glob.glob("/sys/class/drm/card*/device"):
             vendor_file = Path(cardpath) / "vendor"
@@ -472,26 +626,57 @@ class GPUMonitor:
             )
         return None
 
+    def _detect_apple_gpu(self) -> bool:
+        """Detect an Apple Silicon GPU on macOS.
+
+        Returns:
+            True when an Apple GPU was detected and state was set.
+        """
+        gpu_info = detect_apple_gpu()
+        if not gpu_info or gpu_info.get("vendor") != "Apple":
+            return False
+
+        self.gpu_type = "Apple"
+        # VRAM always comes from ioreg; macmon adds sudoless temperature and
+        # power on top when it is installed.
+        has_macmon = is_macmon_available()
+        self.gpu_tool = "macmon+ioreg" if has_macmon else "ioreg"
+
+        model = gpu_info["model"]
+        cores = gpu_info.get("cores")
+        self.gpu_model = f"{model} ({cores}-core GPU)" if cores else model
+
+        unified_memory_gb = get_apple_unified_memory_gb()
+        logger.info(
+            "🍎 Apple GPU detected: %s, unified memory: %s GB, Tool: %s",
+            self.gpu_model,
+            unified_memory_gb if unified_memory_gb is not None else "unknown",
+            self.gpu_tool,
+        )
+        if not has_macmon:
+            logger.info(
+                "💡 Install macmon (brew install macmon) for sudoless GPU "
+                "temperature and power metrics."
+            )
+        return True
+
     def _detect_gpu(self) -> None:
         """Detect GPU type and corresponding monitoring tool."""
+        if IS_MACOS and self._detect_apple_gpu():
+            return
+
         nvidia_paths = ["/usr/bin", "/usr/local/bin", "/usr/local/cuda/bin"]
         nvidia_tool = self._find_tool("nvidia-smi", nvidia_paths)
         if nvidia_tool:
             self.gpu_type = "NVIDIA"
             self.gpu_tool = nvidia_tool
-            try:
-                result = subprocess.run(
-                    [nvidia_tool, "--query-gpu=name", "--format=csv,noheader"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    self.gpu_model = result.stdout.strip().split("\n")[0]
-                else:
-                    self.gpu_model = "NVIDIA GPU"
-            except (subprocess.SubprocessError, OSError):
+            output = _run_tool(
+                [nvidia_tool, "--query-gpu=name", "--format=csv,noheader"],
+                timeout=5,
+            )
+            if output is not None:
+                self.gpu_model = output.strip().split("\n")[0]
+            else:
                 self.gpu_model = "NVIDIA GPU"
             logger.info(
                 "🟢 NVIDIA GPU detected: %s, Tool: %s",
@@ -572,46 +757,29 @@ class GPUMonitor:
             pass
 
         device_id = None
-        try:
-            result = subprocess.run(
-                ["lspci", "-d", "1002:"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            if result.returncode == 0 and result.stdout:
-                for line in result.stdout.strip().split("\n"):
-                    if "1002:" in line:
-                        parts = line.split("1002:")
-                        if len(parts) > 1:
-                            device_id = parts[1].split()[0].lower()
-                            if device_id in amd_device_mapping:
-                                return f"AMD {amd_device_mapping[device_id]}"
-                            break
-        except (subprocess.SubprocessError, OSError):
-            pass
+        lspci = _resolve_tool("lspci", LSPCI_SEARCH_PATHS)
+        output = _run_tool([lspci, "-d", "1002:"], timeout=5) if lspci else None
+        if output:
+            for line in output.strip().split("\n"):
+                if "1002:" in line:
+                    parts = line.split("1002:")
+                    if len(parts) > 1:
+                        device_id = parts[1].split()[0].lower()
+                        if device_id in amd_device_mapping:
+                            return f"AMD {amd_device_mapping[device_id]}"
+                        break
 
         if self.gpu_tool:
-            try:
-                result = subprocess.run(
-                    [self.gpu_tool, "--showproductname"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
-                )
-                if result.returncode == 0:
-                    for line in result.stdout.split("\n"):
-                        if "GPU[0]" in line:
-                            parts = line.split(":")
-                            if len(parts) > 1:
-                                gfx_code = parts[1].strip()
-                                if gfx_code in amd_device_mapping:
-                                    return f"AMD {amd_device_mapping[gfx_code]}"
-                                return f"AMD {gfx_code}"
-            except (subprocess.SubprocessError, OSError):
-                pass
+            output = _run_tool([self.gpu_tool, "--showproductname"], timeout=5)
+            if output is not None:
+                for line in output.split("\n"):
+                    if "GPU[0]" in line:
+                        parts = line.split(":")
+                        if len(parts) > 1:
+                            gfx_code = parts[1].strip()
+                            if gfx_code in amd_device_mapping:
+                                return f"AMD {amd_device_mapping[gfx_code]}"
+                            return f"AMD {gfx_code}"
 
         if device_id:
             return f"AMD GPU (1002:{device_id})"
@@ -619,22 +787,14 @@ class GPUMonitor:
 
     def _detect_intel_gpu_model(self) -> str:
         """Detect Intel GPU model name."""
-        try:
-            result = subprocess.run(
-                ["lspci", "-d", "8086::0300"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            if result.returncode == 0 and result.stdout:
-                line = result.stdout.strip().split("\n")[0]
-                if "Intel" in line:
-                    parts = line.split(": ")
-                    if len(parts) > 1:
-                        return parts[1].split("[")[0].strip()
-        except (subprocess.SubprocessError, OSError):
-            pass
+        lspci = _resolve_tool("lspci", LSPCI_SEARCH_PATHS)
+        output = _run_tool([lspci, "-d", "8086::0300"], timeout=5) if lspci else None
+        if output:
+            line = output.strip().split("\n")[0]
+            if "Intel" in line:
+                parts = line.split(": ")
+                if len(parts) > 1:
+                    return parts[1].split("[")[0].strip()
         return "Intel GPU"
 
     def get_vram_usage(self) -> str:
@@ -643,20 +803,23 @@ class GPUMonitor:
             return "N/A"
 
         try:
+            if self.gpu_type == "Apple":
+                vram_used_gb = read_apple_gpu_stats()["vram_used_gb"]
+                if vram_used_gb is not None:
+                    return f"{int(vram_used_gb * 1024)}"
+                return "N/A"
+
             if self.gpu_type == "NVIDIA":
-                result = subprocess.run(
+                output = _run_tool(
                     [
                         self.gpu_tool,
                         "--query-gpu=memory.used",
                         "--format=csv,noheader,nounits",
                     ],
-                    capture_output=True,
-                    text=True,
                     timeout=5,
-                    check=False,
                 )
-                if result.returncode == 0:
-                    return result.stdout.strip().split("\n")[0]
+                if output is not None:
+                    return output.strip().split("\n")[0]
 
             if self.gpu_type == "AMD":
                 if self.gpu_tool == "sysfs":
@@ -668,15 +831,11 @@ class GPUMonitor:
                             mb_used = vram_bytes / (1024 * 1024)
                             return f"{int(mb_used)}"
 
-                result = subprocess.run(
-                    [self.gpu_tool, "--showmeminfo", "vram"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    check=False,
+                output = _run_tool(
+                    [self.gpu_tool, "--showmeminfo", "vram"], timeout=5
                 )
-                if result.returncode == 0:
-                    for line in result.stdout.split("\n"):
+                if output is not None:
+                    for line in output.split("\n"):
                         if "VRAM Total Used Memory" in line:
                             parts = line.split(":")
                             if len(parts) >= 3:

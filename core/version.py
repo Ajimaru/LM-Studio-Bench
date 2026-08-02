@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Version checking utilities for LM Studio Benchmark.
 
 Provides functions to read the current version, fetch the latest

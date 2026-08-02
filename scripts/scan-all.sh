@@ -10,6 +10,19 @@
 
 set -e
 
+# This script uses `readarray`, which needs bash >= 4. macOS still ships
+# bash 3.2 as /bin/bash, so re-exec under a newer bash when one is present.
+if [[ -z "${BASH_VERSINFO[0]:-}" || "${BASH_VERSINFO[0]}" -lt 4 ]]; then
+    for candidate in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+        if [[ -x "${candidate}" ]]; then
+            exec "${candidate}" "$0" "$@"
+        fi
+    done
+    echo "Error: this script needs bash >= 4 (found ${BASH_VERSION:-unknown})." >&2
+    echo "On macOS install a newer bash with: brew install bash" >&2
+    exit 1
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -68,29 +81,25 @@ echo -e "${YELLOW}═══ Python Files Scan ═══${NC}"
 readarray -t PYTHON_FILES < <(get_git_files '\.py$' core cli agents web tools)
 
 if [[ ${#PYTHON_FILES[@]} -gt 0 ]]; then
-    # Run isort
-    echo -e "${YELLOW}Running isort...${NC}"
-    if ! isort --check-only --diff "${PYTHON_FILES[@]}"; then
+    # Run ruff (linting and import order, see [tool.ruff] in pyproject.toml)
+    echo -e "${YELLOW}Running ruff...${NC}"
+    if ! ruff check "${PYTHON_FILES[@]}"; then
         if [[ $FIX_MODE == true ]]; then
-            echo -e "${YELLOW}⚠ isort found issues - fixing...${NC}"
-            isort "${PYTHON_FILES[@]}"
-            echo -e "${GREEN}✓ Fixed with isort${NC}"
+            echo -e "${YELLOW}⚠ ruff found issues - fixing...${NC}"
+            ruff check --fix "${PYTHON_FILES[@]}" || true
+            if ruff check "${PYTHON_FILES[@]}"; then
+                echo -e "${GREEN}✓ Fixed with ruff${NC}"
+            else
+                echo -e "${RED}❌ ruff found issues it cannot fix!${NC}"
+                FAILED=1
+            fi
         else
-            echo -e "${RED}❌ isort found issues!${NC}"
+            echo -e "${RED}❌ ruff found issues!${NC}"
             echo -e "${YELLOW}Fix with: ./scripts/scan-all.sh --fix${NC}"
             FAILED=1
         fi
     else
-        echo -e "${GREEN}✓ isort passed${NC}"
-    fi
-
-    # Run flake8
-    echo -e "${YELLOW}Running flake8...${NC}"
-    if ! flake8 "${PYTHON_FILES[@]}"; then
-        echo -e "${RED}❌ flake8 found issues!${NC}"
-        FAILED=1
-    else
-        echo -e "${GREEN}✓ flake8 passed${NC}"
+        echo -e "${GREEN}✓ ruff passed${NC}"
     fi
 
     # Run pylint (optional, with timeout)

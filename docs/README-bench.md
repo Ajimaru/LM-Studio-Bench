@@ -6,11 +6,12 @@ tests, computes quality metrics, and generates comprehensive reports.
 
 ## Features
 
-- Automatic capability detection (general text, reasoning, vision, tooling)
+- Automatic capability detection (general text, reasoning, vision, tooling,
+  code)
 - Per-capability test suites with standardized prompts
 - Quality metrics: ROUGE, F1, Exact Match, Accuracy, Function Call Accuracy
 - Performance metrics: tokens/sec, latency
-- Machine-readable JSON and human-friendly HTML reports
+- Machine-readable JSON/CSV and human-friendly HTML/PDF reports
 - CLI interface with extensive configuration options
 - Docker support for containerized execution
 - GitHub Actions integration for CI/CD benchmarking
@@ -22,14 +23,14 @@ tests, computes quality metrics, and generates comprehensive reports.
 Run a benchmark on a model:
 
 ```bash
-python -m cli.main "path/to/model" --output-dir output
+python -m cli.main "path/to/model"
 ```
 
 Run across installed models:
 
 ```bash
-python -m cli.main --all-models --output-dir output
-python -m cli.main --random-models 5 --output-dir output
+python -m cli.main --all-models
+python -m cli.main --random-models 5
 ```
 
 With specific capabilities:
@@ -58,7 +59,7 @@ docker run -v $(pwd)/output:/app/output \
 
 ## Capabilities
 
-The agent supports four primary capabilities:
+The agent supports five primary capabilities:
 
 ### 1. General Text
 
@@ -100,6 +101,12 @@ Tests function calling and tool use:
 
 Metrics: Function Call Accuracy, Parameter Accuracy
 
+### 5. Code
+
+Tests generated Python code against local execution cases.
+
+Metrics: Code execution pass/fail score
+
 ## CLI Reference
 
 ### Basic Usage
@@ -120,13 +127,13 @@ python -m cli.main MODEL_PATH [OPTIONS]
 - `--all-models`: Run the capability benchmark for all installed models
 - `--random-models N`: Run the capability benchmark for `N` random installed models
 - `--capabilities CAPS`: Comma-separated capabilities to test
-  - Options: `general_text,reasoning,vision,tooling`
+  - Options: `general_text,reasoning,vision,tooling,code`
   - Default: Auto-detect from model metadata
 
 #### Output Configuration
 
-- `--output-dir DIR`: Output directory (default: `output`)
-- `--formats FMTS`: Output formats: `json,html` (default: both)
+- `--output-dir DIR`: Output directory (default: XDG user results directory)
+- `--formats FMTS`: Output formats: `json,html,csv,pdf` (default: all four)
 
 #### Test Configuration
 
@@ -135,7 +142,7 @@ python -m cli.main MODEL_PATH [OPTIONS]
 
 #### Model Parameters
 
-- `--context-length N`: Model context length (default: 2048)
+- `--context-length N`: Model context length (default: config value)
 - `--gpu-offload RATIO`: GPU offload ratio 0.0-1.0 (default: 1.0)
 - `--temperature T`: Generation temperature (default: 0.1)
 
@@ -194,10 +201,10 @@ The agent reads configuration from `config/bench.yaml` by default. Override with
 ### Configuration Schema
 
 ```yaml
-context_length: 2048
+context_length: 8192
 gpu_offload: 1.0
 temperature: 0.1
-max_tokens: 256
+max_tokens: 2000
 max_tests_per_capability: 10
 use_rest_api: true
 
@@ -221,6 +228,8 @@ metric_weights:
   tooling:
     function_call_accuracy: 0.7
     accuracy: 0.3
+  code:
+    code_execution: 1.0
 
 composite_score_weights:
   quality: 0.6
@@ -482,14 +491,16 @@ from agents.runner import BenchmarkRunner
 from cli.reporting import generate_reports
 
 config = {
-    "context_length": 2048,
+  "context_length": 8192,
     "max_tests_per_capability": 5,
     "use_rest_api": True
 }
 
+output_dir = Path.home() / ".local/share/lm-studio-bench/results"
+
 runner = BenchmarkRunner(
     config=config,
-    output_dir=Path("output")
+  output_dir=output_dir
 )
 
 report = runner.run(
@@ -500,7 +511,7 @@ report = runner.run(
 
 outputs = generate_reports(
     report_data=report,
-    output_dir=Path("output"),
+  output_dir=output_dir,
     formats=["json", "html"]
 )
 

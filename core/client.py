@@ -505,6 +505,82 @@ class LMStudioRESTClient:
 
         return response.json()
 
+    def chat_with_tools(
+        self,
+        messages: List[Dict[str, str]],
+        tools: List[Dict[str, Any]],
+        model: Optional[str] = None,
+        temperature: float = 0.1,
+        max_tokens: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Send a chat request with native tool definitions.
+
+        Uses the OpenAI-compatible endpoint because that is where LM Studio
+        exposes real tool calling: the model returns a structured
+        ``tool_calls`` array instead of JSON embedded in prose. Prompting a
+        model to *describe* a call and letting it *make* one are different
+        capabilities, and agent integrations such as Continue rely on the
+        latter.
+
+        Args:
+            messages: Chat messages (role, content).
+            tools: Tool definitions in OpenAI function-calling format.
+            model: Model key.
+            temperature: Sampling temperature.
+            max_tokens: Max tokens to generate.
+
+        Returns:
+            Dict with ``content``, ``tool_calls`` (name/arguments pairs),
+            ``finish_reason`` and ``usage``.
+
+        Raises:
+            httpx.HTTPError: On transport or status errors.
+        """
+        payload: Dict[str, Any] = {
+            "messages": messages,
+            "tools": tools,
+            "temperature": temperature,
+            "stream": False,
+        }
+        if model:
+            payload["model"] = model
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+
+        response = self.client.post(
+            f"{self.base_url}/v1/chat/completions",
+            headers=self._headers(),
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        choices = data.get("choices") or [{}]
+        choice = choices[0] if choices else {}
+        message = choice.get("message") or {}
+
+        tool_calls: List[Dict[str, Any]] = []
+        for raw_call in message.get("tool_calls") or []:
+            function = raw_call.get("function") or {}
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except (json.JSONDecodeError, TypeError):
+                    # Keep the raw string: a malformed argument object is a
+                    # finding, not a reason to drop the call.
+                    pass
+            tool_calls.append(
+                {"name": function.get("name"), "arguments": arguments}
+            )
+
+        return {
+            "content": message.get("content") or "",
+            "tool_calls": tool_calls,
+            "finish_reason": choice.get("finish_reason"),
+            "usage": data.get("usage") or {},
+        }
+
     def chat_stream(
         self,
         messages: List[Dict[str, str]],

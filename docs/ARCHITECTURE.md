@@ -24,10 +24,10 @@
   - [REST API vs SDK Mode](#rest-api-vs-sdk-mode)
   - [Component Details](#component-details)
     - [1. run.py (Entry Point)](#1-runpy-entry-point)
-    - [2. config\_loader.py (Configuration Manager)](#2-config_loaderpy-configuration-manager)
-    - [3. benchmark.py (Main Engine)](#3-benchmarkpy-main-engine)
-    - [4. rest\_client.py (REST API Client)](#4-rest_clientpy-rest-api-client)
-    - [5. tray.py (Linux Tray Controller)](#5-traypy-linux-tray-controller)
+    - [2. core/config.py (Configuration Manager)](#2-coreconfigpy-configuration-manager)
+    - [3. cli/benchmark.py (Main Engine)](#3-clibenchmarkpy-main-engine)
+    - [4. core/client.py (REST API Client)](#4-coreclientpy-rest-api-client)
+    - [5. core/tray.py (Linux Tray Controller)](#5-coretraypy-linux-tray-controller)
     - [6. web/app.py + dashboard.html.jinja (Dashboard Analytics)](#6-webapppy--dashboardhtmljinja-dashboard-analytics)
   - [Data Flow Summary](#data-flow-summary)
   - [Testing Architecture](#testing-architecture)
@@ -80,16 +80,16 @@ graph TB
 **Key Components:**
 
 - **run.py**: Wrapper script that decides between web dashboard and CLI benchmark mode
-- **benchmark.py**: Main benchmark engine with argparse, model discovery,
+- **cli/benchmark.py**: Main benchmark engine with argparse, model discovery,
   and execution
-- **config_loader.py**: Loads and merges configuration from JSON file with built-in defaults
+- **core/config.py**: Loads and merges configuration from JSON file with built-in defaults
 - **core/presets.py**: Manages readonly/user presets and maps presets to
   CLI args
 - **tools/hardware_monitor.py**: Shared `GPUMonitor` and `HardwareMonitor`
   implementation for classic and capability flows
-- **rest_client.py**: REST API client for LM Studio v1 endpoints (optional mode)
+- **core/client.py**: REST API client for LM Studio v1 endpoints (optional mode)
 - **web/app.py**: FastAPI web dashboard with live streaming and results browser
-- **tray.py**: Linux AppIndicator tray controller for benchmark controls
+- **core/tray.py**: Linux AppIndicator tray controller for benchmark controls
 
 ---
 
@@ -335,7 +335,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    Start([config_loader.py<br/>import]) --> BaseConfig[BASE_DEFAULT_CONFIG<br/>Hard-coded Defaults]
+    Start([core/config.py<br/>import]) --> BaseConfig[BASE_DEFAULT_CONFIG<br/>Hard-coded Defaults]
 
     BaseConfig --> LoadFunc[load_default_config]
     LoadFunc --> ReadProject[Read config/defaults.json<br/>Project Defaults]
@@ -366,15 +366,16 @@ flowchart TD
 
 | Layer | Source | Priority |
 | ----- | ------ | -------- |
-| **1. Hard-coded** | `BASE_DEFAULT_CONFIG` in config_loader.py | Lowest |
-| **2. User Config** | `~/.config/lm-studio-bench/defaults.json` | Medium |
-| **3. Project Config** | `config/defaults.json` | Low |
-| **3. CLI Arguments** | argparse in benchmark.py | Highest |
+| **1. Hard-coded** | `BASE_DEFAULT_CONFIG` in `core/config.py` | Lowest |
+| **2. Project Config** | `config/defaults.json` | Low |
+| **3. User Config** | `~/.config/lm-studio-bench/defaults.json` | High |
+| **4. CLI Arguments** | argparse in benchmark.py | Highest |
 
 **Merge Strategy:**
 
 - `_deep_merge()` recursively merges nested dictionaries
-- User config values override base config
+- Project config overrides hard-coded defaults; user config overrides project
+  config
 - `None` values in user config are skipped (base value retained)
 
 ---
@@ -386,7 +387,7 @@ flowchart LR
     CLI[CLI Arguments<br/>--runs 5<br/>--context 4096] -->|Highest Priority| Merge[Configuration<br/>Merge]
 
     UserCfg[~/.config/.../defaults.json<br/>context_length: 4096] -->|High Priority| Merge
-    ProjCfg[config/defaults.json<br/>num_runs: 3<br/>context_length: 2048] -->|Medium Priority| Merge
+    ProjCfg[config/defaults.json<br/>num_runs: 3<br/>context_length: 8192] -->|Medium Priority| Merge
     
     Base[BASE_DEFAULT_CONFIG<br/>prompt: default<br/>temperature: 0.1] -->|Lowest Priority| Merge
     
@@ -404,8 +405,8 @@ flowchart LR
 # BASE_DEFAULT_CONFIG
 {
   "num_runs": 3,
-  "context_length": 2048,
-  "prompt": "Is the sky blue?"
+  "context_length": 8192,
+  "prompt": "Read the following function..."
 }
 
 # config/defaults.json
@@ -432,7 +433,7 @@ flowchart LR
 flowchart TD
     Start([benchmark.py main]) --> ParseArgs[Parse CLI Arguments<br/>argparse.ArgumentParser]
 
-    ParseArgs --> LoadConfig[Load DEFAULT_CONFIG<br/>from config_loader]
+    ParseArgs --> LoadConfig[Load DEFAULT_CONFIG<br/>from core/config.py]
     
     LoadConfig --> CheckFlags{Special Flags?}
     
@@ -589,7 +590,7 @@ flowchart TD
 
 ---
 
-### 2. config_loader.py (Configuration Manager)
+### 2. core/config.py (Configuration Manager)
 
 **Responsibilities:**
 
@@ -614,7 +615,7 @@ flowchart TD
 
 ---
 
-### 3. benchmark.py (Main Engine)
+### 3. cli/benchmark.py (Main Engine)
 
 **Responsibilities:**
 
@@ -659,7 +660,7 @@ flowchart TD
 
 ---
 
-### 4. rest_client.py (REST API Client)
+### 4. core/client.py (REST API Client)
 
 **Responsibilities:**
 
@@ -722,7 +723,7 @@ response = client.chat(
 
 ---
 
-### 5. tray.py (Linux Tray Controller)
+### 5. core/tray.py (Linux Tray Controller)
 
 **Responsibilities:**
 
@@ -835,8 +836,8 @@ graph TB
     Tests --> RestTests[test_rest_client.py<br/>22+ tests]
     Tests --> TrayTests[test_tray.py<br/>26+ tests]
     Tests --> PresetTests[test_preset_manager.py<br/>19+ tests]
-    Tests --> ConfigTests[test_config_loader.py<br/>9+ tests]
-    Tests --> PathTests[test_user_paths.py<br/>4+ tests]
+    Tests --> ConfigTests[test_config_loader.py<br/>config tests]
+    Tests --> PathTests[test_user_paths.py<br/>path tests]
     Tests --> VersionTests[test_version_checker.py<br/>7+ tests]
     Tests --> MetadataTests[test_scrape_metadata.py<br/>24+ tests]
     Tests --> RunTests[test_run.py<br/>10+ tests]
@@ -870,8 +871,8 @@ graph TB
 | REST Client | `test_rest_client.py` | 22+ | High |
 | Linux Tray | `test_tray.py` | 26+ | Medium |
 | Preset Manager | `test_preset_manager.py` | 19+ | High |
-| Config Loader | `test_config_loader.py` | 9+ | High |
-| User Paths | `test_user_paths.py` | 4+ | High |
+| Config Loader | `test_config_loader.py` | config loading | High |
+| User Paths | `test_user_paths.py` | path handling | High |
 | Version Checker | `test_version_checker.py` | 7+ | High |
 | Metadata Scraping | `test_scrape_metadata.py` | 24+ | Medium |
 | Entry Point | `test_run.py` | 10+ | Medium |
@@ -895,11 +896,17 @@ graph TB
 **Continuous Integration:**
 
 - GitHub Actions runs full test suite on every PR
-- Code quality checks (flake8, pylint)
+- Code quality checks (ruff, pylint)
 - Security scans (Bandit, CodeQL, Snyk)
 - Test results reported in PR status checks
 
 **Running Tests:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+```
 
 ```bash
 # Run all tests

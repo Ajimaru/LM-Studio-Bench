@@ -20,7 +20,7 @@ Measures token/s speed across all installed models:
 
 ### 2. Capability-Driven Agent ⭐ NEW
 
-Tests model capabilities with quality metrics:
+Tests model capabilities with quality and performance metrics:
 
 ```bash
 ./run.py --agent "model-id"     # Automatically test all capabilities
@@ -41,6 +41,7 @@ Tests model capabilities with quality metrics:
 - `reasoning` - Logical and mathematical reasoning
 - `vision` - Multimodal understanding (image captioning, VQA, OCR)
 - `tooling` - Tool calling and function execution
+- `code` - Generated Python code execution against local test cases
 
 **Metrics per Capability:**
 
@@ -60,8 +61,11 @@ Tests model capabilities with quality metrics:
 
 Results are automatically saved to:
 
-- **JSON Reports:** `./output/benchmark_results_*.json`
-- **HTML Reports:** `./output/benchmark_results_*.html`
+- **JSON Reports:**
+  `~/.local/share/lm-studio-bench/results/benchmark_results_*.json`
+- **HTML Reports:**
+  `~/.local/share/lm-studio-bench/results/benchmark_results_*.html`
+- **CSV/PDF Reports:** same directory when those formats are enabled
 - **SQLite Cache:** `~/.local/share/lm-studio-bench/results/benchmark_cache.db`
 
 The SQLite database stores individual test results and capability summaries, allowing you to:
@@ -121,12 +125,12 @@ Modern web UI with live streaming and configuration:
 
 OPTIONS:
   --capabilities CAPS        Comma-separated capabilities
-                            (general_text, reasoning, vision, tooling)
-  --output-dir DIR          Output directory (default: output)
+                            (general_text, reasoning, vision, tooling, code)
+  --output-dir DIR          Output directory (default: user results dir)
   --config FILE             YAML configuration file
-  --formats FORMATS         Output formats: json,html (default: json,html)
+  --formats FORMATS         Output formats: json,html,csv,pdf
   --max-tests N             Max tests per capability
-  --context-length N        Model context length (default: 2048)
+  --context-length N        Model context length (default: config value)
   --gpu-offload RATIO       GPU offload ratio 0.0-1.0 (default: 1.0)
   --temperature TEMP        Generation temperature (default: 0.1)
   -v, --verbose             Enable verbose logging
@@ -189,7 +193,7 @@ config/
 └── bench.yaml               # Default configuration
 
 agents/
-├── benchmark.py           # Benchmark executor
+├── benchmark.py             # Benchmark executor
 ├── runner.py                # Test orchestration
 └── capabilities.py          # Capability detection
 

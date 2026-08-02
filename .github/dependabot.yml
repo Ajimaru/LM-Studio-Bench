@@ -4,12 +4,30 @@ updates:
     directory: "/"
     target-branch: dev
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: pip
     directory: "/"
     target-branch: dev
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        patterns:
+          - "*"
+      # Major bumps are deliberately not listed here: they stay individual
+      # PRs, since those are the ones that actually break things.
+      production-dependencies:
+        dependency-type: production
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

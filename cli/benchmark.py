@@ -23,7 +23,7 @@ from statistics import mean, median, quantiles
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import httpx
 import psutil
@@ -33,7 +33,13 @@ from core.client import LMStudioRESTClient
 from core.config import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
 from core.logging_utils import install_level_icons
 from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.platform_info import (
+    IS_MACOS,
+    get_os_name_version,
+    has_shared_gpu_memory,
+)
 from core.presets import PresetManager
+from core.prompts import load_prompt_file
 from tools.hardware_monitor import GPUMonitor, HardwareMonitor
 
 try:
@@ -49,8 +55,8 @@ except (ImportError, ModuleNotFoundError):
 try:
     from reportlab.lib import colors
     from reportlab.lib import pagesizes as rl_pagesizes
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib import units as rl_units
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.platypus import (
         PageBreak,
         Paragraph,
@@ -241,6 +247,11 @@ class BenchmarkResult:
     ram_gb_min: Optional[float] = None
     ram_gb_max: Optional[float] = None
     ram_gb_avg: Optional[float] = None
+    # Per-device GPU metrics as JSON, set only when more than one GPU is
+    # present. The flat fields above keep describing the primary GPU, so old
+    # rows and new rows stay comparable.
+    gpu_metrics_json: Optional[str] = None
+    gpu_count: Optional[int] = None
     gtt_enabled: Optional[bool] = None
     gtt_total_gb: Optional[float] = None
     gtt_used_gb: Optional[float] = None
@@ -276,6 +287,9 @@ class BenchmarkResult:
     intel_driver_version: Optional[str] = None
     context_length: Optional[int] = None
     model_key: Optional[str] = None
+    # LM Link device this result was measured on. Only local models are ever
+    # benchmarked, so this records which machine "local" was.
+    device_name: Optional[str] = None
     prompt_hash: Optional[str] = None
     params_hash: Optional[str] = None
     os_name: Optional[str] = None
@@ -301,6 +315,7 @@ class BenchmarkCache:
         ("intel_driver_version", "TEXT"),
         ("prompt_hash", "TEXT"),
         ("params_hash", "TEXT"),
+        ("device_name", "TEXT"),
         ("os_name", "TEXT"),
         ("os_version", "TEXT"),
         ("cpu_model", "TEXT"),
@@ -334,6 +349,8 @@ class BenchmarkCache:
         ("ram_gb_min", "REAL"),
         ("ram_gb_max", "REAL"),
         ("ram_gb_avg", "REAL"),
+        ("gpu_metrics_json", "TEXT"),
+        ("gpu_count", "INTEGER"),
         ("tokens_per_sec_p50", "REAL"),
         ("tokens_per_sec_p95", "REAL"),
         ("tokens_per_sec_std", "REAL"),
@@ -661,6 +678,7 @@ class BenchmarkCache:
                 intel_driver_version TEXT,
                 prompt_hash TEXT,
                 params_hash TEXT,
+                device_name TEXT,
                 os_name TEXT,
                 os_version TEXT,
                 cpu_model TEXT,
@@ -929,6 +947,12 @@ class BenchmarkCache:
                 result_dict["gtt_gb_min"] = row[columns["gtt_gb_min"]]
                 result_dict["gtt_gb_max"] = row[columns["gtt_gb_max"]]
                 result_dict["gtt_gb_avg"] = row[columns["gtt_gb_avg"]]
+            if "gpu_metrics_json" in columns:
+                result_dict["gpu_metrics_json"] = row[
+                    columns["gpu_metrics_json"]
+                ]
+            if "gpu_count" in columns:
+                result_dict["gpu_count"] = row[columns["gpu_count"]]
             if "cpu_percent_min" in columns:
                 result_dict["cpu_percent_min"] = row[columns["cpu_percent_min"]]
                 result_dict["cpu_percent_max"] = row[columns["cpu_percent_max"]]
@@ -955,22 +979,40 @@ class BenchmarkCache:
             return BenchmarkResult(**result_dict)
         return None
 
-    def get_latest_result_for_model(self, model_key: str) -> Optional[BenchmarkResult]:
-        """Returns latest cached result for model regardless of params hash."""
+    def get_latest_result_for_model(
+        self, model_key: str, device_name: Optional[str] = None
+    ) -> Optional[BenchmarkResult]:
+        """Returns latest cached result for model regardless of params hash.
+
+        When ``device_name`` is given, rows measured on a *different* machine
+        are rejected. Rows predating device tracking carry NULL and are still
+        accepted, so existing caches stay usable.
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
         cursor.execute("PRAGMA table_info(benchmark_results)")
         columns = {row[1]: row[0] for row in cursor.fetchall()}
 
-        cursor.execute(
-            """
-            SELECT * FROM benchmark_results
-            WHERE model_key = ?
-            ORDER BY timestamp DESC LIMIT 1
-        """,
-            (model_key,),
-        )
+        if device_name and "device_name" in columns:
+            cursor.execute(
+                """
+                SELECT * FROM benchmark_results
+                WHERE model_key = ?
+                  AND (device_name IS NULL OR device_name = ?)
+                ORDER BY timestamp DESC LIMIT 1
+            """,
+                (model_key, device_name),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT * FROM benchmark_results
+                WHERE model_key = ?
+                ORDER BY timestamp DESC LIMIT 1
+            """,
+                (model_key,),
+            )
 
         row = cursor.fetchone()
         conn.close()
@@ -1037,6 +1079,12 @@ class BenchmarkCache:
                 result_dict["gtt_gb_min"] = row[columns["gtt_gb_min"]]
                 result_dict["gtt_gb_max"] = row[columns["gtt_gb_max"]]
                 result_dict["gtt_gb_avg"] = row[columns["gtt_gb_avg"]]
+            if "gpu_metrics_json" in columns:
+                result_dict["gpu_metrics_json"] = row[
+                    columns["gpu_metrics_json"]
+                ]
+            if "gpu_count" in columns:
+                result_dict["gpu_count"] = row[columns["gpu_count"]]
             if "cpu_percent_min" in columns:
                 result_dict["cpu_percent_min"] = row[columns["cpu_percent_min"]]
                 result_dict["cpu_percent_max"] = row[columns["cpu_percent_max"]]
@@ -1119,6 +1167,7 @@ class BenchmarkCache:
                 result.intel_driver_version,
                 result.prompt_hash,
                 params_hash,
+                result.device_name,
                 result.os_name,
                 result.os_version,
                 result.cpu_model,
@@ -1156,6 +1205,8 @@ class BenchmarkCache:
                 result.ram_gb_min,
                 result.ram_gb_max,
                 result.ram_gb_avg,
+                result.gpu_metrics_json,
+                result.gpu_count,
                 result.tokens_per_sec_p50,
                 result.tokens_per_sec_p95,
                 result.tokens_per_sec_std,
@@ -1190,10 +1241,13 @@ class BenchmarkCache:
                     timestamp, params_size, architecture, max_context_length,
                     model_size_gb, has_vision, has_tools, tokens_per_sec_per_gb,
                     tokens_per_sec_per_billion_params, speed_delta_pct, prev_timestamp,
-                    prompt, context_length, temperature, top_k_sampling, top_p_sampling,
-                    min_p_sampling, repeat_penalty, max_tokens, num_runs, runs_averaged_from,
-                    warmup_runs, run_index, lmstudio_version, app_version, nvidia_driver_version, rocm_driver_version,
-                    intel_driver_version, prompt_hash, params_hash, os_name, os_version,
+                    prompt, context_length, temperature, top_k_sampling,
+                    top_p_sampling, min_p_sampling, repeat_penalty, max_tokens,
+                    num_runs, runs_averaged_from, warmup_runs, run_index,
+                    lmstudio_version, app_version, nvidia_driver_version,
+                    rocm_driver_version, intel_driver_version, prompt_hash,
+                    params_hash, device_name,
+                    os_name, os_version,
                     cpu_model, python_version, benchmark_duration_seconds, error_count,
                     n_gpu_layers, n_batch, n_threads, flash_attention, rope_freq_base,
                     rope_freq_scale, use_mmap, use_mlock, kv_cache_quant,
@@ -1203,6 +1257,7 @@ class BenchmarkCache:
                     gtt_gb_min, gtt_gb_max, gtt_gb_avg,
                     cpu_percent_min, cpu_percent_max, cpu_percent_avg,
                     ram_gb_min, ram_gb_max, ram_gb_avg,
+                    gpu_metrics_json, gpu_count,
                     tokens_per_sec_p50, tokens_per_sec_p95, tokens_per_sec_std,
                     ttft_p50, ttft_p95, ttft_std,
                     capability, test_id, test_name,
@@ -1272,6 +1327,10 @@ class BenchmarkCache:
                 optional_cols.extend(["ram_gb_min", "ram_gb_max", "ram_gb_avg"])
             if "gtt_enabled" in columns:
                 optional_cols.extend(["gtt_enabled", "gtt_total_gb", "gtt_used_gb"])
+            if "gpu_metrics_json" in columns:
+                optional_cols.append("gpu_metrics_json")
+            if "gpu_count" in columns:
+                optional_cols.append("gpu_count")
             if "tokens_per_sec_p50" in columns:
                 optional_cols.extend(
                     [
@@ -1405,6 +1464,14 @@ class BenchmarkCache:
                     result_dict["gtt_total_gb"] = row[idx + 1]
                     result_dict["gtt_used_gb"] = row[idx + 2]
                     idx += 3
+
+                if "gpu_metrics_json" in columns:
+                    result_dict["gpu_metrics_json"] = row[idx]
+                    idx += 1
+
+                if "gpu_count" in columns:
+                    result_dict["gpu_count"] = row[idx]
+                    idx += 1
 
                 if "tokens_per_sec_p50" in columns:
                     result_dict["tokens_per_sec_p50"] = row[idx]
@@ -1601,10 +1668,49 @@ class LMStudioServerManager:
         return True
 
 
+def extract_quantization_name(value: Any) -> Optional[str]:
+    """Normalize a quantization field into a plain name string.
+
+    LM Studio changed this field's shape. Older builds returned a plain
+    string (and encoded the quantization in the model key as
+    ``model@Q4_K_M``); newer builds return an object instead:
+
+    - ``lms ls --json``      -> ``{"name": "Q4_K_M", "bits": 4}``
+    - REST ``/api/v1/models`` -> ``{"name": "Q4_K_M", "bits_per_weight": 4}``
+
+    Args:
+        value: Raw quantization value from the CLI or REST payload.
+
+    Returns:
+        The quantization name (e.g. ``Q4_K_M``, ``4bit``), or None when it
+        cannot be determined.
+    """
+    if isinstance(value, str):
+        return value.strip() or None
+
+    if isinstance(value, dict):
+        name = value.get("name")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+
+        bits = value.get("bits", value.get("bits_per_weight"))
+        if isinstance(bits, (int, float)):
+            return f"{int(bits)}bit"
+
+    return None
+
+
 class ModelDiscovery:
     """Finds all locally installed models"""
 
     _metadata_cache: Dict[str, Dict] = {}
+    # Maps model key -> set of LM Link device identifiers holding that model.
+    # ``None`` inside the set means the model is present on this machine.
+    # A model can live on several devices at once, hence a set rather than a
+    # single value.
+    _device_cache: Dict[str, Set[Optional[str]]] = {}
+    # Maps LM Link deviceIdentifier -> human readable device name.
+    _link_peers_cache: Optional[Dict[str, str]] = None
 
     @staticmethod
     def warm_metadata_cache() -> Dict[str, Dict]:
@@ -1628,9 +1734,22 @@ class ModelDiscovery:
                     for model_data in data:
                         if model_data.get("type") == "llm":
                             key = model_data.get("modelKey")
+                            device = model_data.get("deviceIdentifier")
+                            # Record provenance for the bare key and for every
+                            # variant: variants are NOT device-prefixed, so a
+                            # remote "pub/model@q4_0" is indistinguishable from
+                            # a local one without this map.
+                            for device_key in [key, *model_data.get("variants", [])]:
+                                if device_key:
+                                    ModelDiscovery._device_cache.setdefault(
+                                        device_key, set()
+                                    ).add(device)
                             ModelDiscovery._metadata_cache[key] = {
                                 "architecture": model_data.get(
                                     "architecture", "unknown"
+                                ),
+                                "quantization": extract_quantization_name(
+                                    model_data.get("quantization")
                                 ),
                                 "params_size": model_data.get(
                                     "paramsString", "unknown"
@@ -1648,6 +1767,7 @@ class ModelDiscovery:
                 subprocess.SubprocessError,
                 OSError,
                 json.JSONDecodeError,
+                TypeError,
                 ValueError,
             ) as e:
                 logger.warning("⚠️ Error loading metadata cache: %s", e)
@@ -1662,12 +1782,132 @@ class ModelDiscovery:
             base_model,
             {
                 "architecture": "unknown",
+                "quantization": None,
                 "params_size": "unknown",
                 "max_context_length": 0,
                 "model_size_gb": 0.0,
                 "has_vision": False,
                 "has_tools": False,
             },
+        )
+
+    @staticmethod
+    def get_devices(model_key: str) -> Set[Optional[str]]:
+        """Returns the LM Link devices a model lives on.
+
+        ``None`` inside the result means "this machine". An empty set means
+        the device is unknown, which is treated as local by callers.
+        """
+        ModelDiscovery._get_metadata_cache()
+        devices = ModelDiscovery._device_cache.get(model_key)
+        if devices is None and "@" in model_key:
+            devices = ModelDiscovery._device_cache.get(model_key.split("@")[0])
+        return devices if devices is not None else set()
+
+    @staticmethod
+    def is_local_model(model_key: str) -> bool:
+        """Whether a model is available on this machine.
+
+        Unknown provenance counts as local: without LM Link every model is
+        local, and callers that stub out the metadata cache must keep working.
+        A model present both locally and remotely counts as local — LM Studio
+        resolves that ambiguity in favour of the local copy.
+        """
+        devices = ModelDiscovery.get_devices(model_key)
+        return not devices or None in devices
+
+    @staticmethod
+    def get_link_peers() -> Dict[str, str]:
+        """Maps LM Link device identifiers to readable names.
+
+        Best effort: returns an empty mapping when LM Link is unavailable,
+        which older LM Studio CLIs are. Never raises.
+        """
+        if ModelDiscovery._link_peers_cache is not None:
+            return ModelDiscovery._link_peers_cache
+
+        peers: Dict[str, str] = {}
+        try:
+            result = subprocess.run(
+                ["lms", "link", "status", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                for peer in data.get("peers", []):
+                    identifier = peer.get("deviceIdentifier")
+                    if identifier:
+                        peers[identifier] = peer.get("deviceName") or identifier
+                local_id = data.get("deviceIdentifier")
+                if local_id:
+                    peers[local_id] = data.get("deviceName") or local_id
+        except (
+            subprocess.SubprocessError,
+            OSError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as e:
+            logger.debug("LM Link status unavailable: %s", e)
+
+        ModelDiscovery._link_peers_cache = peers
+        return peers
+
+    @staticmethod
+    def get_device_name(identifier: Optional[str]) -> str:
+        """Resolves a device identifier to a readable name."""
+        if identifier is None:
+            return "local"
+        return ModelDiscovery.get_link_peers().get(identifier) or identifier
+
+    @staticmethod
+    def get_local_device_name() -> Optional[str]:
+        """Returns this machine's LM Link device name, if known."""
+        try:
+            result = subprocess.run(
+                ["lms", "link", "status", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if result.returncode == 0:
+                return json.loads(result.stdout).get("deviceName")
+        except (
+            subprocess.SubprocessError,
+            OSError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as e:
+            logger.debug("LM Link status unavailable: %s", e)
+        return None
+
+    @staticmethod
+    def _log_device_summary(local: List[str], remote: List[str]) -> None:
+        """Reports which models were kept and which were skipped as remote."""
+        logger.info("🖥️ %d local model(s)", len(local))
+        if not remote:
+            return
+
+        by_device: Dict[str, int] = {}
+        for model_key in remote:
+            for device in ModelDiscovery.get_devices(model_key):
+                if device is not None:
+                    name = ModelDiscovery.get_device_name(device)
+                    by_device[name] = by_device.get(name, 0) + 1
+        detail = ", ".join(
+            f"{count} on '{name}'" for name, count in sorted(by_device.items())
+        )
+        logger.info(
+            "🔗 LM Link active: skipping %d remote model(s)%s",
+            len(remote),
+            f" ({detail})" if detail else "",
+        )
+        logger.info(
+            "   Benchmarks run locally only — hardware telemetry measures "
+            "this machine."
         )
 
     @staticmethod
@@ -1735,8 +1975,33 @@ class ModelDiscovery:
 
     @staticmethod
     def filter_models(models: List[str], filter_args: Dict) -> List[str]:
-        """Filters models based on CLI arguments"""
-        if not filter_args:
+        """Filters models based on CLI arguments.
+
+        Remote models served via LM Link are always dropped first, before any
+        CLI filter applies. This is unconditional: hardware telemetry is
+        sampled on this machine, so a remote model's throughput would be paired
+        with local GPU temperature, power and VRAM readings.
+        """
+        filter_args = filter_args or {}
+
+        local_models = []
+        remote_models = []
+        seen = set()
+        for model_key in models:
+            # A model available on several devices is listed once per device;
+            # benchmarking it twice would just duplicate the same local run.
+            if model_key in seen:
+                continue
+            seen.add(model_key)
+            if ModelDiscovery.is_local_model(model_key):
+                local_models.append(model_key)
+            else:
+                remote_models.append(model_key)
+
+        ModelDiscovery._log_device_summary(local_models, remote_models)
+        models = local_models
+
+        if not any(filter_args.values()):
             return models
 
         filtered = []
@@ -1857,6 +2122,8 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def get_nvidia_driver_version() -> Optional[str]:
         """Retrieves NVIDIA Driver version"""
+        if IS_MACOS:
+            return None
         try:
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
@@ -1875,6 +2142,8 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def get_rocm_driver_version() -> Optional[str]:
         """Retrieves AMD ROCm/Driver version"""
+        if IS_MACOS:
+            return None
         try:
             rocm_paths = ["/usr/bin/rocm-smi", "/usr/local/bin/rocm-smi"]
             rocm_paths.extend(glob.glob("/opt/rocm-*/bin/rocm-smi"))
@@ -1945,6 +2214,8 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def get_intel_driver_version() -> Optional[str]:
         """Retrieves Intel GPU Driver version"""
+        if IS_MACOS:
+            return None
         try:
             result = subprocess.run(
                 ["intel_gpu_top", "--help"],
@@ -1984,9 +2255,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                     os_version = platform.release()
                     return os_name, os_version
             else:
-                os_name = os_system
-                os_version = platform.release()
-                return os_name, os_version
+                # macOS reports "macOS Tahoe"/"26.6" instead of
+                # "Darwin"/"25.6.0"; other systems keep platform values.
+                return get_os_name_version()
         except OSError:
             logger.debug("OS info not available")
         return None, None
@@ -2117,6 +2388,10 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             "rocm_driver_version": self.get_rocm_driver_version(),
             "intel_driver_version": self.get_intel_driver_version(),
         }
+
+        # Records which machine results were measured on. Only meaningful when
+        # LM Link is set up; None otherwise.
+        self.local_device_name = ModelDiscovery.get_local_device_name()
 
         logger.info("📋 Collected version information:")
         for key, value in self.system_versions.items():
@@ -2529,17 +2804,23 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             except (subprocess.SubprocessError, OSError) as e:
                 logger.warning("⚠️ Error unloading all models: %s", e)
 
+        metadata = ModelDiscovery.get_model_metadata(model_key)
+        model_size_gb = metadata.get("model_size_gb", 0)
+
+        # Older LM Studio encoded the quantization in the model key
+        # ("model@Q4_K_M"). Newer builds use a flat key and report the
+        # quantization as its own field, so fall back to the metadata.
         if "@" in model_key:
             model_name, quantization = model_key.split("@", 1)
         else:
             model_name = model_key
-            quantization = "unknown"
-
-        metadata = ModelDiscovery.get_model_metadata(model_key)
-        model_size_gb = metadata.get("model_size_gb", 0)
+            quantization = (
+                extract_quantization_name(metadata.get("quantization"))
+                or "unknown"
+            )
 
         smart_offload_levels = self._get_smart_offload_levels(model_key, model_size_gb)
-        logger.info("🎯 Intelligente Offload-Levels: %s", smart_offload_levels)
+        logger.info("🎯 Smart offload levels: %s", smart_offload_levels)
 
         used_offload = smart_offload_levels[0] if smart_offload_levels else 1.0
         instance_id: Optional[str] = None
@@ -2628,6 +2909,13 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                     result.ram_gb_min = profiling_stats.get("ram_gb_min")
                     result.ram_gb_max = profiling_stats.get("ram_gb_max")
                     result.ram_gb_avg = profiling_stats.get("ram_gb_avg")
+                    # Stays None on single-GPU machines, so consumers can use
+                    # its presence to decide whether a per-device view exists
+                    # at all instead of rendering empty panels.
+                    result.gpu_count = profiling_stats.get("gpu_count") or None
+                    result.gpu_metrics_json = (
+                        self.hardware_monitor.per_gpu_metrics_json()
+                    )
 
                     if (
                         self.max_temp
@@ -2657,9 +2945,10 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 )
                 result.error_count = error_count
                 result.model_key = model_key
+                result.device_name = self.local_device_name
                 result.prompt_hash = self.prompt_hash
                 result.params_hash = self.params_hash
-                result.context_length = self.context_length
+                result.context_length = self._effective_context_length(model_key)
                 result.os_name = self.system_info.get("os_name")
                 result.os_version = self.system_info.get("os_version")
                 result.cpu_model = self.system_info.get("cpu_model")
@@ -2737,6 +3026,8 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                             ram_gb_min=result.ram_gb_min,
                             ram_gb_max=result.ram_gb_max,
                             ram_gb_avg=result.ram_gb_avg,
+                            gpu_metrics_json=result.gpu_metrics_json,
+                            gpu_count=result.gpu_count,
                             top_k_sampling=result.top_k_sampling,
                             top_p_sampling=result.top_p_sampling,
                             min_p_sampling=result.min_p_sampling,
@@ -2749,7 +3040,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                             model_key=model_key,
                             prompt_hash=self.prompt_hash,
                             params_hash=self.params_hash,
-                            context_length=self.context_length,
+                            context_length=result.context_length,
                             os_name=result.os_name,
                             os_version=result.os_version,
                             cpu_model=result.cpu_model,
@@ -2774,7 +3065,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                             model_key,
                             self.params_hash,
                             self.prompt,
-                            self.context_length,
+                            result.context_length,
                         )
 
                 logger.info(
@@ -2805,6 +3096,28 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             error_count += 1
             return None
 
+    def _effective_context_length(self, model_key: str) -> int:
+        """Requested context length, capped at what the model supports.
+
+        Loading a model with more context than it was trained for fails, so a
+        run configured for long context would simply skip every short-context
+        model. Capping keeps them measurable; the cap is logged and the capped
+        value is what gets recorded with the result.
+        """
+        model_max = ModelDiscovery.get_model_metadata(model_key).get(
+            "max_context_length", 0
+        )
+        if not model_max or self.context_length <= model_max:
+            return self.context_length
+
+        logger.warning(
+            "⚠️ %s supports %s tokens; capping context from %s.",
+            model_key,
+            model_max,
+            self.context_length,
+        )
+        return model_max
+
     def _load_model(self, model_key: str, gpu_offload: float) -> bool:
         """Loads a model into memory"""
         try:
@@ -2815,7 +3128,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 "--gpu",
                 str(gpu_offload),
                 "--context-length",
-                str(CONTEXT_LENGTH),
+                str(self._effective_context_length(model_key)),
             ]
 
             result = subprocess.run(
@@ -2867,8 +3180,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             ):
                 server_error_type = server_error_cls
 
+            effective_context = self._effective_context_length(model_key)
             load_config_params: Dict[str, Any] = {
-                "context_length": self.context_length,
+                "context_length": effective_context,
             }
 
             flash_attn = self.load_params.get("flash_attention")
@@ -2894,7 +3208,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 " n_threads=%s, flash_attention=%s, rope_freq_base=%s,"
                 " rope_freq_scale=%s, use_mmap=%s, use_mlock=%s,"
                 " kv_cache_quant=%s",
-                self.context_length,
+                effective_context,
                 self.load_params.get("n_gpu_layers"),
                 self.load_params.get("n_batch"),
                 self.load_params.get("n_threads"),
@@ -3084,7 +3398,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
             instance_id = self.rest_client.load_model(
                 model_key=model_key,
-                context_length=self.context_length,
+                context_length=self._effective_context_length(model_key),
                 n_parallel=n_parallel,
                 unified_kv_cache=unified_kv,
                 gpu_offload=gpu_offload,
@@ -3252,9 +3566,17 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             logger.error("❌ No models found")
             return "failed"
 
+        discovered = models
         models = ModelDiscovery.filter_models(models, self.filter_args)
         if not models:
-            logger.error("❌ No models remaining after filtering")
+            if not any(ModelDiscovery.is_local_model(m) for m in discovered):
+                logger.error(
+                    "❌ No local models found — all %d model(s) live on remote "
+                    "LM Link devices. Download a model locally to benchmark it.",
+                    len(discovered),
+                )
+            else:
+                logger.error("❌ No models remaining after filtering")
             return "failed"
 
         logger.info("")
@@ -3280,7 +3602,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 cached = self.cache.get_cached_result(model_key, self.params_hash)
                 is_fallback = False
                 if not cached:
-                    cached = self.cache.get_latest_result_for_model(model_key)
+                    cached = self.cache.get_latest_result_for_model(
+                        model_key, self.local_device_name
+                    )
                     is_fallback = cached is not None
                 if cached:
                     cached_models.append((model_key, cached))
@@ -3689,7 +4013,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 break
 
         if vram_info:
-            recommendations.append("🎯 VRAM-Empfehlungen:")
+            recommendations.append("🎯 VRAM recommendations:")
             recommendations.extend(vram_info[:3])
 
         return recommendations
@@ -3776,7 +4100,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
             fig.update_layout(
                 title="Performance trends over time",
-                xaxis_title="Datum",
+                xaxis_title="Date",
                 yaxis_title="Tokens/s",
                 hovermode="x unified",
                 height=600,
@@ -4305,7 +4629,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             if comp_data:
                 elements.append(
                     Paragraph(
-                        "Quantisierungs-Vergleich (Q4 vs Q5 vs Q6)", heading_style
+                        "Quantization Comparison (Q4 vs Q5 vs Q6)", heading_style
                     )
                 )
 
@@ -4710,7 +5034,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 powers_avg = [r.power_watts_avg for r in results if r.power_watts_avg]
 
                 profile_summary = [
-                    ["Metrik", "Min", "Max", "Durchschnitt"],
+                    ["Metric", "Min", "Max", "Average"],
                 ]
 
                 if temps_avg:
@@ -5427,6 +5751,27 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             logger.error("❌ Error creating HTML: %s", e)
 
 
+def _log_stability_notice() -> None:
+    """Point at the LM Studio settings that keep an unattended run stable.
+
+    A benchmark loads models without anyone watching, so it relies on LM
+    Studio declining loads the machine cannot support. Where processor and
+    graphics share one memory pool an oversized model does not fail cleanly —
+    it drives the system into swapping — so the reminder is sharper there.
+    """
+    logger.info(
+        "🛡️ Stability: keep 'Bypass Memory Load Warnings' at "
+        "'Requires holding Alt/Option' so oversized models are declined "
+        "instead of forced through."
+    )
+    if has_shared_gpu_memory():
+        logger.info(
+            "   This system shares one memory pool between processor and "
+            "graphics — check 'Model Loading Guardrails' too, and leave "
+            "headroom for the OS and other applications."
+        )
+
+
 def main():
     """Main function with CLI arguments"""
 
@@ -5527,14 +5872,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python benchmark.py                                   # Standard: all models, 3 measurements
-  python benchmark.py --list-presets                    # Show available presets and exit
-  python benchmark.py -p quick_test                     # Load preset before parsing other args
-  python benchmark.py --runs 1                          # Fast: all models, 1 measurement
-  python benchmark.py --limit 3 --runs 1                # Test 3 models with 1 measurement
-  python benchmark.py --limit 1 --runs 1                # Test 1 model with 1 measurement
-  python benchmark.py --runs 2 --context 4096           # 2 measurements, 4096 token context
-  python benchmark.py --limit 5 --runs 2 --context 4096 # Test 5 models, more options
+  python benchmark.py                                   # All models, 3 runs
+  python benchmark.py --list-presets                    # List presets, exit
+  python benchmark.py -p quick_test                     # Preset before other args
+  python benchmark.py --runs 1                          # All models, 1 run
+  python benchmark.py --limit 3 --runs 1                # 3 models, 1 run
+  python benchmark.py --limit 1 --runs 1                # 1 model, 1 run
+  python benchmark.py --runs 2 --context 4096           # 2 runs, 4096 token ctx
+  python benchmark.py --limit 5 --runs 2 --context 4096 # 5 models, combined
         """,
     )
 
@@ -5563,6 +5908,17 @@ Examples:
         type=str,
         default=STANDARD_PROMPT,
         help=f'Standard test prompt (default: "{STANDARD_PROMPT}")',
+    )
+
+    parser.add_argument(
+        "--prompt-file",
+        type=str,
+        default=None,
+        help=(
+            "Name of a prompt file in prompts/ (project) or the user prompt "
+            "directory, e.g. 'coding_assistant.md'. Takes precedence over "
+            "--prompt and is the way to benchmark with long prompts."
+        ),
     )
 
     parser.add_argument(
@@ -5756,7 +6112,7 @@ Examples:
         dest="min_p_sampling",
         type=float,
         default=None,
-        help="Override: Min-P (Minimum probability threshold, z.B. 0.05)",
+        help="Override: Min-P (Minimum probability threshold, e.g. 0.05)",
     )
     parser.add_argument(
         "--repeat-penalty",
@@ -6036,6 +6392,11 @@ Examples:
         parser.error("--runs must be >= 1")
     if args.context < 256:
         parser.error("--context must be >= 256")
+    if args.prompt_file:
+        try:
+            args.prompt = load_prompt_file(args.prompt_file)
+        except (ValueError, FileNotFoundError) as exc:
+            parser.error(str(exc))
     if len(args.prompt.strip()) == 0:
         parser.error("--prompt must not be empty")
     if args.limit is not None and args.limit < 1:
@@ -6054,7 +6415,15 @@ Examples:
     }
 
     logger.info("🚀 === LM Studio Model Benchmark ===")
-    logger.info("💬 Prompt: '%s'", args.prompt)
+    if args.prompt_file:
+        logger.info(
+            "💬 Prompt from %s (%s chars): '%s…'",
+            args.prompt_file,
+            len(args.prompt),
+            args.prompt[:80].replace("\n", " "),
+        )
+    else:
+        logger.info("💬 Prompt: '%s'", args.prompt)
     logger.info("📏 Context Length: %s Tokens", args.context)
     logger.info(
         "🔢 Measurements per Model: %s (+ %s Warmup)", args.runs, NUM_WARMUP_RUNS
@@ -6072,6 +6441,7 @@ Examples:
         "⏱️ Estimated total time (worst-case, uncached): ~%s minutes",
         int(args.runs * 45 * (args.limit or 9) / 9),
     )
+    _log_stability_notice()
     logger.info("")
 
     inference_overrides = {

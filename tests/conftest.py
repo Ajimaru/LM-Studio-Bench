@@ -29,6 +29,79 @@ if "lmstudio" not in sys.modules:
     sys.modules["lmstudio"] = _mock_lmstudio
 
 
+# Modules that bound a user directory at import time, with the attribute
+# names they use for it. "from core.paths import USER_LOGS_DIR" copies the
+# value into the importing module, so patching core.paths alone would not
+# reach them.
+_DB_ATTRIBUTES = (
+    "DATABASE_FILE",
+    "METADATA_DATABASE_FILE",
+    "BENCHMARK_DB_PATH",
+)
+_DIR_ATTRIBUTES = (
+    "USER_LOGS_DIR",
+    "USER_RESULTS_DIR",
+    "USER_DATA_DIR",
+    "LOGS_DIR",
+    "RESULTS_DIR",
+)
+
+_USER_DIR_BINDINGS = {
+    "core.paths": _DIR_ATTRIBUTES,
+    "app": _DIR_ATTRIBUTES + _DB_ATTRIBUTES,
+    "web.app": _DIR_ATTRIBUTES + _DB_ATTRIBUTES,
+    "run": _DIR_ATTRIBUTES,
+    "core.tray": _DIR_ATTRIBUTES,
+    "cli.benchmark": _DIR_ATTRIBUTES + _DB_ATTRIBUTES,
+    "benchmark": _DIR_ATTRIBUTES + _DB_ATTRIBUTES,
+    "cli.main": _DIR_ATTRIBUTES + _DB_ATTRIBUTES,
+    "main": _DIR_ATTRIBUTES + _DB_ATTRIBUTES,
+    "tools.scrape_metadata": _DIR_ATTRIBUTES,
+}
+
+
+@pytest.fixture(autouse=True)
+def isolated_user_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Keep the suite out of the developer's own logs and results.
+
+    Several modules write to ~/.local/share/lm-studio-bench while a test
+    merely exercises them: benchmark and tray launcher logs, database
+    backups. Nothing there is overwritten, but the files pile up with every
+    run. Redirect the bound directories at their importing modules; tests
+    that patch these names themselves still win, because their patch is
+    applied after this fixture.
+    """
+    sandbox = tmp_path / "user-dirs"
+    logs_dir = sandbox / "logs"
+    results_dir = sandbox / "results"
+    for directory in (logs_dir, results_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    replacements = {
+        "USER_LOGS_DIR": logs_dir,
+        "LOGS_DIR": logs_dir,
+        "USER_RESULTS_DIR": results_dir,
+        "RESULTS_DIR": results_dir,
+        "USER_DATA_DIR": sandbox,
+        # Derived from RESULTS_DIR at import time, so they need redirecting
+        # too - otherwise a test still reads the developer's own benchmark
+        # history and its outcome depends on what happens to be in there.
+        "DATABASE_FILE": results_dir / "benchmark_cache.db",
+        "BENCHMARK_DB_PATH": results_dir / "benchmark_cache.db",
+        "METADATA_DATABASE_FILE": results_dir / "model_metadata.db",
+    }
+
+    for module_name, attributes in _USER_DIR_BINDINGS.items():
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        for attribute in attributes:
+            if hasattr(module, attribute):
+                monkeypatch.setattr(module, attribute, replacements[attribute])
+
+    return sandbox
+
+
 @pytest.fixture
 def tmp_config_dir(tmp_path: Path) -> Path:
     """Return a temporary config directory."""

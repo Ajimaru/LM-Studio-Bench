@@ -1,30 +1,21 @@
 # PyProject Configuration for LM-Studio-Bench
 # See: https://peps.python.org/pep-0518/
 
-[tool.isort]
-# Profile compatible with Black
-profile = "black"
+[project]
+name = "lm-studio-bench"
+# Version mirrors VERSION after stripping any leading "v"; bump both
+# together.
+version = "0.2.0"
+requires-python = ">=3.11"
 
-# Line length
-line_length = 88
-
-# Multi-line import style
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
-
-# Import order
-force_sort_within_sections = true
-lexicographical = true
-
-# Group imports
-sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
-known_first_party = ["core", "cli", "agents", "web", "tools"]
-
-# Skip directories
-skip_glob = [
+# Ruff is the single source of truth for linting and import order. It
+# replaced flake8 and isort, which needed two config files that editors then
+# contradicted with their own defaults. The pre-commit hook runs the same
+# rules defined here, so editor and hook cannot disagree.
+[tool.ruff]
+# Enforced via E501, not just a hint for formatters.
+line-length = 88
+exclude = [
     ".git",
     "__pycache__",
     ".venv",
@@ -37,11 +28,28 @@ skip_glob = [
     ".pytest_cache",
     ".mypy_cache",
     "node_modules",
-    "book"
+    "book",
 ]
 
-# Don't skip __init__.py files
-skip_gitignore = false
+[tool.ruff.lint]
+# pycodestyle (E, W), pyflakes (F) and import order (I) - the rules the
+# previous flake8 + isort pair actually enforced.
+#
+# Deliberately absent, both inherited from the old .flake8:
+#   C90 (mccabe)      - was selected there but immediately ignored again, so
+#                       complexity never ran. 41 functions would be flagged.
+#   N   (pep8-naming) - was selected but the plugin was never installed, so
+#                       flake8 skipped it silently. 13 findings would appear.
+# Enabling either is a decision about the codebase, not about tooling.
+select = ["E", "W", "F", "I"]
+ignore = [
+    # Whitespace before ':' - conflicts with black's slice formatting.
+    "E203",
+]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["core", "cli", "agents", "web", "tools"]
 
 [tool.djlint]
 # Profile for Django/Jinja templates

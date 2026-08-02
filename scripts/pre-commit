@@ -2,7 +2,7 @@
 #
 # Pre-commit hook for LM-Studio-Bench
 # Runs code quality checks on staged files:
-# - Python: flake8, isort, pylint (optional)
+# - Python: ruff (lint + imports), pylint (optional)
 # - Shell: shellcheck
 # - Markdown: markdownlint
 # - HTML/Jinja: djlint
@@ -60,8 +60,13 @@ readarray -t PYTHON_FILES < <(
 readarray -t BASH_FILES < <(
     printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.(sh|bash)$' || true
 )
+# Prompt templates under prompts/ and tests/prompts/ are model payload, not
+# documentation. Linting them for headings and line length would demand
+# changes to the text that is sent to the model. Kept in sync with
+# .markdownlintignore for editors and manual runs.
 readarray -t MARKDOWN_FILES < <(
-    printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.md$' || true
+    printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.md$' \
+        | grep -vE '^(prompts|tests/prompts)/' || true
 )
 readarray -t HTML_JINJA_FILES < <(
     printf '%s\n' "${STAGED_FILES[@]}" | grep -E '\.(html|jinja|jinja2)$' || true
@@ -111,29 +116,26 @@ if [[ ${#PYTHON_FILES[@]} -gt 0 ]]; then
     echo ""
     echo -e "${YELLOW}═══ Python Checks ═══${NC}"
 
-    # Run isort (auto-fix if needed)
-    echo -e "${YELLOW}Running isort...${NC}"
-    if ! isort --check-only --diff "${PYTHON_FILES[@]}"; then
-        echo -e "${YELLOW}Applying isort auto-fix...${NC}"
-        if isort "${PYTHON_FILES[@]}"; then
+    # Run ruff: import sorting and linting in one pass. Fixable findings
+    # (import order above all) are corrected and re-staged, the rest is
+    # reported without blocking - same contract the isort/flake8 pair had.
+    echo -e "${YELLOW}Running ruff...${NC}"
+    if ! ruff check --quiet "${PYTHON_FILES[@]}"; then
+        echo -e "${YELLOW}Applying ruff auto-fix...${NC}"
+        if ruff check --fix --quiet "${PYTHON_FILES[@]}"; then
             for file in "${PYTHON_FILES[@]}"; do
                 add_autofixed_file "$file"
             done
-            echo -e "${GREEN}✓ isort auto-fix applied${NC}"
+            echo -e "${GREEN}✓ ruff auto-fix applied${NC}"
         else
-            echo -e "${RED}❌ isort auto-fix failed!${NC}"
-            FAILED=1
+            for file in "${PYTHON_FILES[@]}"; do
+                add_autofixed_file "$file"
+            done
+            ruff check "${PYTHON_FILES[@]}" || true
+            echo -e "${YELLOW}⚠ ruff found issues it cannot fix (non-blocking)${NC}"
         fi
     else
-        echo -e "${GREEN}✓ isort passed${NC}"
-    fi
-
-    # Run flake8
-    echo -e "${YELLOW}Running flake8...${NC}"
-    if ! flake8 "${PYTHON_FILES[@]}"; then
-        echo -e "${YELLOW}⚠ flake8 found issues (non-blocking)${NC}"
-    else
-        echo -e "${GREEN}✓ flake8 passed${NC}"
+        echo -e "${GREEN}✓ ruff passed${NC}"
     fi
 
     # Run pylint (optional, with timeout)

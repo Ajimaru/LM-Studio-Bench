@@ -18,13 +18,13 @@ jobs:
     steps:
       # check out repository code
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # prepare Python environment for later checks
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v6
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       # ensure main python script compiles
       - name: Python syntax check (main script)
@@ -74,23 +74,24 @@ jobs:
     steps:
       # checkout the repo for tests
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # set up same Python version
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v6
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       # install system dependencies for PyGObject (optional)
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgirepository1.0 \
+            libgirepository1.0-dev \
             libcairo2 \
             libcairo2-dev \
-            gobject-introspection
+            gobject-introspection \
+            pkg-config
 
       # install test dependencies
       - name: Install dependencies
@@ -108,7 +109,7 @@ jobs:
       # send coverage report to Codecov
       - name: Upload coverage to Codecov
         if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Bench' }}
-        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           files: coverage.xml
           flags: unittests
@@ -119,9 +120,11 @@ jobs:
         if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Bench' }}
         env:
           CODACY_API_TOKEN: ${{ secrets.CODACY_API_TOKEN }}
-          CODACY_ORGANIZATION_PROVIDER: ${{ vars.CODACY_ORGANIZATION_PROVIDER }}
-          CODACY_USERNAME: ${{ vars.CODACY_USERNAME }}
-          CODACY_PROJECT_NAME: ${{ vars.CODACY_PROJECT_NAME }}
+          # Provider must be one of gh, ghe, gl, gle, bb, bbe — a friendly
+          # name like "GitHub" is rejected, so normalise it below.
+          CODACY_ORGANIZATION_PROVIDER: ${{ vars.CODACY_ORGANIZATION_PROVIDER || 'gh' }}
+          CODACY_USERNAME: ${{ vars.CODACY_USERNAME || github.repository_owner }}
+          CODACY_PROJECT_NAME: ${{ vars.CODACY_PROJECT_NAME || github.event.repository.name }}
         continue-on-error: true
         run: |
           if [ -z "${CODACY_API_TOKEN}" ]; then
@@ -129,12 +132,28 @@ jobs:
             exit 0
           fi
 
+          # Accept a friendly provider name and map it to the code the
+          # reporter expects.
+          case "$(printf '%s' "${CODACY_ORGANIZATION_PROVIDER}" | tr '[:upper:]' '[:lower:]')" in
+            github|gh)        CODACY_ORGANIZATION_PROVIDER=gh ;;
+            githubenterprise) CODACY_ORGANIZATION_PROVIDER=ghe ;;
+            gitlab)           CODACY_ORGANIZATION_PROVIDER=gl ;;
+            bitbucket)        CODACY_ORGANIZATION_PROVIDER=bb ;;
+          esac
+          export CODACY_ORGANIZATION_PROVIDER
+          echo "Codacy target: ${CODACY_ORGANIZATION_PROVIDER}/${CODACY_USERNAME}/${CODACY_PROJECT_NAME}"
+
+          # The reporter reads CODACY_API_TOKEN plus the three CODACY_*
+          # identification variables from the environment. Passing the account
+          # token via -t would select the *project* token mode instead, which
+          # fails with "Request URL not found" (-t is --project-token,
+          # -a is --api-token).
           set +e
-          bash <(curl -Ls https://coverage.codacy.com/get.sh) report -r coverage.xml -t "$CODACY_API_TOKEN"
+          bash <(curl -Ls https://coverage.codacy.com/get.sh) report -r coverage.xml
           codacy_exit=$?
           set -e
 
           if [ "$codacy_exit" -ne 0 ]; then
-            echo "Codacy upload failed (likely project/token mapping issue); continuing"
+            echo "Codacy upload failed (exit ${codacy_exit}); continuing"
             exit 0
           fi

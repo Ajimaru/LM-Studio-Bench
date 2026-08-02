@@ -12,11 +12,33 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 import pytest
 
+from core.presets import PresetManager
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "web"))
 
 if "lmstudio" not in sys.modules:
     sys.modules["lmstudio"] = MagicMock()
+
+
+@pytest.fixture(autouse=True)
+def isolated_presets(tmp_path, monkeypatch):
+    """Point the app's preset storage at a throwaway directory.
+
+    The preset endpoints go through the module-level PresetManager in
+    web/app.py, which writes to USER_PRESETS_DIR - the real
+    ~/.config/lm-studio-bench/presets of whoever runs the suite. Saving and
+    deleting presets in a test then edits the developer's own configuration,
+    and the leftovers ("testpreset99", "mypreset") reappear after every run.
+    """
+    app_mod = sys.modules.get("app") or importlib.import_module("app")
+
+    presets_dir = tmp_path / "presets"
+    presets_dir.mkdir()
+    monkeypatch.setattr(
+        app_mod, "preset_mgr", PresetManager(presets_dir=presets_dir)
+    )
+    return presets_dir
 
 
 def _get_client() -> TestClient:
@@ -102,7 +124,9 @@ class TestBenchmarkControlEndpoints:
         """Start benchmark endpoint returns a result dict."""
         app_mod = sys.modules["app"]
         client = _get_client()
-        with patch.object(app_mod.manager, "start_benchmark", new=AsyncMock(return_value=True)):
+        with patch.object(
+            app_mod.manager, "start_benchmark", new=AsyncMock(return_value=True)
+        ):
             response = client.post(
                 "/api/benchmark/start",
                 json={"runs": 1, "context": 512, "enable_profiling": False},
@@ -115,7 +139,9 @@ class TestBenchmarkControlEndpoints:
         """Start benchmark with all optional parameters."""
         app_mod = sys.modules["app"]
         client = _get_client()
-        with patch.object(app_mod.manager, "start_benchmark", new=AsyncMock(return_value=True)):
+        with patch.object(
+            app_mod.manager, "start_benchmark", new=AsyncMock(return_value=True)
+        ):
             response = client.post(
                 "/api/benchmark/start",
                 json={
@@ -162,7 +188,9 @@ class TestBenchmarkControlEndpoints:
         """Start benchmark with flash_attention disabled."""
         app_mod = sys.modules["app"]
         client = _get_client()
-        with patch.object(app_mod.manager, "start_benchmark", new=AsyncMock(return_value=False)):
+        with patch.object(
+            app_mod.manager, "start_benchmark", new=AsyncMock(return_value=False)
+        ):
             response = client.post(
                 "/api/benchmark/start",
                 json={"flash_attention": False, "use_mmap": False, "use_mlock": True},
@@ -919,6 +947,24 @@ class TestPresetImportEndpoint:
         assert data["success"] is True
         assert any("default" in s for s in data.get("skipped", []))
 
+    def test_import_skip_reason_comes_from_the_validator(self):
+        """The reason is still spelled out, just not read off the exception."""
+        import base64
+        import io
+        import zipfile
+        client = _get_client()
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("default.json", '{"runs": 3}')
+        zip_b64 = base64.b64encode(buf.getvalue()).decode()
+        response = client.post(
+            "/api/presets/import",
+            json={"data": zip_b64},
+        )
+        skipped = response.json().get("skipped", [])
+        assert skipped
+        assert "Readonly preset names cannot be used" in skipped[0]
+
 
 def _get_benchmark_manager():
     """Return the BenchmarkManager instance from the app module."""
@@ -957,10 +1003,14 @@ class TestBenchmarkManagerValidation:
             manager._validate_cli_arg_value("--temperature", "hot")
 
     def test_validate_control_char_raises(self):
-        """_validate_cli_arg_value raises ValueError for control chars."""
+        """_validate_cli_arg_value raises ValueError for control chars.
+
+        ``--prompt`` is exempt from the newline rule so code snippets keep
+        their shape; see TestPromptFileWiring for that boundary.
+        """
         manager, _ = _get_benchmark_manager()
         with pytest.raises(ValueError):
-            manager._validate_cli_arg_value("--prompt", "test\nprompt")
+            manager._validate_cli_arg_value("--arch", "test\nqwen3")
 
     def test_validate_null_byte_raises(self):
         """_validate_cli_arg_value raises ValueError for null bytes."""
@@ -1042,6 +1092,29 @@ class TestBenchmarkManagerBuildSafeCommand:
         _, BenchmarkManager = _get_benchmark_manager()
         with pytest.raises(ValueError, match="Shell-unsafe"):
             BenchmarkManager._build_safe_command(["--runs", "3; rm -rf /"])
+
+    def test_prompt_text_may_contain_code(self):
+        """Prompt payload keeps operators like "<=", "|" and "$"."""
+        _, BenchmarkManager = _get_benchmark_manager()
+        prompt = "Explain: if a <= b | c and $x: return `y`"
+        result = BenchmarkManager._build_safe_command(["--prompt", prompt])
+        assert result[-2:] == ["--prompt", prompt]
+
+    def test_flag_after_prompt_is_still_checked(self):
+        """The exemption covers one value, not the rest of the command."""
+        _, BenchmarkManager = _get_benchmark_manager()
+        with pytest.raises(ValueError, match="Shell-unsafe"):
+            BenchmarkManager._build_safe_command(
+                ["--prompt", "a < b", "--runs", "3; rm -rf /"]
+            )
+
+    def test_prompt_file_value_is_still_checked(self):
+        """Only --prompt is exempt; file names stay restricted."""
+        _, BenchmarkManager = _get_benchmark_manager()
+        with pytest.raises(ValueError, match="Shell-unsafe"):
+            BenchmarkManager._build_safe_command(
+                ["--prompt-file", "../$(id).md"]
+            )
 
 
 class TestBenchmarkManagerSetIdle:
@@ -1737,7 +1810,9 @@ class TestRunExperimentWithMocks:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             real_dir = Path(tmpdir)
-            with patch.object(app_mod.manager, "start_benchmark", side_effect=mock_start), \
+            with patch.object(
+                        app_mod.manager, "start_benchmark", side_effect=mock_start
+                    ), \
                     patch.object(app_mod.manager, "is_running", return_value=False), \
                     patch("sqlite3.connect", return_value=mock_conn), \
                     patch.object(app_mod, "USER_RESULTS_DIR", real_dir):
@@ -1816,8 +1891,14 @@ class TestDashboardStatsDetailed:
     def test_dashboard_stats_no_lmstudio(self):
         """Dashboard stats handles missing lmstudio gracefully."""
         client = _get_client()
-        with patch("subprocess.run", side_effect=FileNotFoundError("lms not found")), \
-                patch("subprocess.check_output", side_effect=FileNotFoundError("no nvidia")):
+        with patch(
+                    "subprocess.run",
+                    side_effect=FileNotFoundError("lms not found"),
+                ), \
+                patch(
+                    "subprocess.check_output",
+                    side_effect=FileNotFoundError("no nvidia"),
+                ):
             response = client.get("/api/dashboard/stats")
         assert response.status_code == 200
 
@@ -2182,6 +2263,19 @@ class TestPresetCompareAndExport:
         )
         assert response.status_code == 200
 
+    def test_compare_presets_missing_hides_filesystem_path(self):
+        """The error names the presets, not where they would live on disk."""
+        client = _get_client()
+        response = client.post(
+            "/api/presets/compare",
+            json={"preset_a": "nonexistent_preset_xyz", "preset_b": "default"},
+        )
+        data = response.json()
+        if data.get("success") is False:
+            assert "nonexistent_preset_xyz" in data["error"]
+            assert ".json" not in data["error"]
+            assert "/" not in data["error"]
+
     def test_export_presets_returns_zip(self):
         """GET /api/presets/export returns a ZIP file or success response."""
         client = _get_client()
@@ -2339,6 +2433,23 @@ class TestStatisticalHelperFunctions:
         app_mod = self._app()
         result = app_mod.perform_ttest([50.0], [60.0])
         assert isinstance(result, dict)
+
+    def test_perform_ttest_error_hides_exception_text(self):
+        """A failing t-test reports a generic error, not the exception.
+
+        The dict is embedded in the A/B comparison responses, so its
+        contents reach an HTTP client.
+        """
+        app_mod = self._app()
+        with patch(
+            "statistics.variance",
+            side_effect=ValueError("variance failed in /home/user/secret"),
+        ):
+            result = app_mod.perform_ttest([50.0, 51.0], [60.0, 61.0])
+
+        assert result["error"] == app_mod.GENERIC_API_ERROR
+        assert "secret" not in str(result)
+        assert result["significant"] is False
 
 
 class TestExperimentCreateEndpoint:
@@ -2753,3 +2864,372 @@ class TestBenchmarkWebSocket:
             response = client.get("/api/dashboard/stats")
 
         assert response.status_code == 200
+
+
+class TestInstalledModelsEndpoint:
+    """Tests for GET /api/models/installed."""
+
+    _MIXED = [
+        {
+            "type": "llm",
+            "modelKey": "pub/local-only",
+            "deviceIdentifier": None,
+            "variants": ["pub/local-only@q4_k_m"],
+        },
+        {
+            "type": "llm",
+            "modelKey": "pub/remote-only",
+            "deviceIdentifier": "b64e3314560e876afdc27837698e87b0",
+            "variants": ["pub/remote-only@q4_0"],
+        },
+    ]
+
+    def test_hides_remote_lm_link_models(self):
+        """Remote models are not offered — a run would skip them anyway."""
+        import json as _json
+        client = _get_client()
+        mock_result = MagicMock(returncode=0, stdout=_json.dumps(self._MIXED))
+        with patch("subprocess.run", return_value=mock_result):
+            response = client.get("/api/models/installed")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["success"] is True
+        assert payload["models"] == ["pub/local-only@q4_k_m"]
+
+    def test_keeps_model_present_on_both_devices(self):
+        """A model available locally stays listed even if also remote."""
+        import json as _json
+        client = _get_client()
+        both = [
+            {
+                "type": "llm",
+                "modelKey": "pub/on-both",
+                "deviceIdentifier": None,
+                "variants": ["pub/on-both@q6_k"],
+            },
+            {
+                "type": "llm",
+                "modelKey": "pub/on-both",
+                "deviceIdentifier": "b64e3314560e876afdc27837698e87b0",
+                "variants": ["pub/on-both@q6_k"],
+            },
+        ]
+        mock_result = MagicMock(returncode=0, stdout=_json.dumps(both))
+        with patch("subprocess.run", return_value=mock_result):
+            response = client.get("/api/models/installed")
+
+        assert response.json()["models"] == ["pub/on-both@q6_k"]
+
+
+class TestPromptFileWiring:
+    """Prompt files must survive the whole web path: list, validate, start."""
+
+    def test_prompts_endpoint_lists_shipped_prompt(self):
+        """GET /api/prompts exposes the file the preset refers to."""
+        client = _get_client()
+        response = client.get("/api/prompts")
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["success"] is True
+        assert "coding_assistant.md" in payload["prompts"]
+
+    def test_coding_assistant_preset_carries_prompt_file(self):
+        """The preset the user picks in the UI names a prompt file."""
+        client = _get_client()
+        payload = client.get("/api/presets/coding_assistant").json()
+        assert payload["success"] is True
+        assert payload["config"]["prompt_file"] == "coding_assistant.md"
+
+    def test_sanitize_accepts_known_prompt_file(self):
+        """A prompt file inside the prompt dir passes the sanitizer."""
+        manager, _ = _get_benchmark_manager()
+        result = manager._sanitize_benchmark_args(
+            ["--prompt-file", "coding_assistant.md"]
+        )
+        assert result == ["--prompt-file", "coding_assistant.md"]
+
+    def test_sanitize_rejects_prompt_file_traversal(self):
+        """A path escaping the prompt dir is refused before spawning."""
+        manager, _ = _get_benchmark_manager()
+        with pytest.raises(ValueError):
+            manager._sanitize_benchmark_args(
+                ["--prompt-file", "../core/version.py"]
+            )
+
+    def test_sanitize_rejects_absolute_prompt_file(self):
+        """Absolute paths never reach the subprocess."""
+        manager, _ = _get_benchmark_manager()
+        with pytest.raises(ValueError):
+            manager._sanitize_benchmark_args(["--prompt-file", "/etc/passwd"])
+
+    def test_multiline_prompt_is_allowed(self):
+        """Code prompts keep their newlines; only NUL stays forbidden."""
+        manager, _ = _get_benchmark_manager()
+        value = manager._validate_cli_arg_value(
+            "--prompt", "def f():\n    return 1"
+        )
+        assert value == "def f():\n    return 1"
+
+    def test_newlines_still_rejected_for_other_flags(self):
+        """The relaxation is scoped to --prompt."""
+        manager, _ = _get_benchmark_manager()
+        with pytest.raises(ValueError, match="control characters"):
+            manager._validate_cli_arg_value("--arch", "qwen3\nrm -rf /")
+
+    def test_nul_byte_still_rejected_in_prompt(self):
+        """NUL truncates C strings and must never pass."""
+        manager, _ = _get_benchmark_manager()
+        with pytest.raises(ValueError, match="control characters"):
+            manager._validate_cli_arg_value("--prompt", "abc\x00def")
+
+
+class TestPerGpuMetrics:
+    """Multi-GPU metrics must reach the dashboard, and only then.
+
+    On a single-GPU machine the payload must not carry the per-device keys
+    at all, otherwise the dashboard renders charts with no data in them.
+    """
+
+    def test_parses_stored_metrics(self):
+        """The JSON column is decoded into a list of device aggregates."""
+        from web.app import _parse_gpu_metrics
+
+        raw = (
+            '[{"index":0,"name":"GPU A","samples":3,"vram_gb_max":5.9},'
+            '{"index":1,"name":"GPU B","samples":3,"vram_gb_max":0.3}]'
+        )
+        parsed = _parse_gpu_metrics(raw)
+        assert [entry["index"] for entry in parsed] == [0, 1]
+        assert parsed[0]["vram_gb_max"] == 5.9
+
+    @pytest.mark.parametrize("raw", [None, "", "not json", "{}", "[1, 2]"])
+    def test_unusable_values_yield_empty_list(self, raw):
+        """Anything unreadable is treated as "no per-device data"."""
+        from web.app import _parse_gpu_metrics
+
+        assert _parse_gpu_metrics(raw) == []
+
+    def test_single_gpu_result_has_no_per_gpu_key(self):
+        """Results without stored metrics stay free of the key."""
+        client = _get_client()
+        payload = client.get("/api/results").json()
+        assert payload["success"] is True
+        for entry in payload["results"]:
+            if "per_gpu" in entry:
+                assert entry["per_gpu"], "per_gpu present but empty"
+                assert entry.get("gpu_count", 0) >= 1
+
+
+class TestPerGpuLogParsing:
+    """The live charts are fed by parsing benchmark log lines."""
+
+    @staticmethod
+    def _manager():
+        """Fresh manager instance with empty history."""
+        from web.app import BenchmarkManager
+
+        return BenchmarkManager()
+
+    def test_parses_multi_gpu_line(self):
+        """Every device in the line becomes its own series."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "INFO - 🎛️ [0] AMD Radeon RX 7600M XT: 6.00GB VRAM, 0.74GB GTT, "
+            "62°C, 105W | [1] AMD Radeon Graphics: 0.27GB VRAM, 0.10GB GTT, "
+            "45°C, 25W"
+        )
+
+        history = manager.per_gpu_history
+        assert sorted(history) == [0, 1]
+        assert history[0]["name"] == "AMD Radeon RX 7600M XT"
+        assert history[0]["vram"][-1]["value"] == 6.0
+        assert history[0]["gtt"][-1]["value"] == 0.74
+        assert history[0]["temperatures"][-1]["value"] == 62.0
+        assert history[1]["power"][-1]["value"] == 25.0
+
+    def test_appends_across_samples(self):
+        """Repeated lines extend the series instead of replacing it."""
+        manager = self._manager()
+        line = (
+            "🎛️ [0] GPU A: 1.00GB VRAM, 0.10GB GTT, 40°C, 10W | "
+            "[1] GPU B: 2.00GB VRAM, 0.20GB GTT, 50°C, 20W"
+        )
+        manager.parse_hardware_metrics(line)
+        manager.parse_hardware_metrics(line)
+        assert len(manager.per_gpu_history[0]["vram"]) == 2
+
+    def test_single_gpu_lines_leave_history_empty(self):
+        """The regular per-metric lines must not create device series."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("💾 GPU VRAM: 5.92GB")
+        manager.parse_hardware_metrics("🌡️ GPU Temp: 62.0°C")
+        assert manager.per_gpu_history == {}
+
+    def test_unrelated_line_is_ignored(self):
+        """Output that merely mentions GB does not match."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("Model size: 6.00GB on disk")
+        assert manager.per_gpu_history == {}
+
+
+class TestBenchmarkProgress:
+    """Progress is derived from the benchmark's own log output.
+
+    Both modes announce themselves differently - the classic run prints the
+    model count once, the capability run carries "(4/28)" in every header -
+    so both paths are covered here.
+    """
+
+    @staticmethod
+    def _manager():
+        """Fresh manager with empty progress state."""
+        from web.app import BenchmarkManager
+
+        return BenchmarkManager()
+
+    def test_classic_run_counts_finished_models(self):
+        """Total comes from the header, completed from the result lines."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "INFO - 🚀 Starting benchmark for 23 models..."
+        )
+        manager.parse_hardware_metrics(
+            "✅ granite-4.0-h-tiny: 98.85 tokens/s (Duration: 11.09s)"
+        )
+        manager.parse_hardware_metrics(
+            "✅ qwen3-8b: 44.70 tokens/s (Duration: 25.00s)"
+        )
+
+        snapshot = manager.progress_snapshot()
+        assert snapshot["total"] == 23
+        assert snapshot["completed"] == 2
+
+    def test_capability_run_reads_position(self):
+        """"(4/28)" gives both numbers at once."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "🎯 Starting benchmark for qwen3-8b (4/28)"
+        )
+
+        snapshot = manager.progress_snapshot()
+        assert snapshot["total"] == 28
+        assert snapshot["completed"] == 3
+        assert snapshot["current_model"] == "qwen3-8b"
+
+    def test_capability_completion_line_counts(self):
+        """The capability run words its completion line differently."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "🎯 Starting benchmark for qwen3-8b (4/28)"
+        )
+        manager.parse_hardware_metrics(
+            "✅ qwen3-8b completed (Duration: 13.97s)"
+        )
+        assert manager.progress_snapshot()["completed"] == 4
+
+    def test_current_model_without_position(self):
+        """The classic run names the model on its own line."""
+        manager = self._manager()
+        manager.parse_hardware_metrics(
+            "🚀 Starting benchmark for 5 models..."
+        )
+        manager.parse_hardware_metrics(
+            "🎯 Starting benchmark for granite-4.0-h-tiny"
+        )
+        assert manager.progress_snapshot()["current_model"] == (
+            "granite-4.0-h-tiny"
+        )
+
+    def test_no_total_means_no_progress(self):
+        """Without a total there is nothing to show, so the card stays away."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("✅ some-model: 10.0 tokens/s (Duration: 1s)")
+        assert manager.progress_snapshot() == {}
+
+    def test_eta_is_extrapolated_from_finished_models(self):
+        """Remaining time uses the mean duration of what is already done."""
+        import time
+
+        manager = self._manager()
+        manager.parse_hardware_metrics("🚀 Starting benchmark for 10 models...")
+        manager.progress["started_at"] = time.time() - 60
+        manager.progress["completed"] = 2
+
+        eta = manager.progress_snapshot()["eta_seconds"]
+        # 30 s per model, 8 left - allow a second of slack for slow runners.
+        assert 235 <= eta <= 245
+
+    def test_no_eta_before_the_first_model_finishes(self):
+        """Extrapolating from zero would divide by zero."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("🚀 Starting benchmark for 10 models...")
+        assert manager.progress_snapshot()["eta_seconds"] is None
+
+    def test_completed_never_exceeds_total(self):
+        """A miscounted line must not push the bar past 100 %."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("🚀 Starting benchmark for 2 models...")
+        for _ in range(5):
+            manager.parse_hardware_metrics(
+                "✅ m: 1.0 tokens/s (Duration: 1s)"
+            )
+        snapshot = manager.progress_snapshot()
+        assert snapshot["completed"] == 2
+        assert snapshot["total"] == 2
+
+    def test_status_endpoint_exposes_progress(self):
+        """A client opening the dashboard mid-run gets the state at once."""
+        client = _get_client()
+        payload = client.get("/api/status").json()
+        assert "progress" in payload
+
+    def test_hardware_lines_do_not_affect_progress(self):
+        """The metric lines share the parser but carry no progress."""
+        manager = self._manager()
+        manager.parse_hardware_metrics("🌡️ GPU Temp: 62.0°C")
+        manager.parse_hardware_metrics("💾 GPU VRAM: 5.92GB")
+        assert manager.progress_snapshot() == {}
+
+
+class TestProfilingFlagExposure:
+    """The dashboard needs to tell "no readings yet" from "never measures".
+
+    Without --enable-profiling the benchmark starts no monitor thread, so no
+    GPU line is ever logged and the live charts stay empty for the whole run.
+    """
+
+    @staticmethod
+    def _manager():
+        from web.app import BenchmarkManager
+
+        return BenchmarkManager()
+
+    def test_defaults_to_off_while_idle(self):
+        """Nothing runs, nothing measures."""
+        assert self._manager().profiling_enabled is False
+
+    @pytest.mark.anyio
+    async def test_start_records_the_flag(self):
+        """The flag is read from the sanitized args, not from the request."""
+        manager = self._manager()
+        with patch("subprocess.Popen") as popen, \
+                patch("asyncio.create_task"):
+            popen.return_value = MagicMock(pid=1, poll=MagicMock(return_value=None))
+            await manager.start_benchmark(["--runs", "1", "--enable-profiling"])
+        assert manager.profiling_enabled is True
+
+    @pytest.mark.anyio
+    async def test_start_without_the_flag_records_off(self):
+        """A run started without profiling is remembered as such."""
+        manager = self._manager()
+        with patch("subprocess.Popen") as popen, \
+                patch("asyncio.create_task"):
+            popen.return_value = MagicMock(pid=1, poll=MagicMock(return_value=None))
+            await manager.start_benchmark(["--runs", "1"])
+        assert manager.profiling_enabled is False
+
+    def test_status_endpoint_exposes_the_flag(self):
+        """A client opening the dashboard mid-run learns it immediately."""
+        payload = _get_client().get("/api/status").json()
+        assert "profiling_enabled" in payload

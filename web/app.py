@@ -42,7 +42,6 @@ import webbrowser
 import zipfile
 
 import cpuinfo
-import distro
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -51,10 +50,23 @@ from jinja2 import Environment, FileSystemLoader
 import psutil
 from pydantic import BaseModel
 
+# Linux-only distribution helper; absent on macOS and Windows.
+try:
+    import distro
+except (ImportError, ModuleNotFoundError):
+    distro = None
+
 from core.config import DEFAULT_CONFIG
 from core.logging_utils import install_level_icons
 from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
+from core.platform_info import (
+    detect_apple_gpu,
+    get_apple_chip_name,
+    get_apple_unified_memory_gb,
+    get_macos_name_version,
+)
 from core.presets import PresetManager
+from core.prompts import list_prompt_files, resolve_prompt_file
 
 try:
     from core.version import (
@@ -113,6 +125,34 @@ logging.basicConfig(
     ),
 )
 logger = logging.getLogger(__name__)
+
+# "🚀 Starting benchmark for 23 models..." - classic run, gives the total.
+PROGRESS_TOTAL = re.compile(
+    r"Starting benchmark for\s+(?P<total>\d+)\s+(?:new\s+)?models"
+)
+
+# "🎯 Starting benchmark for qwen3-8b (4/28)" - capability run, gives both.
+PROGRESS_POSITION = re.compile(
+    r"Starting benchmark for\s+(?P<model>\S+)\s+\((?P<index>\d+)/(?P<total>\d+)\)"
+)
+
+# "🎯 Starting benchmark for granite-4.0-h-tiny" - classic run, model only.
+PROGRESS_CURRENT = re.compile(r"🎯 Starting benchmark for\s+(?P<model>\S+)\s*$")
+
+# "✅ granite-4.0-h-tiny: 98.85 tokens/s (Duration: 11.09s)" and the
+# capability variant "✅ granite-4.0-h-tiny completed (Duration: 13.97s)".
+PROGRESS_DONE = re.compile(
+    r"✅\s+(?P<model>\S+?)(?::\s+[\d.]+\s+tokens/s|\s+completed)\s+\(Duration:"
+)
+
+# "[0] AMD Radeon RX 7600M XT: 6.00GB VRAM, 0.74GB GTT, 62C, 105W"
+PER_GPU_LINE = re.compile(
+    r"\[(?P<index>\d+)\]\s*(?P<name>[^:]+?):\s*"
+    r"(?P<vram>[\d.]+)GB VRAM,\s*"
+    r"(?P<gtt>[\d.]+)GB GTT,\s*"
+    r"(?P<temp>[\d.]+)[^\d,]*C,\s*"
+    r"(?P<power>[\d.]+)\s*W"
+)
 
 
 GENERIC_API_ERROR = "Internal server error"
@@ -394,6 +434,19 @@ class _BenchmarkManagerState:
             "ram": [],
         }
     )
+    # Per-device series, populated only when the benchmark reports more than
+    # one GPU. Kept apart from hardware_history because it is keyed by device
+    # index and stays empty on single-GPU machines.
+    per_gpu_history: Dict[int, Dict[str, Any]] = field(default_factory=dict)
+    # How far the running benchmark has come, derived from its log output:
+    # completed, total, current_model and the timestamp of the first line
+    # that revealed a total. Empty while nothing runs.
+    progress: Dict[str, Any] = field(default_factory=dict)
+    # Whether the running benchmark samples hardware at all. Without
+    # --enable-profiling no GPU readings are ever logged, so the live charts
+    # stay empty by design and the dashboard says so instead of showing
+    # blank axes.
+    profiling_enabled: bool = False
     last_hardware_send_time: float = 0.0
 
 
@@ -511,10 +564,26 @@ class BenchmarkManager:
 
     def _validate_cli_arg_value(self, flag: str, value: str) -> str:
         """Validate and sanitize benchmark CLI argument values."""
-        if any(char in value for char in ("\x00", "\n", "\r")):
+        # Prompts are the one place where line breaks are meaningful: a code
+        # snippet loses its shape without them. Arguments are passed as an
+        # argv list, never through a shell, so a newline cannot inject a
+        # second command. NUL still terminates C strings and stays banned.
+        forbidden = ("\x00",) if flag == "--prompt" else ("\x00", "\n", "\r")
+        if any(char in value for char in forbidden):
             raise ValueError(f"Invalid control characters in {flag}")
         if len(value) > 2000:
-            raise ValueError(f"Value too long for {flag}")
+            hint = (
+                " - use --prompt-file for long prompts"
+                if flag == "--prompt"
+                else ""
+            )
+            raise ValueError(f"Value too long for {flag}{hint}")
+
+        if flag == "--prompt-file":
+            # Confines the name to the known prompt directories; the value can
+            # come straight from an HTTP request.
+            resolve_prompt_file(value)
+            return value
 
         int_flags = {
             "--runs",
@@ -554,6 +623,7 @@ class BenchmarkManager:
             "--context",
             "--limit",
             "--prompt",
+            "--prompt-file",
             "--min-context",
             "--max-size",
             "--quants",
@@ -722,6 +792,12 @@ class BenchmarkManager:
         Verifies that the Python interpreter and benchmark script are absolute
         paths, and that no shell metacharacters remain in any argument.
 
+        The value behind ``--prompt`` is exempt: it is free text that routinely
+        contains ``<``, ``$`` or ``|`` - a code snippet cannot be phrased
+        without them. It is passed as one argv element with ``shell=False``,
+        so no shell ever sees it, and _validate_cli_arg_value has already
+        rejected NUL bytes and over-long values.
+
         Args:
             sanitized_args: Pre-sanitized benchmark CLI arguments.
 
@@ -740,7 +816,12 @@ class BenchmarkManager:
             script = str(BENCHMARK_SCRIPT.resolve())
             base_cmd = [interpreter, script]
 
+        previous = ""
         for component in base_cmd + sanitized_args:
+            is_prompt_text = previous == "--prompt"
+            previous = component
+            if is_prompt_text:
+                continue
             if shell_unsafe_pattern.search(component):
                 raise ValueError(
                     f"Shell-unsafe characters detected in argument: "
@@ -766,6 +847,11 @@ class BenchmarkManager:
             else:
                 sanitized_args = self._sanitize_benchmark_args(cli_args)
             self._state.output_queue = asyncio.Queue()
+            # A previous run's device series would otherwise be prepended to
+            # the new charts.
+            self._state.per_gpu_history.clear()
+            self._state.progress.clear()
+            self._state.profiling_enabled = "--enable-profiling" in sanitized_args
             if self._state.output_task and not self._state.output_task.done():
                 self._state.output_task.cancel()
 
@@ -898,6 +984,9 @@ class BenchmarkManager:
                 {"timestamp": datetime.now().isoformat(), "value": cpu_value}
             )
 
+        self._parse_per_gpu_metrics(output_line)
+        self._parse_progress(output_line)
+
         ram_pattern = r"(?<![V])RAM\s*:\s*(\d+(?:\.\d+)?)GB"
         ram_match = re.search(ram_pattern, output_line, re.IGNORECASE)
         if ram_match:
@@ -905,6 +994,118 @@ class BenchmarkManager:
             self.hardware_history["ram"].append(
                 {"timestamp": datetime.now().isoformat(), "value": ram_value}
             )
+
+    def _parse_progress(self, output_line: str) -> None:
+        """Track how many models the running benchmark has finished.
+
+        Both benchmark modes announce their totals differently: the classic
+        run prints the model count once up front, the capability run puts a
+        "(4/28)" into every model header. Either is enough to drive a
+        progress bar, so both are parsed here.
+        """
+        progress = self.progress
+
+        position = PROGRESS_POSITION.search(output_line)
+        if position:
+            progress["total"] = int(position.group("total"))
+            progress["completed"] = int(position.group("index")) - 1
+            progress["current_model"] = position.group("model")
+            progress.setdefault("started_at", time.time())
+            return
+
+        total = PROGRESS_TOTAL.search(output_line)
+        if total:
+            progress["total"] = int(total.group("total"))
+            progress.setdefault("completed", 0)
+            progress.setdefault("started_at", time.time())
+            return
+
+        current = PROGRESS_CURRENT.search(output_line)
+        if current:
+            progress["current_model"] = current.group("model")
+            progress.setdefault("started_at", time.time())
+            return
+
+        if PROGRESS_DONE.search(output_line):
+            progress["completed"] = int(progress.get("completed", 0)) + 1
+            progress.setdefault("started_at", time.time())
+
+    def progress_snapshot(self) -> Dict[str, Any]:
+        """Progress plus a time estimate, empty when the total is unknown.
+
+        The estimate is the mean duration of the models finished so far,
+        applied to the ones left. Model sizes differ widely, so it is a rough
+        figure that settles as the run proceeds - which is still better than
+        no indication of how long this will take.
+        """
+        progress = self.progress
+        total = int(progress.get("total") or 0)
+        if total <= 0:
+            return {}
+
+        completed = max(0, min(int(progress.get("completed") or 0), total))
+        snapshot: Dict[str, Any] = {
+            "completed": completed,
+            "total": total,
+            "current_model": progress.get("current_model"),
+            "eta_seconds": None,
+        }
+
+        started_at = progress.get("started_at")
+        if started_at and completed > 0 and completed < total:
+            elapsed = time.time() - float(started_at)
+            snapshot["eta_seconds"] = round(
+                elapsed / completed * (total - completed)
+            )
+        return snapshot
+
+    def _parse_per_gpu_metrics(self, output_line: str) -> None:
+        """Parse the multi-GPU log line into per-device series.
+
+        The benchmark emits one line per sampling tick, for example::
+
+            [0] Radeon RX 7600M XT: 6.00GB VRAM, 0.74GB GTT, 62C, 105W | [1] ...
+
+        Single-GPU runs never emit it, so per_gpu_history stays empty and
+        consumers can treat its emptiness as "nothing extra to show".
+        """
+        if "GB VRAM" not in output_line:
+            return
+
+        timestamp = datetime.now().isoformat()
+        for match in PER_GPU_LINE.finditer(output_line):
+            try:
+                index = int(match.group("index"))
+            except (TypeError, ValueError):
+                continue
+
+            device = self.per_gpu_history.setdefault(
+                index,
+                {
+                    "index": index,
+                    "name": match.group("name").strip(),
+                    "vram": [],
+                    "gtt": [],
+                    "temperatures": [],
+                    "power": [],
+                },
+            )
+
+            for key, group in (
+                ("vram", "vram"),
+                ("gtt", "gtt"),
+                ("temperatures", "temp"),
+                ("power", "power"),
+            ):
+                raw = match.group(group)
+                if raw is None:
+                    continue
+                try:
+                    device[key].append(
+                        {"timestamp": timestamp, "value": float(raw)}
+                    )
+                except ValueError:
+                    continue
 
     async def read_output(self) -> str:
         """Reads ALL available lines from process without blocking"""
@@ -1008,6 +1209,7 @@ class BenchmarkParams(BaseModel):
     context: Optional[int] = None
     limit: Optional[int] = None
     prompt: Optional[str] = None
+    prompt_file: Optional[str] = None
     benchmark_mode: str = "classic"
 
     min_context: Optional[int] = None
@@ -1075,7 +1277,7 @@ class InferenceParamSet(BaseModel):
 
 
 class CreateExperimentRequest(BaseModel):
-    """Request zum Erstellen eines A/B Experiments"""
+    """Request payload for creating an A/B experiment"""
 
     name: str
     model_name: str
@@ -1116,7 +1318,7 @@ class PresetCompareRequest(BaseModel):
 
 
 def calculate_hash(params: Dict[str, Any]) -> str:
-    """Erstelle SHA256-Hash aus Parameter-Dictionary"""
+    """Create a SHA256 hash from a parameter dictionary"""
     params_str = json.dumps(params, sort_keys=True, default=str)
     return hashlib.sha256(params_str.encode()).hexdigest()[:16]
 
@@ -1216,10 +1418,13 @@ def perform_ttest(
         ZeroDivisionError,
         OverflowError,
     ) as ttest_error:
+        # The message goes to the log, not to the caller: this dict is
+        # embedded in the A/B comparison responses, so anything put here
+        # reaches an HTTP client.
         logger.error("Error in t-test: %s", ttest_error)
         return {
             "test_name": "t-test",
-            "error": str(ttest_error),
+            "error": GENERIC_API_ERROR,
             "significant": False,
         }
 
@@ -1504,11 +1709,25 @@ def calculate_effect_size(
 # ============================================================================
 
 
+def _current_app_version() -> str:
+    """Read the running app version for display, never raising."""
+    if get_current_version is None:
+        return "unknown"
+    try:
+        return get_current_version()
+    except ValueError as exc:
+        logger.warning("⚠️ Could not read app version: %s", exc)
+        return "unknown"
+
+
 @app.get("/")
 async def root() -> HTMLResponse:
     """Hauptseite - Dashboard"""
     template = template_env.get_template("dashboard.html.jinja")
-    html = template.render(config=CONFIG_DEFAULTS)
+    html = template.render(
+        config=CONFIG_DEFAULTS,
+        app_version=_current_app_version(),
+    )
     return HTMLResponse(content=html)
 
 
@@ -1525,12 +1744,18 @@ async def get_status() -> dict:
             else None
         ),
         "connected_clients": len(manager.connected_clients),
+        # Empty dict while idle, so a client that connects mid-run can render
+        # the progress card without waiting for the next websocket tick.
+        "progress": manager.progress_snapshot(),
+        # Lets the hardware section explain empty charts instead of showing
+        # blank axes when the run was started without profiling.
+        "profiling_enabled": manager.profiling_enabled,
     }
 
 
 @app.get("/api/lmstudio/health")
 async def get_lmstudio_health() -> dict:
-    """LM Studio Healthcheck - Live Status ohne Cache"""
+    """LM Studio healthcheck - live status without cache"""
     lmstudio_ports = LMSTUDIO_PORTS
 
     for lm_port in lmstudio_ports:
@@ -1742,7 +1967,9 @@ async def start_benchmark(params: BenchmarkParams) -> dict:
         benchmark_args.extend(["--context", str(params.context)])
     if params.limit:
         benchmark_args.extend(["--limit", str(params.limit)])
-    if params.prompt:
+    if params.prompt_file:
+        benchmark_args.extend(["--prompt-file", params.prompt_file])
+    elif params.prompt:
         benchmark_args.extend(["--prompt", params.prompt])
     if params.min_context:
         benchmark_args.extend(["--min-context", str(params.min_context)])
@@ -1921,6 +2148,28 @@ async def get_latest_release() -> dict:
     }
 
 
+def _parse_gpu_metrics(raw: Optional[str]) -> List[Dict[str, Any]]:
+    """Decode the per-device GPU metrics stored with a result.
+
+    Args:
+        raw: JSON string from the gpu_metrics_json column, or None.
+
+    Returns:
+        List of per-device aggregates; empty when absent or unreadable, which
+        is the normal case on single-GPU machines.
+    """
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        logger.debug("Ignoring unreadable gpu_metrics_json")
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [entry for entry in parsed if isinstance(entry, dict)]
+
+
 @app.get("/api/results")
 async def get_results() -> dict:
     """Returns all cached benchmark results"""
@@ -1971,6 +2220,19 @@ async def get_results() -> dict:
                 result_dict["power_watts_avg"] = result.power_watts_avg
             if hasattr(result, "gtt_enabled"):
                 result_dict["gtt_enabled"] = result.gtt_enabled
+
+            # Per-device metrics exist only on multi-GPU machines. Sending
+            # the key regardless would make the dashboard render empty panels
+            # for everyone else, so it is omitted when there is nothing to
+            # show.
+            per_gpu = _parse_gpu_metrics(
+                getattr(result, "gpu_metrics_json", None)
+            )
+            if per_gpu:
+                result_dict["gpu_count"] = (
+                    getattr(result, "gpu_count", None) or len(per_gpu)
+                )
+                result_dict["per_gpu"] = per_gpu
 
             results_data.append(result_dict)
 
@@ -2276,18 +2538,28 @@ async def get_installed_models() -> dict:
         parsed = json.loads(result.stdout)
         model_ids: list[str] = []
         seen: set[str] = set()
+        remote_only: set[str] = set()
         for item in parsed:
+            # Models served from a remote LM Link device are not benchmarkable:
+            # hardware telemetry samples this machine. Offering them here would
+            # list models that a run then silently skips.
+            is_remote = item.get("deviceIdentifier") is not None
             variants = item.get("variants") or []
-            if variants:
-                for variant in variants:
-                    if variant and variant not in seen:
-                        model_ids.append(variant)
-                        seen.add(variant)
-                continue
-            model_key = item.get("modelKey")
-            if model_key and model_key not in seen:
-                model_ids.append(model_key)
-                seen.add(model_key)
+            keys = variants if variants else [item.get("modelKey")]
+            for key in keys:
+                if not key:
+                    continue
+                if is_remote:
+                    remote_only.add(key)
+                    continue
+                if key not in seen:
+                    model_ids.append(key)
+                    seen.add(key)
+        # A model present both locally and remotely stays listed: LM Studio
+        # resolves that ambiguity in favour of the local copy.
+        skipped = len(remote_only - seen)
+        if skipped:
+            logger.info("🔗 %d remote LM Link model(s) hidden from picker", skipped)
 
         return {"success": True, "models": model_ids}
     except json.JSONDecodeError as e:
@@ -2886,7 +3158,7 @@ async def get_advanced_statistics(model_name: str) -> dict:
 
 @app.get("/api/output")
 async def get_output() -> dict:
-    """Gibt aktuellen Output"""
+    """Return the current output"""
     return {"output": manager.current_output, "status": manager.status}
 
 
@@ -3031,7 +3303,18 @@ async def compare_presets(request: PresetCompareRequest) -> dict:
             "differences": differences,
         }
     except FileNotFoundError as e:
-        return {"success": False, "error": f"Preset not found: {str(e)}"}
+        # str(e) would carry the absolute path of the preset directory; the
+        # names the caller sent are enough to tell what went wrong.
+        logger.warning(
+            "Preset not found while comparing %s vs %s: %s",
+            request.preset_a,
+            request.preset_b,
+            e,
+        )
+        return {
+            "success": False,
+            "error": f"Preset not found: {request.preset_a} or {request.preset_b}",
+        }
     except (OSError, json.JSONDecodeError, ValueError) as e:
         logger.error(
             "❌ Error comparing presets %s vs %s: %s",
@@ -3039,6 +3322,16 @@ async def compare_presets(request: PresetCompareRequest) -> dict:
             request.preset_b,
             e,
         )
+        return _safe_api_error()
+
+
+@app.get("/api/prompts")
+async def get_prompt_files() -> dict:
+    """List prompt files available for --prompt-file."""
+    try:
+        return {"success": True, "prompts": list_prompt_files()}
+    except OSError as e:
+        logger.error("❌ Error listing prompt files: %s", e)
         return _safe_api_error()
 
 
@@ -3112,7 +3405,13 @@ async def import_presets(request: Request) -> dict:
                     preset_mgr.save_preset(preset_name, preset_config)
                     imported_count += 1
                 except ValueError as ve:
-                    skipped.append(f"{preset_name} ({ve})")
+                    # save_preset raises with one of the fixed validator
+                    # strings, but taking the text off the exception turns
+                    # it into exception data on its way to the response.
+                    # Ask the validator instead: same message, no traceback.
+                    reason = preset_mgr.rejection_reason(preset_name)
+                    logger.warning("Skipped preset %s: %s", preset_name, ve)
+                    skipped.append(f"{preset_name} ({reason or 'invalid preset'})")
 
         logger.info("📥 Imported %s presets, skipped %s", imported_count, len(skipped))
 
@@ -4563,8 +4862,18 @@ async def get_dashboard_stats() -> dict:
             "ram_gb": round(psutil.virtual_memory().total / (1024**3), 2),
         }
 
+        if system_info["os"] == "Darwin":
+            macos_name, macos_version = get_macos_name_version()
+            system_info["os"] = macos_name
+            system_info["os_version"] = macos_version
+            apple_chip = get_apple_chip_name()
+            if apple_chip:
+                system_info["cpu"] = apple_chip
+
         if system_info["os"] == "Linux":
             try:
+                if distro is None:
+                    raise ImportError("distro package not installed")
 
                 distro_name = distro.name()
                 distro_version = distro.version()
@@ -4610,6 +4919,7 @@ async def get_dashboard_stats() -> dict:
             gpu_model = "Unknown"
             vram_total_gb = None
             gtt_total_gb = None
+            metal_family = None
 
             if results:
                 gpu_model = results[0].gpu_type
@@ -4627,36 +4937,58 @@ async def get_dashboard_stats() -> dict:
                 else:
                     gpu_type = gpu_model
 
-            try:
-                output = subprocess.check_output(
-                    [
-                        "nvidia-smi",
-                        "--query-gpu=memory.total",
-                        "--format=csv,noheader,nounits",
-                    ],
-                    timeout=5,
+            # Apple Silicon shares one unified memory pool, so total "VRAM"
+            # is system RAM. Detect it first: macOS ships none of the
+            # nvidia-smi/rocm-smi/lspci tooling probed below.
+            apple_gpu = detect_apple_gpu()
+            if apple_gpu and apple_gpu.get("vendor") == "Apple":
+                gpu_type = "Apple"
+                cores = apple_gpu.get("cores")
+                gpu_model = (
+                    f"{apple_gpu['model']} ({cores}-core GPU)"
+                    if cores
+                    else apple_gpu["model"]
                 )
-                vram_total_mb = int(
-                    output.decode().strip().split("\n", maxsplit=1)[0]
+                metal_family = apple_gpu.get("metal_family")
+                vram_total_gb = (
+                    get_apple_unified_memory_gb() or system_info["ram_gb"]
                 )
-                vram_total_gb = round(vram_total_mb / 1024, 2)
-                gpu_type = "NVIDIA"
 
+            if gpu_type != "Apple":
                 try:
-                    model_output = subprocess.check_output(
-                        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                    output = subprocess.check_output(
+                        [
+                            "nvidia-smi",
+                            "--query-gpu=memory.total",
+                            "--format=csv,noheader,nounits",
+                        ],
                         timeout=5,
                     )
-                    gpu_model = model_output.decode().strip().split(
-                        "\n", maxsplit=1
-                    )[0]
-                except (subprocess.SubprocessError, OSError):
-                    gpu_model = "NVIDIA GPU"
+                    vram_total_mb = int(
+                        output.decode().strip().split("\n", maxsplit=1)[0]
+                    )
+                    vram_total_gb = round(vram_total_mb / 1024, 2)
+                    gpu_type = "NVIDIA"
 
-            except (TimeoutExpired, FileNotFoundError, ValueError):
-                pass
+                    try:
+                        model_output = subprocess.check_output(
+                            [
+                                "nvidia-smi",
+                                "--query-gpu=name",
+                                "--format=csv,noheader",
+                            ],
+                            timeout=5,
+                        )
+                        gpu_model = model_output.decode().strip().split(
+                            "\n", maxsplit=1
+                        )[0]
+                    except (subprocess.SubprocessError, OSError):
+                        gpu_model = "NVIDIA GPU"
 
-            if not vram_total_gb:
+                except (TimeoutExpired, FileNotFoundError, ValueError):
+                    pass
+
+            if gpu_type != "Apple" and not vram_total_gb:
                 try:
                     rocm_tool = None
                     for path in [
@@ -4815,17 +5147,34 @@ async def get_dashboard_stats() -> dict:
                 except (TimeoutExpired, FileNotFoundError):
                     pass
 
-            gpu_info = {
-                "type": gpu_type,
-                "model": gpu_model,
-                "vram_gb": vram_total_gb,
-                "gtt_gb": gtt_total_gb if gtt_total_gb else system_info["ram_gb"],
-                "total_gb": (
-                    (vram_total_gb + gtt_total_gb)
-                    if (vram_total_gb and gtt_total_gb)
-                    else (vram_total_gb or system_info["ram_gb"])
-                ),
-            }
+            if gpu_type == "Apple":
+                # Unified memory: VRAM and system RAM are one pool, so the
+                # totals must not be added together.
+                gpu_info = {
+                    "type": gpu_type,
+                    "model": gpu_model,
+                    "vram_gb": vram_total_gb,
+                    "gtt_gb": None,
+                    "total_gb": vram_total_gb,
+                    "unified_memory": True,
+                    "metal": metal_family,
+                }
+            else:
+                gpu_info = {
+                    "type": gpu_type,
+                    "model": gpu_model,
+                    "vram_gb": vram_total_gb,
+                    "gtt_gb": (
+                        gtt_total_gb if gtt_total_gb else system_info["ram_gb"]
+                    ),
+                    "total_gb": (
+                        (vram_total_gb + gtt_total_gb)
+                        if (vram_total_gb and gtt_total_gb)
+                        else (vram_total_gb or system_info["ram_gb"])
+                    ),
+                    "unified_memory": False,
+                    "metal": None,
+                }
 
         except (subprocess.SubprocessError, OSError, ValueError):
             gpu_info = {
@@ -4833,6 +5182,8 @@ async def get_dashboard_stats() -> dict:
                 "vram_gb": None,
                 "gtt_gb": system_info["ram_gb"],
                 "total_gb": system_info["ram_gb"],
+                "unified_memory": False,
+                "metal": None,
             }
 
         classic_models = {r.model_name for r in results}
@@ -5162,9 +5513,43 @@ async def websocket_benchmark(websocket: WebSocket):
                                 "ram": hw["ram"][-max_history:],
                             }
 
+                            # Only present with more than one GPU: the
+                            # dashboard switches to one trace per device when
+                            # it arrives and stays single-line otherwise.
+                            per_gpu = manager.per_gpu_history
+                            if len(per_gpu) > 1:
+                                hardware_data["per_gpu"] = [
+                                    {
+                                        "index": device["index"],
+                                        "name": device["name"],
+                                        "temperatures": device["temperatures"][
+                                            -max_history:
+                                        ],
+                                        "power": device["power"][-max_history:],
+                                        "vram": device["vram"][-max_history:],
+                                        "gtt": device["gtt"][-max_history:],
+                                    }
+                                    for _, device in sorted(per_gpu.items())
+                                ]
+
+                            # Tells the client whether empty charts mean "no
+                            # readings yet" or "this run never measures".
+                            hardware_data["profiling_enabled"] = (
+                                manager.profiling_enabled
+                            )
+
                             await websocket.send_json(
                                 {"type": "hardware", "data": hardware_data}
                             )
+
+                            # Sent alongside the charts: same 2-second beat,
+                            # and it stays silent until the benchmark has
+                            # revealed how many models it will run.
+                            progress = manager.progress_snapshot()
+                            if progress:
+                                await websocket.send_json(
+                                    {"type": "progress", "data": progress}
+                                )
                             manager.update_last_hardware_send_time(current_time)
                         except (OSError, RuntimeError, ValueError) as e:
                             logger.error(

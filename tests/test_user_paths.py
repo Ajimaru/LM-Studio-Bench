@@ -12,6 +12,7 @@ class TestGetUserConfigDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_config_dir()
         assert result == tmp_path / "lm-studio-bench"
@@ -20,10 +21,12 @@ class TestGetUserConfigDir:
     def test_falls_back_to_home_config(self, tmp_path: Path, monkeypatch):
         """Falls back to ~/.config/lm-studio-bench when XDG_CONFIG_HOME unset."""
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_config_dir()
         assert result == tmp_path / ".config" / "lm-studio-bench"
@@ -36,8 +39,10 @@ class TestGetUserConfigDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_config_dir()
+        assert result == target / "lm-studio-bench"
         assert result.exists()
         assert result.is_dir()
 
@@ -45,13 +50,29 @@ class TestGetUserConfigDir:
             self, tmp_path: Path, monkeypatch):
         """Relative traversal values fall back to default config path."""
         monkeypatch.setenv("XDG_CONFIG_HOME", "../etc")
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_config_dir()
         assert result == tmp_path / ".config" / "lm-studio-bench"
+
+    def test_macos_uses_application_support(self, tmp_path: Path, monkeypatch):
+        """macOS config lives below Application Support."""
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        import importlib
+
+        import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Darwin")
+        importlib.reload(up)
+        result = up.get_user_config_dir()
+        assert result == (
+            tmp_path / "Library" / "Application Support" / "LM-Studio-Bench"
+        )
 
 
 class TestGetUserDataDir:
@@ -63,6 +84,7 @@ class TestGetUserDataDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_data_dir()
         assert result == tmp_path / "lm-studio-bench"
@@ -71,10 +93,12 @@ class TestGetUserDataDir:
     def test_falls_back_to_home_local_share(self, tmp_path: Path, monkeypatch):
         """Falls back to ~/.local/share/lm-studio-bench when unset."""
         monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_data_dir()
         assert result == tmp_path / ".local" / "share" / "lm-studio-bench"
@@ -87,8 +111,10 @@ class TestGetUserDataDir:
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_data_dir()
+        assert result == target / "lm-studio-bench"
         assert result.exists()
         assert result.is_dir()
 
@@ -97,13 +123,60 @@ class TestGetUserDataDir:
     ):
         """Relative traversal values fall back to default data path."""
         monkeypatch.setenv("XDG_DATA_HOME", "../../var")
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         import importlib
 
         import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
         importlib.reload(up)
         result = up.get_user_data_dir()
         assert result == tmp_path / ".local" / "share" / "lm-studio-bench"
+
+    def test_macos_uses_application_support(self, tmp_path: Path, monkeypatch):
+        """macOS data lives below Application Support."""
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        import importlib
+
+        import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Darwin")
+        importlib.reload(up)
+        result = up.get_user_data_dir()
+        assert result == (
+            tmp_path / "Library" / "Application Support" / "LM-Studio-Bench"
+        )
+
+
+class TestGetUserLogsAndCacheDirs:
+    """Tests for log and cache path conventions."""
+
+    def test_macos_uses_library_logs_and_caches(self, tmp_path, monkeypatch):
+        """macOS logs and caches live in their dedicated Library folders."""
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        import importlib
+
+        import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Darwin")
+        importlib.reload(up)
+
+        assert up.get_user_logs_dir() == (
+            tmp_path / "Library" / "Logs" / "LM-Studio-Bench"
+        )
+        assert up.get_user_cache_dir() == (
+            tmp_path / "Library" / "Caches" / "LM-Studio-Bench"
+        )
+
+    def test_xdg_cache_home_is_honoured_on_linux(self, tmp_path, monkeypatch):
+        """XDG_CACHE_HOME is honoured outside macOS."""
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+        import importlib
+
+        import core.paths as up
+        monkeypatch.setattr(up.platform, "system", lambda: "Linux")
+        importlib.reload(up)
+        assert up.get_user_cache_dir() == tmp_path / "lm-studio-bench"
 
 
 class TestModuleLevelConstants:
@@ -152,6 +225,12 @@ class TestModuleLevelConstants:
         """USER_LOGS_DIR is inside USER_DATA_DIR."""
         import core.paths as up
         assert up.USER_LOGS_DIR.parent == up.USER_DATA_DIR
+
+    def test_user_cache_dir_exists(self):
+        """USER_CACHE_DIR is created at import time."""
+        import core.paths as up
+        assert up.USER_CACHE_DIR.exists()
+        assert up.USER_CACHE_DIR.is_dir()
 
 
 class TestPathFormattingAndSnapHome:

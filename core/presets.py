@@ -37,6 +37,8 @@ class PresetManager:
         "quick_test",
         "high_quality",
         "resource_limited",
+        "coding_assistant",
+        "legacy_2048",
     }
 
     # Backwards-compatible alias for the previously misspelled preset name.
@@ -47,7 +49,7 @@ class PresetManager:
     PREDEFINED_PRESETS: Dict[str, Dict[str, Any]] = {
         "default_classic": {
             "runs": 3,
-            "context": 2048,
+            "context": 8192,
             "limit": 0,
             "dev_mode": False,
             "min_context": 0,
@@ -65,13 +67,13 @@ class PresetManager:
             "disable_gtt": False,
             "max_temp": 0.0,
             "max_power": 0.0,
-            "prompt": "Explain machine learning in 3 sentences",
+            "prompt": DEFAULT_CONFIG.get("prompt", ""),
             "temperature": 0.1,
             "top_k_sampling": 40,
             "top_p_sampling": 0.9,
             "min_p_sampling": 0.05,
             "repeat_penalty": 1.2,
-            "max_tokens": 256,
+            "max_tokens": 2000,
             "n_gpu_layers": -1,
             "n_batch": 512,
             "n_threads": -1,
@@ -89,7 +91,7 @@ class PresetManager:
         },
         "default_compatibility_test": {
             "runs": 1,
-            "context": 2048,
+            "context": 8192,
             "limit": 0,
             "dev_mode": False,
             "min_context": 0,
@@ -107,13 +109,13 @@ class PresetManager:
             "disable_gtt": False,
             "max_temp": 0.0,
             "max_power": 0.0,
-            "prompt": "Explain machine learning in 3 sentences",
+            "prompt": DEFAULT_CONFIG.get("prompt", ""),
             "temperature": 0.1,
             "top_k_sampling": 40,
             "top_p_sampling": 0.9,
             "min_p_sampling": 0.05,
             "repeat_penalty": 1.2,
-            "max_tokens": 256,
+            "max_tokens": 2000,
             "n_gpu_layers": -1,
             "n_batch": 512,
             "n_threads": -1,
@@ -148,6 +150,28 @@ class PresetManager:
             "n_batch": 256,
             "flash_attention": True,
             "use_mmap": True,
+        },
+        # Mirrors an IDE assistant workload: long file context in the prompt,
+        # a multi-paragraph answer, hardware profiling to catch KV-cache spill.
+        "coding_assistant": {
+            "runs": 3,
+            "context": 16384,
+            "prompt_file": "coding_assistant.md",
+            # Throughput is measured in tokens per second, so a long
+            # generation only multiplies the run time without sharpening the
+            # number. Quality runs use the 2000-token default instead.
+            "max_tokens": 512,
+            "enable_profiling": True,
+            "retest": True,
+            "rank_by": "speed",
+        },
+        # Preserves the pre-8192 defaults so older cached results stay
+        # comparable after the default context length was raised.
+        "legacy_2048": {
+            "runs": 3,
+            "context": 2048,
+            "max_tokens": 256,
+            "prompt": "Explain machine learning in 3 sentences",
         },
     }
 
@@ -227,7 +251,7 @@ class PresetManager:
         load_cfg = default_cfg.get("load", {}) or {}
         return {
             "runs": int(default_cfg.get("num_runs", 3)),
-            "context": int(default_cfg.get("context_length", 2048)),
+            "context": int(default_cfg.get("context_length", 8192)),
             "limit": 0,
             "dev_mode": False,
             "min_context": 0,
@@ -246,6 +270,7 @@ class PresetManager:
             "max_temp": 0.0,
             "max_power": 0.0,
             "prompt": default_cfg.get("prompt"),
+            "prompt_file": None,
             "temperature": inference.get("temperature"),
             "top_k_sampling": inference.get("top_k_sampling"),
             "top_p_sampling": inference.get("top_p_sampling"),
@@ -278,13 +303,22 @@ class PresetManager:
             return False, "Preset name contains invalid path separators"
         return True, ""
 
+    def rejection_reason(self, name: str) -> str:
+        """Why writing this preset name would be refused.
+
+        Returns an empty string when the name is acceptable. Callers that
+        need the reason for a user-facing message should ask here instead of
+        reading it off the raised exception.
+        """
+        if self.is_readonly_name(name):
+            return "Readonly preset names cannot be used"
+        _, reason = self.validate_preset_name(name)
+        return reason
+
     def save_preset(self, name: str, config: Dict[str, Any]) -> None:
         """Save a user preset as JSON in the presets directory."""
-        if self.is_readonly_name(name):
-            raise ValueError("Readonly preset names cannot be used")
-
-        valid, reason = self.validate_preset_name(name)
-        if not valid:
+        reason = self.rejection_reason(name)
+        if reason:
             raise ValueError(reason)
 
         payload = {key: value for key, value in config.items() if value is not None}
@@ -295,11 +329,8 @@ class PresetManager:
 
     def delete_preset(self, name: str) -> None:
         """Delete a user preset file."""
-        if self.is_readonly_name(name):
-            raise ValueError("Readonly preset names cannot be used")
-
-        valid, reason = self.validate_preset_name(name)
-        if not valid:
+        reason = self.rejection_reason(name)
+        if reason:
             raise ValueError(reason)
 
         preset_path = self._preset_path(name)
@@ -364,6 +395,7 @@ class PresetManager:
         add_value("--context", preset.get("context"))
         add_positive_value("--limit", preset.get("limit"))
         add_value("--prompt", preset.get("prompt"))
+        add_value("--prompt-file", preset.get("prompt_file"))
         add_positive_value("--min-context", preset.get("min_context"))
         max_size = preset.get("max_size")
         if isinstance(max_size, (int, float)) and max_size > 0:

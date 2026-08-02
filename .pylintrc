@@ -6,7 +6,7 @@
 load-plugins = pylint.extensions.docparams
 
 # Target runtime version for type analysis
-py-version = 3.10
+py-version = 3.11
 
 # Ignore patterns (test files and generated code)
 ignore-patterns = test_.*?\.py
@@ -26,7 +26,7 @@ disable=
     R0911,
     R0916,
     R1732,
-    # False positives in Codacy's bundled pylint (Python 3.10 code):
+    # False positives in Codacy's bundled pylint (Python 3.11 code):
     # E1101: Path inherits PurePath but has .exists/.mkdir etc.
     E1101,
     # E1136: list[str] / dict[...] generics valid since Python 3.9

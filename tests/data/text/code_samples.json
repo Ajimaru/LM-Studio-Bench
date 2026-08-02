@@ -1,0 +1,78 @@
+[
+    {
+        "id": "code_001",
+        "task": "Write a Python function `merge_intervals(intervals)` that merges overlapping intervals. Each interval is a [start, end] list. Return the merged list sorted by start.",
+        "checks": [
+            "assert merge_intervals([[1, 3], [2, 6], [8, 10]]) == [[1, 6], [8, 10]]",
+            "assert merge_intervals([]) == []",
+            "assert merge_intervals([[1, 4], [4, 5]]) == [[1, 5]]",
+            "assert merge_intervals([[5, 6], [1, 2]]) == [[1, 2], [5, 6]]"
+        ],
+        "category": "algorithm"
+    },
+    {
+        "id": "code_002",
+        "task": "Write a Python function `parse_duration(text)` that converts a duration string like '1h30m', '45s' or '2h' into the total number of seconds as an int. Missing units count as zero. Raise ValueError for input that contains no valid unit.",
+        "checks": [
+            "assert parse_duration('1h30m') == 5400",
+            "assert parse_duration('45s') == 45",
+            "assert parse_duration('2h') == 7200",
+            "try:\n    parse_duration('abc')\n    raise AssertionError('expected ValueError')\nexcept ValueError:\n    pass"
+        ],
+        "category": "parsing"
+    },
+    {
+        "id": "code_003",
+        "task": "The function below is meant to return the second largest distinct number in a list, or None when there is no such value. Fix it and return the corrected function.\n\ndef second_largest(numbers):\n    numbers.sort()\n    return numbers[-2]",
+        "checks": [
+            "assert second_largest([3, 1, 4, 4, 2]) == 3",
+            "assert second_largest([5]) is None",
+            "assert second_largest([]) is None",
+            "assert second_largest([2, 2, 2]) is None",
+            "data = [1, 9, 5]\nsecond_largest(data)\nassert data == [1, 9, 5], 'must not mutate the input'"
+        ],
+        "category": "bug_fixing"
+    },
+    {
+        "id": "code_004",
+        "task": "Write a Python function `group_by_key(records, key)` that groups a list of dicts by the given key and returns a dict mapping each key value to the list of matching records, preserving input order. Records missing the key are skipped.",
+        "checks": [
+            "records = [{'t': 'a', 'v': 1}, {'t': 'b', 'v': 2}, {'t': 'a', 'v': 3}]\nassert group_by_key(records, 't') == {'a': [{'t': 'a', 'v': 1}, {'t': 'a', 'v': 3}], 'b': [{'t': 'b', 'v': 2}]}",
+            "assert group_by_key([], 't') == {}",
+            "assert group_by_key([{'v': 1}], 't') == {}"
+        ],
+        "category": "data_handling"
+    },
+    {
+        "id": "code_005",
+        "task": "Write a Python function `truncate_words(text, limit)` that shortens text to at most `limit` characters without splitting a word, appending a single '…' when it had to shorten. If the text already fits, return it unchanged. The result including '…' must never exceed `limit`.",
+        "checks": [
+            "assert truncate_words('hello world', 20) == 'hello world'",
+            "result = truncate_words('the quick brown fox', 10)\nassert len(result) <= 10\nassert result.endswith('…')\nassert result.startswith('the')",
+            "assert truncate_words('', 5) == ''"
+        ],
+        "category": "edge_case_handling"
+    },
+    {
+        "id": "code_006",
+        "task": "Write a Python class `RateLimiter` with `__init__(self, max_calls, per_seconds)` and a method `allow(self, timestamp)` that returns True when a call at the given timestamp (a float in seconds) is within the limit, and False otherwise. Calls that fall outside the window must no longer count.",
+        "checks": [
+            "r = RateLimiter(2, 10)\nassert r.allow(0.0) is True\nassert r.allow(1.0) is True\nassert r.allow(2.0) is False",
+            "r = RateLimiter(2, 10)\nassert r.allow(0.0) is True\nassert r.allow(1.0) is True\nassert r.allow(11.0) is True",
+            "r = RateLimiter(1, 5)\nassert r.allow(100.0) is True\nassert r.allow(104.9) is False\nassert r.allow(105.1) is True"
+        ],
+        "category": "stateful"
+    },
+    {
+        "id": "code_007",
+        "task": "Write a Python function `flatten(value)` that turns an arbitrarily nested structure of lists and tuples into a single flat list, preserving order. Strings must be treated as scalars, not iterated. Dicts are scalars too.",
+        "checks": [
+            "assert flatten([1, [2, [3, [4]]]]) == [1, 2, 3, 4]",
+            "assert flatten([]) == []",
+            "assert flatten(['ab', ['cd']]) == ['ab', 'cd']",
+            "assert flatten([1, (2, 3), [[4], 5]]) == [1, 2, 3, 4, 5]",
+            "assert flatten([{'a': 1}, [2]]) == [{'a': 1}, 2]"
+        ],
+        "category": "recursion"
+    }
+]
