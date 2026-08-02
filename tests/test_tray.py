@@ -294,13 +294,79 @@ class TestTrayAppGetAboutVersionStatus:
             app = tray.TrayApp("http://localhost:8080")
         assert app._get_about_version_status("dev-branch") == "dev"
 
-    def test_returns_unknown_when_api_fails(self, tmp_path: Path):
-        """Returns 'unknown' when GitHub release fetch fails."""
+    def test_returns_pending_while_lookup_runs(self, tmp_path: Path):
+        """An empty cache means "not fetched yet", not "lookup failed"."""
         tray, _, _ = _import_tray()
         with patch("core.tray.USER_LOGS_DIR", tmp_path):
             app = tray.TrayApp("http://localhost:8080")
         with patch("core.tray.get_cached_latest_release", return_value=None):
+            status = app._get_about_version_status("v1.0.0")
+        assert status == tray.VERSION_STATUS_PENDING
+
+    def test_returns_unknown_for_unparseable_tag(self, tmp_path: Path):
+        """A release whose tag makes no sense stays "unknown"."""
+        tray, _, _ = _import_tray()
+        with patch("core.tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+        with patch(
+            "core.tray.get_cached_latest_release",
+            return_value={"tag_name": "nightly"},
+        ):
             assert app._get_about_version_status("v1.0.0") == "unknown"
+
+    def test_refresh_rewrites_label_once_lookup_resolves(self, tmp_path: Path):
+        """The About label stops saying "checking" when the answer arrives."""
+        tray, _, _ = _import_tray()
+        with patch("core.tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+
+        label = MagicMock()
+        glib = MagicMock()
+        with patch.object(tray, "GLIB", glib):
+            app._schedule_version_status_refresh(label, "v1.0.0")
+
+        tick = glib.timeout_add.call_args[0][1]
+
+        # Still pending: keep the timer alive, leave the label alone.
+        with patch("core.tray.get_cached_latest_release", return_value=None):
+            assert tick() is True
+        label.set_markup.assert_not_called()
+
+        with patch(
+            "core.tray.get_cached_latest_release",
+            return_value={"tag_name": "v1.0.0"},
+        ):
+            assert tick() is False
+        assert "no update" in label.set_markup.call_args[0][0]
+
+    def test_refresh_gives_up_on_unknown(self, tmp_path: Path):
+        """An offline machine settles on "unknown" instead of polling forever."""
+        tray, _, _ = _import_tray()
+        with patch("core.tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+
+        label = MagicMock()
+        glib = MagicMock()
+        with patch.object(tray, "GLIB", glib):
+            app._schedule_version_status_refresh(label, "v1.0.0")
+
+        tick = glib.timeout_add.call_args[0][1]
+        with patch("core.tray.get_cached_latest_release", return_value=None):
+            results = [tick() for _ in range(tray.VERSION_RECHECK_ATTEMPTS)]
+
+        assert results[-1] is False
+        assert "unknown" in label.set_markup.call_args[0][0]
+
+    def test_refresh_without_glib_does_nothing(self, tmp_path: Path):
+        """Without GLib there is no main loop to schedule on."""
+        tray, _, _ = _import_tray()
+        with patch("core.tray.USER_LOGS_DIR", tmp_path):
+            app = tray.TrayApp("http://localhost:8080")
+
+        label = MagicMock()
+        with patch.object(tray, "GLIB", None):
+            app._schedule_version_status_refresh(label, "v1.0.0")
+        label.set_markup.assert_not_called()
 
     def test_returns_update_available(self, tmp_path: Path):
         """Returns update message when newer version exists."""

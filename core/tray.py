@@ -32,6 +32,15 @@ _LATEST_RELEASE_STATE: dict[str, Any] = {
     "fetch_started": False,
 }
 
+# Shown while the background release lookup is still running. "unknown"
+# would read as a failure, and the answer usually arrives a second later.
+VERSION_STATUS_PENDING = "checking…"
+
+# How often the About tab re-reads the release cache, and how long it keeps
+# trying before it settles on "unknown".
+VERSION_RECHECK_INTERVAL_MS = 500
+VERSION_RECHECK_ATTEMPTS = 20
+
 
 def _fetch_latest_release_background() -> None:
     """Fetch latest release info in a background thread and cache result."""
@@ -898,10 +907,16 @@ class TrayApp:
 
         Mapping:
         - local version invalid -> dev
-        - GitHub version invalid/unavailable -> unknown
+        - release data not fetched yet -> checking...
+        - GitHub version invalid -> unknown
         - local == GitHub -> no update
         - local > GitHub -> Ahead of release
         - GitHub > local -> update available
+
+        ``get_cached_latest_release`` only starts the fetch and returns
+        whatever is cached, so the first call after startup returns nothing.
+        That is a pending lookup, not a failure - the caller refreshes the
+        label once the background thread has an answer.
 
         Args:
             local_version: Local VERSION file value.
@@ -915,7 +930,7 @@ class TrayApp:
 
         release_data = get_cached_latest_release()
         if not release_data:
-            return "unknown"
+            return VERSION_STATUS_PENDING
 
         github_version = str(release_data.get("tag_name", "")).strip()
         github_tuple = self._parse_version_tuple(github_version)
@@ -927,6 +942,44 @@ class TrayApp:
         if local_tuple > github_tuple:
             return "Ahead of release"
         return "no update"
+
+    def _set_version_markup(self, label: Any, version: str, status: str) -> None:
+        """Write "version (status)" into an About tab label."""
+        label.set_markup(
+            f'<span foreground="#888888">'
+            f"{self._escape_markup(version)} ({self._escape_markup(status)})"
+            f"</span>"
+        )
+
+    def _schedule_version_status_refresh(self, label: Any, version: str) -> None:
+        """Update the About label once the release lookup has an answer.
+
+        The lookup runs in a background thread, so the label is built before
+        the result exists. Poll the cache from the GTK main loop and rewrite
+        the label as soon as it resolves; give up after a bounded number of
+        attempts so an offline machine ends on "unknown" instead of an
+        eternal "checking...".
+        """
+        if GLIB is None:
+            return
+
+        attempts = {"left": VERSION_RECHECK_ATTEMPTS}
+
+        def _tick() -> bool:
+            status = self._get_about_version_status(version)
+            attempts["left"] -= 1
+
+            if status != VERSION_STATUS_PENDING:
+                self._set_version_markup(label, version, status)
+                return False
+
+            if attempts["left"] <= 0:
+                self._set_version_markup(label, version, "unknown")
+                return False
+
+            return True
+
+        GLIB.timeout_add(VERSION_RECHECK_INTERVAL_MS, _tick)
 
     def _create_info_tab(self) -> Any:
         """Create the Info tab with icon, title, version, etc."""
@@ -958,13 +1011,12 @@ class TrayApp:
             version = version_file.read_text().strip()
         version_status = self._get_about_version_status(version)
         version_label = GTK.Label()
-        version_label.set_markup(
-            f'<span foreground="#888888">'
-            f"{version} ({version_status})"
-            f"</span>"
-        )
+        self._set_version_markup(version_label, version, version_status)
         version_label.set_justify(GTK.Justification.CENTER)
         box.pack_start(version_label, False, False, 5)
+
+        if version_status == VERSION_STATUS_PENDING:
+            self._schedule_version_status_refresh(version_label, version)
 
         desc_label = GTK.Label()
         desc_label.set_text(
