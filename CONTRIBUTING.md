@@ -21,6 +21,15 @@ pip install -r requirements-dev.txt
 runs. It includes the runtime dependencies from `requirements.txt` plus the
 extra tooling needed for `pytest`, linting, and local development.
 
+`requirements-lock.txt` is generated with `pip-tools` and pins the combined
+runtime/development dependency set for CI audit and dependency review. Refresh
+it after changing `requirements*.txt`:
+
+```bash
+pip-compile --allow-unsafe --strip-extras \
+  -o requirements-lock.txt requirements-dev.txt requirements.txt
+```
+
 **3.** Run the benchmark or web dashboard:
 
 ```bash

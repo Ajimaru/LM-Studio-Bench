@@ -38,10 +38,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r requirements-lock.txt
 
       - uses: pypa/gh-action-pip-audit@v1.1.0
         with:
-          inputs: requirements.txt requirements-dev.txt
+          inputs: requirements-lock.txt
           vulnerability-service: osv
           summary: true

@@ -320,6 +320,7 @@ djlint --reformat web/templates/dashboard.html.jinja
 | `.shellcheckrc` | Shellcheck configuration |
 | `pyproject.toml` | ruff and djlint configuration |
 | `requirements-dev.txt` | Python development dependencies |
+| `requirements-lock.txt` | Pinned audit/review dependencies |
 
 ## Setup & Installation Scripts
 
