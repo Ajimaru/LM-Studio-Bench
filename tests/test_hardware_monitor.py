@@ -787,17 +787,56 @@ class TestGPUMonitorAdvanced:
         monitor = GPUMonitor.__new__(GPUMonitor)
         monitor.gpu_type = "AMD"
         monitor.gpu_tool = "rocm-smi"
-        mock_show = MagicMock(
-            returncode=0,
-            stdout="GPU[0] : Navi 21 [Radeon RX 6800 XT]\n",
-        )
-        mock_lspci = MagicMock(returncode=1, stdout="")
         with patch(
-            "subprocess.run",
-            side_effect=[mock_lspci, mock_show],
+            "tools.hardware_monitor.device_names",
+            return_value={0: "AMD Radeon RX 6800 XT"},
         ):
             result = monitor._detect_amd_gpu_model()
-        assert isinstance(result, str)
+        assert result == "AMD Radeon RX 6800 XT"
+
+    def test_detect_amd_gpu_model_names_the_measured_device(self):
+        """With two GPUs the name follows GPU[0], the measured one.
+
+        The CPU brand string only ever describes the integrated GPU, so
+        asking it first labelled results from a discrete card with the name
+        of the iGPU sitting next to it.
+        """
+        monitor = GPUMonitor.__new__(GPUMonitor)
+        monitor.gpu_type = "AMD"
+        monitor.gpu_tool = "rocm-smi"
+
+        cpu_info = MagicMock()
+        cpu_info.get_cpu_info.return_value = {
+            "brand_raw": "AMD Ryzen AI 9 HX 370 w/ Radeon 890M"
+        }
+        with patch(
+            "tools.hardware_monitor.device_names",
+            return_value={
+                0: "AMD Radeon™ RX 7600M XT",
+                1: "AMD Radeon Graphics",
+            },
+        ), patch("tools.hardware_monitor.cpuinfo", cpu_info):
+            result = monitor._detect_amd_gpu_model()
+
+        assert result == "AMD Radeon™ RX 7600M XT"
+        cpu_info.get_cpu_info.assert_not_called()
+
+    def test_detect_amd_gpu_model_falls_back_to_cpu_brand(self):
+        """Without rocm-smi names the integrated GPU is the best guess."""
+        monitor = GPUMonitor.__new__(GPUMonitor)
+        monitor.gpu_type = "AMD"
+        monitor.gpu_tool = "rocm-smi"
+
+        cpu_info = MagicMock()
+        cpu_info.get_cpu_info.return_value = {
+            "brand_raw": "AMD Ryzen AI 9 HX 370 w/ Radeon 890M"
+        }
+        with patch("tools.hardware_monitor.device_names", return_value={}), \
+                patch("tools.hardware_monitor._resolve_tool", return_value=None), \
+                patch("tools.hardware_monitor.cpuinfo", cpu_info):
+            result = monitor._detect_amd_gpu_model()
+
+        assert result == "AMD Radeon 890M"
 
     def test_detect_intel_gpu_model_returns_string(self):
         """_detect_intel_gpu_model returns string."""

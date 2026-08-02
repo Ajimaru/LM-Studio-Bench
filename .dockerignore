@@ -1,0 +1,58 @@
+# Build context exclusions.
+#
+# scripts/Dockerfile.bench is built from the repository root ("docker build
+# -f scripts/Dockerfile.bench ."), so the daemon reads the whole tree before
+# running a single instruction. The Dockerfile copies only agents/, cli/,
+# core/, tools/, config/ and two test data folders - everything below is
+# dead weight, and .venv alone is half a gigabyte.
+#
+# scripts/Dockerfile.AppImage is unaffected: it builds from scripts/ and
+# would need its own scripts/.dockerignore.
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Version control and history
+.git/
+.gitignore
+
+# Build output and artifacts
+dist/
+build/
+*.egg-info/
+book/
+
+# Test and coverage output
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.so
+
+# Editor and tooling state
+.vscode/
+.idea/
+.codacy/
+.continue/
+*.swp
+
+# Local results and logs - never belong in an image
+results/
+logs/
+*.log
+*.db
+
+# Documentation and CI: not used by the image
+docs/
+.github/
+node_modules/
