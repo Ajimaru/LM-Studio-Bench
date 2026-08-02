@@ -1,6 +1,6 @@
 # LM Studio Model Benchmark
 
-![alt text](assets/logo.svg)
+![LM Studio Bench logo](assets/logo.svg)
 
 Automatic benchmarking tool for all locally installed LM Studio models. Systematically tests different models and
 quantizations to measure and compare tokens-per-second performance.
@@ -73,8 +73,10 @@ quantizations to measure and compare tokens-per-second performance.
   - NVIDIA: GPU model via `nvidia-smi --query-gpu=name`
   - AMD: GPU series via `lspci` device-ID mapping, `rocm-smi`, or gfx code
   - iGPU extraction from CPU string (e.g. "Radeon 890M")
-- 📊 **Live Hardware Monitoring**: 6 interactive charts (GPU temp, power, VRAM, GTT, CPU, system RAM) with
-  stats
+- 🧪 **Capability Benchmarks**: Optional agent mode for general text,
+  reasoning, vision, tooling and code execution quality checks
+- 📊 **Live Hardware Monitoring**: interactive charts for GPU temp, power,
+  VRAM, GTT, CPU and system RAM with stats
   - 💾 **VRAM Monitoring**: Measures VRAM usage during benchmarks
   - 🧠 **GTT Support (AMD)**: Uses shared system RAM in addition to VRAM (e.g. 2GB VRAM + 46GB GTT =
     48GB)
@@ -374,8 +376,9 @@ Start the modern web UI with live streaming and an interactive results browser:
 # Load default classic preset (benchmarks all models, 3 runs)
 ./LM-Studio-Bench-x86_64.AppImage --preset default_classic
 
-# Load capability-driven preset (tests one model, 1 run; alias: default_compatability_test)
-./LM-Studio-Bench-x86_64.AppImage --preset default_compatibility_test --agent-model qwen2.5-7b-instruct
+# Run the capability-driven agent for one model
+./LM-Studio-Bench-x86_64.AppImage --agent qwen2.5-7b-instruct \
+  --capabilities general_text,reasoning
 
 # Load other presets
 ./LM-Studio-Bench-x86_64.AppImage --preset quick_test
@@ -539,10 +542,11 @@ See [REST API Features](docs/REST_API_FEATURES.md) for full documentation.
 <details>
 <summary>click to expand</summary>
 
-- **Prompt**: "Is the sky blue?"
-- **Context length**: 2048 tokens
+- **Prompt**: code-review style prompt from `config/defaults.json`
+- **Context length**: 8192 tokens
 - **Warmup**: 1 run
 - **Measurements**: 3 runs
+- **Max tokens**: 2000
 - **GPU offload**: automatic (1.0 → 0.7 → 0.5 → 0.3)
 
 </details>
@@ -565,7 +569,7 @@ For standardized and reproducible benchmarks the following sampling parameters a
 | **Top-P Sampling**  | 0.9   | Nucleus sampling with 90% cumulative probability           |
 | **Min-P Sampling**  | 0.05  | Minimum probability threshold                              |
 | **Repeat Penalty**  | 1.2   | Reduces repetitions (default 1.1)                          |
-| **Max Tokens**      | 256   | Bounded output length for faster tests                     |
+| **Max Tokens**      | 2000  | Bounded output length for coding-assistant style prompts   |
 
 </details>
 
@@ -573,9 +577,11 @@ For standardized and reproducible benchmarks the following sampling parameters a
 
 ## Customization
 
-For persistent changes edit the configuration file [config/defaults.json](config/defaults.json). This file
-controls the default `prompt`, `context_length`, `num_runs`, and other inference parameters used by the
-benchmark.
+For persistent personal changes, prefer
+`~/.config/lm-studio-bench/defaults.json`. Project defaults live in
+[config/defaults.json](config/defaults.json) and are version-controlled.
+Both files control `prompt`, `context_length`, `num_runs`, and other
+inference parameters used by the benchmark.
 
 For ad-hoc runs you can override defaults on the command line. Example:
 
@@ -583,7 +589,7 @@ For ad-hoc runs you can override defaults on the command line. Example:
 ./run.py -P "Your custom test prompt" --context 4096 --runs 5
 ```
 
-(See [config/defaults.json](config/defaults.json) for persistent configuration.)
+(See [docs/USER_DATA.md](docs/USER_DATA.md) for configuration locations.)
 
 ## Output
 
@@ -594,10 +600,11 @@ For ad-hoc runs you can override defaults on the command line. Example:
 <details>
 <summary>click to expand</summary>
 
-The tool uses separate log files for different components:
+The tool uses separate log files for different components under
+`~/.local/share/lm-studio-bench/logs/`:
 
 ```text
-logs/
+~/.local/share/lm-studio-bench/logs/
 ├── webapp_20260105_112201.log       # Web dashboard logs (only when --webapp is used)
 └── benchmark_20260105_113045.log    # Benchmark run logs
 ```
@@ -618,7 +625,9 @@ logs/
 <details>
 <summary>click to expand</summary>
 
-Benchmark reports are stored in the `results/` directory:
+Benchmark reports are stored in
+`~/.local/share/lm-studio-bench/results/` unless an output directory is
+provided:
 
 - `benchmark_results_YYYYMMDD_HHMMSS.json` - structured data (for automation)
 - `benchmark_results_YYYYMMDD_HHMMSS.csv` - tabular data (Excel/Sheets compatible)
@@ -726,6 +735,10 @@ qwen2.5-7b-instruct,q5_k_m,NVIDIA,0.7,4512,38.76,0.145,1.287,10,49,2026-01-04 10
 | **tokens_per_sec_per_billion_params** | Efficiency: tokens/s per billion parameters |
 | **temp_celsius_min/max/avg** | GPU temperature during the benchmark (°C) - only with `--enable-profiling` |
 | **power_watts_min/max/avg** | GPU power draw during the benchmark (W) - only with `--enable-profiling` |
+| **vram_gb_min/max/avg** | GPU memory usage during profiling |
+| **gtt_gb_min/max/avg** | AMD GTT/shared graphics memory during profiling |
+| **cpu_percent_min/max/avg** | System CPU usage during profiling |
+| **ram_gb_min/max/avg** | System RAM usage during profiling |
 
 </details>
 

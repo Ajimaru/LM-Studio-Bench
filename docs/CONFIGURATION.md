@@ -62,8 +62,8 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
 
 ```json
 {
-  "prompt": "Is the sky blue?",
-  "context_length": 2048,
+  "prompt": "Read the following function and explain what it does...",
+  "context_length": 8192,
   "num_runs": 3,
   "retest": false,
   "enable_profiling": false,
@@ -79,7 +79,7 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
     "top_p_sampling": 0.9,
     "min_p_sampling": 0.05,
     "repeat_penalty": 1.2,
-    "max_tokens": 256
+    "max_tokens": 2000
   },
   "load": {
     "n_gpu_layers": -1,
@@ -101,8 +101,8 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
 
 | Field | Type | Default | Description |
 | ------ | ----- | ---------- | -------------- |
-| `prompt` | string | `"Is the sky blue?"` | Default test prompt for all benchmarks |
-| `context_length` | integer | `2048` | Context length in tokens |
+| `prompt` | string | code-review prompt | Default test prompt for all benchmarks |
+| `context_length` | integer | `8192` | Context length in tokens |
 | `num_runs` | integer | `3` | Number of measurements per model/quantization |
 | `retest` | boolean | `false` | Ignore cache and benchmark all selected models again |
 | `enable_profiling` | boolean | `false` | Enable temperature/power monitoring |
@@ -125,7 +125,7 @@ This overrides only `num_runs` and `use_rest_api`, all other values come from pr
 | `top_p_sampling` | float | `0.9` | Top-P / Nucleus sampling (cumulative probability) |
 | `min_p_sampling` | float | `0.05` | Min-P sampling (minimum probability threshold) |
 | `repeat_penalty` | float | `1.2` | Repeat penalty (prevents repetitions, 1.0=off) |
-| `max_tokens` | integer | `256` | Maximum output tokens |
+| `max_tokens` | integer | `2000` | Maximum output tokens |
 
 #### Load Config (`load`)
 
@@ -153,7 +153,7 @@ fields to avoid `null` values in preset comparisons.
 - **benchmark_mode**: `classic`
 - **preset_mode**: `classic`
 - **runs**: 3
-- **context**: 2048
+- **context**: 8192
 - Capability fields (agent_model, agent_capabilities, agent_max_tests): `null`
 
 **Backwards Compatibility**: Loading `--preset default` automatically loads `default_classic`.
@@ -162,12 +162,13 @@ fields to avoid `null` values in preset comparisons.
 
 Default preset for focused capability testing of a single model.
 
-**Alias**: The legacy name `default_compatability_test` is accepted as an alias
-for this preset for backward compatibility.
+**Alias**: The legacy misspelling `default_compatability_test` is accepted as
+an alias for this preset for backward compatibility.
+
 - **benchmark_mode**: `capability`
 - **preset_mode**: `capability`
 - **runs**: 1
-- **context**: 2048
+- **context**: 8192
 - **agent_model**: `qwen2.5-7b-instruct`
 - **agent_capabilities**: `general_text,reasoning`
 - **agent_max_tests**: `10`
@@ -212,7 +213,7 @@ Context length in tokens.
 ./run.py --context 32768       # 32K context
 ```
 
-**Default**: `2048`
+**Default**: `8192`
 
 ---
 
@@ -236,17 +237,20 @@ loads `default_classic` automatically.
 ./run.py --preset quick_test
 ./run.py --preset high_quality --runs 3
 ./run.py --preset default_classic
-./run.py --preset default_compatability_test
+./run.py --preset default_compatibility_test
 ```
 
 Built-in readonly presets:
 
 - `default_classic`
-- `default_compatability_test`
+- `default_compatibility_test`
+- `default_compatability_test` (legacy alias)
 - `default` (alias for `default_classic`)
 - `quick_test`
 - `high_quality`
 - `resource_limited`
+- `coding_assistant`
+- `legacy_2048`
 
 Readonly preset names cannot be saved, deleted, or imported as user presets.
 This restriction also applies to the legacy alias `default`.
@@ -677,7 +681,7 @@ Uses LM Studio REST API v1 instead of Python SDK/CLI.
 - MCP integration
 - Response caching
 
-**Default**: `false` (uses SDK/CLI)
+**Default**: `true` in the shipped project configuration
 
 ---
 

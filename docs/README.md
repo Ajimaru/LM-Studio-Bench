@@ -34,6 +34,7 @@ A Python benchmark tool for LM Studio with a modern web dashboard that:
 
 ✅ Multi-model benchmarking with intelligent GPU offload
 ✅ Vision & tool-calling model detection
+✅ Capability-agent tests for reasoning, vision, tooling and code execution
 ✅ Progressive VRAM management (automatic fallback)
 ✅ Caching system (skip already-tested models)
 ✅ Filter by quantization, architecture, params, context length

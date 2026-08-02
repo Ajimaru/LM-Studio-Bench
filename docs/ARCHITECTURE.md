@@ -367,14 +367,15 @@ flowchart TD
 | Layer | Source | Priority |
 | ----- | ------ | -------- |
 | **1. Hard-coded** | `BASE_DEFAULT_CONFIG` in `core/config.py` | Lowest |
-| **2. User Config** | `~/.config/lm-studio-bench/defaults.json` | Medium |
-| **3. Project Config** | `config/defaults.json` | Low |
-| **3. CLI Arguments** | argparse in benchmark.py | Highest |
+| **2. Project Config** | `config/defaults.json` | Low |
+| **3. User Config** | `~/.config/lm-studio-bench/defaults.json` | High |
+| **4. CLI Arguments** | argparse in benchmark.py | Highest |
 
 **Merge Strategy:**
 
 - `_deep_merge()` recursively merges nested dictionaries
-- User config values override base config
+- Project config overrides hard-coded defaults; user config overrides project
+  config
 - `None` values in user config are skipped (base value retained)
 
 ---
@@ -386,7 +387,7 @@ flowchart LR
     CLI[CLI Arguments<br/>--runs 5<br/>--context 4096] -->|Highest Priority| Merge[Configuration<br/>Merge]
 
     UserCfg[~/.config/.../defaults.json<br/>context_length: 4096] -->|High Priority| Merge
-    ProjCfg[config/defaults.json<br/>num_runs: 3<br/>context_length: 2048] -->|Medium Priority| Merge
+    ProjCfg[config/defaults.json<br/>num_runs: 3<br/>context_length: 8192] -->|Medium Priority| Merge
     
     Base[BASE_DEFAULT_CONFIG<br/>prompt: default<br/>temperature: 0.1] -->|Lowest Priority| Merge
     
@@ -404,8 +405,8 @@ flowchart LR
 # BASE_DEFAULT_CONFIG
 {
   "num_runs": 3,
-  "context_length": 2048,
-  "prompt": "Is the sky blue?"
+  "context_length": 8192,
+  "prompt": "Read the following function..."
 }
 
 # config/defaults.json
@@ -432,7 +433,7 @@ flowchart LR
 flowchart TD
     Start([benchmark.py main]) --> ParseArgs[Parse CLI Arguments<br/>argparse.ArgumentParser]
 
-    ParseArgs --> LoadConfig[Load DEFAULT_CONFIG<br/>from config_loader]
+    ParseArgs --> LoadConfig[Load DEFAULT_CONFIG<br/>from core/config.py]
     
     LoadConfig --> CheckFlags{Special Flags?}
     
@@ -835,8 +836,8 @@ graph TB
     Tests --> RestTests[test_rest_client.py<br/>22+ tests]
     Tests --> TrayTests[test_tray.py<br/>26+ tests]
     Tests --> PresetTests[test_preset_manager.py<br/>19+ tests]
-    Tests --> ConfigTests[test_config_loader.py<br/>9+ tests]
-    Tests --> PathTests[test_user_paths.py<br/>4+ tests]
+    Tests --> ConfigTests[test_config_loader.py<br/>config tests]
+    Tests --> PathTests[test_user_paths.py<br/>path tests]
     Tests --> VersionTests[test_version_checker.py<br/>7+ tests]
     Tests --> MetadataTests[test_scrape_metadata.py<br/>24+ tests]
     Tests --> RunTests[test_run.py<br/>10+ tests]
@@ -870,8 +871,8 @@ graph TB
 | REST Client | `test_rest_client.py` | 22+ | High |
 | Linux Tray | `test_tray.py` | 26+ | Medium |
 | Preset Manager | `test_preset_manager.py` | 19+ | High |
-| Config Loader | `test_config_loader.py` | 9+ | High |
-| User Paths | `test_user_paths.py` | 4+ | High |
+| Config Loader | `test_config_loader.py` | config loading | High |
+| User Paths | `test_user_paths.py` | path handling | High |
 | Version Checker | `test_version_checker.py` | 7+ | High |
 | Metadata Scraping | `test_scrape_metadata.py` | 24+ | Medium |
 | Entry Point | `test_run.py` | 10+ | Medium |
