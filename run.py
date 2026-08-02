@@ -203,6 +203,24 @@ def _build_subprocess_env() -> dict[str, str]:
     return env
 
 
+def _run_child_process(argv: list[str], cwd: Path | None = None) -> int:
+    """Run a project entrypoint in a child interpreter, return its exit code.
+
+    The three launch paths below (dashboard, agent, classic benchmark) differ
+    only in what they append to the argument list, so the call itself lives
+    here: one place that owns the sanitized environment, and one place for a
+    security audit to look at. Every argv starts with PYTHON_EXECUTABLE and
+    carries only arguments that passed _sanitize_cli_args.
+    """
+    completed = subprocess.run(  # nosec B603 - fixed argv, sanitized flags
+        argv,
+        cwd=cwd,
+        env=_build_subprocess_env(),
+        check=False,
+    )
+    return completed.returncode
+
+
 _ALLOWED_ARG_RE = re.compile(r"^[A-Za-z0-9_./:=,@%+\-]+$")
 
 
@@ -527,11 +545,11 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
             env=_build_subprocess_env(),
         )
         lines = result.stdout.split("\n")
-        IN_OPTIONS = False
+        in_options = False
         for line in lines:
             if line.startswith("options:") or line.startswith("  -"):
-                IN_OPTIONS = True
-            if IN_OPTIONS:
+                in_options = True
+            if in_options:
                 print(line)
 
     print()
@@ -553,7 +571,7 @@ HAS_WEB_FLAG = "--webapp" in CLI_ARGS or "-w" in CLI_ARGS
 HAS_AGENT_FLAG = _has_agent_flag(CLI_ARGS)
 DEBUG_ENABLED = "--debug" in CLI_ARGS or "-d" in CLI_ARGS
 
-TRAY_PROCESS = None
+tray_process = None
 
 if HAS_WEB_FLAG:
     args = [arg for arg in CLI_ARGS if arg not in ("--webapp", "-w")]
@@ -569,7 +587,7 @@ if HAS_WEB_FLAG:
         sys.exit(2)
 
     DASHBOARD_URL = f"http://localhost:{web_port}"
-    TRAY_PROCESS = _start_tray_process(DASHBOARD_URL, DEBUG_ENABLED)
+    tray_process = _start_tray_process(DASHBOARD_URL, DEBUG_ENABLED)
 
     app_script = project_root / "web" / "app.py"
     if not app_script.exists():
@@ -579,14 +597,11 @@ if HAS_WEB_FLAG:
 
     print("🌐 Starting FastAPI web dashboard...")
     try:
-        result = subprocess.run(
-            [PYTHON_EXECUTABLE, str(app_script)] + safe_args,
-            env=_build_subprocess_env(),
-            check=False,
+        sys.exit(
+            _run_child_process([PYTHON_EXECUTABLE, str(app_script)] + safe_args)
         )
-        sys.exit(result.returncode)
     finally:
-        _stop_tray_process(TRAY_PROCESS)
+        _stop_tray_process(tray_process)
 elif HAS_AGENT_FLAG:
     AGENT_MODEL = None
     for cli_arg in CLI_ARGS:
@@ -621,39 +636,37 @@ elif HAS_AGENT_FLAG:
 
     print("🤖 Starting capability-driven benchmark agent...")
     try:
-        result = subprocess.run(
-            [PYTHON_EXECUTABLE, "-m", "cli.main"] + safe_args,
-            cwd=project_root,
-            env=_build_subprocess_env(),
-            check=False,
+        sys.exit(
+            _run_child_process(
+                [PYTHON_EXECUTABLE, "-m", "cli.main"] + safe_args,
+                cwd=project_root,
+            )
         )
-        sys.exit(result.returncode)
     except (subprocess.SubprocessError, OSError) as error:
         print(f"❌ Error starting agent: {error}")
         sys.exit(1)
 
 else:
     benchmark_script = project_root / "cli" / "benchmark.py"
-    TRAY_PROCESS = _start_tray_process("http://localhost:1234", DEBUG_ENABLED)
+    tray_process = _start_tray_process("http://localhost:1234", DEBUG_ENABLED)
 
     if not benchmark_script.exists():
         print(f"❌ Error: {benchmark_script} not found")
-        _stop_tray_process(TRAY_PROCESS)
+        _stop_tray_process(tray_process)
         sys.exit(1)
 
     try:
         safe_args = _sanitize_cli_args(CLI_ARGS)
     except ValueError as error:
         print(f"❌ Invalid CLI arguments: {error}")
-        _stop_tray_process(TRAY_PROCESS)
+        _stop_tray_process(tray_process)
         sys.exit(2)
 
     try:
-        result = subprocess.run(
-            [PYTHON_EXECUTABLE, str(benchmark_script)] + safe_args,
-            env=_build_subprocess_env(),
-            check=False,
+        sys.exit(
+            _run_child_process(
+                [PYTHON_EXECUTABLE, str(benchmark_script)] + safe_args
+            )
         )
-        sys.exit(result.returncode)
     finally:
-        _stop_tray_process(TRAY_PROCESS)
+        _stop_tray_process(tray_process)

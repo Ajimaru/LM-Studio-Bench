@@ -168,6 +168,30 @@ class TestExtractPort:
         assert run._extract_port(["-p"]) is None
 
 
+class TestRunChildProcess:
+    """Tests for _run_child_process()."""
+
+    def test_returns_child_exit_code(self):
+        """The child's exit code is what the caller passes to sys.exit."""
+        run = _import_run()
+        completed = MagicMock(returncode=3)
+        with patch("subprocess.run", return_value=completed):
+            assert run._run_child_process(["python", "x.py"]) == 3
+
+    def test_passes_sanitized_env_and_cwd(self):
+        """Every launch gets the cleaned environment, cwd stays optional."""
+        run = _import_run()
+        completed = MagicMock(returncode=0)
+        with patch("subprocess.run", return_value=completed) as mock_run:
+            run._run_child_process(["python", "-m", "cli.main"], cwd="/tmp")
+
+        kwargs = mock_run.call_args.kwargs
+        assert kwargs["cwd"] == "/tmp"
+        assert kwargs["check"] is False
+        assert "LD_PRELOAD" not in kwargs["env"]
+        assert "PYTHONPATH" in kwargs["env"]
+
+
 class TestBuildSubprocessEnv:
     """Tests for _build_subprocess_env()."""
 
