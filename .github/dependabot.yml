@@ -22,10 +22,13 @@ updates:
       # does not ship - the AppImage builder installs libgirepository1.0-dev.
       # requirements.txt caps the range at <3.50 for that reason. Closing the
       # group PR does not teach Dependabot this, so state it here: without
-      # the rule the same unbuildable bump returns every month (see #84).
+      # the rule the same unbuildable bump returns every month.
       # Lift this together with the cap once the base image moves on.
       - dependency-name: "pygobject"
         versions: [">=3.50"]
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-patch
     groups:
       dev-dependencies:
         dependency-type: development
@@ -39,4 +42,3 @@ updates:
           - "*"
         update-types:
           - minor
-          - patch
