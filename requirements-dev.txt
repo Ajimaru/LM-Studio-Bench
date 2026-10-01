@@ -8,7 +8,7 @@
 # one config section in pyproject.toml, and the same rules editors apply.
 ruff>=0.16.5               # Linter + import sorter (see [tool.ruff])
 pylint>=4.0.8              # Deeper static analysis, beyond ruff's scope
-djlint>=1.44.2             # HTML/Jinja linter
+djlint>=1.46.2             # HTML/Jinja linter
 
 # Optional tools for development
 # Formatting is not enforced anywhere; `ruff format` is available from the
@@ -20,16 +20,16 @@ pip-tools>=7.6.1,<8          # Generate requirements-lock.txt with pip-compile
 # Testing
 pytest>=9.1.1,<10              # Test framework
 pytest-cov>=7.1.0          # Coverage plugin for pytest
-pytest-mock>=3.15.1        # Mocking support for pytest
+pytest-mock>=3.16.0        # Mocking support for pytest
 pytest-httpx>=0.36.2       # httpx request mocking for pytest
 httpx>=0.28.1,<0.29          # HTTP client (needed for test client)
 lmstudio>=1.5.0
 tqdm>=4.66.3
 psutil>=5.9.0
 reportlab>=5.0.1
-plotly>=6.9.0
+plotly>=7.1.0
 fastapi>=0.139.0
-uvicorn[standard]>=0.52.4
+uvicorn[standard]>=0.54.0
 jinja2>=3.1.6
 distro>=1.9.0
 py-cpuinfo>=9.0.0
