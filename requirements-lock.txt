@@ -65,7 +65,7 @@ fastapi==0.141.1
     # via
     #   -r requirements-dev.txt
     #   -r requirements.txt
-filelock==3.32.5
+filelock==4.0.5
     # via cachecontrol
 h11==0.16.0
     # via
