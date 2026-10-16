@@ -20,12 +20,10 @@ from io import BytesIO, StringIO
 import json
 import logging
 import math
-import os
 from pathlib import Path
 import platform
 import re
 import shutil
-import signal
 import socket
 import sqlite3
 import statistics
@@ -42,7 +40,7 @@ import webbrowser
 import zipfile
 
 import cpuinfo
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import BackgroundTasks, FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
@@ -57,16 +55,30 @@ except (ImportError, ModuleNotFoundError):
     distro = None
 
 from core.config import DEFAULT_CONFIG
-from core.logging_utils import install_level_icons
+from core.logging_utils import install_level_icons, update_latest_log
 from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
 from core.platform_info import (
     detect_apple_gpu,
     get_apple_chip_name,
     get_apple_unified_memory_gb,
     get_macos_name_version,
+    get_os_name_version,
 )
 from core.presets import PresetManager
+from core.process_control import (
+    CONTROL_ENV,
+    pause_process,
+    resume_process,
+    stop_process,
+)
 from core.prompts import list_prompt_files, resolve_prompt_file
+from core.runtime import (
+    child_creation_flags,
+    child_environment,
+    configure_console,
+    entrypoint_command,
+)
+from tools.hardware_monitor import GPUMonitor
 
 try:
     from core.version import (
@@ -148,10 +160,10 @@ PROGRESS_DONE = re.compile(
 # "[0] AMD Radeon RX 7600M XT: 6.00GB VRAM, 0.74GB GTT, 62C, 105W"
 PER_GPU_LINE = re.compile(
     r"\[(?P<index>\d+)\]\s*(?P<name>[^:]+?):\s*"
-    r"(?P<vram>[\d.]+)GB VRAM,\s*"
-    r"(?P<gtt>[\d.]+)GB GTT,\s*"
-    r"(?P<temp>[\d.]+)[^\d,]*C,\s*"
-    r"(?P<power>[\d.]+)\s*W"
+    r"(?P<vram>N/A|[\d.]+)GB VRAM,\s*"
+    r"(?P<gtt>N/A|[\d.]+)GB GTT,\s*"
+    r"(?P<temp>N/A|-?[\d.]+)[^\d,]*C,\s*"
+    r"(?P<power>N/A|[\d.]+)\s*W"
 )
 
 
@@ -284,8 +296,7 @@ def setup_webapp_logger():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = logs_dir / f"webapp_{timestamp}.log"
     latest_link = logs_dir / "webapp_latest.log"
-    latest_link.unlink(missing_ok=True)
-    latest_link.symlink_to(log_file.name)
+    update_latest_log(log_file, latest_link)
 
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
     file_handler.setFormatter(
@@ -335,6 +346,49 @@ LATEST_RELEASE_CACHE: Dict[str, Any] = {
     "timestamp": 0,
     "ttl_seconds": 3600,
 }
+
+WINDOWS_GPU_CACHE: dict[str, Any] = {"data": None, "timestamp": 0.0}
+WINDOWS_GPU_LOCK = threading.Lock()
+
+
+def get_windows_gpu_info() -> dict[str, Any]:
+    """Read Windows GPU metadata without Linux probes or guessed RAM totals.
+
+    Returns:
+        Dashboard GPU metadata, cached briefly to coalesce polling requests.
+    """
+    with WINDOWS_GPU_LOCK:
+        cached = WINDOWS_GPU_CACHE["data"]
+        if cached is not None and time.monotonic() - WINDOWS_GPU_CACHE["timestamp"] < 5:
+            return dict(cached)
+        monitor = GPUMonitor()
+        capacity = monitor.get_total_vram_gb()
+        info = {
+            "type": monitor.gpu_type or "Unknown",
+            "model": monitor.gpu_model or "Unknown",
+            "vram_gb": capacity,
+            "gtt_gb": None,
+            "total_gb": capacity,
+            "unified_memory": False,
+            "metal": None,
+            "windows_memory_budget": True,
+            "devices": [],
+        }
+        if monitor.native_snapshot is not None:
+            primary = monitor.native_snapshot.primary_device()
+            info["devices"] = [
+                device.model_dump(mode="json")
+                for device in monitor.native_snapshot.devices
+            ]
+            if primary is not None:
+                info["gtt_gb"] = primary.shared_total_gb
+                info["driver_version"] = primary.driver_version
+                info["unified_memory"] = primary.integrated is True
+                if capacity is not None:
+                    info["total_gb"] = capacity + (primary.shared_total_gb or 0)
+        WINDOWS_GPU_CACHE["data"] = info
+        WINDOWS_GPU_CACHE["timestamp"] = time.monotonic()
+        return dict(info)
 
 
 def _get_cached_latest_release() -> Optional[dict]:
@@ -416,7 +470,7 @@ def _get_cached_latest_release() -> Optional[dict]:
 class _BenchmarkManagerState:
     """Mutable runtime state for the benchmark process lifecycle."""
 
-    process: Optional[subprocess.Popen] = None
+    process: Optional[subprocess.Popen[str]] = None
     status: str = "idle"
     start_time: Optional[datetime] = None
     current_output: str = ""
@@ -455,6 +509,7 @@ class BenchmarkManager:
 
     def __init__(self):
         self._state = _BenchmarkManagerState()
+        self._control_lock = threading.Lock()
 
     def __getattr__(self, name: str) -> Any:
         """Delegate state fields to the internal runtime state object."""
@@ -487,42 +542,46 @@ class BenchmarkManager:
             self._state.output_queue = asyncio.Queue()
 
         logger.info("🔄 Output consumer task started")
+        process = self.process
+        if process is None or process.stdout is None:
+            logger.warning("Output consumer has no benchmark pipe")
+            return
+        stream = process.stdout
+        output_queue = self._state.output_queue
+        log_file = self._state.benchmark_log_file
 
         try:
             loop = asyncio.get_event_loop()
 
             while True:
-                if not self.process or not self.process.stdout:
-                    break
-
                 try:
                     line = await loop.run_in_executor(
-                        None, self.process.stdout.readline
+                        None, stream.readline
                     )
 
                     if not line:
                         break
 
-                    if self._state.benchmark_log_file:
+                    if log_file:
                         try:
                             with open(
-                                self._state.benchmark_log_file, "a", encoding="utf-8"
+                                log_file, "a", encoding="utf-8"
                             ) as f:
                                 f.write(line)
                         except (OSError, UnicodeError, ValueError) as log_error:
                             logger.error("❌ Log write error: %s", log_error)
 
-                    self.parse_hardware_metrics(line)
-
-                    await self._state.output_queue.put(line)
-                    self._state.current_output += line
+                    await output_queue.put(line)
+                    if self.process is process:
+                        self.parse_hardware_metrics(line)
+                        self._state.current_output += line
 
                 except (OSError, RuntimeError, ValueError) as read_error:
                     logger.error("❌ Read error: %s", read_error)
                     break
 
-            if self.process is not None:
-                return_code = self.process.poll()
+            if self.process is process and self.status not in ("stopping", "stopped"):
+                return_code = process.poll()
                 if return_code == 0:
                     self._state.status = "completed"
                 else:
@@ -530,7 +589,7 @@ class BenchmarkManager:
                     failure_msg = (
                         f"❌ Benchmark process exited with code {return_code}\n"
                     )
-                    await self._state.output_queue.put(failure_msg)
+                    await output_queue.put(failure_msg)
                     self._state.current_output += failure_msg
 
             logger.info("🔄 Output consumer task ended (EOF reached)")
@@ -549,6 +608,9 @@ class BenchmarkManager:
             raise
         except (OSError, RuntimeError, TypeError, ValueError) as consume_error:
             logger.error("❌ Error in output consumer: %s", consume_error)
+        finally:
+            if process.poll() is not None:
+                stream.close()
 
     def drain_output_queue(self) -> str:
         """Fetches all currently available output chunks without blocking."""
@@ -740,7 +802,7 @@ class BenchmarkManager:
                     "Invalid empty model id/path for capability benchmark"
                 )
 
-            model_pattern = re.compile(r"^[A-Za-z0-9_./:@%+\-=,]+$")
+            model_pattern = re.compile(r"^[^;&|`$<>!\x00-\x1f\x7f]+$")
             if not model_pattern.fullmatch(model):
                 raise ValueError(f"Unsupported model id/path: {model}")
 
@@ -789,8 +851,9 @@ class BenchmarkManager:
     ) -> list[str]:
         """Build a fully-validated command list for subprocess execution.
 
-        Verifies that the Python interpreter and benchmark script are absolute
-        paths, and that no shell metacharacters remain in any argument.
+        Runtime-generated interpreter/script paths are trusted argv elements.
+        User values retain their existing validation, including the exception
+        for free-form prompts. Backslashes are valid Windows path separators.
 
         The value behind ``--prompt`` is exempt: it is free text that routinely
         contains ``<``, ``$`` or ``|`` - a code snippet cannot be phrased
@@ -807,17 +870,12 @@ class BenchmarkManager:
         Raises:
             ValueError: If any component contains shell-unsafe characters.
         """
-        shell_unsafe_pattern = re.compile(r"[;&|`$<>\\!]")
-
-        interpreter = str(sys.executable)
-        if mode == "capability":
-            base_cmd = [interpreter, "-u", "-m", "cli.main"]
-        else:
-            script = str(BENCHMARK_SCRIPT.resolve())
-            base_cmd = [interpreter, script]
+        shell_unsafe_pattern = re.compile(r"[;&|`$<>!]")
+        if mode not in ("classic", "capability"):
+            raise ValueError(f"Unsupported benchmark mode: {mode}")
 
         previous = ""
-        for component in base_cmd + sanitized_args:
+        for component in sanitized_args:
             is_prompt_text = previous == "--prompt"
             previous = component
             if is_prompt_text:
@@ -828,7 +886,9 @@ class BenchmarkManager:
                     f"{component!r}"
                 )
 
-        return base_cmd + [str(a) for a in sanitized_args]
+        return entrypoint_command(
+            mode, [str(arg) for arg in sanitized_args], interpreter=sys.executable
+        )
 
     async def start_benchmark(
         self,
@@ -836,6 +896,18 @@ class BenchmarkManager:
         mode: str = "classic",
     ) -> bool:
         """Starts a new benchmark process."""
+        if not self._control_lock.acquire(blocking=False):
+            logger.warning("Another benchmark control action is in progress")
+            return False
+        try:
+            return await self._start_benchmark(cli_args, mode)
+        finally:
+            self._control_lock.release()
+
+    async def _start_benchmark(
+        self, cli_args: list[str], mode: str
+    ) -> bool:
+        """Start a benchmark while holding the lifecycle lock."""
         if self.is_running():
             logger.warning("Benchmark is already running")
             return False
@@ -859,12 +931,19 @@ class BenchmarkManager:
 
             self._state.process = subprocess.Popen(
                 safe_cmd,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
                 bufsize=1,
                 cwd=PROJECT_ROOT,
-                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                env={
+                    **child_environment(),
+                    "PYTHONUNBUFFERED": "1",
+                    CONTROL_ENV: "1",
+                },
+                creationflags=child_creation_flags(),
                 shell=False,
             )
             self._state.status = "running"
@@ -875,6 +954,10 @@ class BenchmarkManager:
             timestamp_str = self._state.start_time.strftime("%Y%m%d_%H%M%S")
             filename = f"benchmark_{timestamp_str}.log"
             self._state.benchmark_log_file = logs_dir / filename
+            update_latest_log(
+                self._state.benchmark_log_file,
+                logs_dir / "benchmark_latest.log",
+            )
             self._state.output_task = asyncio.create_task(self._consume_output())
 
             logger.info("✅ Benchmark started with PID %s", self._state.process.pid)
@@ -890,61 +973,76 @@ class BenchmarkManager:
 
     def pause_benchmark(self) -> bool:
         """Pauses running benchmark."""
-        if not self.is_running() or not self.process:
-            logger.warning("No running benchmark")
+        if not self._control_lock.acquire(blocking=False):
+            logger.warning("Another benchmark control action is in progress")
             return False
         try:
-            self.process.send_signal(signal.SIGSTOP)
+            if not self.is_running() or self.process is None:
+                logger.warning("No running benchmark")
+                return False
+            if self.status == "paused":
+                logger.warning("Benchmark is already paused")
+                return False
+            pause_process(self.process)
             self._state.status = "paused"
             logger.info("⏸️ Benchmark paused")
             return True
-        except (OSError, ProcessLookupError, ValueError) as pause_error:
+        except (OSError, ValueError, psutil.Error) as pause_error:
             logger.error("❌ Error pausing: %s", pause_error)
             return False
+        finally:
+            self._control_lock.release()
 
     def resume_benchmark(self) -> bool:
         """Resumes paused benchmark."""
-        if self.status != "paused" or not self.process:
-            logger.warning("No paused benchmark")
+        if not self._control_lock.acquire(blocking=False):
+            logger.warning("Another benchmark control action is in progress")
             return False
         try:
-            self.process.send_signal(signal.SIGCONT)
+            if self.status != "paused" or self.process is None:
+                logger.warning("No paused benchmark")
+                return False
+            resume_process(self.process)
             self._state.status = "running"
             logger.info("▶️ Benchmark resumed")
             return True
-        except (OSError, ProcessLookupError, ValueError) as resume_error:
+        except (OSError, ValueError, psutil.Error) as resume_error:
             logger.error("❌ Error resuming: %s", resume_error)
             return False
+        finally:
+            self._control_lock.release()
 
     def stop_benchmark(self) -> bool:
         """Stops running benchmark."""
-        if not self.process:
-            logger.warning("No running benchmark")
+        if not self._control_lock.acquire(blocking=False):
+            logger.warning("Another benchmark control action is in progress")
             return False
-
+        previous_status = self.status
         try:
-            self.process.send_signal(signal.SIGTERM)
-            try:
-                self.process.wait(timeout=5)
-                logger.info("⏹️ Benchmark stopped (SIGTERM)")
-            except TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
-                logger.warning("⏹️ Benchmark forcefully stopped (SIGKILL)")
+            process = self.process
+            if process is None:
+                logger.warning("No running benchmark")
+                return False
+            self._state.status = "stopping"
+            stop_process(process, paused=previous_status == "paused")
 
             self._state.status = "stopped"
             self._state.process = None
-            if self._state.output_task and not self._state.output_task.done():
-                self._state.output_task.cancel()
+            logger.info("⏹️ Benchmark stopped")
             return True
-        except (OSError, ProcessLookupError, ValueError) as stop_error:
+        except (
+            OSError, RuntimeError, ValueError, psutil.Error, subprocess.SubprocessError
+        ) as stop_error:
+            self._state.status = previous_status if self.is_running() else "failed"
             logger.error("❌ Error stopping: %s", stop_error)
             return False
+        finally:
+            self._control_lock.release()
 
     def parse_hardware_metrics(self, output_line: str):
         """Parse hardware metrics from benchmark output"""
 
-        temp_pat = r"GPU\s+Temp\s*:\s*(\d+(?:\.\d+)?)°?C"
+        temp_pat = r"GPU\s+Temp\s*:\s*(-?\d+(?:\.\d+)?)°?C"
         temp_match = re.search(temp_pat, output_line, re.IGNORECASE)
         if temp_match:
             temp_value = float(temp_match.group(1))
@@ -1154,16 +1252,17 @@ manager = BenchmarkManager()
 
 async def run_metadata_scraper():
     """Runs the metadata scraper script best-effort."""
-    if not SCRAPER_SCRIPT.exists():
-        logger.warning("⚠️ Scraper script not found: %s", SCRAPER_SCRIPT)
-        return
     try:
         await asyncio.to_thread(
             subprocess.run,
-            [sys.executable, str(SCRAPER_SCRIPT)],
+            entrypoint_command("metadata", []),
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            env=child_environment(),
+            cwd=PROJECT_ROOT,
+            creationflags=child_creation_flags(),
             timeout=300,
         )
         logger.info("📝 Metadata scraper executed (missing models only)")
@@ -1184,7 +1283,7 @@ async def lifespan(_app: FastAPI):
     finally:
         if manager.is_running():
             logger.info("🛑 Stopping benchmark on shutdown...")
-            manager.stop_benchmark()
+            await asyncio.to_thread(manager.stop_benchmark)
             await asyncio.sleep(1)
 
 
@@ -2080,7 +2179,7 @@ async def resume_benchmark() -> dict:
 @app.post("/api/benchmark/stop")
 async def stop_benchmark() -> dict:
     """Stoppt laufenden Benchmark"""
-    success = manager.stop_benchmark()
+    success = await asyncio.to_thread(manager.stop_benchmark)
     return {
         "success": success,
         "status": manager.status,
@@ -2089,29 +2188,27 @@ async def stop_benchmark() -> dict:
 
 
 @app.post("/api/system/shutdown")
-async def shutdown_system() -> dict:
+async def shutdown_system(background_tasks: BackgroundTasks, request: Request) -> dict:
     """Shutdown the web application gracefully.
 
     This endpoint allows clients (like the tray app) to request a graceful
-    shutdown of the entire dashboard. The benchmark is stopped first, then
-    the application exits via SIGTERM signal.
+    shutdown of the entire dashboard. The benchmark is stopped first. The
+    managed server is then asked to exit after the response has been sent.
     """
     logger.info("🛑 Shutdown requested via API")
 
-    try:
-        success = manager.stop_benchmark()
-        logger.info("✅ Benchmark stopped: %s", success)
-    except (OSError, ProcessLookupError, RuntimeError, ValueError) as exc:
-        logger.warning("Error stopping benchmark during shutdown: %s", exc)
+    callback = getattr(request.app.state, "shutdown_callback", None)
+    if not callable(callback):
+        logger.error("Shutdown is unavailable for an externally managed server")
+        return {"success": False, "message": "Server shutdown is not configured"}
 
-    def _send_shutdown_signal() -> None:
-        """Send SIGTERM to self after brief delay to allow response."""
-        time.sleep(0.5)
-        logger.info("🛑 Sending SIGTERM to shutdown process...")
-        os.kill(os.getpid(), signal.SIGTERM)
+    if manager.process is not None:
+        success = await asyncio.to_thread(manager.stop_benchmark)
+        if not success:
+            logger.error("Shutdown cancelled: benchmark cleanup failed")
+            return {"success": False, "message": "Could not stop the benchmark"}
 
-    shutdown_thread = threading.Thread(target=_send_shutdown_signal, daemon=True)
-    shutdown_thread.start()
+    background_tasks.add_task(callback)
 
     return {"success": True, "message": "🛑 Shutting down..."}
 
@@ -4862,6 +4959,12 @@ async def get_dashboard_stats() -> dict:
             "ram_gb": round(psutil.virtual_memory().total / (1024**3), 2),
         }
 
+        windows_system = system_info["os"] == "Windows"
+        if windows_system:
+            windows_name, windows_version = get_os_name_version()
+            system_info["os"] = windows_name
+            system_info["os_version"] = windows_version
+
         if system_info["os"] == "Darwin":
             macos_name, macos_version = get_macos_name_version()
             system_info["os"] = macos_name
@@ -4921,6 +5024,9 @@ async def get_dashboard_stats() -> dict:
             gtt_total_gb = None
             metal_family = None
 
+            if windows_system:
+                gpu_info = await asyncio.to_thread(get_windows_gpu_info)
+
             if results:
                 gpu_model = results[0].gpu_type
                 if (
@@ -4954,7 +5060,7 @@ async def get_dashboard_stats() -> dict:
                     get_apple_unified_memory_gb() or system_info["ram_gb"]
                 )
 
-            if gpu_type != "Apple":
+            if not windows_system and gpu_type != "Apple":
                 try:
                     output = subprocess.check_output(
                         [
@@ -4988,7 +5094,7 @@ async def get_dashboard_stats() -> dict:
                 except (TimeoutExpired, FileNotFoundError, ValueError):
                     pass
 
-            if gpu_type != "Apple" and not vram_total_gb:
+            if not windows_system and gpu_type != "Apple" and not vram_total_gb:
                 try:
                     rocm_tool = None
                     for path in [
@@ -5159,7 +5265,7 @@ async def get_dashboard_stats() -> dict:
                     "unified_memory": True,
                     "metal": metal_family,
                 }
-            else:
+            elif not windows_system:
                 gpu_info = {
                     "type": gpu_type,
                     "model": gpu_model,
@@ -5180,8 +5286,8 @@ async def get_dashboard_stats() -> dict:
             gpu_info = {
                 "type": "Unknown",
                 "vram_gb": None,
-                "gtt_gb": system_info["ram_gb"],
-                "total_gb": system_info["ram_gb"],
+                "gtt_gb": None if windows_system else system_info["ram_gb"],
+                "total_gb": None if windows_system else system_info["ram_gb"],
                 "unified_memory": False,
                 "metal": None,
             }
@@ -5781,9 +5887,19 @@ async def health_check() -> dict:
 # Main
 # ============================================================================
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:
+    """Start the managed dashboard server.
+
+    Args:
+        argv: CLI arguments without the executable, or None for sys.argv.
+
+    Returns:
+        Zero after shutdown, or one if an entrypoint is missing.
+    """
+    global DEBUG_MODE
     import uvicorn
 
+    configure_console()
     parser = argparse.ArgumentParser(
         description="FastAPI Web Dashboard for LM Studio Benchmark"
     )
@@ -5808,7 +5924,7 @@ if __name__ == "__main__":
         help="Do not auto-open browser on startup",
     )
     normalized_args = _expand_short_flag_clusters(
-        sys.argv[1:],
+        sys.argv[1:] if argv is None else argv,
         combinable={"d", "h"},
     )
     args = parser.parse_args(args=normalized_args)
@@ -5828,12 +5944,11 @@ if __name__ == "__main__":
     logger.info("📁 Project root: %s", format_path_for_logs(PROJECT_ROOT))
     logger.info("📄 Benchmark script: %s", format_path_for_logs(BENCHMARK_SCRIPT))
 
-    if not BENCHMARK_SCRIPT.exists():
-        logger.error(
-            "❌ Benchmark script not found: %s",
-            format_path_for_logs(BENCHMARK_SCRIPT),
-        )
-        sys.exit(1)
+    try:
+        entrypoint_command("classic", [])
+    except (OSError, ValueError) as error:
+        logger.error("❌ Benchmark entrypoint is unavailable: %s", error)
+        return 1
 
     if args.port:
         port = args.port
@@ -5862,4 +5977,27 @@ if __name__ == "__main__":
         browser_thread.start()
 
     UVICORN_LOG_LEVEL = "debug" if args.debug else "info"
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level=UVICORN_LOG_LEVEL)
+    server = uvicorn.Server(
+        uvicorn.Config(app, host="0.0.0.0", port=port, log_level=UVICORN_LOG_LEVEL)
+    )
+
+    def request_shutdown() -> None:
+        server.should_exit = True
+
+    app.state.shutdown_callback = request_shutdown
+    try:
+        server.run()
+    finally:
+        app.state.shutdown_callback = None
+        for handler in logger.handlers[:]:
+            if (
+                isinstance(handler, logging.FileHandler)
+                and Path(handler.baseFilename) == webapp_log_file
+            ):
+                logger.removeHandler(handler)
+                handler.close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

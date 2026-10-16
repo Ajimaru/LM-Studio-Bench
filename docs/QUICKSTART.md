@@ -2,6 +2,11 @@
 
 ## Installation
 
+For Windows 10/11 x64, use [the Windows guide](WINDOWS.md). The native source
+setup is `.\setup.ps1`; the manual entrypoint is
+`.\.venv\Scripts\python.exe .\run.py --webapp`.
+The Bash instructions below apply to Linux/macOS.
+
 ```bash
 cd ~/LM-Studio-Bench
 
@@ -87,7 +92,8 @@ with the web app.
 
 ### macOS
 
-The tray is GTK/AppIndicator based and is therefore Linux-only. On macOS
+The GTK/AppIndicator tray backend is Linux-only; Windows has a native backend.
+On macOS
 `run.py` prints a one-line notice and continues; benchmarks, the CLI and the
 web dashboard all work normally. Use the dashboard in the browser for the
 Start/Pause/Stop controls the tray provides on Linux.

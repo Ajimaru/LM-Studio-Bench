@@ -14,4 +14,7 @@ pydantic>=2.13.5
 # GTK system tray, Linux only. PyGObject needs gobject-introspection and
 # cairo development headers that macOS does not ship.
 PyGObject>=3.48,<3.50; sys_platform == "linux"
+# Native Windows tray; no GTK, tkinter or Cairo runtime is needed.
+pystray>=0.19.5,<0.20; sys_platform == "win32"
+Pillow>=11.3.0; sys_platform == "win32"
 PyYAML>=6.0.3

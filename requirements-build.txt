@@ -1,0 +1,3 @@
+# Build tooling only. Runtime dependencies have a separate Windows lock.
+# Resolve both locks with uv for CPython 3.13 / Windows x64.
+pyinstaller>=6.16,<7

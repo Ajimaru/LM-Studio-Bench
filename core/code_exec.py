@@ -9,7 +9,11 @@ untrusted input, so every execution happens in a throwaway subprocess with:
 * a stripped environment,
 * a wall-clock timeout, plus CPU, address-space, file-size and process limits
   where the platform supports them,
-* stdin connected to /dev/null.
+* stdin connected to the platform's null device.
+
+On Windows, a job object applies combined CPU and memory limits to the code
+process and its descendants before the child is resumed. File-size limits
+remain POSIX-only.
 
 This contains accidents — endless loops, memory hogs, a stray ``open(...,'w')``
 — and raises the cost of anything deliberate. It is not a security boundary
@@ -21,12 +25,19 @@ execute code from.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 import re
 import subprocess  # nosec B404 - sandboxed execution is this module's purpose
 import sys
 import tempfile
 from typing import NamedTuple, Optional
+
+import psutil
+
+from core.platform_info import IS_WINDOWS
+from core.runtime import code_python_executable
+from core.windows_job import WindowsJob
 
 try:
     import resource
@@ -93,7 +104,7 @@ def _limit_resources() -> None:  # pragma: no cover - runs in the child process
 
     Best effort: platforms without ``resource`` simply rely on the timeout.
     """
-    if resource is None:
+    if sys.platform == "win32" or resource is None:
         return
 
     limits = [
@@ -116,6 +127,49 @@ def _truncate(text: str) -> str:
     if len(text) <= MAX_OUTPUT_CHARS:
         return text
     return text[:MAX_OUTPUT_CHARS] + "\n…[truncated]"
+
+
+def _run_windows(
+    command: list[str], workdir: str, timeout: float
+) -> subprocess.CompletedProcess[str]:
+    """Run a suspended child only after Windows accepts its resource limits."""
+    env = {
+        key: os.environ[key]
+        for key in ("SystemRoot", "WINDIR")
+        if key in os.environ
+    }
+    env.update({"TEMP": workdir, "TMP": workdir, "HOME": workdir,
+                "USERPROFILE": workdir})
+    with WindowsJob(MAX_ADDRESS_SPACE_BYTES, MAX_CPU_SECONDS) as job:
+        # CREATE_SUSPENDED | CREATE_NO_WINDOW. No model code can run yet.
+        with subprocess.Popen(  # nosec B603 - fixed interpreter, no shell
+            command,
+            cwd=workdir,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            env=env,
+            creationflags=0x00000004 | 0x08000000,
+        ) as process:
+            try:
+                job.assign(process.pid)
+                psutil.Process(process.pid).resume()
+                stdout, stderr = process.communicate(timeout=timeout)
+                return_code = process.returncode
+                if return_code is None:
+                    raise RuntimeError("The code worker has no exit status")
+                return subprocess.CompletedProcess(
+                    command, return_code, stdout, stderr
+                )
+            finally:
+                try:
+                    job.close()
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait(timeout=5)
 
 
 def run_code_test(
@@ -146,13 +200,20 @@ def run_code_test(
         script_path.write_text(script, encoding="utf-8")
 
         try:
-            with open("/dev/null", "rb") as devnull:
+            command = [
+                code_python_executable(), "-I", "-S", "-X", "utf8",
+                str(script_path),
+            ]
+            if IS_WINDOWS:
+                completed = _run_windows(command, workdir, effective_timeout)
+            else:
                 completed = subprocess.run(  # nosec B603 - fixed argv, no shell
-                    [sys.executable, "-I", "-S", str(script_path)],
+                    command,
                     cwd=workdir,
-                    stdin=devnull,
+                    stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
                     timeout=effective_timeout,
                     env={"PATH": "/usr/bin:/bin", "HOME": workdir},
                     preexec_fn=_limit_resources,  # nosec B606
@@ -164,7 +225,8 @@ def run_code_test(
                 f"Timed out after {effective_timeout:.0f}s",
                 timed_out=True,
             )
-        except (OSError, ValueError) as exc:
+        except (OSError, RuntimeError, ValueError, psutil.Error) as exc:
+            logger.error("Could not execute code test: %s", exc)
             return ExecutionResult(False, f"Could not execute: {exc}")
 
         stdout = _truncate(completed.stdout or "")

@@ -5,7 +5,7 @@
 name = "lm-studio-bench"
 # Version mirrors VERSION after stripping any leading "v"; bump both
 # together.
-version = "0.2.0"
+version = "0.3.1"
 requires-python = ">=3.11"
 
 # Ruff is the single source of truth for linting and import order. It

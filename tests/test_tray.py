@@ -12,6 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from core.logging_utils import resolve_latest_log
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -42,10 +44,10 @@ def _import_tray() -> tuple[types.ModuleType, MagicMock, MagicMock]:
         if "core.tray" in sys.modules:
             del sys.modules["core.tray"]
         tray = importlib.import_module("core.tray")
-        setattr(tray, "gi", gi_mock)
-        setattr(tray, "Gtk", gtk_mock)
-        setattr(tray, "AppIndicator3", indicator_mock)
-        setattr(tray, "IMPORT_ERROR", None)
+        tray.IS_LINUX = True
+        tray.IS_WINDOWS = False
+        tray.IS_MACOS = False
+        getattr(tray, "_load_gtk")()
     sys.modules["core.tray"] = tray
     return tray, gtk_mock, indicator_mock
 
@@ -75,13 +77,21 @@ class TestSetupLogger:
             tray._setup_logger(debug=False)
         assert tray.LOGGER.level == logging.INFO
 
-    def test_creates_latest_symlink(self, tmp_path: Path):
-        """A 'trayapp_latest.log' symlink is created."""
+    def test_creates_latest_reference(self, tmp_path: Path):
+        """The latest tray log is discoverable without Windows symlink rights."""
         tray, _, _ = _import_tray()
         with patch("core.tray.USER_LOGS_DIR", tmp_path):
-            tray._setup_logger(debug=False)
-        symlink = tmp_path / "trayapp_latest.log"
-        assert symlink.exists() or symlink.is_symlink()
+            log_path = tray._setup_logger(debug=False)
+        assert resolve_latest_log(tmp_path / "trayapp_latest.log") == log_path
+
+    def test_closes_previous_log_handler(self, tmp_path: Path):
+        """Repeated logger initialization releases the previous file handle."""
+        tray, _, _ = _import_tray()
+        with patch("core.tray.USER_LOGS_DIR", tmp_path):
+            getattr(tray, "_setup_logger")(debug=False)
+            previous_stream = tray.LOGGER.handlers[0].stream
+            getattr(tray, "_setup_logger")(debug=False)
+        assert previous_stream.closed
 
     def test_log_file_has_timestamp_name(self, tmp_path: Path):
         """Log file name contains 'trayapp_' prefix."""
@@ -194,6 +204,37 @@ class TestTrayAppCallApi:
             app = tray.TrayApp("http://localhost:8080")
         app.api_base = "http://127.0.0.1:8080"
         assert app._build_api_url("/api/status") is None
+
+    @pytest.mark.parametrize(
+        ("endpoint", "timeout"),
+        [
+            ("/api/status", 5.0),
+            ("/api/benchmark/stop", 45.0),
+            ("/api/system/shutdown", 45.0),
+        ],
+    )
+    def test_cleanup_requests_allow_worker_shutdown(self, endpoint, timeout):
+        """Cooperative shutdown gets a longer, bounded timeout than polling."""
+        tray, _, _ = _import_tray()
+        app = tray.TrayApp("http://localhost:8080")
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b'{"success": true}'
+        with patch.object(tray.urllib_request, "urlopen", return_value=response) as open_:
+            getattr(app, "_call_api")(endpoint, "POST")
+        assert open_.call_args.kwargs["timeout"] == timeout
+
+    def test_rejects_non_object_json(self):
+        """Malformed API responses cannot crash status/menu handlers."""
+        tray, _, _ = _import_tray()
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b"[]"
+        with patch.object(tray.urllib_request, "urlopen", return_value=response):
+            result = getattr(tray.TrayApp("http://localhost:8080"), "_call_api")(
+                "/api/status"
+            )
+        assert result is None
 
 
 class TestTrayAppCheckForUpdates:
@@ -751,6 +792,55 @@ class TestTrayCheckUpdatesClicked:
         app._show_update_notification = MagicMock()
         app._on_check_updates_clicked(MagicMock())
         app._show_update_notification.assert_called_once()
+
+    def test_unreachable_api_does_not_claim_latest_version(self):
+        """A failed release lookup must be distinguished from no updates."""
+        tray, _, _ = _import_tray()
+        app = tray.TrayApp("http://localhost:8080")
+        app._call_api = MagicMock(return_value=None)
+        app._show_info_dialog = MagicMock()
+        getattr(app, "_on_check_updates_clicked")(None)
+        assert app._show_info_dialog.call_args.args[0] == "Update Check Failed"
+
+
+class TestTrayShutdown:
+    """Common shutdown decisions must not misreport failed cleanup."""
+
+    @pytest.mark.parametrize("response", [None, {}, {"success": False}])
+    def test_failed_shutdown_keeps_gtk_available(self, response):
+        """An unavailable/rejecting dashboard does not silently close the tray."""
+        tray, gtk, _ = _import_tray()
+        app = tray.TrayApp("http://localhost:8080")
+        app._call_api = MagicMock(return_value=response)
+        app._show_info_dialog = MagicMock()
+        app._start_status_polling = MagicMock()
+        getattr(app, "_on_quit")(None)
+        gtk.main_quit.assert_not_called()
+        app._show_info_dialog.assert_called_once()
+        app._start_status_polling.assert_called_once()
+
+    def test_successful_shutdown_exits_gtk(self):
+        """Only an explicit successful managed shutdown closes the GTK tray."""
+        tray, gtk, _ = _import_tray()
+        gtk.main_level.return_value = 1
+        app = tray.TrayApp("http://localhost:8080")
+        app._call_api = MagicMock(return_value={"success": True})
+        getattr(app, "_on_quit")(None)
+        gtk.main_quit.assert_called_once()
+
+    def test_failed_stop_is_visible(self):
+        """A truthy error response is not logged/displayed as successful Stop."""
+        tray, _, _ = _import_tray()
+        app = tray.TrayApp("http://localhost:8080")
+        app._call_api = MagicMock(
+            return_value={"success": False, "message": "Worker did not exit"}
+        )
+        app._show_info_dialog = MagicMock()
+        app._refresh_menu_buttons = MagicMock()
+        getattr(app, "_on_stop")(None)
+        app._show_info_dialog.assert_called_once_with(
+            "Stop Failed", "Worker did not exit"
+        )
 
 
 class TestTrayStopStatusPolling:

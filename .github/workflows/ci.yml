@@ -66,9 +66,11 @@ jobs:
           python run.py --help 2>&1 | head -20 || true
 
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-24.04, windows-latest]
         run-coverage: [true]
 
     steps:
@@ -84,6 +86,7 @@ jobs:
 
       # install system dependencies for PyGObject (optional)
       - name: Install system dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -93,12 +96,14 @@ jobs:
             gobject-introspection \
             pkg-config
 
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
       # install test dependencies
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -r requirements-optional.txt
+        run: >-
+          python -m pip install
+          -r requirements.txt -r requirements-dev.txt -r requirements-optional.txt
 
       # execute unit tests and collect coverage
       - name: Run tests (with coverage)
@@ -117,7 +122,7 @@ jobs:
 
       # optionally report coverage to Codacy
       - name: Upload coverage to Codacy
-        if: ${{ matrix.run-coverage && github.repository == 'Ajimaru/LM-Studio-Bench' }}
+        if: ${{ matrix.run-coverage && runner.os == 'Linux' && github.repository == 'Ajimaru/LM-Studio-Bench' }}
         env:
           CODACY_API_TOKEN: ${{ secrets.CODACY_API_TOKEN }}
           # Provider must be one of gh, ghe, gl, gle, bb, bbe — a friendly
@@ -157,3 +162,20 @@ jobs:
             echo "Codacy upload failed (exit ${codacy_exit}); continuing"
             exit 0
           fi
+
+  macos-regression:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Check shared platform and process helpers
+        run: >-
+          python -m pytest --no-cov -q
+          tests/test_user_paths.py tests/test_platform_info.py
+          tests/test_gpu_devices.py tests/test_hardware_monitor.py
+          tests/test_runtime.py tests/test_logging_utils.py
+          tests/test_process_control.py

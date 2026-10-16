@@ -107,6 +107,12 @@ def get_os_name_version() -> Tuple[Optional[str], Optional[str]]:
     if system == "Darwin":
         return get_macos_name_version()
 
+    if system == "Windows":
+        release, version, _, _ = platform.win32_ver()
+        if version:
+            name = f"Windows {release}" if release else "Windows"
+            return name, version
+
     if system == "Linux":
         try:
             import distro  # pylint: disable=import-outside-toplevel

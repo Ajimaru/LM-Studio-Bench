@@ -24,9 +24,16 @@ from typing import Any, Optional, SupportsFloat, SupportsIndex, TypedDict
 from agents.runner import BenchmarkRunner
 from cli.reporting import HTMLReporter, sanitize_report_name
 from core.logging_utils import install_level_icons
-from core.paths import USER_RESULTS_DIR
-from core.platform_info import IS_MACOS, get_os_name_version
-from tools.hardware_monitor import GPUMonitor, HardwareMonitor
+from core.paths import USER_RESULTS_DIR, format_path_for_logs
+from core.platform_info import IS_MACOS, IS_WINDOWS, get_os_name_version
+from core.process_control import start_stop_listener
+from core.runtime import configure_console
+from tools.hardware_monitor import (
+    GPUMonitor,
+    HardwareMonitor,
+    evaluate_hardware_limits,
+    nvidia_driver_version,
+)
 
 try:
     import cpuinfo as _cpuinfo
@@ -103,6 +110,11 @@ else:
 BENCHMARK_DB_PATH = USER_RESULTS_DIR / "benchmark_cache.db"
 
 
+def _format_limit_result(value: bool | None) -> str:
+    """Keep uncheckable hardware thresholds distinct from false in reports."""
+    return "N/A" if value is None else str(value)
+
+
 def _get_app_version() -> str:
     """Read app version from VERSION file."""
     version_file = Path(__file__).resolve().parent.parent / "VERSION"
@@ -177,11 +189,9 @@ def _get_driver_versions() -> dict[str, Optional[str]]:
             "intel_driver_version": None,
         }
 
-    nvidia = _run_command(
-        ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"]
-    )
-    rocm = _run_command(["rocm-smi", "--version"])
-    intel = _run_command(["intel_gpu_top", "--help"])
+    nvidia = nvidia_driver_version()
+    rocm = None if IS_WINDOWS else _run_command(["rocm-smi", "--version"])
+    intel = None if IS_WINDOWS else _run_command(["intel_gpu_top", "--help"])
 
     if nvidia:
         nvidia = nvidia.splitlines()[0].strip()
@@ -408,7 +418,7 @@ def parse_args() -> argparse.Namespace:
         default=str(USER_RESULTS_DIR),
         help=(
             "Output directory for results "
-            "(default: ~/.local/share/lm-studio-bench/results)"
+            f"(default: {format_path_for_logs(USER_RESULTS_DIR)})"
         )
     )
 
@@ -1274,13 +1284,13 @@ def _write_reports(
                 _append_csv_row(
                     [
                         "Temp Limit Exceeded",
-                        str(bool(hardware.get("max_temp_exceeded"))),
+                        _format_limit_result(hardware.get("max_temp_exceeded")),
                     ]
                 )
                 _append_csv_row(
                     [
                         "Power Limit Exceeded",
-                        str(bool(hardware.get("max_power_exceeded"))),
+                        _format_limit_result(hardware.get("max_power_exceeded")),
                     ]
                 )
 
@@ -1438,11 +1448,11 @@ def _write_reports(
                         ),
                         (
                             "Temp limit exceeded: "
-                            f"{bool(hardware.get('max_temp_exceeded'))}"
+                            f"{_format_limit_result(hardware.get('max_temp_exceeded'))}"
                         ),
                         (
                             "Power limit exceeded: "
-                            f"{bool(hardware.get('max_power_exceeded'))}"
+                            f"{_format_limit_result(hardware.get('max_power_exceeded'))}"
                         ),
                     ]
                 )
@@ -1755,9 +1765,11 @@ def main() -> int:
     Returns:
         Exit code (0 for success, 1 for error)
     """
+    configure_console()
     args = parse_args()
 
     setup_logging(args.verbose or args.dev_mode)
+    start_stop_listener()
     logger = logging.getLogger(__name__)
     total_start = time.perf_counter()
 
@@ -1781,7 +1793,9 @@ def main() -> int:
             gpu_monitor.gpu_type or "Unknown",
             gpu_monitor.gpu_tool or "",
             enabled=config.get("enable_profiling", False),
+            device_id=gpu_monitor.native_device_id,
         )
+        gpu_monitor.attach_windows_sampler(hardware_monitor.windows_sampler)
 
         capabilities = None
         if args.capabilities:
@@ -1941,42 +1955,15 @@ def main() -> int:
                 max_temp = config.get("max_temp")
                 max_power = config.get("max_power")
 
-                if (
-                    max_temp
-                    and summary.get("temp_celsius_max")
-                    and summary["temp_celsius_max"] > max_temp
-                ):
-                    logger.warning(
-                        "⚠️ Max. temperature exceeded: %.2f°C > %.2f°C",
-                        summary["temp_celsius_max"],
-                        max_temp,
-                    )
-
-                if (
-                    max_power
-                    and summary.get("power_watts_max")
-                    and summary["power_watts_max"] > max_power
-                ):
-                    logger.warning(
-                        "⚠️ Max. power exceeded: %.2fW > %.2fW",
-                        summary["power_watts_max"],
-                        max_power,
-                    )
+                limit_results = evaluate_hardware_limits(
+                    profiling_stats, max_temp, max_power
+                )
 
                 report_data["hardware_profiling"] = {
                     "enabled": True,
                     "max_temp_limit": max_temp,
                     "max_power_limit": max_power,
-                    "max_temp_exceeded": bool(
-                        max_temp
-                        and summary.get("temp_celsius_max")
-                        and summary["temp_celsius_max"] > max_temp
-                    ),
-                    "max_power_exceeded": bool(
-                        max_power
-                        and summary.get("power_watts_max")
-                        and summary["power_watts_max"] > max_power
-                    ),
+                    **limit_results,
                 } | dict(profiling_stats)
 
             classic_metrics = _build_classic_metrics(

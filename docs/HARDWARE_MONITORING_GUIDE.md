@@ -8,6 +8,28 @@ metrics and improved GPU model detection.
 Monitoring logic is shared in `tools/hardware_monitor.py` and used by both
 classic benchmark flows and capability-driven agent flows.
 
+## Windows adapters and availability
+
+Windows uses the native ADLX/IGCL/WDDM component with NVIDIA SMI enrichment.
+PCI/LUID association prevents readings from being assigned by a matching name
+or a different vendor's device index. Driver/runtime errors and unsupported
+sensors are distinct, and real zero readings are not replaced with missing data.
+
+On Windows, `gtt_gb_*` denotes shared GPU memory usage. Shared capacity is an OS
+budget borrowed from system RAM, not additional physical memory. The dashboard
+labels it accordingly. Native per-adapter result metadata records sensor
+availability and sources; logical adapter LUIDs remain distinct.
+
+NVIDIA temperature/power and Intel/NVIDIA memory readings were verified locally.
+The tested Intel UHD driver cannot load the documented IGCL runtime, so its
+temperature/power stay unavailable. AMD code and fixtures are implemented;
+AMD hardware checks are performed on another system. See
+[Windows support and diagnostics](WINDOWS.md) for requirements and the checklist.
+
+Temperature and power limits are **warnings**, not automatic shutdown controls.
+An unavailable sensor produces an explicit uncheckable-threshold warning.
+CPU/RAM profiling continues when GPU monitoring tools are unavailable.
+
 ## 📊 Implemented Metrics
 
 ### GPU Detection and Model Info

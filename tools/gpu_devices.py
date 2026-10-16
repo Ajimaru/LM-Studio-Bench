@@ -17,10 +17,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 import logging
+import math
+from pathlib import PureWindowsPath
 import re
-import shutil
 import subprocess  # nosec B404 - vendor CLIs are the only source for this data
 from typing import Any, Dict, List, Optional
+
+from core.runtime import child_creation_flags
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,26 @@ QUERY_TIMEOUT_SECONDS = 5
 ROCM_LINE = re.compile(
     r"GPU\[(?P<index>\d+)\]\s*:\s*(?P<label>[^:]+):\s*(?P<value>[-\d.]+)\s*$"
 )
+
+
+def parse_gpu_number(value: str) -> Optional[float]:
+    """Parse a finite sensor value, preserving unavailable values as None.
+
+    Args:
+        value: A vendor-tool field without units.
+
+    Returns:
+        A finite float, or None for unsupported, malformed or nonfinite data.
+    """
+    try:
+        result = float(value)
+    except ValueError:
+        logger.debug("GPU sensor value is unavailable: %r", value)
+        return None
+    if not math.isfinite(result):
+        logger.warning("Ignoring nonfinite GPU sensor value: %r", value)
+        return None
+    return result
 
 
 @dataclass
@@ -72,6 +95,7 @@ class GpuAggregate:
     name: Optional[str] = None
     samples: int = 0
     values: Dict[str, List[float]] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def add(self, sample: GpuSample) -> None:
         """Fold one sample into this aggregate."""
@@ -96,6 +120,8 @@ class GpuAggregate:
             result[f"{metric}_min"] = min(readings)
             result[f"{metric}_max"] = max(readings)
             result[f"{metric}_avg"] = sum(readings) / len(readings)
+        if self.metadata:
+            result["metadata"] = dict(self.metadata)
         return result
 
 
@@ -112,8 +138,10 @@ def _run(command: List[str]) -> Optional[str]:
             command,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=QUERY_TIMEOUT_SECONDS,
             check=False,
+            creationflags=child_creation_flags(),
         )
     except (subprocess.SubprocessError, OSError) as error:
         logger.debug("GPU query failed (%s): %s", command[0], error)
@@ -181,12 +209,6 @@ def _sample_nvidia(tool: str) -> List[GpuSample]:
     if not output:
         return []
 
-    def to_float(text: str) -> Optional[float]:
-        try:
-            return float(text)
-        except ValueError:
-            return None
-
     samples: List[GpuSample] = []
     for line in output.strip().splitlines():
         parts = [part.strip() for part in line.split(",")]
@@ -196,13 +218,13 @@ def _sample_nvidia(tool: str) -> List[GpuSample]:
             index = int(parts[0])
         except ValueError:
             continue
-        memory_mb = to_float(parts[4])
+        memory_mb = parse_gpu_number(parts[4])
         samples.append(
             GpuSample(
                 index=index,
                 name=parts[1] or None,
-                temp_celsius=to_float(parts[2]),
-                power_watts=to_float(parts[3]),
+                temp_celsius=parse_gpu_number(parts[2]),
+                power_watts=parse_gpu_number(parts[3]),
                 vram_gb=memory_mb / 1024 if memory_mb is not None else None,
             )
         )
@@ -242,7 +264,7 @@ def sample_devices(
     if not gpu_tool:
         return []
 
-    tool_name = gpu_tool.rsplit("/", 1)[-1]
+    tool_name = PureWindowsPath(gpu_tool).name.lower()
 
     if gpu_type == "AMD" and tool_name.startswith("rocm-smi"):
         return _sample_rocm(gpu_tool)
@@ -262,7 +284,7 @@ def device_names(
     """Return human readable names per device index, when available."""
     if not gpu_tool:
         return {}
-    tool_name = gpu_tool.rsplit("/", 1)[-1]
+    tool_name = PureWindowsPath(gpu_tool).name.lower()
     if gpu_type == "AMD" and tool_name.startswith("rocm-smi"):
         return _rocm_device_names(gpu_tool)
     return {}
@@ -273,8 +295,6 @@ def detect_device_count(
     gpu_tool: Optional[str],
 ) -> int:
     """Number of GPUs the vendor tool reports, 0 when unknown."""
-    if gpu_type == "NVIDIA" and gpu_tool and shutil.which("nvidia-smi"):
-        return len(_sample_nvidia(gpu_tool))
     return len(sample_devices(gpu_type, gpu_tool))
 
 

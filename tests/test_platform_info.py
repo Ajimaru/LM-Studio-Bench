@@ -118,6 +118,14 @@ class TestGetOsNameVersion:
                 patch("platform.release", return_value="14.0"):
             assert pi.get_os_name_version() == ("FreeBSD", "14.0")
 
+    def test_windows_reports_release_and_build(self):
+            """Windows marketing release and kernel build remain distinguishable."""
+            with patch("platform.system", return_value="Windows"), \
+                    patch("platform.win32_ver", return_value=(
+                        "11", "10.0.26100", "", "Multiprocessor Free"
+                    )):
+                assert pi.get_os_name_version() == ("Windows 11", "10.0.26100")
+
 
 class TestOpenUrlCommand:
     """Tests for get_open_url_command()."""

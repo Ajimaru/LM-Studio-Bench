@@ -5,6 +5,7 @@
 ## User Guide
 
 - [Quickstart](QUICKSTART.md)
+- [Native Windows Support](WINDOWS.md)
 - [Configuration Reference](CONFIGURATION.md)
 - [Hardware Monitoring Guide](HARDWARE_MONITORING_GUIDE.md)
 - [LLM Metadata Guide](LLM_METADATA_GUIDE.md)

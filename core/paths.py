@@ -1,5 +1,6 @@
 """User directory paths following platform conventions."""
 
+import logging
 import os
 from pathlib import Path
 import platform
@@ -7,6 +8,7 @@ from typing import Union
 
 APP_DIR_NAME = "LM-Studio-Bench"
 XDG_DIR_NAME = "lm-studio-bench"
+logger = logging.getLogger(__name__)
 
 
 def _effective_home() -> Path:
@@ -50,6 +52,20 @@ def _is_macos() -> bool:
     return platform.system() == "Darwin"
 
 
+def _windows_app_dir(env_var: str, fallback_name: str) -> Path:
+    """Resolve a Windows application directory without requiring env vars."""
+    fallback = _effective_home() / "AppData" / fallback_name
+    raw_value = os.environ.get(env_var)
+    if not raw_value:
+        return fallback / APP_DIR_NAME
+
+    candidate = Path(raw_value).expanduser()
+    if not candidate.is_absolute() or ".." in candidate.parts:
+        logger.warning("Ignoring invalid %s; using the user AppData directory", env_var)
+        return fallback / APP_DIR_NAME
+    return candidate / APP_DIR_NAME
+
+
 def _macos_application_support_dir() -> Path:
     """Return the macOS Application Support directory for this app."""
     return _effective_home() / "Library" / "Application Support" / APP_DIR_NAME
@@ -75,12 +91,11 @@ def format_path_for_logs(path_value: Union[str, Path]) -> str:
     except TypeError:
         raw = str(path_value)
 
-    home_str = str(_effective_home())
-    if raw == home_str:
-        return "~"
-    if raw.startswith(f"{home_str}/"):
-        return raw.replace(home_str, "~", 1)
-    return raw
+    try:
+        relative_path = Path(raw).relative_to(_effective_home())
+    except ValueError:
+        return raw
+    return f"~/{relative_path.as_posix()}" if relative_path.parts else "~"
 
 
 def get_user_config_dir() -> Path:
@@ -89,16 +104,16 @@ def get_user_config_dir() -> Path:
     Returns:
         Path to the platform-specific config directory.
     """
-    if _is_macos():
+    if platform.system() == "Windows":
+        config_dir = _windows_app_dir("APPDATA", "Roaming")
+    elif _is_macos():
         config_dir = _macos_application_support_dir()
-        config_dir.mkdir(parents=True, exist_ok=True)
-        return config_dir
-
-    base_dir = _resolve_xdg_home(
-        "XDG_CONFIG_HOME",
-        _effective_home() / ".config",
-    )
-    config_dir = base_dir / XDG_DIR_NAME
+    else:
+        base_dir = _resolve_xdg_home(
+            "XDG_CONFIG_HOME",
+            _effective_home() / ".config",
+        )
+        config_dir = base_dir / XDG_DIR_NAME
 
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
@@ -110,16 +125,16 @@ def get_user_data_dir() -> Path:
     Returns:
         Path to the platform-specific data directory.
     """
-    if _is_macos():
+    if platform.system() == "Windows":
+        data_dir = _windows_app_dir("LOCALAPPDATA", "Local")
+    elif _is_macos():
         data_dir = _macos_application_support_dir()
-        data_dir.mkdir(parents=True, exist_ok=True)
-        return data_dir
-
-    base_dir = _resolve_xdg_home(
-        "XDG_DATA_HOME",
-        _effective_home() / ".local" / "share",
-    )
-    data_dir = base_dir / XDG_DIR_NAME
+    else:
+        base_dir = _resolve_xdg_home(
+            "XDG_DATA_HOME",
+            _effective_home() / ".local" / "share",
+        )
+        data_dir = base_dir / XDG_DIR_NAME
 
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
@@ -134,7 +149,9 @@ def get_user_logs_dir() -> Path:
 
 def get_user_cache_dir() -> Path:
     """Get user cache directory."""
-    if _is_macos():
+    if platform.system() == "Windows":
+        cache_dir = _windows_app_dir("LOCALAPPDATA", "Local") / "cache"
+    elif _is_macos():
         cache_dir = _macos_cache_dir()
     else:
         base_dir = _resolve_xdg_home(

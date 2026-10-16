@@ -5,6 +5,7 @@ We patch subprocess and sys.exit before importing to avoid side effects.
 """
 import importlib
 import io
+import os
 from pathlib import Path
 import re
 import socket
@@ -76,7 +77,8 @@ class TestResolvePythonExecutable:
     def test_returns_venv_python_when_present(self, tmp_path: Path, monkeypatch):
         """Returns venv python path when it exists and is executable."""
         run = _import_run()
-        venv_python = tmp_path / ".venv" / "bin" / "python"
+        suffix = ("Scripts", "python.exe") if os.name == "nt" else ("bin", "python")
+        venv_python = tmp_path / ".venv" / Path(*suffix)
         venv_python.parent.mkdir(parents=True)
         venv_python.write_text("#!/usr/bin/env python3")
         venv_python.chmod(0o755)
@@ -261,7 +263,7 @@ class TestBuildSubprocessEnv:
         run = _import_run()
         env = run._build_subprocess_env()
         assert "PYTHONPATH" in env
-        path_entries = env["PYTHONPATH"].split(":")
+        path_entries = env["PYTHONPATH"].split(os.pathsep)
         assert path_entries[0] == str(run.project_root)
 
     def test_preserves_existing_pythonpath(self, monkeypatch):
@@ -269,7 +271,7 @@ class TestBuildSubprocessEnv:
         run = _import_run()
         monkeypatch.setenv("PYTHONPATH", "/custom/path")
         env = run._build_subprocess_env()
-        path_entries = env["PYTHONPATH"].split(":")
+        path_entries = env["PYTHONPATH"].split(os.pathsep)
         assert path_entries[0] == str(run.project_root)
         assert "/custom/path" in env["PYTHONPATH"]
 
@@ -813,17 +815,21 @@ class TestRunPyHelperFunctions:
 class TestRunPyMainBlock:
     """Tests for run.py's main entry point modes."""
 
-    def test_webapp_mode_flag_detected(self):
-        """HAS_WEB_FLAG reflects --webapp arg."""
+    def test_import_does_not_start_processes(self):
+        """Importing the wrapper neither starts an app nor changes cwd."""
         run = _import_run()
-        if hasattr(run, "HAS_WEB_FLAG"):
-            assert isinstance(run.HAS_WEB_FLAG, bool)
+        original_cwd = Path.cwd()
+        with patch("subprocess.run") as mock_run, \
+                patch("subprocess.Popen") as mock_popen, \
+                patch.object(sys, "argv", ["run.py", "--webapp"]):
+            importlib.reload(run)
+        mock_run.assert_not_called()
+        mock_popen.assert_not_called()
+        assert Path.cwd() == original_cwd
 
-    def test_cli_args_is_list(self):
-        """CLI_ARGS is a list of strings."""
-        run = _import_run()
-        if hasattr(run, "CLI_ARGS"):
-            assert isinstance(run.CLI_ARGS, list)
+    def test_main_is_callable(self):
+        """Source and frozen launchers share an explicit entrypoint."""
+        assert callable(_import_run().main)
 
 
 def _execute_run_module_with_args(
@@ -831,7 +837,7 @@ def _execute_run_module_with_args(
     run_result: SimpleNamespace | None = None,
     popen_proc: MagicMock | None = None,
 ):
-    """Import run.py with a custom argv and return execution artifacts."""
+    """Call the import-safe launcher with argv and capture execution."""
     if "run" in sys.modules:
         del sys.modules["run"]
 
@@ -853,7 +859,8 @@ def _execute_run_module_with_args(
             patch("sys.exit", side_effect=_raise_system_exit) as mock_exit:
         exit_code = None
         try:
-            importlib.import_module("run")
+            module = importlib.import_module("run")
+            sys.exit(module.main(argv[1:]))
         except SystemExit as exc:
             exit_code = exc.code
         return {
@@ -930,15 +937,14 @@ class TestRunModuleEntrypointCoverage:
 
     def test_webapp_mode_missing_app_script_exits_one(self):
         """Webapp mode exits with code 1 when web/app.py is missing."""
-        original_exists = Path.exists
+        original_is_file = Path.is_file
 
-        def patched_exists(path_obj):
-            path_str = str(path_obj)
-            if path_str.endswith("web/app.py"):
+        def patched_is_file(path_obj):
+            if path_obj.parts[-2:] == ("web", "app.py"):
                 return False
-            return original_exists(path_obj)
+            return original_is_file(path_obj)
 
-        with patch.object(Path, "exists", patched_exists):
+        with patch.object(Path, "is_file", patched_is_file):
             result = _execute_run_module_with_args(["run.py", "--webapp"])
 
         assert result["exit_code"] == 1
@@ -966,7 +972,8 @@ class TestRunModuleEntrypointCoverage:
                 patch("sys.exit", side_effect=_raise_system_exit):
             exit_code = None
             try:
-                importlib.import_module("run")
+                module = importlib.import_module("run")
+                sys.exit(module.main())
             except SystemExit as exc:
                 exit_code = exc.code
 

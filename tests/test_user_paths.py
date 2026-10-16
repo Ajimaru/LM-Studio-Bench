@@ -1,6 +1,9 @@
 """Tests for core/paths.py."""
+import os
 from pathlib import Path
 from typing import cast
+
+import pytest
 
 
 class TestGetUserConfigDir:
@@ -278,3 +281,114 @@ class TestPathFormattingAndSnapHome:
         value = _NoFspath()
         typed_value = cast(str | Path, value)
         assert up.format_path_for_logs(typed_value) == "~/logs/x.log"
+
+    def test_does_not_redact_a_similar_home_prefix(self, tmp_path, monkeypatch):
+        """A different directory with the same text prefix stays unchanged."""
+        import core.paths as up
+
+        monkeypatch.setenv("SNAP_REAL_HOME", str(tmp_path / "home"))
+        other_path = tmp_path / "home-other" / "file.log"
+        assert up.format_path_for_logs(other_path) == str(other_path)
+
+    def test_redacts_paths_with_spaces_and_unicode(self, tmp_path, monkeypatch):
+        """Path components, not slash spelling, determine home redaction."""
+        import core.paths as up
+
+        home = tmp_path / "Benutzer \u00c4"
+        monkeypatch.setenv("SNAP_REAL_HOME", str(home))
+        assert up.format_path_for_logs(home / "logs" / "test.log") == (
+            "~/logs/test.log"
+        )
+
+
+class TestWindowsPaths:
+    """Windows stores configuration and local data in separate AppData roots."""
+
+    @pytest.mark.parametrize(
+        ("getter", "env_var", "subdir"),
+        [
+            ("get_user_config_dir", "APPDATA", ""),
+            ("get_user_data_dir", "LOCALAPPDATA", ""),
+            ("get_user_logs_dir", "LOCALAPPDATA", "logs"),
+            ("get_user_cache_dir", "LOCALAPPDATA", "cache"),
+        ],
+    )
+    def test_uses_appdata(
+        self, tmp_path, monkeypatch, getter, env_var, subdir
+    ):
+        """Windows ignores XDG overrides and creates its AppData directories."""
+        import core.paths as up
+
+        base = tmp_path / "App Data \u00c4"
+        monkeypatch.setattr(up.platform, "system", lambda: "Windows")
+        monkeypatch.setenv(env_var, str(base))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg-data"))
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg-cache"))
+
+        result = getattr(up, getter)()
+
+        assert result == base / "LM-Studio-Bench" / subdir
+        assert result.is_dir()
+
+    @pytest.mark.parametrize(
+        ("getter", "env_var", "fallback", "subdir"),
+        [
+            ("get_user_config_dir", "APPDATA", "Roaming", ""),
+            ("get_user_data_dir", "LOCALAPPDATA", "Local", ""),
+            ("get_user_logs_dir", "LOCALAPPDATA", "Local", "logs"),
+            ("get_user_cache_dir", "LOCALAPPDATA", "Local", "cache"),
+        ],
+    )
+    def test_missing_environment_uses_home(
+        self, tmp_path, monkeypatch, getter, env_var, fallback, subdir
+    ):
+        """Missing environment variables do not make Windows startup fail."""
+        import core.paths as up
+
+        monkeypatch.setattr(up.platform, "system", lambda: "Windows")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv(env_var, raising=False)
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
+
+        result = getattr(up, getter)()
+
+        assert result == (
+            tmp_path / "AppData" / fallback / "LM-Studio-Bench" / subdir
+        )
+        assert result.is_dir()
+
+    @pytest.mark.parametrize("invalid", ["relative", "..", "absolute-traversal"])
+    def test_invalid_environment_is_reported(
+        self, tmp_path, monkeypatch, caplog, invalid
+    ):
+        """Relative and parent-traversal values are rejected with a warning."""
+        import core.paths as up
+
+        value = (
+            str(tmp_path / "base" / ".." / "outside")
+            if invalid == "absolute-traversal"
+            else invalid
+        )
+        monkeypatch.setattr(up.platform, "system", lambda: "Windows")
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("SNAP_REAL_HOME", raising=False)
+        monkeypatch.setenv("APPDATA", value)
+
+        result = up.get_user_config_dir()
+
+        assert result == tmp_path / "AppData" / "Roaming" / "LM-Studio-Bench"
+        assert "Ignoring invalid APPDATA" in caplog.text
+
+    @pytest.mark.skipif(os.name != "nt", reason="Native Windows UNC parsing")
+    def test_accepts_redirected_unc_appdata(self, monkeypatch):
+        """UNC roaming profiles are valid without accessing a test share."""
+        import core.paths as up
+
+        monkeypatch.setattr(up.platform, "system", lambda: "Windows")
+        monkeypatch.setenv("APPDATA", r"\\server\profiles\user")
+        monkeypatch.setattr(Path, "mkdir", lambda *args, **kwargs: None)
+
+        assert up.get_user_config_dir() == Path(
+            r"\\server\profiles\user\LM-Studio-Bench"
+        )

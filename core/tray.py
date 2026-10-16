@@ -22,8 +22,10 @@ from urllib import request as urllib_request
 from urllib.parse import urlparse
 import webbrowser
 
+from core.logging_utils import resolve_latest_log, update_latest_log
 from core.paths import USER_LOGS_DIR
-from core.platform_info import IS_LINUX, IS_MACOS
+from core.platform_info import IS_LINUX, IS_MACOS, IS_WINDOWS
+from core.runtime import child_creation_flags, child_environment, entrypoint_command
 from core.version import fetch_latest_release
 
 _LATEST_RELEASE_LOCK = threading.Lock()
@@ -40,6 +42,15 @@ VERSION_STATUS_PENDING = "checking…"
 # trying before it settles on "unknown".
 VERSION_RECHECK_INTERVAL_MS = 500
 VERSION_RECHECK_ATTEMPTS = 20
+API_TIMEOUT = 5.0
+CLEANUP_API_TIMEOUT = 45.0
+DOCUMENTATION_URL = "https://ajimaru.github.io/LM-Studio-Bench"
+REPOSITORY_URL = "https://github.com/Ajimaru/LM-Studio-Bench"
+APP_DESCRIPTION = (
+    "Automatic benchmarking tool for all locally installed LM Studio models. "
+    "Systematically tests different models and quantizations to measure and "
+    "compare tokens-per-second performance."
+)
 
 
 def _fetch_latest_release_background() -> None:
@@ -126,9 +137,6 @@ def _bootstrap_gi_runtime_paths() -> None:
     _prepend_env_paths("GI_TYPELIB_PATH", gi_paths)
 
 
-_bootstrap_gi_runtime_paths()
-
-
 def _import_gi_repository(module_name: str) -> Any:
     """Import a whitelisted GI repository module by name."""
     if module_name == "Gtk":
@@ -142,38 +150,41 @@ def _import_gi_repository(module_name: str) -> Any:
     raise ValueError(f"Unsupported GI module: {module_name}")
 
 
-try:
-    import gi
+GTK: Any = None
+GLIB: Any = None
+APP_INDICATOR3: Any = None
+IMPORT_ERROR: Optional[Exception] = None
 
-    gi.require_version("Gtk", "3.0")
-    GTK: Any = _import_gi_repository("Gtk")
 
+def _load_gtk() -> None:
+    """Load the Linux GUI only when a tray is actually requested."""
+    global GTK, GLIB, APP_INDICATOR3, IMPORT_ERROR
+    if not IS_LINUX or GTK is not None:
+        return
+    _bootstrap_gi_runtime_paths()
     try:
-        GLIB: Any = _import_gi_repository("GLib")
-    except (ImportError, ModuleNotFoundError, ValueError):
-        GLIB = None
-
-    APP_INDICATOR3: Any = None
-    for appindicator_module in ("AppIndicator3", "AyatanaAppIndicator3"):
+        gi = importlib.import_module("gi")
+        gi.require_version("Gtk", "3.0")
+        GTK = _import_gi_repository("Gtk")
         try:
-            gi.require_version(appindicator_module, "0.1")
-            APP_INDICATOR3 = _import_gi_repository(appindicator_module)
-            break
-        except (
-            ValueError,
-            ImportError,
-            ModuleNotFoundError,
-            AttributeError,
-        ):
-            continue
-except (ImportError, ValueError, AttributeError) as import_exc:
-    gi = None
-    GTK = None
-    APP_INDICATOR3 = None
-    GLIB = None
-    IMPORT_ERROR = import_exc
-else:
-    IMPORT_ERROR = None
+            GLIB = _import_gi_repository("GLib")
+        except (ImportError, ValueError):
+            GLIB = None
+
+        for module_name in ("AppIndicator3", "AyatanaAppIndicator3"):
+            try:
+                gi.require_version(module_name, "0.1")
+                APP_INDICATOR3 = _import_gi_repository(module_name)
+                break
+            except (ValueError, ImportError, AttributeError):
+                continue
+    except (ImportError, ValueError, AttributeError, OSError) as exc:
+        GTK = None
+        GLIB = None
+        APP_INDICATOR3 = None
+        IMPORT_ERROR = exc
+    else:
+        IMPORT_ERROR = None
 
 
 LOGGER = logging.getLogger("tray")
@@ -184,21 +195,56 @@ _WEBAPP_URL_RE = re.compile(r"Dashboard available at (http://localhost:\d+)")
 def tray_unavailable_reason() -> Optional[str]:
     """Explain why the tray cannot start, or return None when it can.
 
-    The tray is built on GTK/AppIndicator, which is packaged for Linux
-    desktops only. Callers use this to report a clear message instead of a
-    GTK import traceback.
+    Windows uses pystray/Pillow, Linux uses GTK/AppIndicator, and macOS
+    intentionally has no tray. GUI modules are loaded only on demand.
     """
-    if IMPORT_ERROR is None:
-        return None
-
     if IS_MACOS:
         return (
-            "The GTK system tray is Linux-only and is not available on "
+            "The system tray is not available on "
             "macOS. Benchmarks, the CLI and the web dashboard are "
             "unaffected."
         )
+    if IS_WINDOWS:
+        from core.windows_tray import windows_tray_unavailable_reason
 
+        return windows_tray_unavailable_reason()
+    if not IS_LINUX:
+        return "The system tray is supported on Linux and Windows x64 only."
+    _load_gtk()
+    if GTK is not None:
+        return None
     return f"Tray dependencies unavailable: {IMPORT_ERROR}"
+
+
+def status_icon_color(status: str, api_reachable: bool) -> str:
+    """Return the shared Linux/Windows status color."""
+    if not api_reachable or status in {"error", "failed"}:
+        return "red"
+    return {"running": "green", "paused": "yellow"}.get(status, "gray")
+
+
+def create_tray_app(dashboard_url: str, debug: bool = False) -> TrayApp:
+    """Create the platform tray, raising RuntimeError if it is unavailable.
+
+    Args:
+        dashboard_url: Dashboard URL for API calls and browser actions.
+        debug: Enable detailed logging.
+
+    Returns:
+        A native Windows tray or the Linux GTK compatibility entrypoint.
+
+    Raises:
+        RuntimeError: The platform or its GUI dependencies are unsupported.
+        ValueError: The dashboard URL is invalid.
+    """
+    reason = tray_unavailable_reason()
+    if reason is not None:
+        raise RuntimeError(reason)
+    if IS_WINDOWS:
+        from core.windows_tray import WindowsTrayApp
+
+        return WindowsTrayApp(dashboard_url, debug=debug)
+    return TrayApp(dashboard_url, debug=debug)
 
 
 def _normalize_dashboard_url(dashboard_url: str) -> str:
@@ -231,8 +277,7 @@ def _setup_logger(debug: bool) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = logs_dir / f"trayapp_{timestamp}.log"
     latest_link = logs_dir / "trayapp_latest.log"
-    latest_link.unlink(missing_ok=True)
-    latest_link.symlink_to(log_file.name)
+    update_latest_log(log_file, latest_link)
 
     level = logging.DEBUG if debug else logging.INFO
     LOGGER.setLevel(level)
@@ -246,7 +291,9 @@ def _setup_logger(debug: bool) -> Path:
     file_handler.setLevel(level)
     file_handler.setFormatter(formatter)
 
-    LOGGER.handlers.clear()
+    for handler in LOGGER.handlers[:]:
+        LOGGER.removeHandler(handler)
+        handler.close()
     LOGGER.addHandler(file_handler)
     return log_file
 
@@ -278,18 +325,19 @@ class TrayApp:
         self.last_update_check: float = 0.0
         self.force_update_check: bool = False
         self.pending_update: Optional[dict] = None
+        self._update_check_succeeded = False
+        self._last_api_error = ""
+        self._shutdown_error = ""
+
+    def _wait_for_close(self, seconds: float) -> bool:
+        """Wait briefly; native backends may interrupt this during shutdown."""
+        time.sleep(seconds)
+        return False
 
     def _build_webapp_env(self) -> dict[str, str]:
         """Build environment for launching the webapp subprocess."""
-        env = os.environ.copy()
         project_root = Path(__file__).resolve().parent.parent
-        src_dir = project_root / "src"
-        entries = [str(project_root), str(src_dir)]
-        existing = env.get("PYTHONPATH", "")
-        if existing:
-            entries.append(existing)
-        env["PYTHONPATH"] = ":".join(entries)
-        return env
+        return child_environment(project_root)
 
     def _find_free_local_port(self) -> int:
         """Find a free localhost TCP port."""
@@ -301,36 +349,39 @@ class TrayApp:
         """Start webapp in background and return reachable dashboard URL."""
         project_root = Path(__file__).resolve().parent.parent
         app_script = project_root / "web" / "app.py"
-        if not app_script.exists():
+        if not getattr(sys, "frozen", False) and not app_script.exists():
             LOGGER.error("Webapp script not found: %s", app_script)
             return None
 
         port = self._find_free_local_port()
         dashboard_url = f"http://localhost:{port}"
-        cmd = [
-            sys.executable,
-            str(app_script),
+        args = [
             "--port",
             str(port),
             "--no-browser",
         ]
         if self.debug:
-            cmd.append("--debug")
+            args.append("--debug")
 
         LOGGER.info("Starting webapp for tray open: %s", dashboard_url)
         try:
+            cmd = entrypoint_command("webapp", args, project_root=project_root)
             subprocess.Popen(  # nosec B603
                 cmd,
                 cwd=project_root,
                 env=self._build_webapp_env(),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                creationflags=child_creation_flags(),
             )
         except OSError as exc:
             LOGGER.error("Failed to start webapp subprocess: %s", exc)
             return None
 
         for _ in range(20):
+            if self._wait_for_close(0):
+                LOGGER.info("Dashboard startup wait interrupted by tray shutdown")
+                return None
             if self._is_dashboard_url_reachable(dashboard_url):
                 self._set_dashboard_url(dashboard_url)
                 return dashboard_url
@@ -340,7 +391,8 @@ class TrayApp:
                 self._set_dashboard_url(discovered_url)
                 return discovered_url
 
-            time.sleep(0.25)
+            if self._wait_for_close(0.25):
+                return None
 
         LOGGER.warning("Started webapp but URL did not become reachable in time")
         return None
@@ -408,8 +460,9 @@ class TrayApp:
         latest_link = USER_LOGS_DIR / "webapp_latest.log"
         candidates: list[Path] = []
 
-        if latest_link.exists():
-            candidates.append(latest_link)
+        latest_log = resolve_latest_log(latest_link)
+        if latest_log is not None:
+            candidates.append(latest_log)
 
         try:
             recent_logs = sorted(
@@ -505,7 +558,11 @@ class TrayApp:
 
         Returns:
             Parsed JSON as dict when successful, otherwise None.
+
+        Stop/shutdown have a longer timeout because the server waits for
+        cooperative model-worker cleanup before responding.
         """
+        self._last_api_error = ""
         url = self._build_api_url(endpoint)
         if not url:
             return None
@@ -522,9 +579,16 @@ class TrayApp:
                 headers=headers,
                 method=method,
             )
-            with urllib_request.urlopen(req, timeout=5.0) as response:  # nosec B310
+            timeout = (
+                CLEANUP_API_TIMEOUT
+                if endpoint in {"/api/benchmark/stop", "/api/system/shutdown"}
+                else API_TIMEOUT
+            )
+            with urllib_request.urlopen(req, timeout=timeout) as response:  # nosec B310
                 response_body = response.read().decode("utf-8")
             data = json.loads(response_body) if response_body else {}
+            if not isinstance(data, dict):
+                raise ValueError("Dashboard returned a non-object JSON response")
             LOGGER.debug("API response (%s): %s", endpoint, data)
             return data
         except (
@@ -533,10 +597,12 @@ class TrayApp:
             json.JSONDecodeError,
             TimeoutError,
         ) as exc:
+            self._last_api_error = str(exc)
             exc_type = type(exc).__name__
             LOGGER.warning("API %s %s failed (%s): %s", method, endpoint, exc_type, exc)
             return None
         except OSError as exc:
+            self._last_api_error = str(exc)
             LOGGER.error("Unexpected error on API %s %s: %s", method, endpoint, exc)
             return None
 
@@ -614,15 +680,7 @@ class TrayApp:
         if not self.icon_dir:
             return
 
-        if not api_reachable:
-            color = "red"
-        elif status == "running":
-            color = "green"
-        elif status == "paused":
-            color = "yellow"
-        else:
-            color = "gray"
-
+        color = status_icon_color(status, api_reachable)
         icon_name = f"lmstudio-bench-tray-{color}"
         if self.appindicator is not None:
             self.appindicator.set_icon_full(icon_name, "")
@@ -672,7 +730,10 @@ class TrayApp:
         self._update_icon_for_status(status, api_reachable)
 
         LOGGER.debug("Updating menu buttons: status=%s, data=%s", status, status_data)
+        self._apply_menu_status(status)
 
+    def _apply_menu_status(self, status: str) -> None:
+        """Apply controller status to GTK widgets; native backends override."""
         is_running_or_paused = status in ("running", "paused")
         if self.start_item:
             self.start_item.set_sensitive(not is_running_or_paused)
@@ -694,8 +755,7 @@ class TrayApp:
     def _on_start(self, _item: Any) -> None:
         """Start benchmark from tray."""
         result = self._call_api("/api/benchmark/start", "POST", payload={})
-        if result:
-            LOGGER.info("Start action: %s", result.get("message", "ok"))
+        self._report_action_result("Start", result)
         self._refresh_menu_buttons()
 
     def _on_pause_resume(self, _item: Any) -> None:
@@ -708,20 +768,30 @@ class TrayApp:
         status = str(status_data.get("status", "")).lower()
         if status == "running":
             result = self._call_api("/api/benchmark/pause", "POST")
-            if result:
-                LOGGER.info("Pause action: %s", result.get("message", "ok"))
+            self._report_action_result("Pause", result)
         elif status == "paused":
             result = self._call_api("/api/benchmark/resume", "POST")
-            if result:
-                LOGGER.info("Resume action: %s", result.get("message", "ok"))
+            self._report_action_result("Resume", result)
         self._refresh_menu_buttons()
 
     def _on_stop(self, _item: Any) -> None:
         """Stop benchmark from tray."""
         result = self._call_api("/api/benchmark/stop", "POST")
-        if result:
-            LOGGER.info("Stop action: %s", result.get("message", "ok"))
+        self._report_action_result("Stop", result)
         self._refresh_menu_buttons()
+
+    def _report_action_result(self, action: str, result: Optional[dict]) -> None:
+        """Make failed control requests visible instead of claiming success."""
+        if result and result.get("success") is True:
+            LOGGER.info("%s action: %s", action, result.get("message", "ok"))
+            return
+        message = (
+            str(result.get("message", "The dashboard rejected the request."))
+            if result
+            else self._last_api_error or "The dashboard could not be reached."
+        )
+        LOGGER.warning("%s failed: %s", action, message)
+        self._show_info_dialog(f"{action} Failed", message)
 
     def _on_status(self, _item: Any) -> None:
         """Show current benchmark status."""
@@ -754,6 +824,8 @@ class TrayApp:
         Returns:
             True if update is available, False otherwise.
         """
+        self._update_check_succeeded = False
+        self.pending_update = None
         update_data = self._call_api("/api/system/latest-release")
         if not update_data:
             LOGGER.debug("Update check failed (API error)")
@@ -763,6 +835,7 @@ class TrayApp:
             LOGGER.debug("Update check returned error: %s", update_data.get("message"))
             return False
 
+        self._update_check_succeeded = True
         is_update_available = update_data.get("is_update_available", False)
         current = update_data.get("current_version", "unknown")
         latest = update_data.get("latest_version", "unknown")
@@ -867,10 +940,16 @@ class TrayApp:
 
         if update_available and self.pending_update:
             self._show_update_notification()
-        else:
+        elif self._update_check_succeeded:
             self._show_info_dialog(
                 "No Updates Available",
                 "You are running the latest version.",
+            )
+        else:
+            self._show_info_dialog(
+                "Update Check Failed",
+                "Could not check for updates. Check the dashboard connection "
+                "and try again.",
             )
 
     def _parse_version_tuple(self, version: str) -> Optional[tuple]:
@@ -1005,10 +1084,7 @@ class TrayApp:
         title_label.set_justify(GTK.Justification.CENTER)
         box.pack_start(title_label, False, False, 0)
 
-        version_file = project_root / "VERSION"
-        version = "v0.1.0"
-        if version_file.exists():
-            version = version_file.read_text().strip()
+        version = self._read_version()
         version_status = self._get_about_version_status(version)
         version_label = GTK.Label()
         self._set_version_markup(version_label, version, version_status)
@@ -1019,12 +1095,7 @@ class TrayApp:
             self._schedule_version_status_refresh(version_label, version)
 
         desc_label = GTK.Label()
-        desc_label.set_text(
-            "Automatic benchmarking tool for all locally installed "
-            "LM Studio models. Systematically tests different models "
-            "and quantizations to measure and compare "
-            "tokens-per-second performance."
-        )
+        desc_label.set_text(APP_DESCRIPTION)
         desc_label.set_line_wrap(True)
         desc_label.set_max_width_chars(50)
         desc_label.set_justify(GTK.Justification.CENTER)
@@ -1033,14 +1104,14 @@ class TrayApp:
         links_box = GTK.Box(orientation=GTK.Orientation.VERTICAL, spacing=5)
 
         doc_link = GTK.LinkButton(
-            uri="https://ajimaru.github.io/LM-Studio-Bench",
+            uri=DOCUMENTATION_URL,
             label="Documentation",
         )
         doc_link.set_halign(GTK.Align.CENTER)
         links_box.pack_start(doc_link, False, False, 0)
 
         github_link = GTK.LinkButton(
-            uri="https://github.com/Ajimaru/LM-Studio-Bench",
+            uri=REPOSITORY_URL,
             label="GitHub Repository",
         )
         github_link.set_halign(GTK.Align.CENTER)
@@ -1112,6 +1183,33 @@ class TrayApp:
         name, _, role = entry.partition(" - ")
         return name.strip(), None, role.strip() or None
 
+    @staticmethod
+    def _read_version() -> str:
+        """Read the bundled version without depending on the working directory."""
+        version_file = Path(__file__).resolve().parent.parent / "VERSION"
+        try:
+            return version_file.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            LOGGER.warning("Unable to read version: %s", exc)
+            return "unknown"
+
+    def _read_contributors(self) -> list[tuple[str, Optional[str], Optional[str]]]:
+        """Read contributor metadata shared by both native About dialogs."""
+        contributors = [
+            ("Ajimaru", "Ajimaru", "Project creator and maintainer"),
+        ]
+        authors_file = Path(__file__).resolve().parent.parent / "AUTHORS"
+        try:
+            lines = authors_file.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            LOGGER.warning("Unable to read contributors: %s", exc)
+            return contributors
+        for line in lines:
+            parsed = self._parse_contributor(line.strip())
+            if parsed and parsed[1] != "Ajimaru":
+                contributors.append(parsed)
+        return contributors
+
     def _create_contributors_tab(self) -> Any:
         """Create the Contributors tab with list of contributors."""
         box = GTK.Box(orientation=GTK.Orientation.VERTICAL, spacing=12)
@@ -1120,8 +1218,6 @@ class TrayApp:
         box.set_margin_start(40)
         box.set_margin_end(40)
 
-        project_root = Path(__file__).resolve().parent.parent
-
         header_label = GTK.Label()
         header_label.set_markup(
             '<span size="large" weight="bold">Contributors</span>'
@@ -1129,56 +1225,26 @@ class TrayApp:
         header_label.set_justify(GTK.Justification.CENTER)
         box.pack_start(header_label, False, False, 10)
 
-        ajimaru_label = GTK.Label()
-        ajimaru_label.set_markup(
-            '<b>Ajimaru</b> (<a href="https://github.com/Ajimaru">'
-            "@Ajimaru</a>)\n"
-            '<span foreground="#888888">Project creator and maintainer</span>'
-        )
-        ajimaru_label.set_line_wrap(True)
-        ajimaru_label.set_justify(GTK.Justification.CENTER)
-        box.pack_start(ajimaru_label, False, False, 5)
+        for name, handle, role in self._read_contributors():
+            markup = self._escape_markup(name)
+            if handle == "Ajimaru":
+                markup = f"<b>{markup}</b>"
+            if handle:
+                markup = (
+                    f'{markup} (<a href="https://github.com/{handle}">'
+                    f"@{handle}</a>)"
+                )
+            if role:
+                markup += (
+                    f'\n<span foreground="#888888">'
+                    f"{self._escape_markup(role)}</span>"
+                )
 
-        authors_file = project_root / "AUTHORS"
-        if authors_file.exists():
-            content = authors_file.read_text()
-            lines = content.split("\n")
-            for line in lines:
-                line = line.strip()
-                if (
-                    not line
-                    or line.startswith("#")
-                    or line.startswith("<!-- Add")
-                    or line == "---"
-                    or line.startswith("This file lists")
-                    or line.startswith("## ")
-                    or line == "If you contribute"
-                ):
-                    continue
-                if "Ajimaru" in line and "@Ajimaru" in line:
-                    continue
-                parsed = self._parse_contributor(line)
-                if not parsed:
-                    continue
-
-                name, handle, role = parsed
-                markup = self._escape_markup(name)
-                if handle:
-                    markup = (
-                        f'{markup} (<a href="https://github.com/{handle}">'
-                        f"@{handle}</a>)"
-                    )
-                if role:
-                    markup += (
-                        f'\n<span foreground="#888888">'
-                        f"{self._escape_markup(role)}</span>"
-                    )
-
-                contrib_label = GTK.Label()
-                contrib_label.set_markup(markup)
-                contrib_label.set_line_wrap(True)
-                contrib_label.set_justify(GTK.Justification.CENTER)
-                box.pack_start(contrib_label, False, False, 5)
+            contrib_label = GTK.Label()
+            contrib_label.set_markup(markup)
+            contrib_label.set_line_wrap(True)
+            contrib_label.set_justify(GTK.Justification.CENTER)
+            box.pack_start(contrib_label, False, False, 5)
 
         box.show_all()
         return box
@@ -1232,32 +1298,36 @@ class TrayApp:
             except (RuntimeError, OSError) as exc:
                 LOGGER.warning("Failed to stop polling timer: %s", exc)
 
-    def _on_quit(self, _item: Any) -> None:
-        """Stop benchmark and shutdown web dashboard.
-
-        This cleanup handler ensures the benchmark is stopped and the
-        web dashboard is shut down gracefully before the tray app exits,
-        preventing orphaned processes.
-        """
-        LOGGER.info("Quit action triggered, initiating shutdown...")
-
-        self._stop_status_polling()
-
+    def _shutdown_dashboard(self) -> bool:
+        """Request managed cleanup; never confuse a failure with success."""
         try:
-            LOGGER.info("Calling WebApp shutdown endpoint...")
             result = self._call_api("/api/system/shutdown", "POST")
-            if result:
+            if result and result.get("success") is True:
                 LOGGER.info("Shutdown response: %s", result.get("message", "ok"))
-            else:
-                LOGGER.warning("Shutdown endpoint failed, trying stop only...")
-                status_data = self._call_api("/api/status")
-                if status_data:
-                    status = str(status_data.get("status", "")).lower()
-                    if status in ("running", "paused"):
-                        LOGGER.info("Stopping benchmark...")
-                        self._call_api("/api/benchmark/stop", "POST")
+                return True
+            self._shutdown_error = (
+                str(result.get("message", "Shutdown was rejected."))
+                if result
+                else self._last_api_error or "The dashboard could not be reached."
+            )
         except (OSError, RuntimeError, AttributeError) as exc:
-            LOGGER.warning("Error during shutdown: %s", exc)
+            self._shutdown_error = str(exc)
+        LOGGER.error("Dashboard shutdown was not confirmed: %s", self._shutdown_error)
+        return False
+
+    def _on_quit(self, _item: Any) -> None:
+        """Stop the dashboard before exiting the GTK tray."""
+        LOGGER.info("Quit action triggered, initiating shutdown...")
+        self._stop_status_polling()
+        if not self._shutdown_dashboard():
+            self._show_info_dialog(
+                "Shutdown Failed",
+                f"{self._shutdown_error}\n\n"
+                "The dashboard or benchmark may still be running. "
+                "The tray will remain available so you can retry.",
+            )
+            self._start_status_polling()
+            return
 
         LOGGER.info("Benchmark Tray exiting")
         if self.status_icon is not None:
@@ -1327,6 +1397,9 @@ class TrayApp:
 
     def run(self) -> None:
         """Initialize tray icon and run GTK loop."""
+        _load_gtk()
+        if GTK is None:
+            raise RuntimeError("GTK tray dependencies are unavailable")
         project_root = Path(__file__).resolve().parent.parent
         self.icon_dir = project_root / "assets" / "icons"
 
@@ -1375,7 +1448,7 @@ class TrayApp:
 def _run_tray(dashboard_url: str, debug: bool) -> None:
     """Create and run tray app instance."""
     try:
-        app = TrayApp(dashboard_url=dashboard_url, debug=debug)
+        app = create_tray_app(dashboard_url=dashboard_url, debug=debug)
         app.run()
     except (RuntimeError, OSError, ImportError):
         LOGGER.exception("Tray thread crashed")
@@ -1464,14 +1537,15 @@ def main() -> int:
         LOGGER.error("Cannot start tray: %s", unavailable_reason)
         return 1
 
-    try:
-        GTK.init(sys.argv)
-    except RuntimeError:
-        LOGGER.error("No graphical display available for GTK tray")
-        return 1
+    if IS_LINUX:
+        try:
+            GTK.init(sys.argv)
+        except RuntimeError:
+            LOGGER.error("No graphical display available for GTK tray")
+            return 1
 
     try:
-        app = TrayApp(dashboard_url=args.url, debug=args.debug)
+        app = create_tray_app(dashboard_url=args.url, debug=args.debug)
         app.run()
     except (RuntimeError, OSError, ImportError):
         LOGGER.exception("Tray standalone startup failed")

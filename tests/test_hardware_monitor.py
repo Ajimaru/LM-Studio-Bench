@@ -194,11 +194,22 @@ class TestHardwareMonitor:
         assert monitor.monitoring is False
         assert monitor.thread is None
 
-    def test_start_without_gpu_tool_does_not_start(self):
-        """start() with no gpu_tool does not start monitoring."""
+    def test_start_without_gpu_tool_records_cpu_and_ram(self, monkeypatch):
+        """Optional GPU probes must not disable CPU/RAM profiling."""
         monitor = HardwareMonitor(gpu_type="NVIDIA", gpu_tool=None, enabled=True)
-        monitor.start()
-        assert monitor.monitoring is False
+        monkeypatch.setattr(monitor, "_get_cpu_usage", lambda: 10.0)
+        monkeypatch.setattr(monitor, "_get_ram_usage", lambda: 1.0)
+        try:
+            monitor.start()
+            deadline = time.monotonic() + 2
+            while not monitor.cpus and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert monitor.monitoring is True
+        finally:
+            stats = monitor.stop()
+        assert stats["cpu_percent_avg"] == 10
+        assert stats["ram_gb_avg"] == 1
+        assert stats["temp_celsius_avg"] is None
 
     def test_start_resets_all_measurement_buffers(self):
         """start() clears all stale readings before a new run begins."""
@@ -412,8 +423,9 @@ class TestGPUMonitor:
         assert monitor.gpu_type == "NVIDIA"
         assert monitor.gpu_tool == "/usr/bin/nvidia-smi"
 
-    def test_detect_amd_gpu_via_rocm_smi(self):
+    def test_detect_amd_gpu_via_rocm_smi(self, monkeypatch):
         """GPUMonitor detects AMD GPU when rocm-smi is available."""
+        monkeypatch.setattr(hw, "IS_WINDOWS", False)
         def mock_which(name, *args, **kwargs):
             return "/usr/bin/rocm-smi" if name == "rocm-smi" else None
 

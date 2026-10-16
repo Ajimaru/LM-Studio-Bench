@@ -30,11 +30,18 @@ import threading
 import time
 from typing import TextIO
 
+from core.logging_utils import update_latest_log
 from core.paths import USER_LOGS_DIR, format_path_for_logs
-from core.platform_info import IS_LINUX, IS_MACOS
+from core.platform_info import IS_LINUX, IS_MACOS, IS_WINDOWS
+from core.runtime import (
+    child_creation_flags,
+    child_environment,
+    configure_console,
+    entrypoint_command,
+    python_executable,
+)
 
 project_root = Path(__file__).parent
-os.chdir(project_root)
 
 
 def _resolve_python_executable() -> str:
@@ -43,10 +50,7 @@ def _resolve_python_executable() -> str:
     Prefer local virtualenv interpreter when available so subprocesses use
     project dependencies even if run.py was launched by a system Python.
     """
-    venv_python = project_root / ".venv" / "bin" / "python"
-    if venv_python.exists() and os.access(venv_python, os.X_OK):
-        return str(venv_python)
-    return sys.executable
+    return python_executable(project_root)
 
 
 PYTHON_EXECUTABLE = _resolve_python_executable()
@@ -57,9 +61,9 @@ def _tray_python_candidates() -> list[str]:
     raw_candidates = [
         PYTHON_EXECUTABLE,
         sys.executable,
-        "/usr/bin/python3",
-        "python3",
     ]
+    if IS_LINUX:
+        raw_candidates.extend(["/usr/bin/python3", "python3"])
     unique_candidates: list[str] = []
     for candidate in raw_candidates:
         if not candidate:
@@ -147,7 +151,7 @@ def _drop_snap_gtk_paths(env: dict[str, str]) -> None:
 
 def _build_subprocess_env() -> dict[str, str]:
     """Build a sanitized environment for child Python processes."""
-    env = os.environ.copy()
+    env = child_environment(project_root)
     env.pop("LD_LIBRARY_PATH", None)
     env.pop("LD_PRELOAD", None)
     # macOS equivalents of LD_LIBRARY_PATH/LD_PRELOAD.
@@ -155,13 +159,6 @@ def _build_subprocess_env() -> dict[str, str]:
     env.pop("DYLD_INSERT_LIBRARIES", None)
     env.pop("DYLD_FRAMEWORK_PATH", None)
     _drop_snap_gtk_paths(env)
-    root_dir = str(project_root)
-    pythonpath_entries = [root_dir]
-    existing_path = env.get("PYTHONPATH", "")
-    if existing_path:
-        pythonpath_entries.append(existing_path)
-    env["PYTHONPATH"] = ":".join(pythonpath_entries)
-
     # AppImage/GI bootstrapping is Linux-only packaging.
     if not IS_LINUX:
         return env
@@ -196,9 +193,9 @@ def _build_subprocess_env() -> dict[str, str]:
     if gi_paths:
         existing_gi = env.get("GI_TYPELIB_PATH", "")
         if existing_gi:
-            env["GI_TYPELIB_PATH"] = ":".join(gi_paths + [existing_gi])
+            env["GI_TYPELIB_PATH"] = os.pathsep.join(gi_paths + [existing_gi])
         else:
-            env["GI_TYPELIB_PATH"] = ":".join(gi_paths)
+            env["GI_TYPELIB_PATH"] = os.pathsep.join(gi_paths)
 
     return env
 
@@ -212,16 +209,21 @@ def _run_child_process(argv: list[str], cwd: Path | None = None) -> int:
     security audit to look at. Every argv starts with PYTHON_EXECUTABLE and
     carries only arguments that passed _sanitize_cli_args.
     """
+    environment = _build_subprocess_env()
+    options: dict[str, int] = {}
+    if IS_WINDOWS and environment.get("_LM_STUDIO_BENCH_WINDOWLESS") == "1":
+        options["creationflags"] = child_creation_flags()
     completed = subprocess.run(  # nosec B603 - fixed argv, sanitized flags
         argv,
         cwd=cwd,
-        env=_build_subprocess_env(),
+        env=environment,
         check=False,
+        **options,
     )
     return completed.returncode
 
 
-_ALLOWED_ARG_RE = re.compile(r"^[A-Za-z0-9_./:=,@%+\-]+$")
+_ALLOWED_ARG_RE = re.compile(r"^[^;&|`$<>!\x00-\x1f\x7f]+$")
 
 
 def _sanitize_cli_args(cli_args: list[str]) -> list[str]:
@@ -289,6 +291,17 @@ def _tray_skip_reason() -> str | None:
             "Benchmarks and the web dashboard are unaffected."
         )
 
+    if IS_WINDOWS:
+        try:
+            from core.windows_tray import windows_tray_unavailable_reason
+
+            reason = windows_tray_unavailable_reason()
+        except (ImportError, OSError, RuntimeError) as error:
+            reason = str(error)
+        if reason is not None:
+            return f"ℹ️ System tray skipped: {reason}"
+        return None
+
     if importlib.util.find_spec("gi") is not None:
         return None
 
@@ -310,7 +323,7 @@ def _start_tray_process(
         return None
 
     tray_script = project_root / "core" / "tray.py"
-    if not tray_script.exists():
+    if not getattr(sys, "frozen", False) and not tray_script.exists():
         print(f"⚠️ Tray script not found: {format_path_for_logs(tray_script)}")
         return None
 
@@ -319,13 +332,17 @@ def _start_tray_process(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     launcher_log = logs_dir / f"runapp_{timestamp}.log"
     latest_link = logs_dir / "runapp_latest.log"
-    latest_link.unlink(missing_ok=True)
-    latest_link.symlink_to(launcher_log.name)
+    update_latest_log(launcher_log, latest_link)
 
     env = _build_subprocess_env()
 
     for candidate in _tray_python_candidates():
-        tray_cmd = [candidate, str(tray_script), "--url", tray_dashboard_url]
+        tray_cmd = entrypoint_command(
+            "tray",
+            ["--url", tray_dashboard_url],
+            interpreter=candidate,
+            project_root=project_root,
+        )
         if tray_debug_enabled:
             tray_cmd.append("--debug")
 
@@ -341,8 +358,10 @@ def _start_tray_process(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
                 bufsize=1,
                 env=env,
+                creationflags=child_creation_flags(),
             )
             log_thread = _start_tray_log_thread(tray_proc, launcher_log)
 
@@ -480,11 +499,8 @@ def _stop_tray_process(tray_proc: subprocess.Popen | None) -> None:
             pass
 
 
-RAW_ARGS = sys.argv[1:]
-CLI_ARGS = _expand_short_flag_clusters(RAW_ARGS)
-
-
-if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
+def _print_help() -> None:
+    """Print wrapper help and the classic benchmark options."""
     print("LM Studio Model Benchmark - Entry Point")
     print("=" * 60)
     print()
@@ -513,6 +529,7 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print("🌐 WEB DASHBOARD OPTIONS:")
     print()
     print("  --webapp, -w          Starts FastAPI web dashboard")
+    print("  --no-tray             Skip the optional system tray")
     print()
     print("=" * 60)
     print()
@@ -536,11 +553,15 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print()
 
     benchmark_script = project_root / "cli" / "benchmark.py"
-    if benchmark_script.exists():
+    if getattr(sys, "frozen", False) or benchmark_script.exists():
         result = subprocess.run(  # nosec B603
-            [PYTHON_EXECUTABLE, str(benchmark_script), "--help"],
+            entrypoint_command(
+                "classic", ["--help"],
+                interpreter=PYTHON_EXECUTABLE, project_root=project_root,
+            ),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
             env=_build_subprocess_env(),
         )
@@ -565,108 +586,126 @@ if "--help" in CLI_ARGS or "-h" in CLI_ARGS:
     print("    ./run.py --webapp")
     print()
 
-    sys.exit(0)
+def _dispatch_internal_role(role: str, args: list[str]) -> int:
+    """Run a fixed packaged entrypoint, preserving its argv and exit behavior."""
+    from core.runtime import ENTRYPOINTS
 
-HAS_WEB_FLAG = "--webapp" in CLI_ARGS or "-w" in CLI_ARGS
-HAS_AGENT_FLAG = _has_agent_flag(CLI_ARGS)
-DEBUG_ENABLED = "--debug" in CLI_ARGS or "-d" in CLI_ARGS
+    if role not in ENTRYPOINTS:
+        print(f"❌ Unknown application role: {role}", file=sys.stderr)
+        return 2
 
-tray_process = None
-
-if HAS_WEB_FLAG:
-    args = [arg for arg in CLI_ARGS if arg not in ("--webapp", "-w")]
-    web_port = _extract_port(args)
-    if web_port is None:
-        web_port = _find_free_port()
-        args.extend(["--port", str(web_port)])
-
+    original_argv = sys.argv
+    original_directory = Path.cwd()
     try:
-        safe_args = _sanitize_cli_args(args)
-    except ValueError as error:
-        print(f"❌ Invalid CLI arguments: {error}")
-        sys.exit(2)
-
-    DASHBOARD_URL = f"http://localhost:{web_port}"
-    tray_process = _start_tray_process(DASHBOARD_URL, DEBUG_ENABLED)
-
-    app_script = project_root / "web" / "app.py"
-    if not app_script.exists():
-        print(f"❌ Error: {app_script} not found")
-        print("💡 Tip: Please run the web dashboard setup first")
-        sys.exit(1)
-
-    print("🌐 Starting FastAPI web dashboard...")
-    try:
-        sys.exit(
-            _run_child_process([PYTHON_EXECUTABLE, str(app_script)] + safe_args)
-        )
+        sys.argv = [sys.executable, *args]
+        os.chdir(project_root)
+        if role == "webapp":
+            from web.app import main as entrypoint
+        elif role == "classic":
+            from cli.benchmark import main as entrypoint
+        elif role == "capability":
+            from cli.main import main as entrypoint
+        elif role == "tray":
+            from core.tray import main as entrypoint
+        elif role == "metadata":
+            from tools.scrape_metadata import main as entrypoint
+        else:
+            from scripts.windows_selftest import main as entrypoint
+        result = entrypoint()
+        return 0 if result is None else int(result)
     finally:
-        _stop_tray_process(tray_process)
-elif HAS_AGENT_FLAG:
-    AGENT_MODEL = None
-    for cli_arg in CLI_ARGS:
-        if cli_arg.startswith("--agent="):
-            extracted = cli_arg.split("=", 1)[1]
-            if not extracted:
-                print(
-                    "❌ Invalid --agent argument: expected "
-                    "--agent MODEL or --agent=MODEL"
-                )
-                sys.exit(2)
-            AGENT_MODEL = extracted
+        sys.argv = original_argv
+        os.chdir(original_directory)
 
-    args = [
-        arg
-        for arg in CLI_ARGS
-        if arg != "--agent" and not arg.startswith("--agent=")
-    ]
 
-    if AGENT_MODEL is not None:
-        args.insert(0, AGENT_MODEL)
+def main(argv: list[str] | None = None) -> int:
+    """Run the requested application mode without import-time subprocesses.
+
+    Args:
+        argv: CLI arguments without the executable, or None to use sys.argv.
+
+    Returns:
+        The child exit code, 2 for invalid arguments, or 1 for launch failure.
+    """
+    configure_console()
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    if raw_args and raw_args[0] == "--internal-role":
+        if len(raw_args) < 2:
+            print("❌ --internal-role requires a role", file=sys.stderr)
+            return 2
+        return _dispatch_internal_role(raw_args[1], raw_args[2:])
+    cli_args = _expand_short_flag_clusters(raw_args)
+    if "--help" in cli_args or "-h" in cli_args:
+        _print_help()
+        return 0
+
+    role = "classic"
+    no_tray = "--no-tray" in cli_args
+    cli_args = [arg for arg in cli_args if arg != "--no-tray"]
+    args = cli_args[:]
+    dashboard_url = "http://localhost:1234"
+    if "--webapp" in cli_args or "-w" in cli_args:
+        role = "webapp"
+        args = [arg for arg in cli_args if arg not in ("--webapp", "-w")]
+        port = _extract_port(args)
+        if port is None:
+            port = _find_free_port()
+            args.extend(["--port", str(port)])
+        dashboard_url = f"http://localhost:{port}"
+    elif _has_agent_flag(cli_args):
+        role = "capability"
+        model = None
+        for arg in cli_args:
+            if arg.startswith("--agent="):
+                model = arg.split("=", 1)[1]
+                if not model:
+                    print("❌ --agent requires a model name or path")
+                    return 2
+        args = [
+            arg for arg in cli_args
+            if arg != "--agent" and not arg.startswith("--agent=")
+        ]
+        if model is not None:
+            args.insert(0, model)
+
     try:
         safe_args = _sanitize_cli_args(args)
     except ValueError as error:
         print(f"❌ Invalid CLI arguments: {error}")
-        sys.exit(2)
-
-    agent_script = project_root / "cli" / "main.py"
-    if not agent_script.exists():
-        print(f"❌ Error: {agent_script} not found")
-        sys.exit(1)
-
-    print("🤖 Starting capability-driven benchmark agent...")
+        return 2
     try:
-        sys.exit(
-            _run_child_process(
-                [PYTHON_EXECUTABLE, "-m", "cli.main"] + safe_args,
-                cwd=project_root,
-            )
+        command = entrypoint_command(
+            role, safe_args,
+            interpreter=PYTHON_EXECUTABLE,
+            project_root=project_root,
         )
+    except (OSError, ValueError) as error:
+        print(f"❌ Cannot launch application: {error}")
+        return 1
+
+    tray_process = None
+    try:
+        if role != "capability" and not no_tray:
+            tray_process = _start_tray_process(
+                dashboard_url, "--debug" in cli_args or "-d" in cli_args
+            )
+        if role == "webapp":
+            print("🌐 Starting FastAPI web dashboard...")
+        elif role == "capability":
+            print("🤖 Starting capability-driven benchmark agent...")
+        return _run_child_process(command, cwd=project_root)
+    except KeyboardInterrupt:
+        print("🛑 Interrupted")
+        return 130
     except (subprocess.SubprocessError, OSError) as error:
-        print(f"❌ Error starting agent: {error}")
-        sys.exit(1)
-
-else:
-    benchmark_script = project_root / "cli" / "benchmark.py"
-    tray_process = _start_tray_process("http://localhost:1234", DEBUG_ENABLED)
-
-    if not benchmark_script.exists():
-        print(f"❌ Error: {benchmark_script} not found")
-        _stop_tray_process(tray_process)
-        sys.exit(1)
-
-    try:
-        safe_args = _sanitize_cli_args(CLI_ARGS)
-    except ValueError as error:
-        print(f"❌ Invalid CLI arguments: {error}")
-        _stop_tray_process(tray_process)
-        sys.exit(2)
-
-    try:
-        sys.exit(
-            _run_child_process(
-                [PYTHON_EXECUTABLE, str(benchmark_script)] + safe_args
-            )
-        )
+        print(f"❌ Error starting application: {error}")
+        return 1
     finally:
         _stop_tray_process(tray_process)
+
+
+if __name__ == "__main__":
+    from multiprocessing import freeze_support
+
+    freeze_support()
+    sys.exit(main())

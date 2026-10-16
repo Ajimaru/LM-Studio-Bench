@@ -1,11 +1,82 @@
 """Shared fixtures and configuration for the test suite."""
+from collections.abc import Iterator
 import json
+import logging
+import os
 from pathlib import Path
 import sys
+import tempfile
 from typing import Any, Dict
 from unittest.mock import MagicMock
 
 import pytest
+
+_SESSION_HOME: tempfile.TemporaryDirectory[str] | None = None
+_OLD_ENV: dict[str, str | None] = {}
+_ROOT_LOGGER = logging.getLogger()
+_LOGGER_TYPE = logging.Logger
+_FILE_HANDLER_TYPE = logging.FileHandler
+
+
+def _close_test_handlers(directory: Path) -> None:
+    """Release only log handles created below an owned test directory."""
+    loggers = [_ROOT_LOGGER, *_ROOT_LOGGER.manager.loggerDict.values()]
+    for logger in loggers:
+        if not isinstance(logger, _LOGGER_TYPE):
+            continue
+        for handler in list(logger.handlers):
+            if not isinstance(handler, _FILE_HANDLER_TYPE):
+                continue
+            filename = getattr(handler, "baseFilename", None)
+            if isinstance(filename, str) and Path(filename).is_relative_to(directory):
+                logger.removeHandler(handler)
+                handler.close()
+
+
+def pytest_configure() -> None:
+    """Isolate user directories before collection imports project modules."""
+    global _SESSION_HOME
+    _SESSION_HOME = tempfile.TemporaryDirectory(prefix="lmsbench-tests-")
+    home = Path(_SESSION_HOME.name)
+    replacements = {
+        "XDG_CONFIG_HOME": home / "config",
+        "XDG_DATA_HOME": home / "data",
+        "XDG_CACHE_HOME": home / "cache",
+        "APPDATA": home / "roaming",
+        "LOCALAPPDATA": home / "local",
+        "SNAP_REAL_HOME": home / "home",
+    }
+    for key, value in replacements.items():
+        _OLD_ENV[key] = os.environ.get(key)
+        os.environ[key] = str(value)
+
+
+def pytest_unconfigure() -> None:
+    """Restore environment overrides and remove only this session's data."""
+    if _SESSION_HOME is not None:
+        _close_test_handlers(Path(_SESSION_HOME.name))
+        _SESSION_HOME.cleanup()
+    for key, value in _OLD_ENV.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+
+@pytest.fixture(autouse=True)
+def isolated_native_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Native hardware access is opt-in; ordinary unit tests use fixtures."""
+    if os.environ.get("LM_STUDIO_NATIVE_SMOKE") == "1":
+        return
+    import tools.hardware_monitor as hardware
+
+    def disabled_probe(*_args, **_kwargs):
+        from tools.windows_gpu import WindowsGpuError
+
+        raise WindowsGpuError("Native GPU probe is disabled in ordinary unit tests")
+
+    if hasattr(hardware, "query_windows_snapshot"):
+        monkeypatch.setattr(hardware, "query_windows_snapshot", disabled_probe)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CORE_DIR = PROJECT_ROOT / "core"
@@ -61,7 +132,9 @@ _USER_DIR_BINDINGS = {
 
 
 @pytest.fixture(autouse=True)
-def isolated_user_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def isolated_user_dirs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[Path]:
     """Keep the suite out of the developer's own logs and results.
 
     Several modules write to ~/.local/share/lm-studio-bench while a test
@@ -99,7 +172,8 @@ def isolated_user_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             if hasattr(module, attribute):
                 monkeypatch.setattr(module, attribute, replacements[attribute])
 
-    return sandbox
+    yield sandbox
+    _close_test_handlers(tmp_path)
 
 
 @pytest.fixture

@@ -488,9 +488,11 @@ class TestBenchmarkManagerWithProcess:
         mock_proc.poll.return_value = None
         mgr.process = mock_proc
         mgr.status = "running"
-        result = mgr.pause_benchmark()
+        with patch.object(app_mod, "pause_process") as pause:
+            result = mgr.pause_benchmark()
         assert result is True
         assert mgr.status == "paused"
+        pause.assert_called_once_with(mock_proc)
 
     def test_pause_returns_false_on_error(self):
         """pause_benchmark returns False when signal raises."""
@@ -498,9 +500,9 @@ class TestBenchmarkManagerWithProcess:
         mgr = app_mod.BenchmarkManager()
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
-        mock_proc.send_signal.side_effect = OSError("no such process")
         mgr.process = mock_proc
-        result = mgr.pause_benchmark()
+        with patch.object(app_mod, "pause_process", side_effect=OSError("gone")):
+            result = mgr.pause_benchmark()
         assert result is False
 
     def test_resume_returns_true_when_paused(self):
@@ -510,19 +512,21 @@ class TestBenchmarkManagerWithProcess:
         mock_proc = MagicMock()
         mgr.process = mock_proc
         mgr.status = "paused"
-        result = mgr.resume_benchmark()
+        with patch.object(app_mod, "resume_process") as resume:
+            result = mgr.resume_benchmark()
         assert result is True
         assert mgr.status == "running"
+        resume.assert_called_once_with(mock_proc)
 
     def test_resume_returns_false_on_error(self):
         """resume_benchmark returns False when signal raises."""
         app_mod = _import_app()
         mgr = app_mod.BenchmarkManager()
         mock_proc = MagicMock()
-        mock_proc.send_signal.side_effect = OSError("no such process")
         mgr.process = mock_proc
         mgr.status = "paused"
-        result = mgr.resume_benchmark()
+        with patch.object(app_mod, "resume_process", side_effect=OSError("gone")):
+            result = mgr.resume_benchmark()
         assert result is False
 
     def test_stop_returns_true_when_process_exists(self):
@@ -536,30 +540,27 @@ class TestBenchmarkManagerWithProcess:
         assert result is True
         assert mgr.process is None
 
-    def test_stop_kills_if_sigterm_times_out(self):
-        """stop_benchmark kills process if SIGTERM wait times out."""
-        import subprocess
+    def test_stop_delegates_paused_cleanup(self):
+        """The platform helper receives the pause state for graceful cleanup."""
         app_mod = _import_app()
         mgr = app_mod.BenchmarkManager()
         mock_proc = MagicMock()
         mock_proc.poll.return_value = None
-        mock_proc.wait.side_effect = [
-            subprocess.TimeoutExpired(cmd="bench", timeout=5),
-            None,
-        ]
         mgr.process = mock_proc
-        result = mgr.stop_benchmark()
+        mgr.status = "paused"
+        with patch.object(app_mod, "stop_process") as stop:
+            result = mgr.stop_benchmark()
         assert result is True
-        mock_proc.kill.assert_called_once()
+        stop.assert_called_once_with(mock_proc, paused=True)
 
     def test_stop_returns_false_on_error(self):
         """stop_benchmark returns False when signal raises."""
         app_mod = _import_app()
         mgr = app_mod.BenchmarkManager()
         mock_proc = MagicMock()
-        mock_proc.send_signal.side_effect = OSError("no such process")
         mgr.process = mock_proc
-        result = mgr.stop_benchmark()
+        with patch.object(app_mod, "stop_process", side_effect=OSError("gone")):
+            result = mgr.stop_benchmark()
         assert result is False
 
     def test_drain_output_queue_returns_combined(self):
@@ -620,3 +621,49 @@ class TestBenchmarkManagerStartAsync:
             result = self._run(mgr.start_benchmark(["--test"]))
         assert result is False
         assert mgr.status == "idle"
+
+
+class TestWindowsDashboardRuntime:
+    """Regression tests for native metadata and managed server cleanup."""
+
+    def test_unknown_gpu_does_not_become_system_ram(self, monkeypatch):
+        """Missing GPU capacity remains missing rather than pretending to be RAM."""
+        from types import SimpleNamespace
+
+        app_mod = _import_app()
+        gpu = SimpleNamespace(
+            gpu_type="Unknown", gpu_model="Unknown",
+            native_snapshot=None, get_total_vram_gb=lambda: None,
+        )
+        monkeypatch.setattr(app_mod, "GPUMonitor", lambda: gpu)
+        monkeypatch.setattr(
+            app_mod, "WINDOWS_GPU_CACHE", {"data": None, "timestamp": 0}
+        )
+        info = app_mod.get_windows_gpu_info()
+        assert info["vram_gb"] is None
+        assert info["gtt_gb"] is None
+        assert info["total_gb"] is None
+
+    def test_per_gpu_missing_values_do_not_erase_valid_zero(self):
+        """Unavailable temperature/power do not turn into fake chart zeros."""
+        app_mod = _import_app()
+        manager = app_mod.BenchmarkManager()
+        getattr(manager, "_parse_per_gpu_metrics")(
+            "[0] AMD adapter: 0.00GB VRAM, 1.25GB GTT, N/A°C, N/AW"
+        )
+        device = manager.per_gpu_history[0]
+        assert device["vram"][0]["value"] == 0
+        assert device["gtt"][0]["value"] == 1.25
+        assert device["temperatures"] == []
+        assert device["power"] == []
+
+    def test_managed_main_releases_its_log(self, tmp_path, monkeypatch):
+        """A completed server must release its Windows log-file handle."""
+        app_mod = _import_app()
+        monkeypatch.setattr(app_mod, "USER_LOGS_DIR", tmp_path)
+        with patch("uvicorn.Config"), patch("uvicorn.Server") as server:
+            assert app_mod.main(["--no-browser", "--port", "9876"]) == 0
+        server.return_value.run.assert_called_once()
+        log = next(tmp_path.glob("webapp_*.log"))
+        log.rename(tmp_path / "released.log")
+        assert app_mod.app.state.shutdown_callback is None

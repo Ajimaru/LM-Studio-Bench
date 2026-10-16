@@ -31,16 +31,25 @@ from tqdm import tqdm
 
 from core.client import LMStudioRESTClient
 from core.config import BASE_DEFAULT_CONFIG, DEFAULT_CONFIG
-from core.logging_utils import install_level_icons
+from core.logging_utils import install_level_icons, update_latest_log
 from core.paths import USER_LOGS_DIR, USER_RESULTS_DIR, format_path_for_logs
 from core.platform_info import (
     IS_MACOS,
+    IS_WINDOWS,
     get_os_name_version,
     has_shared_gpu_memory,
 )
 from core.presets import PresetManager
+from core.process_control import CONTROL_ENV, start_stop_listener
 from core.prompts import load_prompt_file
-from tools.hardware_monitor import GPUMonitor, HardwareMonitor
+from core.runtime import configure_console
+from tools.hardware_monitor import (
+    WINDOWS_NATIVE_TOOL,
+    GPUMonitor,
+    HardwareMonitor,
+    evaluate_hardware_limits,
+    nvidia_driver_version,
+)
 
 try:
     import cpuinfo
@@ -1600,7 +1609,7 @@ class BenchmarkCache:
 
         resolved_output.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(os.path.basename(resolved_output), "w", encoding="utf-8") as f:
+        with resolved_output.open("w", encoding="utf-8") as f:
             json.dump(
                 results,
                 f,
@@ -2124,25 +2133,12 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
         """Retrieves NVIDIA Driver version"""
         if IS_MACOS:
             return None
-        try:
-            result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            if result.returncode == 0:
-                version = result.stdout.strip()
-                return version if version else None
-        except (subprocess.SubprocessError, OSError):
-            logger.debug("NVIDIA driver not available")
-        return None
+        return nvidia_driver_version()
 
     @staticmethod
     def get_rocm_driver_version() -> Optional[str]:
         """Retrieves AMD ROCm/Driver version"""
-        if IS_MACOS:
+        if IS_MACOS or IS_WINDOWS:
             return None
         try:
             rocm_paths = ["/usr/bin/rocm-smi", "/usr/local/bin/rocm-smi"]
@@ -2214,7 +2210,7 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
     @staticmethod
     def get_intel_driver_version() -> Optional[str]:
         """Retrieves Intel GPU Driver version"""
-        if IS_MACOS:
+        if IS_MACOS or IS_WINDOWS:
             return None
         try:
             result = subprocess.run(
@@ -2358,7 +2354,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             self.gpu_monitor.gpu_type or "Unknown",
             self.gpu_monitor.gpu_tool or "",
             enabled=enable_profiling,
+            device_id=self.gpu_monitor.native_device_id,
         )
+        self.gpu_monitor.attach_windows_sampler(self.hardware_monitor.windows_sampler)
 
         self.cli_args = {
             "runs": num_runs,
@@ -2446,6 +2444,11 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
 
             if not gpu_tool:
                 return None
+
+            if gpu_tool == WINDOWS_NATIVE_TOOL:
+                available = self.gpu_monitor.get_available_windows_memory(self.use_gtt)
+                self._gtt_info = self.gpu_monitor.shared_memory_info
+                return available
 
             if gpu_type == "NVIDIA":
                 result = subprocess.run(
@@ -2917,27 +2920,9 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                         self.hardware_monitor.per_gpu_metrics_json()
                     )
 
-                    if (
-                        self.max_temp
-                        and result.temp_celsius_max
-                        and result.temp_celsius_max > self.max_temp
-                    ):
-                        logger.warning(
-                            "⚠️ Max. temperature exceeded: %s°C > %s°C",
-                            result.temp_celsius_max,
-                            self.max_temp,
-                        )
-
-                    if (
-                        self.max_power
-                        and result.power_watts_max
-                        and result.power_watts_max > self.max_power
-                    ):
-                        logger.warning(
-                            "⚠️ Max. power exceeded: %sW > %sW",
-                            result.power_watts_max,
-                            self.max_power,
-                        )
+                    evaluate_hardware_limits(
+                        profiling_stats, self.max_temp, self.max_power
+                    )
 
                 benchmark_end_time = time.time()
                 result.benchmark_duration_seconds = round(
@@ -3074,12 +3059,6 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                     result.avg_tokens_per_sec,
                     result.benchmark_duration_seconds,
                 )
-                try:
-                    if self.use_rest_api and instance_id:
-                        self._unload_model_rest(instance_id)
-                except (httpx.HTTPError, OSError):
-                    pass
-
                 return result
 
             logger.error("❌ No successful measurements for %s", model_key)
@@ -3095,6 +3074,13 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
             logger.error("❌ Error benchmarking %s: %s", model_key, e)
             error_count += 1
             return None
+        finally:
+            if self.hardware_monitor.monitoring:
+                self.hardware_monitor.stop()
+            if self.use_rest_api and instance_id:
+                self._unload_model_rest(instance_id)
+            elif not self.use_rest_api:
+                self._unload_model(model_key)
 
     def _effective_context_length(self, model_key: str) -> int:
         """Requested context length, capped at what the model supports.
@@ -3684,33 +3670,36 @@ class LMStudioBenchmark:  # pylint: disable=too-many-instance-attributes
                 models = models[: self.model_limit]
             logger.info("🚀 Starting benchmark for %s models...", len(models))
 
-        for model_key in tqdm(models, desc="Benchmarking models"):
-            result = self.benchmark_model(model_key)
-            if result:
-                self.results.append(result)
-                newly_tested_models.append(result)
-
-        if newly_tested_models:
-            logger.info(
-                "📊 Exporting reports for %s newly tested models...",
-                len(newly_tested_models),
-            )
-            self._export_results_to_files(newly_tested_models)
-        else:
-            logger.warning("⚠️ No new models tested - no reports generated")
-
         try:
-            subprocess.run(
-                ["lms", "unload", "--all"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
-            logger.info("🧹 All models unloaded (cleanup)")
-            time.sleep(1)
-        except (subprocess.SubprocessError, OSError) as e:
-            logger.warning("⚠️ Error unloading all models: %s", e)
+            for model_key in tqdm(models, desc="Benchmarking models"):
+                result = self.benchmark_model(model_key)
+                if result:
+                    self.results.append(result)
+                    newly_tested_models.append(result)
+
+            if newly_tested_models:
+                logger.info(
+                    "📊 Exporting reports for %s newly tested models...",
+                    len(newly_tested_models),
+                )
+                self._export_results_to_files(newly_tested_models)
+            else:
+                logger.warning("⚠️ No new models tested - no reports generated")
+        finally:
+            if self.hardware_monitor.monitoring:
+                self.hardware_monitor.stop()
+            try:
+                subprocess.run(
+                    ["lms", "unload", "--all"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                logger.info("🧹 All models unloaded (cleanup)")
+                time.sleep(1)
+            except (subprocess.SubprocessError, OSError) as e:
+                logger.warning("⚠️ Error unloading all models: %s", e)
 
         logger.info(
             "✅ Benchmark completed. %s/%s models successfully tested",
@@ -5772,8 +5761,9 @@ def _log_stability_notice() -> None:
         )
 
 
-def main():
-    """Main function with CLI arguments"""
+def main() -> int | None:
+    """Run the CLI, returning a nonzero code on failure or interruption."""
+    configure_console()
 
     def _expand_short_flag_clusters(cli_args: list[str]) -> list[str]:
         """Expand combined short flags like ``-rd`` to ``-r -d``.
@@ -5800,11 +5790,11 @@ def main():
     current_process = psutil.Process()
     parent_process = current_process.parent()
 
-    is_webapp_subprocess = False
+    is_webapp_subprocess = os.environ.get(CONTROL_ENV) == "1"
     if parent_process and "python" in parent_process.name().lower():
         try:
             parent_cmdline = " ".join(parent_process.cmdline())
-            if "web/app.py" in parent_cmdline:
+            if "web/app.py" in parent_cmdline.replace("\\", "/"):
                 is_webapp_subprocess = True
         except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             pass
@@ -5814,19 +5804,16 @@ def main():
     )
 
     if not is_webapp_subprocess:
-        file_handler = logging.FileHandler(log_filename, mode="w")
+        file_handler = logging.FileHandler(log_filename, mode="w", encoding="utf-8")
         file_handler.setFormatter(
             logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         )
         file_handler.addFilter(NoJSONFilter())
         logging.root.addHandler(file_handler)
         logger.info("📝 Benchmark-Log: %s", format_path_for_logs(log_filename))
+        update_latest_log(log_filename, LOGS_DIR / "benchmark_latest.log")
     else:
         logger.info("📝 Benchmark running as WebApp subprocess - Logging via WebApp")
-
-    latest_link = LOGS_DIR / "benchmark_latest.log"
-    latest_link.unlink(missing_ok=True)
-    latest_link.symlink_to(log_filename.name)
 
     normalized_args = _expand_short_flag_clusters(sys.argv[1:])
 
@@ -6488,15 +6475,22 @@ Examples:
         load_params=load_params,
         use_rest_api=args.use_rest_api,
     )
-    run_status = benchmark.run_all_benchmarks()
+    start_stop_listener()
+    try:
+        run_status = benchmark.run_all_benchmarks()
+    except KeyboardInterrupt:
+        logger.info("🛑 Benchmark interrupted; model cleanup completed")
+        return 130
 
     if run_status == "no_new_models":
         logger.info("ℹ️ Benchmark finished with cache only (0 new models tested)")
     elif run_status == "failed":
         logger.error("❌ Benchmark failed before test execution")
+        return 1
 
     logger.info("🎉 Benchmark completed!")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

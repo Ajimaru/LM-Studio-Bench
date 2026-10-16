@@ -1,6 +1,7 @@
 # User Data & Configuration Locations
 
-This project follows the [XDG Base Directory Specification](
+This project uses platform-specific locations for user data and configuration.
+On Linux it follows the [XDG Base Directory Specification](
 https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html) for storing user data and
 configuration.
 
@@ -21,7 +22,38 @@ locations:
 └── logs/                   # Optional: legacy/manual debug location
 ```
 
-### User Directories (XDG Standard)
+### Windows User Directories
+
+| Contents | Directory |
+| --- | --- |
+| Configuration and presets | `%APPDATA%\LM-Studio-Bench\` |
+| Results and SQLite databases | `%LOCALAPPDATA%\LM-Studio-Bench\results\` |
+| Timestamped logs | `%LOCALAPPDATA%\LM-Studio-Bench\logs\` |
+| Cache | `%LOCALAPPDATA%\LM-Studio-Bench\cache\` |
+
+If an AppData environment variable is missing or invalid, the application uses
+the corresponding `AppData\Roaming` or `AppData\Local` directory below the user
+home. Windows does not use XDG overrides. Redirected UNC profiles are supported.
+
+Windows logs do not require symlink privileges or Developer Mode. A regular
+`*_latest.txt` file contains the filename of the current timestamped log;
+it is a reference, not a copy of the log contents. Unix retains the existing
+`*_latest.log` symlinks. On Windows, log discovery also accepts legacy
+`*_latest.log` files.
+
+Existing data from an earlier Windows checkout's `.config\lm-studio-bench`,
+`.local\share\lm-studio-bench` and `.cache\lm-studio-bench` directories is
+**not moved automatically**. Close the application, back up the old data and
+copy the desired configuration, results and cache to the matching AppData
+directories. Do not overwrite newer files or copy open SQLite databases.
+
+### macOS User Directories
+
+Configuration and data use `~/Library/Application Support/LM-Studio-Bench`.
+Logs use `~/Library/Logs/LM-Studio-Bench`, and cache uses
+`~/Library/Caches/LM-Studio-Bench`.
+
+### Linux User Directories (XDG Standard)
 
 User-specific data is stored in standard XDG locations:
 

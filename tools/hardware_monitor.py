@@ -2,6 +2,8 @@
 
 import glob
 import logging
+import math
+import os
 from pathlib import Path
 import re
 import shutil
@@ -15,17 +17,28 @@ import psutil
 
 from core.platform_info import (
     IS_MACOS,
+    IS_WINDOWS,
     detect_apple_gpu,
     get_apple_unified_memory_gb,
     read_apple_gpu_stats,
 )
+from core.runtime import child_creation_flags
 from tools.gpu_devices import (
     GpuAggregate,
+    GpuSample,
     device_names,
+    parse_gpu_number,
     sample_devices,
     serialize_aggregates,
 )
 from tools.macmon import MacmonSampler, is_macmon_available
+from tools.windows_gpu import (
+    WindowsGpuDevice,
+    WindowsGpuError,
+    WindowsGpuSampler,
+    WindowsGpuSnapshot,
+)
+from tools.windows_gpu import query_snapshot as query_windows_snapshot
 
 try:
     import cpuinfo
@@ -37,6 +50,7 @@ logger = logging.getLogger(__name__)
 
 
 PER_GPU_MIN_DEVICES = 2
+WINDOWS_NATIVE_TOOL = "windows-native"
 
 # lspci lives in sbin on distributions that keep it off a user's PATH.
 LSPCI_SEARCH_PATHS = ("/usr/sbin", "/sbin", "/usr/bin", "/bin")
@@ -77,16 +91,91 @@ def _run_tool(command: List[str], timeout: int) -> Optional[str]:
             command,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=timeout,
             check=False,
+            creationflags=child_creation_flags(),
         )
     except (subprocess.SubprocessError, OSError) as error:
         logger.debug("Hardware query failed (%s): %s", command[0], error)
         return None
 
     if result.returncode != 0:
+        logger.debug("Hardware query %s exited with %s", command[0], result.returncode)
         return None
     return result.stdout
+
+
+def nvidia_search_paths() -> list[str]:
+    """Return platform-appropriate NVIDIA executable search directories."""
+    if not IS_WINDOWS:
+        return ["/usr/bin", "/usr/local/bin", "/usr/local/cuda/bin"]
+    paths = []
+    windows = os.environ.get("SystemRoot") or os.environ.get("WINDIR")
+    if windows:
+        paths.append(str(Path(windows) / "System32"))
+    program_files = os.environ.get("ProgramFiles")
+    if program_files:
+        paths.append(str(Path(program_files) / "NVIDIA Corporation" / "NVSMI"))
+    return paths
+
+
+def nvidia_smi_path() -> Optional[str]:
+    """Resolve NVIDIA's CLI through PATH and native installation locations."""
+    return _resolve_tool("nvidia-smi", tuple(nvidia_search_paths()))
+
+
+def nvidia_driver_version() -> Optional[str]:
+    """Return the first NVIDIA adapter's driver version, if available."""
+    tool = nvidia_smi_path()
+    if tool is None:
+        return None
+    output = _run_tool(
+        [tool, "--query-gpu=driver_version", "--format=csv,noheader"], timeout=5
+    )
+    return output.strip().splitlines()[0] if output and output.strip() else None
+
+
+def evaluate_hardware_limits(
+    stats: dict[str, Any],
+    max_temp: float | None = None,
+    max_power: float | None = None,
+) -> dict[str, bool | None]:
+    """Evaluate warning thresholds without calling missing readings a pass.
+
+    Args:
+        stats: Recorded hardware statistics.
+        max_temp: Temperature warning limit; None/zero disables it.
+        max_power: Power warning limit; None/zero disables it.
+
+    Returns:
+        Exceeded flags; None means a configured threshold cannot be checked.
+
+    Raises:
+        ValueError: If a configured limit is not finite.
+    """
+    results: dict[str, bool | None] = {}
+    for label, metric, key, limit in (
+        ("temperature", "temp_celsius_max", "max_temp_exceeded", max_temp),
+        ("power", "power_watts_max", "max_power_exceeded", max_power),
+    ):
+        if not limit:
+            results[key] = False
+            continue
+        if not math.isfinite(limit):
+            raise ValueError(f"The {label} limit must be finite")
+        value = stats.get(metric)
+        if value is None:
+            results[key] = None
+            logger.warning(
+                "%s threshold cannot be checked: the GPU sensor is unavailable",
+                label.capitalize(),
+            )
+            continue
+        results[key] = value > limit
+        if results[key]:
+            logger.warning("Max. %s exceeded: %s > %s", label, value, limit)
+    return results
 
 
 class HardwareMonitor:
@@ -97,7 +186,10 @@ class HardwareMonitor:
         gpu_type: Optional[str],
         gpu_tool: Optional[str],
         enabled: bool = False,
-    ):
+        *,
+        device_id: str | None = None,
+    ) -> None:
+        """Initialize the selected backend without starting a sampling thread."""
         self.gpu_type = gpu_type
         self.gpu_tool = gpu_tool
         self.enabled = enabled
@@ -113,6 +205,13 @@ class HardwareMonitor:
         self.lock = threading.Lock()
         self._amd_sysfs_path: Optional[str] = None
         self._amd_hwmon_path: Optional[str] = None
+        self._native_device_id = device_id
+        self._native_snapshot: WindowsGpuSnapshot | None = None
+        self._native_indices: dict[str, int] = {}
+        self._native_sampler = (
+            WindowsGpuSampler(nvidia_smi_path())
+            if gpu_tool == WINDOWS_NATIVE_TOOL else None
+        )
 
         # Per-device tracking is only set up when the vendor tool actually
         # reports more than one GPU. On a single-GPU machine the aggregate
@@ -136,6 +235,8 @@ class HardwareMonitor:
 
     def _init_gpu_devices(self) -> None:
         """Detect whether per-device sampling applies to this machine."""
+        if self._native_sampler is not None:
+            return
         try:
             devices = sample_devices(self.gpu_type, self.gpu_tool)
         except (OSError, ValueError) as error:  # pragma: no cover - defensive
@@ -154,6 +255,36 @@ class HardwareMonitor:
 
     def _sample_gpu_devices(self) -> None:
         """Fold one per-device reading into the aggregates."""
+        if self._native_sampler is not None:
+            snapshot = self._native_snapshot
+            if snapshot is None:
+                return
+            with self.lock:
+                for device in snapshot.devices:
+                    index = self._native_indices.setdefault(
+                        device.id, len(self._native_indices)
+                    )
+                    aggregate = self.gpu_devices.setdefault(
+                        index, GpuAggregate(index=index, name=device.name)
+                    )
+                    aggregate.metadata = {
+                        "device_id": device.id,
+                        "vendor": device.vendor,
+                        "driver_version": device.driver_version,
+                        "integrated": device.integrated,
+                        "sensor_status": device.status.model_dump(),
+                        "sensor_messages": dict(device.messages),
+                        "sensor_sources": dict(device.sources),
+                    }
+                    aggregate.add(GpuSample(
+                        index=index, name=device.name,
+                        temp_celsius=device.metrics.temp_celsius,
+                        power_watts=device.metrics.power_watts,
+                        vram_gb=device.metrics.vram_gb,
+                        gtt_gb=device.metrics.gtt_gb,
+                    ))
+                self.device_count = len(self._native_indices)
+            return
         if self.device_count < PER_GPU_MIN_DEVICES:
             return
 
@@ -176,6 +307,9 @@ class HardwareMonitor:
         if self.device_count < PER_GPU_MIN_DEVICES:
             return
 
+        def display(value: float | None, digits: int) -> str:
+            return f"{value:.{digits}f}" if value is not None else "N/A"
+
         with self.lock:
             parts = []
             for index in sorted(self.gpu_devices):
@@ -185,15 +319,19 @@ class HardwareMonitor:
                     for metric, readings in aggregate.values.items()
                     if readings
                 }
+                status = aggregate.metadata.get("sensor_status", {})
+                for metric, availability in status.items():
+                    if availability != "ok":
+                        latest.pop(metric, None)
                 if not latest:
                     continue
                 label = aggregate.name or f"GPU{index}"
                 parts.append(
                     f"[{index}] {label}: "
-                    f"{latest.get('vram_gb', 0):.2f}GB VRAM, "
-                    f"{latest.get('gtt_gb', 0):.2f}GB GTT, "
-                    f"{latest.get('temp_celsius', 0):.0f}°C, "
-                    f"{latest.get('power_watts', 0):.0f}W"
+                    f"{display(latest.get('vram_gb'), 2)}GB VRAM, "
+                    f"{display(latest.get('gtt_gb'), 2)}GB GTT, "
+                    f"{display(latest.get('temp_celsius'), 0)}°C, "
+                    f"{display(latest.get('power_watts'), 0)}W"
                 )
 
         if parts:
@@ -232,6 +370,8 @@ class HardwareMonitor:
             self.rams.clear()
             self.ram_readings.clear()
             self.gpu_devices.clear()
+            self._native_indices.clear()
+            self._native_snapshot = None
         self._amd_sysfs_path = None
         self._amd_hwmon_path = None
 
@@ -264,9 +404,11 @@ class HardwareMonitor:
             )
             return
 
-        if not self.gpu_tool:
-            logger.warning("⚠️ No GPU tools found - hardware monitoring not available")
+        if self.monitoring:
+            logger.warning("Hardware monitoring is already running")
             return
+        if not self.gpu_tool:
+            logger.warning("No GPU tools found; recording CPU and RAM only")
 
         logger.info(
             "🔥 Starting Hardware-Monitoring (GPU: %s, Tool: %s)",
@@ -275,6 +417,15 @@ class HardwareMonitor:
         )
         self.monitoring = True
         self._reset_measurements()
+
+        if self._native_sampler is not None:
+            logger.info("Initializing native Windows GPU monitoring")
+            self._native_sampler.start()
+            if not self._native_sampler.wait_ready():
+                logger.warning(
+                    "Windows GPU data is unavailable: %s",
+                    self._native_sampler.error or "initialization timed out",
+                )
 
         if self._macmon is not None and not self._macmon.start():
             logger.debug("macmon could not be started; temp/power stay unset")
@@ -286,7 +437,10 @@ class HardwareMonitor:
         """Stop monitoring and return collected statistics."""
         self.monitoring = False
         if self.thread:
-            self.thread.join(timeout=2)
+            self.thread.join(timeout=5 if self._native_sampler is not None else 2)
+
+        if self._native_sampler is not None:
+            self._native_sampler.stop()
 
         if self._macmon is not None:
             self._macmon.stop()
@@ -327,6 +481,8 @@ class HardwareMonitor:
         logger.info("🔍 Hardware-Monitor thread started")
         while self.monitoring:
             try:
+                if self._native_sampler is not None:
+                    self._native_snapshot = self._native_sampler.sample()
                 temp = self._get_temperature()
                 power = self._get_power_draw()
                 vram = self._get_vram_usage()
@@ -387,13 +543,18 @@ class HardwareMonitor:
                 self._log_per_gpu_reading()
 
                 time.sleep(1)
-            except (subprocess.SubprocessError, OSError, ValueError) as error:
-                logger.debug("Monitoring error: %s", error)
+            except (
+                WindowsGpuError, subprocess.SubprocessError, OSError, ValueError
+            ) as error:
+                logger.warning("Monitoring error: %s", error)
                 time.sleep(2)
         logger.info("🛑 Hardware-Monitor thread stopped")
 
     def _get_temperature(self) -> Optional[float]:
         """Read current GPU temperature."""
+        if self._native_sampler is not None:
+            device = self._native_device()
+            return device.metrics.temp_celsius if device is not None else None
         try:
             if not self.gpu_tool:
                 return None
@@ -414,7 +575,7 @@ class HardwareMonitor:
                 )
                 if output is not None:
                     temp_str = output.strip().split("\n")[0]
-                    return float(temp_str)
+                    return parse_gpu_number(temp_str)
 
             if self.gpu_type == "AMD":
                 if self.gpu_tool == "sysfs" and self._amd_hwmon_path:
@@ -445,6 +606,9 @@ class HardwareMonitor:
 
     def _get_power_draw(self) -> Optional[float]:
         """Read GPU power draw in watts."""
+        if self._native_sampler is not None:
+            device = self._native_device()
+            return device.metrics.power_watts if device is not None else None
         try:
             if not self.gpu_tool:
                 return None
@@ -465,7 +629,7 @@ class HardwareMonitor:
                 )
                 if output is not None:
                     power_str = output.strip().split("\n")[0]
-                    return float(power_str)
+                    return parse_gpu_number(power_str)
 
             if self.gpu_type == "AMD":
                 output = _run_tool([self.gpu_tool, "--showpower"], timeout=3)
@@ -488,6 +652,9 @@ class HardwareMonitor:
 
     def _get_vram_usage(self) -> Optional[float]:
         """Read GPU VRAM usage in GB."""
+        if self._native_sampler is not None:
+            device = self._native_device()
+            return device.metrics.vram_gb if device is not None else None
         try:
             if not self.gpu_tool:
                 return None
@@ -502,8 +669,8 @@ class HardwareMonitor:
                     timeout=3,
                 )
                 if output is not None:
-                    vram_mb = float(output.strip().split("\n")[0])
-                    return vram_mb / 1024.0
+                    vram_mb = parse_gpu_number(output.strip().split("\n")[0])
+                    return vram_mb / 1024.0 if vram_mb is not None else None
 
             if self.gpu_type == "Apple":
                 return read_apple_gpu_stats()["vram_used_gb"]
@@ -532,6 +699,9 @@ class HardwareMonitor:
 
     def _get_gtt_usage(self) -> Optional[float]:
         """Read GTT usage in GB for AMD GPUs."""
+        if self._native_sampler is not None:
+            device = self._native_device()
+            return device.metrics.gtt_gb if device is not None else None
         try:
             if self.gpu_type != "AMD" or not self.gpu_tool:
                 return None
@@ -554,6 +724,22 @@ class HardwareMonitor:
             pass
 
         return None
+
+    @property
+    def windows_sampler(self) -> WindowsGpuSampler | None:
+        """Expose the owned sampler for consistent per-run VRAM readings."""
+        return self._native_sampler
+
+    def _native_device(self) -> WindowsGpuDevice | None:
+        if self._native_snapshot is None:
+            return None
+        if self._native_device_id is not None:
+            return next(
+                (device for device in self._native_snapshot.devices
+                 if device.id == self._native_device_id),
+                None,
+            )
+        return self._native_snapshot.primary_device(self.gpu_type)
 
     def _get_cpu_usage(self) -> Optional[float]:
         """Read system CPU utilization in percent."""
@@ -584,6 +770,10 @@ class GPUMonitor:
         self.gpu_type: Optional[str] = None
         self.gpu_model: Optional[str] = None
         self.gpu_tool: Optional[str] = None
+        self.native_snapshot: WindowsGpuSnapshot | None = None
+        self.native_device_id: str | None = None
+        self._windows_sampler: WindowsGpuSampler | None = None
+        self.shared_memory_info: dict[str, float] | None = None
         self._detect_gpu()
 
     def get_gpu_info(self) -> Dict[str, Optional[str]]:
@@ -593,6 +783,86 @@ class GPUMonitor:
             "gpu_model": self.gpu_model,
             "gpu_tool": self.gpu_tool,
         }
+
+    def get_total_vram_gb(self) -> Optional[float]:
+        """Return primary GPU capacity without inventing a RAM-based fallback."""
+        if self.native_snapshot is not None:
+            device = self.native_snapshot.primary_device()
+            return device.vram_total_gb if device is not None else None
+        if self.gpu_type == "Apple":
+            return get_apple_unified_memory_gb()
+        if self.gpu_type != "NVIDIA" or not self.gpu_tool:
+            return None
+        output = _run_tool(
+            [
+                self.gpu_tool, "--query-gpu=memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            timeout=5,
+        )
+        if not output or not output.strip():
+            return None
+        memory_mb = parse_gpu_number(output.strip().splitlines()[0])
+        return memory_mb / 1024 if memory_mb is not None else None
+
+    def attach_windows_sampler(self, sampler: WindowsGpuSampler | None) -> None:
+        """Reuse the profiling sampler rather than launching competing probes."""
+        self._windows_sampler = sampler
+
+    def get_windows_device(self) -> WindowsGpuDevice | None:
+        """Read the selected adapter, never substitute a differently named GPU."""
+        if self.gpu_tool != WINDOWS_NATIVE_TOOL:
+            return None
+        if self._windows_sampler is not None and self._windows_sampler.running:
+            snapshot = self._windows_sampler.latest_sample()
+        else:
+            try:
+                snapshot = query_windows_snapshot(nvidia_smi_path())
+            except WindowsGpuError as error:
+                logger.warning("Windows GPU readings unavailable: %s", error)
+                return None
+        if snapshot is None:
+            return None
+        return next(
+            (device for device in snapshot.devices
+             if device.id == self.native_device_id),
+            None,
+        )
+
+    def get_available_windows_memory(self, use_shared: bool) -> float | None:
+        """Return measured memory headroom, bounded by available system RAM.
+
+        Args:
+            use_shared: Allow AMD/Intel shared memory for offload prediction.
+
+        Returns:
+            Available GiB, or None if the necessary measurements are absent.
+        """
+        device = self.get_windows_device()
+        self.shared_memory_info = None
+        if device is None:
+            return None
+        if device.vram_total_gb is None or device.metrics.vram_gb is None:
+            return None
+        available = max(0.0, device.vram_total_gb - device.metrics.vram_gb)
+        if (
+            device.vendor in ("AMD", "Intel")
+            and device.shared_total_gb is not None
+            and device.metrics.gtt_gb is not None
+        ):
+            self.shared_memory_info = {
+                "total": device.shared_total_gb,
+                "used": device.metrics.gtt_gb,
+                "free": max(0.0, device.shared_total_gb - device.metrics.gtt_gb),
+            }
+        if (
+            use_shared and device.vendor in ("AMD", "Intel")
+            and device.shared_total_gb is not None
+            and device.metrics.gtt_gb is not None
+        ):
+            shared = max(0.0, device.shared_total_gb - device.metrics.gtt_gb)
+            available += min(shared, psutil.virtual_memory().available / 1024**3)
+        return available
 
     def _find_tool(self, tool_name: str, search_paths: List[str]) -> Optional[str]:
         """Search for a tool in PATH and well-known fallback paths.
@@ -665,7 +935,26 @@ class GPUMonitor:
         if IS_MACOS and self._detect_apple_gpu():
             return
 
-        nvidia_paths = ["/usr/bin", "/usr/local/bin", "/usr/local/cuda/bin"]
+        if IS_WINDOWS:
+            try:
+                snapshot = query_windows_snapshot(nvidia_smi_path())
+                device = snapshot.primary_device()
+                if device is not None:
+                    self.native_snapshot = snapshot
+                    self.native_device_id = device.id
+                    self.gpu_type = device.vendor
+                    self.gpu_model = device.name
+                    self.gpu_tool = WINDOWS_NATIVE_TOOL
+                    logger.info(
+                        "Windows GPU detected: %s (%s)", device.name, device.id
+                    )
+                    for error in snapshot.errors:
+                        logger.warning("Windows GPU telemetry: %s", error)
+                    return
+            except WindowsGpuError as error:
+                logger.warning("Native Windows GPU monitoring unavailable: %s", error)
+
+        nvidia_paths = nvidia_search_paths()
         nvidia_tool = self._find_tool("nvidia-smi", nvidia_paths)
         if nvidia_tool:
             self.gpu_type = "NVIDIA"
@@ -682,6 +971,14 @@ class GPUMonitor:
                 "🟢 NVIDIA GPU detected: %s, Tool: %s",
                 self.gpu_model,
                 nvidia_tool,
+            )
+            return
+
+        if IS_WINDOWS:
+            self.gpu_type = "Unknown"
+            self.gpu_model = "Unknown"
+            logger.warning(
+                "No supported Windows GPU monitoring backend is available"
             )
             return
 
@@ -808,6 +1105,10 @@ class GPUMonitor:
         if not self.gpu_tool:
             return "N/A"
 
+        if self.gpu_tool == WINDOWS_NATIVE_TOOL:
+            device = self.get_windows_device()
+            value = device.metrics.vram_gb if device is not None else None
+            return str(round(value * 1024)) if value is not None else "N/A"
         try:
             if self.gpu_type == "Apple":
                 vram_used_gb = read_apple_gpu_stats()["vram_used_gb"]

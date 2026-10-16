@@ -128,6 +128,23 @@ class TestSampleNvidia:
             samples = sample_devices("NVIDIA", "nvidia-smi")
         assert len(samples) == 2
 
+    def test_windows_executable_outside_path(self):
+        """Resolved Windows paths work without a second PATH lookup."""
+        with patch("tools.gpu_devices._run", return_value=NVIDIA_CSV), \
+                patch("shutil.which", return_value=None):
+            assert detect_device_count(
+                "NVIDIA", r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+            ) == 2
+
+    def test_unavailable_values_do_not_replace_valid_zero(self):
+        """Missing or nonfinite readings stay None, while zero is retained."""
+        output = "0, NVIDIA test, NaN, N/A, 0\n"
+        with patch("tools.gpu_devices._run", return_value=output):
+            sample = sample_devices("NVIDIA", "nvidia-smi.exe")[0]
+        assert sample.temp_celsius is None
+        assert sample.power_watts is None
+        assert sample.vram_gb == 0
+
 
 class TestUnsupportedBackends:
     """Backends without a device index stay on the aggregate readers."""

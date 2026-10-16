@@ -5,3 +5,7 @@
 # Requires system libraries: libgirepository1.0, libcairo2, libcairo2-dev, gobject-introspection
 # Not available on macOS: the tray is skipped there, everything else still runs.
 PyGObject>=3.48,<3.50; sys_platform == "linux"
+
+# Native Windows tray (Windows 10/11 x64).
+pystray>=0.19.5,<0.20; sys_platform == "win32"
+Pillow>=11.3.0; sys_platform == "win32"

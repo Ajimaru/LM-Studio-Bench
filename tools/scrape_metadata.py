@@ -33,6 +33,7 @@ if str(PROJECT_ROOT) not in sys.path:
 core_paths = importlib.import_module("core.paths")
 core_logging_utils = importlib.import_module("core.logging_utils")
 install_level_icons = core_logging_utils.install_level_icons
+update_latest_log = core_logging_utils.update_latest_log
 USER_LOGS_DIR = core_paths.USER_LOGS_DIR
 USER_RESULTS_DIR = core_paths.USER_RESULTS_DIR
 RESULTS_DIR = USER_RESULTS_DIR
@@ -79,8 +80,8 @@ def setup_logger() -> logging.Logger:
     """Set up and configure a logger for the metadata scraper.
 
     Creates a timestamped log file in the LOGS_DIR directory and sets up both
-    file and console logging handlers. Also creates a symlink named
-    'metadata_scraper_latest.log' pointing to the current log file.
+    file and console logging handlers. Maintains a latest-log reference:
+    a text pointer on Windows and a symlink on Unix.
 
     Returns:
         logging.Logger: Configured logger instance named 'metadata_scraper' with
@@ -88,14 +89,13 @@ def setup_logger() -> logging.Logger:
 
     Side Effects:
         - Creates a new log file in LOGS_DIR with timestamp
-        - Removes and recreates the 'metadata_scraper_latest.log' symlink
+        - Updates the platform-specific latest-log reference
         - Configures the root logging settings
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOGS_DIR / f"metadata_scraper_{timestamp}.log"
     latest_link = LOGS_DIR / "metadata_scraper_latest.log"
-    latest_link.unlink(missing_ok=True)
-    latest_link.symlink_to(log_file.name)
+    update_latest_log(log_file, latest_link)
 
     install_level_icons()
     logging.basicConfig(

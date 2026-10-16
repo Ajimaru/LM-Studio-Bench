@@ -1259,11 +1259,20 @@
                     <span style="color: var(--text); font-weight: 500;">GPU VRAM:</span> <span id="home-gpu-vram">--</span>
                   </div>
                   <div>
-                    <span style="color: var(--text); font-weight: 500;">System RAM (GTT):</span> <span id="home-gpu-gtt">--</span>
+                    <span id="home-gpu-gtt-label"
+                          style="color: var(--text);
+                                 font-weight: 500">System RAM (GTT):</span> <span id="home-gpu-gtt">--</span>
                   </div>
                   <div>
-                    <span style="color: var(--text); font-weight: 500;">Available:</span> <span id="home-gpu-total">--</span>
+                    <span id="home-gpu-total-label"
+                          style="color: var(--text);
+                                 font-weight: 500">Available:</span> <span id="home-gpu-total">--</span>
                   </div>
+                  <div id="home-gpu-sensor-status"
+                       role="status"
+                       aria-live="polite"
+                       style="font-size: 0.875rem;
+                              line-height: 1.4"></div>
                 </div>
                 <div style="margin-top: 1rem;
                             padding-top: 1rem;
@@ -3989,6 +3998,61 @@
         }
 
         // ===== Dashboard Stats Loading =====
+        function updateGpuInfo(gpu) {
+            const capacity = value => Number.isFinite(value)
+                ? `${value.toFixed(2)} GB` : '--';
+            document.getElementById('home-gpu-model').textContent =
+                gpu?.model || gpu?.type || 'Not detected';
+            document.getElementById('home-gpu-vram').textContent =
+                capacity(gpu?.vram_gb);
+            document.getElementById('home-gpu-gtt').textContent =
+                capacity(gpu?.gtt_gb);
+            document.getElementById('home-gpu-total').textContent =
+                capacity(gpu?.total_gb);
+            const shared = document.getElementById('home-gpu-gtt-label');
+            const total = document.getElementById('home-gpu-total-label');
+            const windows = gpu?.windows_memory_budget === true;
+            shared.textContent = windows
+                ? 'Shared GPU memory budget:' : 'System RAM (GTT):';
+            total.textContent = windows
+                ? 'Dedicated + shared budget:' : 'Available:';
+            shared.title = windows
+                ? 'Borrowed from system RAM, not additional physical memory.'
+                : '';
+            total.title = windows
+                ? 'An OS memory budget, not free VRAM. Model offload depends '
+                    + 'on the compute backend; NVIDIA prediction uses dedicated VRAM.'
+                : '';
+
+            const labels = {
+                temp_celsius: 'temperature',
+                power_watts: 'power',
+                vram_gb: 'VRAM usage',
+                gtt_gb: 'shared memory usage',
+            };
+            const summaries = [];
+            const details = [];
+            for (const device of (Array.isArray(gpu?.devices) ? gpu.devices : [])) {
+                const missing = [];
+                for (const [sensor, state] of Object.entries(device.status || {})) {
+                    if (state !== 'ok') {
+                        missing.push(labels[sensor] || sensor);
+                        details.push(`${device.name} [${device.index}]: `
+                            + `${labels[sensor] || sensor}: `
+                            + (device.messages?.[sensor] || state));
+                    }
+                }
+                if (missing.length) {
+                    summaries.push(`${device.name} [${device.index}]: `
+                        + `${missing.join(', ')} unavailable`);
+                }
+            }
+            const status = document.getElementById('home-gpu-sensor-status');
+            const summary = summaries.join('; ');
+            if (status.textContent !== summary) status.textContent = summary;
+            status.title = details.join('\n');
+        }
+
         async function loadDashboardStats() {
             try {
                 const response = await fetch('/api/dashboard/stats');
@@ -4008,17 +4072,7 @@
                 document.getElementById('home-ram').textContent = `${data.system_info.ram_gb} GB` || '--';
                 
                 // GPU Info
-                if (data.gpu_info) {
-                    document.getElementById('home-gpu-model').textContent = data.gpu_info.model || data.gpu_info.type || '--';
-                    document.getElementById('home-gpu-vram').textContent = data.gpu_info.vram_gb ? `${data.gpu_info.vram_gb} GB` : 'Not detected';
-                    document.getElementById('home-gpu-gtt').textContent = data.gpu_info.gtt_gb ? `${data.gpu_info.gtt_gb} GB` : '--';
-                    document.getElementById('home-gpu-total').textContent = data.gpu_info.total_gb ? `${data.gpu_info.total_gb} GB` : '--';
-                } else {
-                    document.getElementById('home-gpu-model').textContent = 'Not detected';
-                    document.getElementById('home-gpu-vram').textContent = '--';
-                    document.getElementById('home-gpu-gtt').textContent = '--';
-                    document.getElementById('home-gpu-total').textContent = '--';
-                }
+                updateGpuInfo(data.gpu_info);
                 
                 // LM Studio Health + mode
                 updateLMStudioHealth(data.lmstudio);

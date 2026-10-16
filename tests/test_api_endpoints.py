@@ -229,14 +229,27 @@ class TestSystemEndpoints:
         assert response.status_code == 200
         assert response.json()["success"] is False
 
-    def test_shutdown_starts_thread(self):
-        """Shutdown endpoint returns success and starts shutdown thread."""
+    def test_shutdown_requests_managed_server_exit(self):
+        """Shutdown invokes the server callback after sending its response."""
         client = _get_client()
-        with patch("os.kill"), \
-                patch("time.sleep"):
+        callback = MagicMock()
+        with patch.object(
+            client.app.state, "shutdown_callback", callback, create=True
+        ):
             response = client.post("/api/system/shutdown")
         assert response.status_code == 200
         assert response.json()["success"] is True
+        callback.assert_called_once()
+
+    def test_unmanaged_server_shutdown_fails_explicitly(self):
+        """An embedded ASGI app must not terminate its arbitrary host process."""
+        client = _get_client()
+        with patch.object(
+            client.app.state, "shutdown_callback", None, create=True
+        ):
+            response = client.post("/api/system/shutdown")
+        assert response.json()["success"] is False
+        assert "not configured" in response.json()["message"]
 
 
 class TestResultsEndpoints:
@@ -2081,6 +2094,7 @@ class TestDashboardStatsDetailed:
         with (
             patch.object(app_mod, "BenchmarkCache", return_value=mock_cache),
             patch.object(app_mod, "METADATA_DATABASE_FILE", metadata_db),
+            patch.object(app_mod.platform, "system", return_value="Linux"),
             patch("httpx.Client", return_value=mock_http_client),
             patch(
                 "cpuinfo.get_cpu_info",
@@ -3214,7 +3228,7 @@ class TestProfilingFlagExposure:
         """The flag is read from the sanitized args, not from the request."""
         manager = self._manager()
         with patch("subprocess.Popen") as popen, \
-                patch("asyncio.create_task"):
+                patch("asyncio.create_task", side_effect=lambda coro: coro.close()):
             popen.return_value = MagicMock(pid=1, poll=MagicMock(return_value=None))
             await manager.start_benchmark(["--runs", "1", "--enable-profiling"])
         assert manager.profiling_enabled is True
@@ -3224,7 +3238,7 @@ class TestProfilingFlagExposure:
         """A run started without profiling is remembered as such."""
         manager = self._manager()
         with patch("subprocess.Popen") as popen, \
-                patch("asyncio.create_task"):
+                patch("asyncio.create_task", side_effect=lambda coro: coro.close()):
             popen.return_value = MagicMock(pid=1, poll=MagicMock(return_value=None))
             await manager.start_benchmark(["--runs", "1"])
         assert manager.profiling_enabled is False

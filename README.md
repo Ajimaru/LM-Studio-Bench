@@ -101,7 +101,8 @@ quantizations to measure and compare tokens-per-second performance.
 
 ## System Requirements
 
-- **OS**: Linux (primary), macOS 11+ (Apple Silicon supported; Intel Macs not tested), Windows (untested)
+- **OS**: Linux (primary), macOS 11+ (Apple Silicon supported; Intel Macs not tested),
+  Windows 10/11 x64 (native implementation; see [Windows validation status](docs/WINDOWS.md))
 - **Python**: 3.11 or newer
 - **GPU**: ~12GB VRAM recommended (NVIDIA/AMD/Intel), or an Apple Silicon
   Mac with ~16GB+ unified memory
@@ -114,7 +115,8 @@ they are not tested and GPU detection or acceleration metrics may be incomplete.
 Two platform differences are worth knowing:
 
 - **No system tray.** The tray is built on GTK/AppIndicator, which is
-  Linux-only. On macOS it is skipped with a one-line notice; everything else
+  Linux-only. Windows uses a separate native backend. On macOS the tray is
+  skipped with a one-line notice; everything else
   runs normally. `PyGObject` is therefore not installed on macOS.
 - **GPU temperature and power need `macmon`** (optional). macOS exposes
   these only through `sudo powermetrics`; [macmon](https://github.com/vladkens/macmon)
@@ -133,6 +135,15 @@ Two platform differences are worth knowing:
 Apple Silicon reports one unified memory pool, so VRAM and system RAM are the
 same memory. The dashboard shows it as a single total rather than adding
 VRAM and GTT together.
+
+### Windows notes
+
+See [Native Windows support](docs/WINDOWS.md) for PowerShell setup, AppData
+locations, native tray controls, GPU driver requirements and package licensing.
+NVIDIA uses `nvidia-smi`; AMD/Intel use the native ADLX/IGCL/WDDM component.
+Unavailable sensors are reported explicitly rather than as zero.
+Local verification covers Windows 11 with Intel/NVIDIA; AMD hardware validation
+is performed separately. ARM64 and signed/Store packages are not verified targets.
 
 - **Software**: [LM Studio](https://lmstudio.ai/) or
   [LM Studio (Headless)](https://lmstudio.ai/docs/developer/core/headless_llmster/) installed locally
