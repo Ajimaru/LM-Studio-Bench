@@ -27,7 +27,7 @@ cachecontrol==0.14.4
     # via
     #   cachecontrol
     #   pip-audit
-certifi==2026.7.22
+certifi==2026.10.19
     # via
     #   httpcore
     #   httpx
@@ -65,7 +65,7 @@ fastapi==0.141.1
     # via
     #   -r requirements-dev.txt
     #   -r requirements.txt
-filelock==4.0.5
+filelock==4.2.1
     # via cachecontrol
 h11==0.16.0
     # via
@@ -150,7 +150,7 @@ pathspec==1.1.1
     # via
     #   djlint
     #   mypy
-pillow==12.3.0
+pillow==13.0.0
     # via reportlab
 pip-api==0.0.34
     # via pip-audit
