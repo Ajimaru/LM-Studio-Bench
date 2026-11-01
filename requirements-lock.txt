@@ -15,9 +15,9 @@ anyio==4.15.0
     #   lmstudio
     #   starlette
     #   watchfiles
-ast-serialize==0.11.2
+ast-serialize==0.13.1
     # via mypy
-astroid==4.0.4
+astroid==4.3.4
     # via pylint
 boolean-py==5.0
     # via license-expression
@@ -41,7 +41,7 @@ click==8.5.0
     #   djlint
     #   pip-tools
     #   uvicorn
-coverage==7.16.0
+coverage==7.17.0
     # via pytest-cov
 cssbeautifier==2.0.3
     # via djlint
@@ -55,13 +55,13 @@ distro==1.9.0 ; sys_platform == "linux"
     # via
     #   -r requirements-dev.txt
     #   -r requirements.txt
-djlint==1.46.2
+djlint==1.47.1
     # via -r requirements-dev.txt
 editorconfig==0.17.1
     # via
     #   cssbeautifier
     #   jsbeautifier
-fastapi==0.141.1
+fastapi==0.162.0
     # via
     #   -r requirements-dev.txt
     #   -r requirements.txt
@@ -76,7 +76,7 @@ httpcore==1.0.9
     # via
     #   httpx
     #   httpx-ws
-httptools==0.8.0
+httptools==0.9.0
     # via uvicorn
 httpx==0.28.1
     # via
@@ -104,9 +104,9 @@ jsbeautifier==2.0.3
     # via
     #   cssbeautifier
     #   djlint
-json5==0.15.0
+json5==0.17.3
     # via djlint
-librt==0.15.0
+librt==0.16.0
     # via mypy
 license-expression==30.4.4
     # via cyclonedx-python-lib
@@ -124,15 +124,15 @@ mdurl==0.1.2
     # via markdown-it-py
 msgpack==1.2.3
     # via cachecontrol
-msgspec==0.21.1
+msgspec==0.22.0
     # via lmstudio
-mypy==2.3.1
+mypy==2.4.1
     # via -r requirements-dev.txt
 mypy-extensions==1.1.0
     # via
     #   isort
     #   mypy
-narwhals==2.26.0
+narwhals==2.28.0
     # via plotly
 numpy==2.4.6
     # via scipy
@@ -160,7 +160,7 @@ pip-requirements-parser==32.0.1
     # via pip-audit
 pip-tools==7.6.1
     # via -r requirements-dev.txt
-platformdirs==4.12.1
+platformdirs==4.14.0
     # via
     #   pip-audit
     #   pylint
@@ -168,7 +168,7 @@ plotly==7.1.0
     # via
     #   -r requirements-dev.txt
     #   -r requirements.txt
-pluggy==1.6.0
+pluggy==1.7.0
     # via
     #   pytest
     #   pytest-cov
@@ -184,12 +184,12 @@ py-serializable==2.1.0
     # via cyclonedx-python-lib
 pycairo==1.29.1
     # via pygobject
-pydantic==2.13.5
+pydantic==2.14.2
     # via
     #   -r requirements-dev.txt
     #   -r requirements.txt
     #   fastapi
-pydantic-core==2.46.5
+pydantic-core==2.50.2
     # via pydantic
 pygments==2.21.0
     # via
@@ -197,7 +197,7 @@ pygments==2.21.0
     #   rich
 pygobject==3.48.2 ; sys_platform == "linux"
     # via -r requirements.txt
-pylint==4.0.9
+pylint==4.1.3
     # via -r requirements-dev.txt
 pyparsing==3.3.2
     # via pip-requirements-parser
@@ -205,7 +205,7 @@ pyproject-hooks==1.3.3
     # via
     #   build
     #   pip-tools
-pytest==9.1.1
+pytest==9.2.0
     # via
     #   -r requirements-dev.txt
     #   pytest-cov
@@ -215,7 +215,7 @@ pytest-cov==7.1.0
     # via -r requirements-dev.txt
 pytest-httpx==0.36.2
     # via -r requirements-dev.txt
-pytest-mock==3.16.0
+pytest-mock==3.17.0
     # via -r requirements-dev.txt
 python-dotenv==1.2.3
     # via uvicorn
@@ -226,7 +226,7 @@ pyyaml==6.0.3
     #   uvicorn
 regex==2026.9.3
     # via djlint
-reportlab==5.0.1
+reportlab==5.1.0
     # via
     #   -r requirements-dev.txt
     #   -r requirements.txt
@@ -236,7 +236,7 @@ requests==2.34.2
     #   pip-audit
 rich==15.0.0
     # via pip-audit
-ruff==0.16.6
+ruff==0.17.3
     # via -r requirements-dev.txt
 scipy==1.17.1
     # via
@@ -244,9 +244,9 @@ scipy==1.17.1
     #   -r requirements.txt
 sortedcontainers==2.4.0
     # via cyclonedx-python-lib
-starlette==1.7.0
+starlette==1.10.0
     # via fastapi
-tomli==2.4.1
+tomli==2.5.0
     # via pip-audit
 tomli-w==1.2.0
     # via pip-audit
@@ -278,11 +278,11 @@ uvicorn==0.54.0
     # via
     #   -r requirements-dev.txt
     #   -r requirements.txt
-uvloop==0.22.1
+uvloop==0.23.0
     # via uvicorn
 watchfiles==1.3.0
     # via uvicorn
-websockets==17.1
+websockets==17.3
     # via uvicorn
 wheel==0.48.0
     # via pip-tools
