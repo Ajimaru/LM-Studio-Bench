@@ -83,7 +83,7 @@ jobs:
 
       - name: Set up Snyk CLI to check for security issues
         if: steps.snyk_token.outputs.configured == 'true'
-        uses: snyk/actions/setup@b075801f26076be9bb50521154cafab73f44da0c
+        uses: snyk/actions/setup@11b673cfb4b0dc0d860a1323caa199d54950dcce
 
       - name: Snyk Code test
         if: steps.snyk_token.outputs.configured == 'true'
